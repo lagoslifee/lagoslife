@@ -153,7 +153,7 @@ async function requireSession(req: Request, res: Response, next: NextFunction) {
   }
   (req as AuthenticatedRequest).player = {
     userId: session.user.id,
-    name: session.user.username ?? session.user.name,
+    name: session.user.displayUsername ?? session.user.username ?? session.user.name,
   };
   next();
 }
