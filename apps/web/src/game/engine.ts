@@ -54,6 +54,7 @@ import {
 } from "@lagos-living/shared";
 import { apiUrl } from "../auth-client";
 import { MultiplayerConnection, type MultiplayerStatus } from "../multiplayer";
+import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, qualityStep } from "./adaptive-quality";
 import { CityAudio } from "./audio";
 import { Avatar, AvatarFactory } from "./avatar";
 import { CarController } from "./car-controller";
@@ -90,6 +91,8 @@ export type HudState = {
   motion: MotionState;
   fps: number;
   frameMs: number;
+  /** Automatic quality reduction level; 0 means the chosen preset is used as is. */
+  qualityStep: number;
   x: number;
   z: number;
   yaw: number;
@@ -212,6 +215,8 @@ export class GameEngine {
   private updateMs = 0;
   private readonly callbacks: EngineCallbacks;
   private frameTimes: number[] = [];
+  private readonly adaptive = new AdaptiveQuality();
+  private baseScaling = 1;
   private autopilot: { path: Vec2[]; index: number; sprint: boolean; resolve: (ok: boolean) => void; lastProgress: number; lastPoint: Vec2; deadline: number } | null = null;
   private forcedInput: [number, number] | null = null;
   private readyFired = false;
@@ -289,7 +294,8 @@ export class GameEngine {
     const engine = new Engine(this.canvas, this.quality !== "low", { stencil: false, preserveDrawingBuffer: false, powerPreference: "high-performance" }, false);
     this.engine = engine;
     const dpr = window.devicePixelRatio || 1;
-    engine.setHardwareScalingLevel(this.quality === "low" ? 1.5 : this.quality === "medium" ? Math.max(1, dpr / 1.25) / dpr : 1 / Math.min(dpr, 1.5));
+    this.baseScaling = this.quality === "low" ? 1.5 : this.quality === "medium" ? Math.max(1, dpr / 1.25) / dpr : 1 / Math.min(dpr, 1.5);
+    engine.setHardwareScalingLevel(this.baseScaling);
     const scene = new Scene(engine);
     this.scene = scene;
     scene.skipPointerMovePicking = true;
@@ -299,13 +305,13 @@ export class GameEngine {
     scene.imageProcessingConfiguration.exposure = 1.05;
     scene.imageProcessingConfiguration.contrast = 1.12;
     scene.fogMode = Scene.FOGMODE_EXP2;
-    scene.fogDensity = 0.0024;
+    scene.fogDensity = FULL_FOG_DENSITY;
     scene.fogColor = new Color3(0.78, 0.84, 0.88);
 
     this.camera = new TargetCamera("camera", new Vector3(0, 3, -5), scene);
     this.camera.fov = 0.95;
     this.camera.minZ = 0.1;
-    this.camera.maxZ = 1600;
+    this.camera.maxZ = FULL_VIEW_DISTANCE;
 
     this.callbacks.loading("Lighting the island…", 0.1);
     const hdr = new HDRCubeTexture("/assets/sky/daylight-1k.hdr", scene, 256, false, true, false, true);
@@ -628,6 +634,10 @@ export class GameEngine {
     const dt = Math.min(this.maxFrameDt, this.engine.getDeltaTime() / 1000);
     this.frameTimes.push(this.engine.getDeltaTime());
     if (this.frameTimes.length > 120) this.frameTimes.shift();
+    if (this.readyFired && this.settings.autoGraphics && !document.hidden) {
+      const level = this.adaptive.sample(this.engine.getDeltaTime(), now);
+      if (level !== null) this.applyQualityStep(level);
+    }
 
     if (this.input.consume("phone")) this.callbacks.toggle("phone");
     if (this.input.consume("map")) this.callbacks.toggle("map");
@@ -985,6 +995,7 @@ export class GameEngine {
       motion,
       fps: Math.round(this.engine.getFps()),
       frameMs: Math.round(average * 10) / 10,
+      qualityStep: this.adaptive.level,
       x,
       z,
       yaw: this.controller.yaw,
@@ -1297,6 +1308,19 @@ export class GameEngine {
   setSettings(settings: PlayerSettings) {
     this.settings = settings;
     this.audio.apply(settings);
+    if (!settings.autoGraphics && this.adaptive.level !== 0) {
+      this.adaptive.reset();
+      this.applyQualityStep(0);
+    }
+  }
+
+  private applyQualityStep(level: number) {
+    if (!this.engine || !this.scene) return;
+    const step = qualityStep(level);
+    this.engine.setHardwareScalingLevel(this.baseScaling * step.scaling);
+    if (this.shadows) this.sun.shadowEnabled = step.shadows;
+    this.camera.maxZ = step.viewDistance;
+    this.scene.fogDensity = step.fogDensity;
   }
 
   setBindings(bindings: Bindings) {
@@ -1500,6 +1524,7 @@ export class GameEngine {
           this.carPilot = { path: path.length ? path : [[x, z]], index: 0, resolve, deadline: performance.now() + timeoutMs, stuckSince: null, recovery: null, recoveries: 0 };
         }),
       fps: () => this.engine.getFps(),
+      quality: () => ({ step: this.adaptive.level, scaling: this.engine.getHardwareScalingLevel(), shadows: this.sun.shadowEnabled, viewDistance: this.camera.maxZ, fogDensity: this.scene.fogDensity }),
       meshesNamed: (prefix: string) =>
         this.scene.meshes
           .filter((mesh) => mesh.name.startsWith(prefix))

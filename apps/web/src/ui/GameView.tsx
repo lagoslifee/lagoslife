@@ -431,7 +431,7 @@ export function GameView({
             <button onClick={() => setMapOpen(true)}>🗺 Map <kbd>{keyLabel(bindings.map)}</kbd></button>
             <button onClick={() => setHelpOpen((open) => !open)}>⌨ Controls <kbd>{keyLabel(bindings.help)}</kbd></button>
           </div>
-          <div className="perf" data-testid="perf">{hud.fps} fps · {hud.frameMs} ms · {hud.speed.toFixed(1)} m/s {hud.mode}</div>
+          <div className="perf" data-testid="perf">{hud.fps} fps · {hud.frameMs} ms · {hud.qualityStep ? `auto detail −${hud.qualityStep} · ` : ""}{hud.speed.toFixed(1)} m/s {hud.mode}</div>
           <div className="osm-credit">Map data © OpenStreetMap contributors (ODbL)</div>
         </>
       )}

@@ -419,6 +419,8 @@ function SettingsApp({ settings, onSettings, bindings, onBindings, quality, onQu
         </select>
       </label>
       <p className="muted small">Changing quality reloads the world.</p>
+      {toggle("autoGraphics", "Lower detail automatically when slow")}
+      <p className="muted small">Steps down resolution, shadows and view distance while the frame rate stays under 30 fps, and restores them when it recovers.</p>
       <h3>Character</h3>
       <button className="secondary" onClick={onCustomise}>Customise character</button>
       <p className="muted small">The 3D resident currently uses one generated model for everyone; saved style choices are kept for the modular wardrobe.</p>

@@ -178,6 +178,7 @@ export const settingsSchema = z.object({
   cameraShake: z.boolean(),
   textScale: z.number().min(0.85).max(1.4),
   graphics: z.enum(["low", "medium", "high"]),
+  autoGraphics: z.boolean().default(true),
   needsEnabled: z.boolean(),
 });
 export type PlayerSettings = z.infer<typeof settingsSchema>;
@@ -191,6 +192,7 @@ export const defaultSettings: PlayerSettings = {
   cameraShake: false,
   textScale: 1,
   graphics: "medium",
+  autoGraphics: true,
   needsEnabled: true,
 };
 
