@@ -8,10 +8,8 @@ import {
 } from "@lagos-living/shared";
 import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 import { apiUrl, authClient } from "./auth-client";
-import { EconomyPanel } from "./EconomyPanel";
-import { PropertyPanel } from "./PropertyPanel";
 
-const PlayableScene = lazy(() => import("./PlayableScene"));
+const GameView = lazy(() => import("./ui/GameView").then((module) => ({ default: module.GameView })));
 
 type AuthMode = "login" | "register" | "forgot" | "reset";
 
@@ -191,7 +189,7 @@ function CharacterCreator({
             <div className={`avatar-body outfit-${appearance.outfit}`} />
           </div>
           <p>Modular preview</p>
-          <small>Final rigged character asset pending</small>
+          <small>Style choices are saved for the modular wardrobe</small>
         </div>
         <div className="creator-options">
           <p className="step-label">CHARACTER STUDIO</p>
@@ -244,43 +242,17 @@ function GameShell({
 
   return (
     <main className="game-shell">
-      <Suspense fallback={<div className="loading-screen">Preparing the island…</div>}>
-        <PlayableScene />
+      <Suspense fallback={<div className="loading-screen">Preparing Lagos…</div>}>
+        <GameView
+          playerName={playerName}
+          overlayOpen={creatorOpen}
+          onCustomise={() => setCreatorOpen(true)}
+          onSignOut={async () => {
+            await authClient.signOut();
+            location.assign("/?manual=1");
+          }}
+        />
       </Suspense>
-      <header className="game-nav">
-        <div className="wordmark"><span>LL</span> LAGOS LIVING</div>
-        <div className="server-pill"><i /> DEVELOPMENT WORLD</div>
-        <div className="profile-menu">
-          <strong>{playerName}</strong>
-          <button
-            onClick={async () => {
-              await authClient.signOut();
-              location.assign("/?manual=1");
-            }}
-          >
-            Sign out
-          </button>
-        </div>
-      </header>
-      <EconomyPanel />
-      <PropertyPanel />
-      <aside className="location-card">
-        <p className="eyebrow">CURRENT DISTRICT</p>
-        <h2>Ikoyi Preview</h2>
-        <p>Bourdillon–Glover starter extract · gameplay-scaled OpenStreetMap layout</p>
-      </aside>
-      <aside className="minimap" aria-label="Development minimap">
-        <div className="map-water" />
-        <div className="map-road one" /><div className="map-road two" />
-        <i /><span>YOU</span>
-      </aside>
-      <section className="welcome-card">
-        <p className="step-label">WELCOME HOME</p>
-        <h1>Good evening, {playerName}.</h1>
-        <p>Your journey starts here. Set your look before the city opens further.</p>
-        <button className="primary" onClick={() => setCreatorOpen(true)}>Customise character</button>
-      </section>
-      <div className="development-notice">EARLY DEVELOPMENT · TEMPORARY WORLD ASSETS</div>
       {creatorOpen && (
         <CharacterCreator
           initial={appearance}
