@@ -6,6 +6,7 @@ export type WorldRoad = {
   kind: string;
   oneway: boolean;
   width: number;
+  bridge?: boolean;
   points: Vec2[];
 };
 
@@ -17,15 +18,36 @@ export type WorldBuilding = {
   points: Vec2[];
 };
 
+export type WorldArea = { id: number; kind: string; name: string | null; points: Vec2[] };
+
+/** One streamed tile: the buildings and areas whose centroid falls inside it. */
+export type WorldTile = { key: string; buildings: WorldBuilding[]; areas: WorldArea[] };
+
+export type WaterGrid = { originX: number; originZ: number; cell: number; cols: number; rows: number; bits: string };
+
 export type WorldData = {
   name: string;
   attribution: string;
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
+  tileSize: number;
+  tiles: Array<{ key: string; buildings: number }>;
+  water: WaterGrid;
   roads: WorldRoad[];
-  buildings: WorldBuilding[];
-  areas: Array<{ id: number; kind: string; name: string | null; points: Vec2[] }>;
   pois: Array<{ id: number; kind: string; name: string | null; position: Vec2 }>;
 };
+
+/** Vertex samples of a packed bit grid (1 = water); out-of-range samples are land. */
+export function waterSampler(grid: WaterGrid) {
+  const binary = atob(grid.bits);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  const stride = grid.cols + 1;
+  return (col: number, row: number) => {
+    if (col < 0 || row < 0 || col > grid.cols || row > grid.rows) return 0;
+    const index = row * stride + col;
+    return (bytes[index >> 3]! >> (index & 7)) & 1;
+  };
+}
 
 export type Junction = { point: Vec2; roads: WorldRoad[] };
 

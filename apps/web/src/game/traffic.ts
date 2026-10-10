@@ -73,6 +73,8 @@ export class AmbientLife {
   private template: Mesh;
   honks = 0;
   onHonk: (() => void) | null = null;
+  /** Where the first cars are placed before the player's position is known. */
+  private home: Vec2 | null = null;
 
   constructor(
     private readonly scene: Scene,
@@ -84,6 +86,7 @@ export class AmbientLife {
   ) {
     this.roads = roads.filter((road) => ["primary", "tertiary", "unclassified", "residential"].includes(road.kind) && polylineLength(road.points) > 120);
     this.sidewalkRoads = roads.filter((road) => ["primary", "tertiary", "unclassified", "residential"].includes(road.kind) && polylineLength(road.points) > 60);
+    this.home = getPlace("starter-home").door;
     this.template = carTemplate(scene, materials);
     this.template.setEnabled(false);
     const carCount = quality === "low" ? 10 : quality === "medium" ? 18 : 26;
@@ -146,8 +149,11 @@ export class AmbientLife {
   }
 
   private spawnCar(car: Car, seed: number, player: Vec2 | null) {
+    const centre = player ?? this.home;
+    const near = centre ? this.roads.filter((road) => road.points.some((point) => Math.hypot(point[0] - centre[0], point[1] - centre[1]) < 260)) : this.roads;
+    const pool = near.length ? near : this.roads;
     for (let attempt = 0; attempt < 12; attempt += 1) {
-      const road = this.roads[Math.floor(hash(Math.round(seed * 1000) + attempt * 17) * this.roads.length)]!;
+      const road = pool[Math.floor(hash(Math.round(seed * 1000) + attempt * 17) * pool.length)]!;
       const points = densify(road.points, 4);
       const length = polylineLength(points);
       const s = hash(Math.round(seed * 777) + attempt) * length;
@@ -225,6 +231,10 @@ export class AmbientLife {
         }
       } else if (car.stoppedFor > 0) car.stoppedFor = 0;
       car.s += car.speed * car.direction * dt;
+      if (Math.hypot(x - player[0], z - player[1]) > 320) {
+        this.spawnCar(car, seed + car.mesh.uniqueId * 0.11, player);
+        continue;
+      }
       if (car.s < 0 || car.s > car.length) {
         const far = Math.hypot(x - player[0], z - player[1]) > 90;
         if (far) this.spawnCar(car, seed + car.mesh.uniqueId * 0.13, player);

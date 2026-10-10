@@ -71,6 +71,9 @@ export function createMaterials(scene: Scene, quality: Quality) {
   water.alpha = 0.85;
   water.zOffset = -2;
 
+  const lagoon = flat(scene, "lagoon water", "#3f6f73", 0.12, 0.15);
+  lagoon.environmentIntensity = 0.9;
+
   const lamp = new PBRMaterial("lamp glow", scene);
   lamp.albedoColor = Color3.FromHexString("#fff4d6");
   lamp.emissiveColor = Color3.FromHexString("#fff0c8");
@@ -91,6 +94,7 @@ export function createMaterials(scene: Scene, quality: Quality) {
 
   return {
     water,
+    lagoon,
     lamp,
     vertexPaint,
     plaster,

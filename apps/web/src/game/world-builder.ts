@@ -4,8 +4,10 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Scene } from "@babylonjs/core/scene";
 import {
+  districtAt,
   insideBuilding,
   PLACES,
+  registerFootprints,
   sampleRoute,
   TRANSIT,
   type Place,
@@ -14,7 +16,7 @@ import {
 import { densify, hash, MeshBuilderBatch, offsetPolyline, pointAt, polylineLength, slicePolyline } from "./geometry";
 import type { Materials, Quality } from "./materials";
 import { SignAtlas, type UvRect } from "./sign-atlas";
-import { findJunctions, type WorldBuilding, type WorldData, type WorldRoad } from "./street-index";
+import { findJunctions, waterSampler, type WorldArea, type WorldBuilding, type WorldData, type WorldRoad, type WorldTile } from "./street-index";
 
 type Color = [number, number, number];
 
@@ -179,10 +181,13 @@ export class ObstacleGrid {
 /** Groups batches by spatial chunk and material key. */
 class ChunkSet {
   readonly batches = new Map<string, Map<string, MeshBuilderBatch>>();
-  constructor(readonly size: number, readonly label: string) {}
+  /** Positions are clamped into `[min, max)` so geometry straddling a tile edge stays in that tile's chunks. */
+  constructor(readonly size: number, readonly label: string, readonly min: Vec2, readonly max: Vec2) {}
 
   key(x: number, z: number) {
-    return `${Math.floor(x / this.size)}:${Math.floor(z / this.size)}`;
+    const cx = Math.min(Math.max(x, this.min[0]), this.max[0] - 0.01);
+    const cz = Math.min(Math.max(z, this.min[1]), this.max[1] - 0.01);
+    return `${Math.floor(cx / this.size)}:${Math.floor(cz / this.size)}`;
   }
 
   get(x: number, z: number, material: string) {
@@ -213,7 +218,31 @@ class ChunkSet {
     }
     return chunks;
   }
+
+  /** Chunks whose batches have not been turned into meshes yet; each builds on first use. */
+  deferred(scene: Scene, materials: Record<string, Material>): DetailChunk[] {
+    return [...this.batches].map(([key, chunk]) => {
+      const [cx, cz] = key.split(":").map(Number) as [number, number];
+      const entry: DetailChunk = {
+        x: (cx + 0.5) * this.size,
+        z: (cz + 0.5) * this.size,
+        meshes: null,
+        build: () => {
+          if (entry.meshes) return entry.meshes;
+          entry.meshes = [];
+          for (const [materialKey, batch] of chunk) {
+            const mesh = batch.build(scene, materials[materialKey]!);
+            if (mesh) entry.meshes.push(mesh);
+          }
+          return entry.meshes;
+        },
+      };
+      return entry;
+    });
+  }
 }
+
+type DetailChunk = { x: number; z: number; meshes: Mesh[] | null; build: () => Mesh[] };
 
 function shoelace(points: Vec2[]) {
   let sum = 0;
@@ -283,38 +312,201 @@ function textQuad(batch: MeshBuilderBatch, x: number, y: number, z: number, yaw:
 export type BuiltWorld = {
   roads: RoadIndex;
   obstacles: ObstacleGrid;
+  /** Signs in currently loaded tiles. */
   junctionSigns: Array<{ point: Vec2; names: string[]; yaw: number }>;
   placeSigns: Array<{ placeId: string; point: Vec2 }>;
   groundHeight: (x: number, z: number) => number;
   updateDetail: (x: number, z: number) => void;
-  stats: { meshes: number; detailChunks: number; windows: number; buildings: number };
+  /** Queues tiles near the point for loading and releases distant ones. */
+  stream: (x: number, z: number) => void;
+  /** Builds queued tiles until the time budget is spent. */
+  pump: (budgetMs: number) => void;
+  /** Tiles within the near radius of the last streamed point that are not built yet. */
+  pendingNear: () => number;
+  loadedTiles: () => string[];
+  mapLayer: () => { buildings: WorldBuilding[]; areas: WorldArea[] };
+  stats: { meshes: number; detailChunks: number; windows: number; buildings: number; tiles: number; tileBuildMs: number };
   casters: () => Mesh[];
+  onMeshes: ((meshes: Mesh[]) => void) | null;
 };
 
-export function buildWorld(scene: Scene, data: WorldData, materials: Materials, atlas: SignAtlas, quality: Quality): BuiltWorld {
+type LoadedTile = {
+  key: string;
+  meshes: Mesh[];
+  detailChunks: DetailChunk[];
+  junctionSigns: BuiltWorld["junctionSigns"];
+  placeSigns: BuiltWorld["placeSigns"];
+  buildings: WorldBuilding[];
+  areas: WorldArea[];
+  windows: number;
+};
+
+export function buildWorld(scene: Scene, data: WorldData, materials: Materials, atlas: SignAtlas, quality: Quality, fetchTile: (key: string) => Promise<WorldTile>): BuiltWorld {
   const roads = new RoadIndex(data.roads.filter((road) => road.kind !== "footway"));
   const obstacles = new ObstacleGrid();
-  const base = new ChunkSet(160, "base");
-  const detail = new ChunkSet(80, "detail");
   const materialMap: Record<string, Material> = { ...materials, signs: atlas.material } as unknown as Record<string, Material>;
   const detailRadius = quality === "low" ? 90 : quality === "medium" ? 150 : 220;
+  const loadRadius = quality === "low" ? 420 : quality === "medium" ? 520 : 640;
+  const TILE = data.tileSize;
+  const tileOf = (x: number, z: number) => `${Math.floor(x / TILE)}_${Math.floor(z / TILE)}`;
+  const contentTiles = new Set(data.tiles.map((tile) => tile.key));
+  const water = waterSampler(data.water);
+  const junctions = findJunctions(data.roads);
+  const placeByBuilding = new Map<number, Place>(PLACES.filter((place) => place.buildingId !== null).map((place) => [place.buildingId!, place]));
+
+  // Each road's densified centreline is split into runs of consecutive segments per tile (by segment midpoint).
+  const roadParts = new Map<string, Array<{ road: WorldRoad; part: Vec2[] }>>();
+  for (const road of data.roads) {
+    const dense = densify(road.points, 2);
+    let runKey = "";
+    let run: Vec2[] = [];
+    const flush = () => {
+      if (run.length >= 2) {
+        const list = roadParts.get(runKey) ?? [];
+        list.push({ road, part: run });
+        roadParts.set(runKey, list);
+      }
+      run = [];
+    };
+    for (let index = 1; index < dense.length; index += 1) {
+      const a = dense[index - 1]!;
+      const b = dense[index]!;
+      const key = tileOf((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+      if (key !== runKey) {
+        flush();
+        runKey = key;
+        run = [a];
+      }
+      run.push(b);
+    }
+    flush();
+  }
+
+  // The lagoon is one plane under the whole city; land tiles sit on top of it.
+  const lagoon = MeshBuilder.CreateGround("lagoon", { width: 24_000, height: 24_000, subdivisions: 1 }, scene);
+  lagoon.position.set((data.bounds.minX + data.bounds.maxX) / 2, -0.45, (data.bounds.minZ + data.bounds.maxZ) / 2);
+  lagoon.material = materials.lagoon;
+  lagoon.isPickable = false;
+  lagoon.freezeWorldMatrix();
+
+  // Frontage compound walls are claimed per road side so neighbours never overlap; results are cached by
+  // building so a tile rebuilt after unloading gets the same walls.
+  const claimed = new Map<string, Array<[number, number]>>();
+  const claimCache = new Map<string, Array<[number, number]>>();
+  const claim = (owner: number, key: string, s0: number, s1: number) => {
+    const cacheKey = `${owner}|${key}`;
+    const cached = claimCache.get(cacheKey);
+    if (cached) return cached;
+    const list = claimed.get(key) ?? [];
+    const pieces: Array<[number, number]> = [[s0, s1]];
+    for (const [a, b] of list) {
+      for (let index = pieces.length - 1; index >= 0; index -= 1) {
+        const [p0, p1] = pieces[index]!;
+        if (b <= p0 || a >= p1) continue;
+        pieces.splice(index, 1);
+        if (a > p0) pieces.push([p0, a]);
+        if (b < p1) pieces.push([b, p1]);
+      }
+    }
+    const kept = pieces.filter(([a, b]) => b - a > 1.2);
+    list.push(...kept);
+    claimed.set(key, list);
+    claimCache.set(cacheKey, kept);
+    return kept;
+  };
+
+  const sidewalkRoads = new Set(["primary", "tertiary", "unclassified", "residential"]);
+  const sidewalkWidth = (road: WorldRoad) => (road.kind === "primary" ? 2.6 : road.kind === "tertiary" ? 2.2 : 1.8);
+  const obstaclesAdded = new Set<string>();
+
+  /** Matches the shared walkable deck (`DECK_PAD` in the world build) plus the parapet's thickness. */
+  const deckHalf = (road: WorldRoad) => road.width / 2 + 1;
+  const bridges = data.roads.filter((road) => road.bridge);
+  const insideOtherDeck = (x: number, z: number, exclude: WorldRoad) => {
+    for (const road of bridges) {
+      if (road === exclude) continue;
+      const half = deckHalf(road) - 0.05;
+      for (let index = 1; index < road.points.length; index += 1) {
+        const [ax, az] = road.points[index - 1]!;
+        const [bx, bz] = road.points[index]!;
+        const dx = bx - ax;
+        const dz = bz - az;
+        const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+        if (Math.hypot(ax + dx * t - x, az + dz * t - z) < half) return true;
+      }
+    }
+    return false;
+  };
+
+  function buildTile(key: string, content: WorldTile | null): LoadedTile {
+  const [tx, tz] = key.split("_").map(Number) as [number, number];
+  const x0 = tx * TILE;
+  const z0 = tz * TILE;
+  const inTile = (x: number, z: number) => x >= x0 && x < x0 + TILE && z >= z0 && z < z0 + TILE;
+  const firstBuild = !obstaclesAdded.has(key);
+  obstaclesAdded.add(key);
+  const addObstacle = (a: Vec2, b: Vec2, r: number) => {
+    if (firstBuild) obstacles.add(a, b, r);
+  };
+  const base = new ChunkSet(TILE, `base ${key}`, [x0, z0], [x0 + TILE, z0 + TILE]);
+  const detail = new ChunkSet(TILE / 2, `detail ${key}`, [x0, z0], [x0 + TILE, z0 + TILE]);
   let windows = 0;
   const palms: Array<[number, number, number]> = [];
   const lights: Array<[number, number, number]> = [];
   const tankInstances: Array<[number, number, number]> = [];
+  const placeSigns: BuiltWorld["placeSigns"] = [];
 
-  // Ground with a margin beyond the mapped extract so the horizon never shows an edge.
-  const { minX, maxX, minZ, maxZ } = data.bounds;
-  for (let x = minX - 320; x < maxX + 320; x += 160) {
-    for (let z = minZ - 320; z < maxZ + 320; z += 160) {
-      base.get(x + 80, z + 80, "dirt").polygon([[x, z], [x + 160, z], [x + 160, z + 160], [x, z + 160]], 0, 7);
+  // Land: full cells merge into row strips; shoreline cells use marching squares on the water samples.
+  {
+    const grid = data.water;
+    const cell = grid.cell;
+    const c0 = Math.round((x0 - grid.originX) / cell);
+    const r0 = Math.round((z0 - grid.originZ) / cell);
+    const n = Math.round(TILE / cell);
+    const ground = base.get(x0 + TILE / 2, z0 + TILE / 2, "dirt");
+    for (let row = 0; row < n; row += 1) {
+      let runStart = -1;
+      const zA = grid.originZ + (r0 + row) * cell;
+      const zB = zA + cell;
+      const flushRun = (end: number) => {
+        if (runStart < 0) return;
+        const xA = grid.originX + (c0 + runStart) * cell;
+        const xB = grid.originX + (c0 + end) * cell;
+        ground.polygon([[xA, zA], [xB, zA], [xB, zB], [xA, zB]], 0, 7);
+        runStart = -1;
+      };
+      for (let col = 0; col < n; col += 1) {
+        const c = c0 + col;
+        const r = r0 + row;
+        const corners = [water(c, r), water(c + 1, r), water(c + 1, r + 1), water(c, r + 1)];
+        const wet = corners[0]! + corners[1]! + corners[2]! + corners[3]!;
+        if (wet === 0) {
+          if (runStart < 0) runStart = col;
+          continue;
+        }
+        flushRun(col);
+        if (wet === 4) continue;
+        const xA = grid.originX + c * cell;
+        const xB = xA + cell;
+        const points: Vec2[] = [[xA, zA], [xB, zA], [xB, zB], [xA, zB]];
+        const ring: Vec2[] = [];
+        for (let corner = 0; corner < 4; corner += 1) {
+          const next = (corner + 1) % 4;
+          const p = points[corner]!;
+          const q = points[next]!;
+          if (!corners[corner]) ring.push(p);
+          if (corners[corner] !== corners[next]) ring.push([(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]);
+        }
+        if (ring.length >= 3) ground.polygon(ring, 0, 7);
+      }
+      flushRun(n);
     }
   }
 
-  for (const area of data.areas) {
+  for (const area of content?.areas ?? []) {
     const [cx, cz] = centroid(area.points);
     const ring = shoelace(area.points) < 0 ? [...area.points].reverse() : area.points;
-    if (area.kind === "pitch" || area.kind === "recreation_ground" || area.kind === "greenfield") {
+    if (["pitch", "recreation_ground", "greenfield", "park", "garden", "golf_course", "grass", "village_green"].includes(area.kind)) {
       base.get(cx, cz, "grass").polygon(ring, 0.012, 5);
     } else if (area.kind === "swimming_pool") {
       base.get(cx, cz, "water").polygon(ring, 0.05, 4);
@@ -325,12 +517,40 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     }
   }
 
-  const sidewalkRoads = new Set(["primary", "tertiary", "unclassified", "residential"]);
-  const sidewalkWidth = (road: WorldRoad) => (road.kind === "primary" ? 2.6 : road.kind === "tertiary" ? 2.2 : 1.8);
+  for (const { road, part: dense } of roadParts.get(key) ?? []) {
+    const [mx, mz] = dense[Math.floor(dense.length / 2)]!;
+    if (road.bridge) {
+      // Parallel bridge ways (carriageways, footways) merge into one deck; parapets only run along its outer edge.
+      const edge = deckHalf(road);
+      const concrete = base.get(mx, mz, "concrete");
+      concrete.worldRibbon(dense, -edge, edge, 0.012, 4);
+      concrete.worldRibbon(dense, -edge, edge, -1.4, 4);
+      for (const side of [1, -1]) {
+        const keep = offsetPolyline(dense, side * edge).map(([x, z]) => !insideOtherDeck(x, z, road));
+        let run: Vec2[] = [];
+        const flush = () => {
+          if (run.length >= 2) {
+            concrete.curtain(run, side * edge, -1.4, 1.05, 2, side < 0);
+            concrete.curtain(run, side * (edge - 0.25), 0, 1.05, 2, side > 0);
+            concrete.worldRibbon(run, side > 0 ? edge - 0.25 : -edge, side > 0 ? edge : -edge + 0.25, 1.05, 1);
+            const line = offsetPolyline(run, side * (edge - 0.12));
+            for (let index = 1; index < line.length; index += 1) addObstacle(line[index - 1]!, line[index]!, 0.15);
+          }
+          run = [];
+        };
+        dense.forEach((point, index) => {
+          if (keep[index]) run.push(point);
+          else flush();
+        });
+        flush();
+      }
+      const span = polylineLength(dense);
+      for (let s = 12; s < span; s += 32) {
+        const p = pointAt(dense, s);
+        concrete.box(p.x, -3.2, p.z, edge * 1.4, 3.6, 1.6, Math.atan2(p.dx, p.dz) + Math.PI / 2);
+      }
+    }
 
-  for (const road of data.roads) {
-    const dense = densify(road.points, 2);
-    const [mx, mz] = road.points[Math.floor(road.points.length / 2)]!;
     if (road.kind === "footway") {
       base.get(mx, mz, "pavers").worldRibbon(dense, -road.width / 2, road.width / 2, 0.05, 2.5);
       continue;
@@ -343,7 +563,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       base.get(px, pz, asphaltKey).worldRibbon(piece, -road.width / 2, road.width / 2, y, 6);
     }
 
-    if (sidewalkRoads.has(road.kind)) {
+    if (sidewalkRoads.has(road.kind) && !road.bridge) {
       const inner = road.width / 2 + 0.55;
       const outer = inner + sidewalkWidth(road);
       for (const side of [1, -1]) {
@@ -432,8 +652,8 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
   }
 
   // Zebra crossings across the mouths of side streets that meet main roads.
-  const junctions = findJunctions(data.roads);
-  for (const junction of junctions) {
+  const tileJunctions = junctions.filter((junction) => inTile(junction.point[0], junction.point[1]));
+  for (const junction of tileJunctions) {
     const major = junction.roads.some((road) => road.kind === "primary" || road.kind === "tertiary");
     if (!major) continue;
     for (const road of junction.roads) {
@@ -455,32 +675,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     }
   }
 
-  // Frontage compound walls are claimed per road side so neighbours never overlap.
-  const claimed = new Map<string, Array<[number, number]>>();
-  const claim = (key: string, s0: number, s1: number) => {
-    const list = claimed.get(key) ?? [];
-    const pieces: Array<[number, number]> = [[s0, s1]];
-    for (const [a, b] of list) {
-      for (let index = pieces.length - 1; index >= 0; index -= 1) {
-        const [p0, p1] = pieces[index]!;
-        if (b <= p0 || a >= p1) continue;
-        pieces.splice(index, 1);
-        if (a > p0) pieces.push([p0, a]);
-        if (b < p1) pieces.push([b, p1]);
-      }
-    }
-    const kept = pieces.filter(([a, b]) => b - a > 1.2);
-    list.push(...kept);
-    claimed.set(key, list);
-    return kept;
-  };
-
-  const placeByBuilding = new Map<number, Place>(PLACES.map((place) => [place.buildingId, place]));
-  const placeSigns: BuiltWorld["placeSigns"] = [];
-  let shopIndex = 0;
-
-  const buildings = [...data.buildings].sort((a, b) => a.id - b.id);
-  for (const building of buildings) {
+  for (const building of content?.buildings ?? []) {
     buildBuilding(building);
   }
 
@@ -764,7 +959,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
         mullions.box(sx + ex * offset + doorNx * 0.06, 1.7, sz + ez * offset + doorNz * 0.06, 0.08, 2.5, 0.1, doorYaw, 1, undefined, true);
       }
       mullions.box(sx + doorNx * 0.08, 3.08, sz + doorNz * 0.08, width + 0.2, 0.26, 0.2, doorYaw, 1, undefined, true);
-      const name = place?.name ?? SHOP_NAMES[shopIndex++ % SHOP_NAMES.length]!;
+      const name = place?.name ?? SHOP_NAMES[Math.floor(hash(building.id * 37) * SHOP_NAMES.length)]!;
       const signColor = SHOP_COLORS[Math.floor(hash(building.id * 19) * SHOP_COLORS.length)]!;
       const uv = atlas.get(name, "shop", place ? place.street : undefined, signColor);
       const signWidth = Math.min(width, 5.6);
@@ -811,8 +1006,8 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
         base.get(cx, cz, "concrete").box(px, 1.75, pz, 1.7, 0.4, 0.04, doorYaw, 1, [0.95, 0.95, 0.95]);
         textQuad(base.get(cx, cz, "signs"), px + doorNx * 0.025, 1.75, pz + doorNz * 0.025, doorYaw, 1.62, 1.62 / SignAtlas.aspect, uv);
         textQuad(base.get(cx, cz, "signs"), px - doorNx * 0.025, 1.75, pz - doorNz * 0.025, doorYaw + Math.PI, 1.62, 1.62 / SignAtlas.aspect, uv);
-        obstacles.add([px - ex * 0.7, pz - ez * 0.7], [px - ex * 0.7, pz - ez * 0.7], 0.08);
-        obstacles.add([px + ex * 0.7, pz + ez * 0.7], [px + ex * 0.7, pz + ez * 0.7], 0.08);
+        addObstacle([px - ex * 0.7, pz - ez * 0.7], [px - ex * 0.7, pz - ez * 0.7], 0.08);
+        addObstacle([px + ex * 0.7, pz + ez * 0.7], [px + ex * 0.7, pz + ez * 0.7], 0.08);
       } else if (!shopfront) {
         const uv = atlas.get(place.name, "plate", place.street);
         textQuad(base.get(cx, cz, "signs"), doorX + ex * 1.3 + doorNx * 0.05, 2.0, doorZ + ez * 1.3 + doorNz * 0.05, doorYaw, 1.3, 1.3 / SignAtlas.aspect, uv);
@@ -845,7 +1040,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     const gateS = gateHit ? Math.max(s0 + 2, Math.min(s1 - 2, gateHit.s)) : (s0 + s1) / 2;
     const wallHeight = 2.3;
     const wallPaint: Color = [paint[0] * 0.95, paint[1] * 0.95, paint[2] * 0.95];
-    for (const [a, b] of claim(`${road.id}:${side}`, s0, s1)) {
+    for (const [a, b] of claim(building.id, `${road.id}:${side}`, s0, s1)) {
       const segments: Array<[number, number]> = [];
       if (gateS - 1.7 > a && gateS + 1.7 < b) segments.push([a, gateS - 1.7], [gateS + 1.7, b]);
       else segments.push([a, b]);
@@ -860,7 +1055,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
         wallBatch.curtain(line, -0.1 * side, 0, wallHeight, 2.5, !face, wallPaint);
         wallBatch.curtain(line, 0.1 * side, 0, wallHeight, 2.5, face, wallPaint);
         base.get(lx, lz, "concrete").worldRibbon(line, -0.16, 0.16, wallHeight, 1, trim);
-        for (let index = 1; index < line.length; index += 1) obstacles.add(line[index - 1]!, line[index]!, 0.16);
+        for (let index = 1; index < line.length; index += 1) addObstacle(line[index - 1]!, line[index]!, 0.16);
         const first = line[0]!;
         const last = line.at(-1)!;
         for (const [px, pz] of [first, last]) {
@@ -876,7 +1071,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
         const gate = base.get(gx, gz, "gate");
         gate.box(gx - gp.dx * 0.85, 1.15, gz - gp.dz * 0.85, 0.08, 2.1, 1.65, gateYaw - Math.PI / 2);
         gate.box(gx + gp.dx * 0.85, 1.15, gz + gp.dz * 0.85, 0.08, 2.1, 1.65, gateYaw - Math.PI / 2);
-        obstacles.add([gx - gp.dx * 1.7, gz - gp.dz * 1.7], [gx + gp.dx * 1.7, gz + gp.dz * 1.7], 0.12);
+        addObstacle([gx - gp.dx * 1.7, gz - gp.dz * 1.7], [gx + gp.dx * 1.7, gz + gp.dz * 1.7], 0.12);
         for (const sign of [-1, 1]) {
           base.get(gx, gz, "concrete").box(gx + gp.dx * sign * 1.85, 1.35, gz + gp.dz * sign * 1.85, 0.5, 2.7, 0.5, gateYaw, 1, trim);
         }
@@ -897,7 +1092,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
 
   // Junction street-name signs, one blade per named street.
   const junctionSigns: BuiltWorld["junctionSigns"] = [];
-  for (const junction of junctions) {
+  for (const junction of tileJunctions) {
     const named = junction.roads.filter((road) => road.name);
     if (named.length < 2) continue;
     const dirs = named.slice(0, 2).map((road) => {
@@ -920,12 +1115,12 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     if (!corner) continue;
     const [px, pz] = corner;
     base.get(px, pz, "pole").box(px, 1.6, pz, 0.08, 3.2, 0.08);
-    obstacles.add(corner, corner, 0.1);
+    addObstacle(corner, corner, 0.1);
     named.slice(0, 2).forEach((road, index) => {
       const dir = dirs[index]!;
       const y = 3.0 - index * 0.36;
       const yawAlong = Math.atan2(dir[0], dir[1]);
-      const uv = atlas.get(road.name!, "street", "Lekki Phase 1");
+      const uv = atlas.get(road.name!, "street", districtAt(px, pz)?.name ?? "Lagos");
       const width = 1.7;
       const height = width / SignAtlas.aspect * 1.25;
       const cxBlade = px + dir[0] * (width / 2 - 0.1);
@@ -939,8 +1134,37 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     junctionSigns.push({ point: corner, names: named.slice(0, 2).map((road) => road.name!), yaw: Math.atan2(dirs[0]![0], dirs[0]![1]) });
   }
 
+  // Open-area venues (parks): a name board at the gate and benches just inside.
+  for (const place of PLACES.filter((candidate) => candidate.buildingId === null && candidate.areaId && inTile(candidate.door[0], candidate.door[1]))) {
+    const yaw = place.facing;
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
+    const rx = fz;
+    const rz = -fx;
+    const bx = place.door[0] + rx * 2.2;
+    const bz = place.door[1] + rz * 2.2;
+    const posts = base.get(bx, bz, "pole");
+    posts.box(bx - rx * 0.8, 1.1, bz - rz * 0.8, 0.08, 2.2, 0.08, yaw);
+    posts.box(bx + rx * 0.8, 1.1, bz + rz * 0.8, 0.08, 2.2, 0.08, yaw);
+    base.get(bx, bz, "signGreen").box(bx, 1.9, bz, 1.9, 0.5, 0.05, yaw);
+    const uv = atlas.get(place.name, "plate", place.street);
+    textQuad(base.get(bx, bz, "signs"), bx + fx * 0.03, 1.9, bz + fz * 0.03, yaw, 1.8, 1.8 / SignAtlas.aspect, uv);
+    textQuad(base.get(bx, bz, "signs"), bx - fx * 0.03, 1.9, bz - fz * 0.03, yaw + Math.PI, 1.8, 1.8 / SignAtlas.aspect, uv);
+    addObstacle([bx - rx * 0.8, bz - rz * 0.8], [bx - rx * 0.8, bz - rz * 0.8], 0.08);
+    addObstacle([bx + rx * 0.8, bz + rz * 0.8], [bx + rx * 0.8, bz + rz * 0.8], 0.08);
+    for (const offset of [-3.5, 3.5]) {
+      const sx = place.door[0] - fx * 4 + rx * offset;
+      const sz = place.door[1] - fz * 4 + rz * offset;
+      base.get(sx, sz, "wood").box(sx, 0.45, sz, 1.8, 0.08, 0.5, yaw);
+      base.get(sx, sz, "wood").box(sx - fx * 0.24, 0.75, sz - fz * 0.24, 1.8, 0.4, 0.06, yaw);
+      base.get(sx, sz, "gate").box(sx, 0.22, sz, 1.6, 0.44, 0.4, yaw, 1, undefined, true);
+      addObstacle([sx - rx * 0.8, sz - rz * 0.8], [sx + rx * 0.8, sz + rz * 0.8], 0.3);
+    }
+    placeSigns.push({ placeId: place.id, point: place.door });
+  }
+
   // Bus stops: shelter, bench, flag sign and painted bay on the carriageway.
-  for (const stop of TRANSIT.stops) {
+  for (const stop of TRANSIT.stops.filter((candidate) => inTile(candidate.alight[0], candidate.alight[1]))) {
     const heading = (stop as unknown as { heading: number }).heading;
     const hx = Math.sin(heading);
     const hz = Math.cos(heading);
@@ -955,7 +1179,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
         const x = sx + hx * along + rx * depth;
         const z = sz + hz * along + rz * depth;
         shelter.box(x, 1.3, z, 0.08, 2.6, 0.08, yaw);
-        obstacles.add([x, z], [x, z], 0.08);
+        addObstacle([x, z], [x, z], 0.08);
       }
     }
     base.get(sx, sz, "roof").box(sx, 2.65, sz, 4.1, 0.08, 1.7, yaw, 2, [0.24, 0.36, 0.6]);
@@ -967,7 +1191,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     const flagX = stop.pole[0];
     const flagZ = stop.pole[1];
     base.get(flagX, flagZ, "pole").box(flagX, 1.5, flagZ, 0.07, 3.0, 0.07);
-    obstacles.add([flagX, flagZ], [flagX, flagZ], 0.08);
+    addObstacle([flagX, flagZ], [flagX, flagZ], 0.08);
     const flagUv = atlas.get("BUS STOP", "bus", stop.name.replace("Admiralty Way · ", ""));
     const flagYaw = heading + Math.PI;
     textQuad(base.get(flagX, flagZ, "signs"), flagX + rx * 0.45 + hx * 0.03, 2.75, flagZ + rz * 0.45 + hz * 0.03, heading, 0.9, 0.9 / SignAtlas.aspect * 1.6, flagUv);
@@ -1031,7 +1255,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     const frondMesh = fronds.build(scene, materials.palmLeaf)!;
     frondMesh.unfreezeWorldMatrix();
     const matrices = palms.map(([x, z, seed]) => {
-      obstacles.add([x, z], [x, z], 0.25);
+      addObstacle([x, z], [x, z], 0.25);
       const scale = 0.8 + seed * 0.45;
       return Matrix.Compose(new Vector3(scale, scale, scale), Quaternion.RotationYawPitchRoll(seed * 6.28, (seed - 0.5) * 0.08, 0), new Vector3(x, 0, z));
     });
@@ -1049,7 +1273,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     head.bakeTransformIntoVertices(Matrix.Translation(0, 7.85, -1.7));
     head.material = materials.lamp;
     const matrices = lights.map(([x, z, yaw]) => {
-      obstacles.add([x, z], [x, z], 0.14);
+      addObstacle([x, z], [x, z], 0.14);
       return Matrix.Compose(Vector3.One(), Quaternion.RotationYawPitchRoll(yaw, 0, 0), new Vector3(x, 0, z));
     });
     addInstances(merged, matrices);
@@ -1066,17 +1290,136 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
   }
 
   const baseChunks = base.build(scene, materialMap);
-  const detailChunks = detail.build(scene, materialMap);
-  for (const chunk of detailChunks) for (const mesh of chunk.meshes) mesh.setEnabled(false);
-  let lastKey = "";
+  const detailChunks = detail.deferred(scene, materialMap);
+  const meshes = [...baseChunks.flatMap((chunk) => chunk.meshes), ...instanced];
+  for (const mesh of meshes) mesh.freezeWorldMatrix();
+  return {
+    key,
+    meshes,
+    detailChunks,
+    junctionSigns,
+    placeSigns,
+    buildings: content?.buildings ?? [],
+    areas: content?.areas ?? [],
+    windows,
+  };
+  }
+
+  const loaded = new Map<string, LoadedTile>();
+  const contents = new Map<string, WorldTile>();
+  const fetching = new Set<string>();
+  let wanted: string[] = [];
+  let nearKeys: string[] = [];
+  let tileBuildMs = 0;
+  let lastDetailKey = "";
+  let focus: Vec2 = [0, 0];
+  const world: BuiltWorld = {
+    roads,
+    obstacles,
+    junctionSigns: [],
+    placeSigns: [],
+    groundHeight,
+    updateDetail,
+    stream,
+    pump,
+    pendingNear: () => nearKeys.filter((key) => !loaded.has(key)).length,
+    loadedTiles: () => [...loaded.keys()],
+    mapLayer: () => ({ buildings: [...loaded.values()].flatMap((tile) => tile.buildings), areas: [...loaded.values()].flatMap((tile) => tile.areas) }),
+    stats: { meshes: 0, detailChunks: 0, windows: 0, buildings: 0, tiles: 0, tileBuildMs: 0 },
+    casters: () => [...loaded.values()].flatMap((tile) => tile.meshes),
+    onMeshes: null,
+  };
+
+  function refreshLists() {
+    const tiles = [...loaded.values()];
+    world.junctionSigns = tiles.flatMap((tile) => tile.junctionSigns);
+    world.placeSigns = tiles.flatMap((tile) => tile.placeSigns);
+    world.stats = {
+      meshes: tiles.reduce((total, tile) => total + tile.meshes.length + tile.detailChunks.reduce((sum, chunk) => sum + (chunk.meshes?.length ?? 0), 0), 0),
+      detailChunks: tiles.reduce((total, tile) => total + tile.detailChunks.length, 0),
+      windows: tiles.reduce((total, tile) => total + tile.windows, 0),
+      buildings: tiles.reduce((total, tile) => total + tile.buildings.length, 0),
+      tiles: tiles.length,
+      tileBuildMs: Math.round(tileBuildMs),
+    };
+    lastDetailKey = "";
+  }
+
+  function tileDistance(key: string, x: number, z: number) {
+    const [tx, tz] = key.split("_").map(Number) as [number, number];
+    const dx = Math.max(tx * TILE - x, 0, x - (tx + 1) * TILE);
+    const dz = Math.max(tz * TILE - z, 0, z - (tz + 1) * TILE);
+    return Math.hypot(dx, dz);
+  }
+
+  function stream(x: number, z: number) {
+    focus = [x, z];
+    const span = Math.ceil(loadRadius / TILE) + 1;
+    const cx = Math.floor(x / TILE);
+    const cz = Math.floor(z / TILE);
+    const keys: Array<{ key: string; distance: number }> = [];
+    for (let ix = cx - span; ix <= cx + span; ix += 1) {
+      for (let iz = cz - span; iz <= cz + span; iz += 1) {
+        const key = `${ix}_${iz}`;
+        const distance = tileDistance(key, x, z);
+        if (distance <= loadRadius) keys.push({ key, distance });
+      }
+    }
+    keys.sort((a, b) => a.distance - b.distance);
+    wanted = keys.map(({ key }) => key);
+    nearKeys = keys.filter(({ distance }) => distance < 120).map(({ key }) => key);
+    for (const key of wanted) {
+      if (!contentTiles.has(key) || contents.has(key) || fetching.has(key)) continue;
+      fetching.add(key);
+      void fetchTile(key)
+        .then((tile) => {
+          registerFootprints(tile.buildings);
+          contents.set(key, tile);
+        })
+        .catch(() => contents.set(key, { key, buildings: [], areas: [] }))
+        .finally(() => fetching.delete(key));
+    }
+    let released = false;
+    for (const [key, tile] of loaded) {
+      if (tileDistance(key, x, z) <= loadRadius + TILE * 0.75) continue;
+      for (const mesh of tile.meshes) mesh.dispose();
+      for (const chunk of tile.detailChunks) for (const mesh of chunk.meshes ?? []) mesh.dispose();
+      loaded.delete(key);
+      released = true;
+    }
+    if (released) refreshLists();
+  }
+
+  function pump(budgetMs: number) {
+    const start = performance.now();
+    let built = false;
+    for (const key of wanted) {
+      if (loaded.has(key)) continue;
+      if (contentTiles.has(key) && !contents.has(key)) continue;
+      const t0 = performance.now();
+      const tile = buildTile(key, contents.get(key) ?? null);
+      tileBuildMs += performance.now() - t0;
+      loaded.set(key, tile);
+      world.onMeshes?.(tile.meshes);
+      built = true;
+      if (performance.now() - start > budgetMs) break;
+    }
+    if (built) {
+      refreshLists();
+      updateDetail(focus[0], focus[1]);
+    }
+  }
 
   function updateDetail(x: number, z: number) {
     const key = `${Math.round(x / 10)}:${Math.round(z / 10)}`;
-    if (key === lastKey) return;
-    lastKey = key;
-    for (const chunk of detailChunks) {
-      const near = Math.hypot(chunk.x - x, chunk.z - z) < detailRadius + 40;
-      for (const mesh of chunk.meshes) if (mesh.isEnabled() !== near) mesh.setEnabled(near);
+    if (key === lastDetailKey) return;
+    lastDetailKey = key;
+    for (const tile of loaded.values()) {
+      for (const chunk of tile.detailChunks) {
+        const near = Math.hypot(chunk.x - x, chunk.z - z) < detailRadius + TILE / 4 + 20;
+        if (!near && !chunk.meshes) continue;
+        for (const mesh of near ? chunk.build() : chunk.meshes!) if (mesh.isEnabled() !== near) mesh.setEnabled(near);
+      }
     }
   }
 
@@ -1092,20 +1435,5 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     return 0.015;
   }
 
-  return {
-    roads,
-    obstacles,
-    junctionSigns,
-    placeSigns,
-    groundHeight,
-    updateDetail,
-    stats: {
-      meshes: baseChunks.reduce((total, chunk) => total + chunk.meshes.length, 0) + detailChunks.reduce((total, chunk) => total + chunk.meshes.length, 0) + instanced.length,
-      detailChunks: detailChunks.length,
-      windows,
-      buildings: data.buildings.length,
-    },
-    casters: () => baseChunks.flatMap((chunk) => chunk.meshes),
-  };
+  return world;
 }
-

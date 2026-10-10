@@ -1,8 +1,8 @@
-import { PLACES, TRANSIT, type PlaceKind, type Vec2 } from "@lagos-living/shared";
+import { DISTRICTS, PLACES, TRANSIT, type PlaceKind, type Vec2 } from "@lagos-living/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GameEngine } from "../game/engine";
 import { densify, pointAt, polylineLength } from "../game/geometry";
-import type { WorldData, WorldRoad } from "../game/street-index";
+import { waterSampler, type WorldArea, type WorldBuilding, type WorldData, type WorldRoad } from "../game/street-index";
 
 type View = { cx: number; cz: number; scale: number; width: number; height: number };
 type Marker = { point: Vec2; label: string; kind: "objective" | "waypoint" };
@@ -18,7 +18,47 @@ const PLACE_GLYPH: Record<PlaceKind, { glyph: string; color: string }> = {
   delivery: { glyph: "D", color: "#8a8a8a" },
   dealership: { glyph: "V", color: "#0f6a8a" },
   mechanic: { glyph: "M", color: "#4a5560" },
+  library: { glyph: "L", color: "#5b4a8a" },
+  worship: { glyph: "W", color: "#7a6a3a" },
+  community: { glyph: "C", color: "#2a7a8a" },
+  park: { glyph: "P", color: "#3f8a3a" },
 };
+
+const waterImages = new WeakMap<WorldData, HTMLCanvasElement>();
+/** One pixel per water sample, north up; drawn scaled under the roads. */
+function waterImage(data: WorldData) {
+  let canvas = waterImages.get(data);
+  if (canvas) return canvas;
+  const grid = data.water;
+  const sample = waterSampler(grid);
+  canvas = document.createElement("canvas");
+  canvas.width = grid.cols + 1;
+  canvas.height = grid.rows + 1;
+  const ctx = canvas.getContext("2d")!;
+  const image = ctx.createImageData(canvas.width, canvas.height);
+  for (let row = 0; row <= grid.rows; row += 1) {
+    for (let col = 0; col <= grid.cols; col += 1) {
+      if (!sample(col, row)) continue;
+      const offset = ((grid.rows - row) * canvas.width + col) * 4;
+      image.data.set([142, 196, 214, 255], offset);
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  waterImages.set(data, canvas);
+  return canvas;
+}
+
+const roadBoxes = new WeakMap<WorldRoad, [number, number, number, number]>();
+function roadBox(road: WorldRoad) {
+  let box = roadBoxes.get(road);
+  if (!box) {
+    const xs = road.points.map(([x]) => x);
+    const zs = road.points.map(([, z]) => z);
+    box = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+    roadBoxes.set(road, box);
+  }
+  return box;
+}
 
 const ROAD_STYLE: Record<string, { color: string; casing: string; rank: number }> = {
   primary: { color: "#f6d77a", casing: "#c69a3a", rank: 3 },
@@ -58,6 +98,8 @@ export function drawMap(
     markers: Marker[];
     buses: Array<{ x: number; z: number; yaw: number; state: string }>;
     vehicles?: Array<{ x: number; z: number }>;
+    /** Buildings and areas of the streamed tiles currently loaded. */
+    layer: { buildings: WorldBuilding[]; areas: WorldArea[] };
     showPlaces: boolean;
     compact: boolean;
   },
@@ -71,8 +113,15 @@ export function drawMap(
     return sx > -pad && sx < width + pad && sy > -pad && sy < height + pad;
   };
 
-  for (const area of data.areas) {
-    if (!["pitch", "recreation_ground", "greenfield", "swimming_pool"].includes(area.kind)) continue;
+  {
+    const grid = data.water;
+    const [sx, sy] = toScreen(view, grid.originX - grid.cell / 2, grid.originZ + (grid.rows + 0.5) * grid.cell);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(waterImage(data), sx, sy, (grid.cols + 1) * grid.cell * view.scale, (grid.rows + 1) * grid.cell * view.scale);
+  }
+
+  for (const area of options.layer.areas) {
+    if (!["pitch", "recreation_ground", "greenfield", "swimming_pool", "park", "garden", "golf_course"].includes(area.kind)) continue;
     ctx.fillStyle = area.kind === "swimming_pool" ? "#9fd3e0" : "#c9dbb0";
     ctx.beginPath();
     area.points.forEach(([x, z], index) => {
@@ -86,7 +135,7 @@ export function drawMap(
   ctx.fillStyle = "#d3c9b8";
   ctx.strokeStyle = "#bdb19c";
   ctx.lineWidth = 0.6;
-  for (const building of data.buildings) {
+  for (const building of options.layer.buildings) {
     const [x0, z0] = building.points[0]!;
     if (!visible(x0, z0, 80 * view.scale + 40)) continue;
     ctx.beginPath();
@@ -103,6 +152,10 @@ export function drawMap(
   const sorted = [...data.roads].sort((a, b) => (ROAD_STYLE[a.kind]?.rank ?? 0) - (ROAD_STYLE[b.kind]?.rank ?? 0));
   for (const pass of ["casing", "fill"] as const) {
     for (const road of sorted) {
+      const [minX, maxX, minZ, maxZ] = roadBox(road);
+      const [ax, ay] = toScreen(view, minX, maxZ);
+      const [bx, by] = toScreen(view, maxX, minZ);
+      if (bx < -20 || ax > width + 20 || by < -20 || ay > height + 20) continue;
       const style = ROAD_STYLE[road.kind] ?? ROAD_STYLE.residential!;
       const px = Math.max(1.2, road.width * view.scale);
       ctx.strokeStyle = pass === "casing" ? style.casing : style.color;
@@ -356,6 +409,7 @@ export function Minimap({ engine, data, markers, onOpen }: { engine: GameEngine;
         markers: markersRef.current,
         buses: engine.busPositions(),
         vehicles: engine.myVehicles().filter((car) => car.id !== engine.drivingVehicleId()),
+        layer: engine.mapLayer(),
         showPlaces: true,
         compact: true,
       });
@@ -434,6 +488,7 @@ export function FullMap({
         markers: markersRef.current,
         buses: engine.busPositions(),
         vehicles: engine.myVehicles().filter((car) => car.id !== engine.drivingVehicleId()),
+        layer: engine.mapLayer(),
         showPlaces: true,
         compact: false,
       });
@@ -443,7 +498,7 @@ export function FullMap({
   }, [engine, data, candidates]);
 
   return (
-    <div className="map-modal" role="dialog" aria-label="Map of Lekki Phase 1">
+    <div className="map-modal" role="dialog" aria-label="Map of Lagos">
       <canvas
         ref={canvas}
         data-testid="full-map"
@@ -461,14 +516,14 @@ export function FullMap({
           drag.current = null;
         }}
         onWheel={(event) => {
-          view.current.scale = Math.max(0.3, Math.min(5, view.current.scale * (event.deltaY > 0 ? 0.85 : 1.18)));
+          view.current.scale = Math.max(0.12, Math.min(5, view.current.scale * (event.deltaY > 0 ? 0.85 : 1.18)));
         }}
       />
       <div className="map-panel">
         <div className="map-header">
           <div>
             <p className="eyebrow">MAP</p>
-            <h2>Lekki Phase 1</h2>
+            <h2>Lagos</h2>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close map">✕</button>
         </div>
@@ -480,6 +535,21 @@ export function FullMap({
           aria-label="Search the map"
           autoFocus
         />
+        <div className="map-districts" role="group" aria-label="Jump to a district">
+          {DISTRICTS.filter((district) => district.id !== "link-bridge").map((district) => (
+            <button
+              key={district.id}
+              className="secondary"
+              onClick={() => {
+                view.current.cx = (district.rect.minX + district.rect.maxX) / 2;
+                view.current.cz = (district.rect.minZ + district.rect.maxZ) / 2;
+                view.current.scale = 0.35;
+              }}
+            >
+              {district.name}
+            </button>
+          ))}
+        </div>
         <ul className="map-results">
           {results.map((result) => (
             <li key={`${result.label}-${result.point.join()}`}>

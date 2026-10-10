@@ -1,4 +1,4 @@
-import { defaultSettings, TRANSIT, type Notice, type Place, type PlayerSettings, type SelfState, type Vec2 } from "@lagos-living/shared";
+import { defaultSettings, districtAt, TRANSIT, type Notice, type Place, type PlayerSettings, type SelfState, type Vec2 } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PropertyListing } from "../api";
 import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
@@ -514,7 +514,8 @@ function placeFromListing(listing: PropertyListing): Place {
     kind: listing.listingType === "sale" ? "sale" : "rental",
     name: listing.name,
     street: listing.street ?? "",
-    buildingId: 0,
+    district: districtAt(listing.door[0], listing.door[1])?.id ?? "lekki-phase-1",
+    buildingId: null,
     door: listing.door,
     facade: listing.door,
     facing: 0,

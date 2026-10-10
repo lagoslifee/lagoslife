@@ -26,13 +26,15 @@ import {
   INTERACTION_RANGE,
   VEHICLE_RULES,
   type WorldVehicle,
+  blockedByWater,
+  districtAt,
   insideBuilding,
   INTERIOR_ORIGIN,
   MOVEMENT,
   PLACES,
   resolveBuildingCollision,
   TRANSIT,
-  WORLD_BOUNDS,
+  withinWorld,
   type BusState,
   type MotionState,
   type NetworkPlayer,
@@ -54,7 +56,7 @@ import { MeshBuilderBatch } from "./geometry";
 import { buildInterior, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
 import { createMaterials, type Materials, type Quality } from "./materials";
 import { SignAtlas } from "./sign-atlas";
-import { RoadNavigator, StreetTracker, type WorldData } from "./street-index";
+import { RoadNavigator, StreetTracker, type WorldData, type WorldTile } from "./street-index";
 import { AmbientLife } from "./traffic";
 import { buildWorld, type BuiltWorld } from "./world-builder";
 
@@ -123,6 +125,10 @@ const PLACE_ACTIONS: Record<Place["kind"], string> = {
   delivery: "Deliver parcel",
   dealership: "Browse cars",
   mechanic: "Mechanic",
+  library: "Read",
+  worship: "Visit",
+  community: "Community hall",
+  park: "Relax",
 };
 
 export class EngineDisposedError extends Error {
@@ -305,21 +311,29 @@ export class GameEngine {
 
     this.materials = createMaterials(scene, this.quality);
     this.atlas = new SignAtlas(scene);
-    this.callbacks.loading("Loading Lekki Phase 1 streets…", 0.25);
-    const response = await fetch("/assets/world/lekki-phase1.world.json");
+    this.callbacks.loading("Loading Lagos streets…", 0.25);
+    const response = await fetch("/assets/world/lagos.world.json");
     if (!response.ok) throw new Error("World data could not be loaded");
     this.data = (await response.json()) as WorldData;
     this.assertLive();
     this.callbacks.loading("Building houses, compounds and junctions…", 0.4);
     await new Promise((resolve) => setTimeout(resolve, 0));
     this.assertLive();
-    this.world = buildWorld(scene, this.data, this.materials, this.atlas, this.quality);
-    for (const mesh of this.world.casters()) mesh.receiveShadows = true;
-    if (this.shadows) {
-      const map = this.shadows.getShadowMap()!;
-      map.renderList = this.world.casters().filter((mesh) => /plaster|roof|walls|gate/.test(mesh.name));
-      map.refreshRate = 1;
-    }
+    const fetchTile = async (key: string) => {
+      const tile = await fetch(`/assets/world/tiles/${key}.json`);
+      if (!tile.ok) throw new Error(`Tile ${key} could not be loaded`);
+      return (await tile.json()) as WorldTile;
+    };
+    this.world = buildWorld(scene, this.data, this.materials, this.atlas, this.quality, fetchTile);
+    if (this.shadows) this.shadows.getShadowMap()!.refreshRate = 1;
+    this.world.onMeshes = (meshes) => {
+      for (const mesh of meshes) mesh.receiveShadows = true;
+      const map = this.shadows?.getShadowMap();
+      if (map) map.renderList!.push(...meshes.filter((mesh) => /plaster|roof|walls|gate/.test(mesh.name)));
+    };
+    const spawn = getPlace("starter-home").door;
+    await this.primeTiles(spawn[0], spawn[1]);
+    this.assertLive();
     this.tracker = new StreetTracker(this.data.roads);
     this.navigator = new RoadNavigator(this.data.roads.filter((road) => road.kind !== "service" || road.name));
 
@@ -383,6 +397,22 @@ export class GameEngine {
 
   private resize = () => this.engine?.resize();
 
+  /** Loads and builds the tiles around a point before the player sees it (start-up). */
+  private async primeTiles(x: number, z: number) {
+    const deadline = performance.now() + 60_000;
+    this.world.stream(x, z);
+    while (this.world.pendingNear() > 0 && performance.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      this.assertLive();
+      this.world.stream(x, z);
+      this.world.pump(200);
+    }
+  }
+
+  private onLand(x: number, z: number) {
+    return withinWorld(x, z) && !blockedByWater(x, z);
+  }
+
   private addCaster(meshes: AbstractMesh[]) {
     if (!this.shadows) return;
     for (const mesh of meshes) this.shadows.addShadowCaster(mesh, false);
@@ -394,8 +424,13 @@ export class GameEngine {
     [px, pz] = this.world.obstacles.resolve(px, pz, MOVEMENT.radius);
     for (const bus of this.buses.values()) [px, pz] = bus.pushOut(px, pz, MOVEMENT.radius);
     for (const { view } of this.vehicles.values()) [px, pz] = view.pushOut(px, pz, MOVEMENT.radius);
-    px = Math.max(WORLD_BOUNDS.minX + 1, Math.min(WORLD_BOUNDS.maxX - 1, px));
-    pz = Math.max(WORLD_BOUNDS.minZ + 1, Math.min(WORLD_BOUNDS.maxZ - 1, pz));
+    const { x: ox, z: oz } = this.controller;
+    // Open water and the district edges stop residents; slide along them, and never trap someone already outside.
+    if (!this.onLand(px, pz) && this.onLand(ox, oz)) {
+      if (this.onLand(px, oz)) pz = oz;
+      else if (this.onLand(ox, pz)) px = ox;
+      else [px, pz] = [ox, oz];
+    }
     return [px, pz];
   }
 
@@ -407,8 +442,8 @@ export class GameEngine {
     for (const [id, { view }] of this.vehicles) {
       if (id !== this.driving?.vehicleId) [px, pz] = view.pushOut(px, pz, radius);
     }
-    px = Math.max(WORLD_BOUNDS.minX + 2, Math.min(WORLD_BOUNDS.maxX - 2, px));
-    pz = Math.max(WORLD_BOUNDS.minZ + 2, Math.min(WORLD_BOUNDS.maxZ - 2, pz));
+    // Water and district edges count as a fixed overlap, so the car stops at the shore but can always reverse off it.
+    if (!this.onLand(px, pz)) return [px + radius, pz];
     return [px, pz];
   };
 
@@ -656,6 +691,8 @@ export class GameEngine {
     this.updateRemotes(now, dt);
     this.updateVehicles(now);
     if (!this.interior) {
+      this.world.stream(x, z);
+      this.world.pump(this.readyFired ? 8 : 200);
       this.life?.update(dt, [x, z], [...this.buses.values()], now * 0.001);
       this.world.updateDetail(this.camera.position.x, this.camera.position.z);
     }
@@ -674,7 +711,7 @@ export class GameEngine {
       this.lastHud = now;
       this.emitHud(now, bus, motion);
     }
-    if (!this.readyFired && this.self) {
+    if (!this.readyFired && this.self && (this.interior || this.world.pendingNear() === 0)) {
       this.readyFired = true;
       this.callbacks.loading("Ready", 1);
       this.callbacks.ready();
@@ -873,7 +910,9 @@ export class GameEngine {
 
   private emitHud(now: number, bus: DanfoView | null, motion: MotionState) {
     const { x, z } = this.controller;
-    let street = "Lekki Phase 1";
+    const district = districtAt(x, z);
+    const area = district?.name ?? "Lagos";
+    let street = area;
     let named = false;
     if (this.interior) {
       street = this.self?.propertyId ? getPlace(this.self.propertyId).name : "Indoors";
@@ -882,7 +921,7 @@ export class GameEngine {
       if (road) {
         street = road.name ?? (road.kind === "service" ? "Unnamed service road" : "Unnamed road");
         named = Boolean(road.name);
-      } else street = "Off-street · Lekki Phase 1";
+      } else street = `Off-street · ${area}`;
     }
     const average = this.frameTimes.reduce((total, value) => total + value, 0) / Math.max(1, this.frameTimes.length);
     const state = bus?.state;
@@ -892,7 +931,7 @@ export class GameEngine {
       online: this.online,
       street,
       streetNamed: named,
-      district: "Lekki Phase 1 · Eti-Osa",
+      district: district ? `${district.name} · ${district.lga}` : "Lagos",
       location: bus ? "bus" : this.interior ? "interior" : "street",
       interiorTitle: this.interior && this.self?.propertyId ? getPlace(this.self.propertyId).name : null,
       propertyId: this.self?.propertyId ?? null,
@@ -1241,6 +1280,11 @@ export class GameEngine {
     return [...this.vehicles.values()].filter(({ state }) => state.mine).map(({ state, view }) => ({ id: state.id, x: view.x, z: view.z, plate: state.plate }));
   }
 
+  /** Buildings and areas of the streamed tiles, for the maps. */
+  mapLayer() {
+    return this.world.mapLayer();
+  }
+
   drivingVehicleId() {
     return this.driving?.vehicleId ?? null;
   }
@@ -1357,6 +1401,15 @@ export class GameEngine {
       stops: () => TRANSIT.stops,
       places: () => PLACES.map((place) => ({ id: place.id, name: place.name, kind: place.kind, door: place.door, kerb: place.kerb })),
       stats: () => this.stats(),
+      loadedTiles: () => this.world.loadedTiles(),
+      meshSummary: () => {
+        const counts: Record<string, number> = {};
+        for (const mesh of this.scene.meshes) {
+          const key = `${mesh.name.split(" ")[0]}${mesh.isEnabled() ? "" : "(off)"}${mesh.isVisible ? "" : "(hidden)"}`;
+          counts[key] = (counts[key] ?? 0) + 1;
+        }
+        return counts;
+      },
       setMaxFrameDt: (seconds: number) => {
         this.maxFrameDt = seconds;
       },
