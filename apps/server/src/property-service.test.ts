@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { pool } from "./database.js";
+import { getPlace } from "@lagos-living/shared";
 import { purchaseItem } from "./economy-service.js";
+import { setPlayerPosition } from "./player-presence.js";
 import {
   acquireProperty,
+  cancelTenancy,
   getInterior,
+  listProperties,
+  renewTenancy,
+  settleExpiredTenancies,
   invitePropertyGuest,
   performHomeAction,
   placeFurniture,
@@ -28,19 +34,24 @@ beforeAll(async () => {
   }
   await pool.query(
     `INSERT INTO property_listing
-      (id, name, district, address_label, purchase_price, monthly_rent, world_x, world_z)
-     VALUES ($1, 'Test Garden Flat', 'Ikoyi', 'Automated test listing', 180000, 30000, 0, 0)`,
+      (id, name, district, address_label, purchase_price, monthly_rent, world_x, world_z, listing_type)
+     VALUES ($1, 'Test Garden Flat', 'Ikoyi', 'Automated test listing', 180000, 30000, 0, 0, 'sale')`,
     [propertyId],
   );
   await pool.query(
     `INSERT INTO property_listing
-      (id, name, district, address_label, purchase_price, monthly_rent, world_x, world_z)
-     VALUES ($1, 'Test Rental Flat', 'Ikoyi', 'Automated rental listing', 180000, 30000, 0, 0)`,
+      (id, name, district, address_label, purchase_price, monthly_rent, world_x, world_z,
+       listing_type, deposit, rent_interval_days, grace_days)
+     VALUES ($1, 'Test Rental Flat', 'Ikoyi', 'Automated rental listing', 180000, 30000, 0, 0,
+       'rental', 10000, 7, 3)`,
     [rentalId],
   );
 });
 
 afterAll(async () => {
+  await pool.query(`DELETE FROM property_storage WHERE property_id = ANY($1)`, [[propertyId, rentalId]]);
+  await pool.query(`DELETE FROM furniture_placement WHERE property_id = ANY($1)`, [[propertyId, rentalId]]);
+  await pool.query(`UPDATE player_profile SET home_property_id = NULL WHERE home_property_id = ANY($1)`, [[propertyId, rentalId]]);
   await pool.query(`DELETE FROM property_tenure WHERE property_id = $1`, [propertyId]);
   await pool.query(`DELETE FROM property_tenure WHERE property_id = $1`, [rentalId]);
   await pool.query(`DELETE FROM home_state WHERE property_id = $1`, [propertyId]);
@@ -54,7 +65,15 @@ describe("property ownership and access", () => {
   let owner = users[0]!;
   let deniedBuyer = users[1]!;
 
+  it("requires visiting the listing before signing", async () => {
+    setPlayerPosition(users[0]!.id, 300, 300);
+    await expect(acquireProperty(users[0]!.id, propertyId, "owned", randomUUID())).rejects.toThrow(
+      "For Rent / For Sale sign",
+    );
+  });
+
   it("allows exactly one winner during a concurrent property purchase", async () => {
+    for (const user of users) setPlayerPosition(user.id, 1, 1);
     const attempts = await Promise.allSettled(
       users.slice(0, 2).map((user) =>
         acquireProperty(user.id, propertyId, "owned", randomUUID()),
@@ -75,6 +94,7 @@ describe("property ownership and access", () => {
   });
 
   it("creates a time-limited rental with immediate interior access", async () => {
+    await expect(acquireProperty(users[2]!.id, rentalId, "owned", randomUUID())).rejects.toThrow("rent only");
     const result = await acquireProperty(users[2]!.id, rentalId, "rented", randomUUID());
     expect(result.replayed).toBe(false);
     const tenure = await pool.query(
@@ -89,6 +109,8 @@ describe("property ownership and access", () => {
   });
 
   it("saves furniture and daily-life state, then grants explicit guest access", async () => {
+    const store = getPlace("home-and-style").door;
+    setPlayerPosition(owner.id, store[0], store[1]);
     await purchaseItem(owner.id, "lagoon-sofa", randomUUID());
     const placementKey = randomUUID();
     const first = await placeFurniture(owner.id, propertyId, {
@@ -135,5 +157,82 @@ describe("property ownership and access", () => {
         idempotencyKey: randomUUID(),
       }),
     ).rejects.toThrow("Only the owner");
+    await expect(
+      placeFurniture(owner.id, propertyId, {
+        itemId: "island-bed",
+        gridX: 3,
+        gridZ: 0,
+        rotation: 0,
+        idempotencyKey: randomUUID(),
+      }),
+    ).rejects.toThrow("doorway");
+  });
+});
+
+describe("rental agreements", () => {
+  const tenant = () => users[2]!;
+
+  it("charges rent and deposit once, shows the terms, and renews", async () => {
+    const listing = (await listProperties(tenant().id)).find(({ id }) => id === rentalId)!;
+    expect(listing).toMatchObject({ rent: 30000, deposit: 10000, upfrontRent: 40000, intervalDays: 7, isMine: true });
+    const deposits = await pool.query(
+      `SELECT amount FROM game_transaction WHERE user_id = $1 AND kind = 'property_deposit'`,
+      [tenant().id],
+    );
+    expect(deposits.rows.map(({ amount }) => Number(amount))).toEqual([-10000]);
+
+    const before = await pool.query(
+      `SELECT next_payment_at FROM property_tenure WHERE property_id = $1`,
+      [rentalId],
+    );
+    const key = randomUUID();
+    const [first, second] = await Promise.all([
+      renewTenancy(tenant().id, rentalId, key),
+      renewTenancy(tenant().id, rentalId, key),
+    ]);
+    expect([first.replayed, second.replayed].filter(Boolean)).toHaveLength(1);
+    const after = await pool.query(
+      `SELECT next_payment_at FROM property_tenure WHERE property_id = $1`,
+      [rentalId],
+    );
+    const added = new Date(after.rows[0].next_payment_at).getTime() - new Date(before.rows[0].next_payment_at).getTime();
+    expect(Math.round(added / 86_400_000)).toBe(7);
+    await expect(renewTenancy(tenant().id, rentalId, randomUUID())).rejects.toThrow("well in advance");
+  });
+
+  it("prevents a second resident from renting an occupied flat", async () => {
+    setPlayerPosition(users[1]!.id, 0, 0);
+    await expect(acquireProperty(users[1]!.id, rentalId, "rented", randomUUID())).rejects.toThrow(
+      "already holds",
+    );
+  });
+
+  it("cancels with a deposit refund and frees the flat", async () => {
+    const result = await cancelTenancy(tenant().id, rentalId, randomUUID());
+    expect(result).toEqual({ cancelled: true, refunded: 10000 });
+    const listing = (await listProperties(users[1]!.id)).find(({ id }) => id === rentalId)!;
+    expect(listing.available).toBe(true);
+  });
+
+  it("ends an unpaid tenancy after the grace period and returns stored belongings", async () => {
+    setPlayerPosition(users[1]!.id, 0, 0);
+    await acquireProperty(users[1]!.id, rentalId, "rented", randomUUID());
+    await pool.query(
+      `UPDATE property_tenure
+       SET next_payment_at = NOW() - INTERVAL '4 days', expires_at = NOW() - INTERVAL '1 hour'
+       WHERE property_id = $1`,
+      [rentalId],
+    );
+    await pool.query(
+      `INSERT INTO property_storage (property_id, user_id, item_id, quantity) VALUES ($1, $2, 'island-water', 2)`,
+      [rentalId, users[1]!.id],
+    );
+    await settleExpiredTenancies();
+    await expect(getInterior(users[1]!.id, rentalId)).rejects.toThrow("do not have access");
+    const returned = await pool.query(
+      `SELECT quantity FROM inventory_item WHERE user_id = $1 AND item_id = 'island-water'`,
+      [users[1]!.id],
+    );
+    expect(Number(returned.rows[0].quantity)).toBe(2);
   });
 });

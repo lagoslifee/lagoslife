@@ -2,6 +2,10 @@ import {
   acquirePropertySchema,
   completeJobRequestSchema,
   defaultAppearance,
+  defaultSettings,
+  eatRequestSchema,
+  settingsSchema,
+  tenancyActionSchema,
   homeActionSchema,
   inviteGuestSchema,
   placeFurnitureSchema,
@@ -16,21 +20,71 @@ import { auth } from "./auth.js";
 import { config } from "./config.js";
 import { pool } from "./database.js";
 import { createMultiplayerToken } from "./multiplayer-token.js";
+import { z } from "zod";
 import {
+  cancelDelivery,
   completeDelivery,
+  eatItem,
   EconomyError,
+  ensureProfile,
   getEconomyState,
   purchaseItem,
+  resetTestProgress,
+  restAtHome,
   startDelivery,
 } from "./economy-service.js";
 import {
   acquireProperty,
+  cancelTenancy,
   getInterior,
   invitePropertyGuest,
   listProperties,
+  moveStorage,
   performHomeAction,
   placeFurniture,
+  removeFurniture,
+  renewTenancy,
+  setHome,
 } from "./property-service.js";
+
+type Handler = (req: Request, userId: string) => Promise<unknown>;
+
+/** Wraps an authenticated JSON handler and maps EconomyError to its status. */
+function guarded(fallback: string, handler: Handler) {
+  return async (req: Request, res: Response) => {
+    try {
+      res.json(await handler(req, (req as AuthenticatedRequest).player.userId));
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid request" });
+        return;
+      }
+      if (!(error instanceof EconomyError)) console.error(fallback, error);
+      res.status(error instanceof EconomyError ? error.status : 500).json({
+        error: error instanceof EconomyError ? error.message : fallback,
+      });
+    }
+  };
+}
+
+const sensitiveRates = new Map<string, { since: number; count: number }>();
+/** Per-player limit for money-moving routes; generous for play, hostile to scripts. */
+function rateLimited(req: Request, res: Response, next: NextFunction) {
+  const userId = (req as AuthenticatedRequest).player.userId;
+  const now = Date.now();
+  const rate = sensitiveRates.get(userId) ?? { since: now, count: 0 };
+  if (now - rate.since > 10_000) {
+    rate.since = now;
+    rate.count = 0;
+  }
+  rate.count += 1;
+  sensitiveRates.set(userId, rate);
+  if (rate.count > 25) {
+    res.status(429).json({ error: "Too many requests — slow down a little." });
+    return;
+  }
+  next();
+}
 
 type AuthenticatedRequest = Request & {
   player: { userId: string; name: string };
@@ -153,145 +207,80 @@ export function configureRoutes(app: Express) {
     res.json(await getEconomyState(userId));
   });
 
-  app.post("/api/shop/purchase", requirePlayer, async (req, res) => {
-    const parsed = purchaseRequestSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: "Invalid purchase request" });
-      return;
-    }
-    try {
-      const { userId } = (req as AuthenticatedRequest).player;
-      res.json(await purchaseItem(userId, parsed.data.itemId, parsed.data.idempotencyKey));
-    } catch (error) {
-      const status = error instanceof EconomyError ? error.status : 500;
-      res.status(status).json({
-        error: error instanceof EconomyError ? error.message : "Purchase could not be completed",
-      });
-    }
-  });
+  app.post("/api/shop/purchase", requirePlayer, rateLimited, guarded("Purchase could not be completed", (req, userId) => {
+    const body = purchaseRequestSchema.parse(req.body);
+    return purchaseItem(userId, body.itemId, body.idempotencyKey);
+  }));
 
-  app.post("/api/jobs/delivery/start", requirePlayer, async (req, res) => {
-    try {
-      const { userId } = (req as AuthenticatedRequest).player;
-      res.json(await startDelivery(userId));
-    } catch (error) {
-      const status = error instanceof EconomyError ? error.status : 500;
-      res.status(status).json({
-        error: error instanceof EconomyError ? error.message : "Job could not be started",
-      });
-    }
-  });
+  app.post("/api/food/eat", requirePlayer, rateLimited, guarded("Could not eat", (req, userId) =>
+    eatItem(userId, eatRequestSchema.parse(req.body).itemId)));
 
-  app.post("/api/jobs/delivery/complete", requirePlayer, async (req, res) => {
-    const parsed = completeJobRequestSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: "Invalid job completion request" });
-      return;
-    }
-    try {
-      const { userId } = (req as AuthenticatedRequest).player;
-      res.json(await completeDelivery(userId, parsed.data.jobId));
-    } catch (error) {
-      const status = error instanceof EconomyError ? error.status : 500;
-      res.status(status).json({
-        error: error instanceof EconomyError ? error.message : "Job could not be completed",
-      });
-    }
-  });
+  app.post("/api/needs/sleep", requirePlayer, rateLimited, guarded("Could not sleep", (_req, userId) =>
+    restAtHome(userId)));
 
-  app.get("/api/properties", requirePlayer, async (req, res) => {
-    const { userId } = (req as AuthenticatedRequest).player;
-    res.json(await listProperties(userId));
-  });
+  app.post("/api/jobs/delivery/start", requirePlayer, rateLimited, guarded("Job could not be started", (_req, userId) =>
+    startDelivery(userId)));
 
-  app.post("/api/properties/acquire", requirePlayer, async (req, res) => {
-    const parsed = acquirePropertySchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: "Invalid property request" });
-      return;
-    }
-    try {
-      const { userId } = (req as AuthenticatedRequest).player;
-      res.json(
-        await acquireProperty(
-          userId,
-          parsed.data.propertyId,
-          parsed.data.tenure,
-          parsed.data.idempotencyKey,
-        ),
-      );
-    } catch (error) {
-      const status = error instanceof EconomyError ? error.status : 500;
-      res.status(status).json({
-        error: error instanceof EconomyError ? error.message : "Property could not be acquired",
-      });
-    }
-  });
+  app.post("/api/jobs/delivery/complete", requirePlayer, rateLimited, guarded("Job could not be completed", (req, userId) =>
+    completeDelivery(userId, completeJobRequestSchema.parse(req.body).jobId)));
 
-  app.get("/api/properties/:propertyId/interior", requirePlayer, async (req, res) => {
-    try {
-      const { userId } = (req as AuthenticatedRequest).player;
-      res.json(await getInterior(userId, String(req.params.propertyId)));
-    } catch (error) {
-      const status = error instanceof EconomyError ? error.status : 500;
-      res.status(status).json({
-        error: error instanceof EconomyError ? error.message : "Home could not be entered",
-      });
-    }
-  });
+  app.post("/api/jobs/delivery/cancel", requirePlayer, guarded("Job could not be cancelled", (_req, userId) =>
+    cancelDelivery(userId)));
 
-  app.post("/api/properties/:propertyId/furniture", requirePlayer, async (req, res) => {
-    const parsed = placeFurnitureSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: "Invalid furniture placement" });
-      return;
-    }
-    try {
-      const { userId } = (req as AuthenticatedRequest).player;
-      res.json(await placeFurniture(userId, String(req.params.propertyId), parsed.data));
-    } catch (error) {
-      const status = error instanceof EconomyError ? error.status : 500;
-      res.status(status).json({
-        error: error instanceof EconomyError ? error.message : "Furniture could not be placed",
-      });
-    }
-  });
+  app.get("/api/properties", requirePlayer, guarded("Listings unavailable", (_req, userId) =>
+    listProperties(userId)));
 
-  app.post("/api/properties/:propertyId/action", requirePlayer, async (req, res) => {
-    const parsed = homeActionSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: "Invalid home action" });
-      return;
-    }
-    try {
-      const { userId } = (req as AuthenticatedRequest).player;
-      res.json(
-        await performHomeAction(userId, String(req.params.propertyId), parsed.data.action),
-      );
-    } catch (error) {
-      const status = error instanceof EconomyError ? error.status : 500;
-      res.status(status).json({
-        error: error instanceof EconomyError ? error.message : "Home action failed",
-      });
-    }
-  });
+  app.post("/api/properties/acquire", requirePlayer, rateLimited, guarded("Property could not be acquired", (req, userId) => {
+    const body = acquirePropertySchema.parse(req.body);
+    return acquireProperty(userId, body.propertyId, body.tenure, body.idempotencyKey);
+  }));
 
-  app.post("/api/properties/:propertyId/guests", requirePlayer, async (req, res) => {
-    const parsed = inviteGuestSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: "Invalid guest invitation" });
-      return;
-    }
-    try {
-      const { userId } = (req as AuthenticatedRequest).player;
-      res.json(
-        await invitePropertyGuest(userId, String(req.params.propertyId), parsed.data.username),
-      );
-    } catch (error) {
-      const status = error instanceof EconomyError ? error.status : 500;
-      res.status(status).json({
-        error: error instanceof EconomyError ? error.message : "Guest could not be invited",
-      });
-    }
-  });
+  app.post("/api/properties/:propertyId/renew", requirePlayer, rateLimited, guarded("Rent could not be renewed", (req, userId) =>
+    renewTenancy(userId, String(req.params.propertyId), tenancyActionSchema.parse(req.body).idempotencyKey)));
+
+  app.post("/api/properties/:propertyId/cancel", requirePlayer, rateLimited, guarded("Tenancy could not be cancelled", (req, userId) =>
+    cancelTenancy(userId, String(req.params.propertyId), tenancyActionSchema.parse(req.body).idempotencyKey)));
+
+  app.post("/api/properties/:propertyId/home", requirePlayer, guarded("Home could not be set", (req, userId) =>
+    setHome(userId, String(req.params.propertyId))));
+
+  app.get("/api/properties/:propertyId/interior", requirePlayer, guarded("Home could not be entered", (req, userId) =>
+    getInterior(userId, String(req.params.propertyId))));
+
+  app.post("/api/properties/:propertyId/furniture", requirePlayer, rateLimited, guarded("Furniture could not be placed", (req, userId) =>
+    placeFurniture(userId, String(req.params.propertyId), placeFurnitureSchema.parse(req.body))));
+
+  app.post("/api/properties/:propertyId/furniture/remove", requirePlayer, rateLimited, guarded("Furniture could not be moved", (req, userId) =>
+    removeFurniture(userId, String(req.params.propertyId), z.object({ placementId: z.uuid() }).parse(req.body).placementId)));
+
+  app.post("/api/properties/:propertyId/storage", requirePlayer, rateLimited, guarded("Storage action failed", (req, userId) => {
+    const body = z.object({ itemId: z.string().min(1).max(80), direction: z.enum(["store", "retrieve"]) }).parse(req.body);
+    return moveStorage(userId, String(req.params.propertyId), body.itemId, body.direction);
+  }));
+
+  app.post("/api/properties/:propertyId/action", requirePlayer, rateLimited, guarded("Home action failed", (req, userId) =>
+    performHomeAction(userId, String(req.params.propertyId), homeActionSchema.parse(req.body).action)));
+
+  app.post("/api/properties/:propertyId/guests", requirePlayer, rateLimited, guarded("Guest could not be invited", (req, userId) =>
+    invitePropertyGuest(userId, String(req.params.propertyId), inviteGuestSchema.parse(req.body).username)));
+
+  app.get("/api/settings", requirePlayer, guarded("Settings unavailable", async (_req, userId) => {
+    await ensureProfile(pool, userId);
+    const result = await pool.query(`SELECT settings FROM player_profile WHERE user_id = $1`, [userId]);
+    return { ...defaultSettings, ...(result.rows[0]?.settings ?? {}) };
+  }));
+
+  app.put("/api/settings", requirePlayer, guarded("Settings could not be saved", async (req, userId) => {
+    const settings = settingsSchema.parse(req.body);
+    await ensureProfile(pool, userId);
+    await pool.query(`UPDATE player_profile SET settings = $2, updated_at = NOW() WHERE user_id = $1`, [userId, settings]);
+    return settings;
+  }));
+
+  app.post("/api/dev/reset-progress", requirePlayer, guarded("Reset failed", async (req, userId) => {
+    const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(req.hostname);
+    if (config.NODE_ENV !== "development" || !isLocalHost) throw new EconomyError("Not found", 404);
+    await resetTestProgress(userId);
+    return { reset: true };
+  }));
 }
