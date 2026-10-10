@@ -3,9 +3,10 @@ import { useEffect, useState } from "react";
 import { api, naira, type EconomyState, type InteriorState, type MyVehicle, type PropertyListing } from "../api";
 import { actionLabels, keyLabel, type Action, type Bindings } from "../game/controller";
 import type { HudState } from "../game/engine";
+import { CommunityApp } from "./CommunitySheets";
 import { VehiclesApp } from "./VehicleSheets";
 
-export type PhoneApp = "home" | "map" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "friends" | "notifications" | "settings" | "help";
+export type PhoneApp = "home" | "map" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "community" | "friends" | "notifications" | "settings" | "help";
 
 const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
   { id: "map", label: "Map", icon: "🗺" },
@@ -14,6 +15,7 @@ const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
   { id: "wallet", label: "Wallet", icon: "₦" },
   { id: "property", label: "My Home", icon: "🏠" },
   { id: "vehicles", label: "Vehicles", icon: "🚗" },
+  { id: "community", label: "Community", icon: "🤝" },
   { id: "friends", label: "Friends", icon: "👥" },
   { id: "notifications", label: "Alerts", icon: "🔔" },
   { id: "settings", label: "Settings", icon: "⚙" },
@@ -104,6 +106,7 @@ export function Phone(props: Props) {
             onClose={onClose}
           />
         )}
+        {app === "community" && <CommunityApp onNavigate={props.onNavigate} onClose={onClose} />}
         {app === "friends" && (
           <div className="app-section">
             <p><strong>{props.hud?.online ?? 1}</strong> resident{props.hud?.online === 1 ? "" : "s"} online in this world.</p>

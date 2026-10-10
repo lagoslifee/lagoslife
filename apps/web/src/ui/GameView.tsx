@@ -7,6 +7,7 @@ import type { Quality } from "../game/materials";
 import { FullMap, Minimap } from "./MapView";
 import { currentObjective } from "./objectives";
 import { Phone, type PhoneApp } from "./Phone";
+import { COMMUNITY_KINDS, CommunitySheet } from "./CommunitySheets";
 import { PlaceSheet } from "./Sheets";
 import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
 
@@ -424,7 +425,10 @@ export function GameView({ playerName, onCustomise, onSignOut, overlayOpen }: { 
       {sheet?.kind === "mechanic" && (
         <MechanicSheet place={sheet} economy={economy} vehicles={vehicles} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} />
       )}
-      {sheet && sheet.kind !== "dealership" && sheet.kind !== "mechanic" && (
+      {sheet && COMMUNITY_KINDS.has(sheet.kind) && (
+        <CommunitySheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} />
+      )}
+      {sheet && sheet.kind !== "dealership" && sheet.kind !== "mechanic" && !COMMUNITY_KINDS.has(sheet.kind) && (
         <PlaceSheet
           place={sheet}
           economy={economy}

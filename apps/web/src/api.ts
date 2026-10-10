@@ -1,4 +1,4 @@
-import type { OwnedVehicle, PlayerSettings } from "@lagos-living/shared";
+import type { CommunityStatus, OwnedVehicle, PlayerSettings } from "@lagos-living/shared";
 import { apiUrl } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -130,6 +130,13 @@ export const api = {
   garageVehicle: (id: string, propertyId: string) =>
     post<VehicleResult>(`/api/vehicles/${id}/garage`, { propertyId, idempotencyKey: crypto.randomUUID() }),
   retrieveVehicle: (id: string) => post<VehicleResult>(`/api/vehicles/${id}/retrieve`),
+  community: () => request<CommunityStatus>("/api/community"),
+  visitQuietPlace: (placeId: string) => post<QuietVisitResult>("/api/community/visit", { placeId }),
+  volunteer: (placeId: string) => post<VolunteerResult>("/api/community/volunteer", { placeId }),
 };
+
+type Needs = { hunger: number; energy: number };
+export type QuietVisitResult = { rested: boolean; energyGain: number; needs: Needs; status: CommunityStatus };
+export type VolunteerResult = { replayed: boolean; wage: number; balance: number; needs: Needs; status: CommunityStatus };
 
 export const naira = (value: number) => `₦${Math.round(value).toLocaleString("en-NG")}`;
