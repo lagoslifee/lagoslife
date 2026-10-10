@@ -1,0 +1,24 @@
+{
+  "name": "lagos-living",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@11.6.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev": "concurrently -n server,web -c yellow,cyan \"npm run dev -w @lagos-living/server\" \"npm run dev -w @lagos-living/web\"",
+    "db:migrate": "npm run db:migrate -w @lagos-living/server",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
