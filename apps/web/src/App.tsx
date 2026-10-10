@@ -220,7 +220,16 @@ function CharacterCreator({
   );
 }
 
-function GameShell({ user }: { user: { name: string; username?: string | null | undefined } }) {
+function GameShell({
+  user,
+}: {
+  user: {
+    name: string;
+    username?: string | null | undefined;
+    displayUsername?: string | null | undefined;
+  };
+}) {
+  const playerName = user.displayUsername ?? user.username ?? user.name;
   const [appearance, setAppearance] = useState(defaultAppearance);
   const [creatorOpen, setCreatorOpen] = useState(false);
 
@@ -240,8 +249,15 @@ function GameShell({ user }: { user: { name: string; username?: string | null | 
         <div className="wordmark"><span>LL</span> LAGOS LIVING</div>
         <div className="server-pill"><i /> DEVELOPMENT WORLD</div>
         <div className="profile-menu">
-          <strong>{user.username ?? user.name}</strong>
-          <button onClick={() => authClient.signOut()}>Sign out</button>
+          <strong>{playerName}</strong>
+          <button
+            onClick={async () => {
+              await authClient.signOut();
+              location.assign("/?manual=1");
+            }}
+          >
+            Sign out
+          </button>
         </div>
       </header>
       <aside className="location-card">
@@ -256,7 +272,7 @@ function GameShell({ user }: { user: { name: string; username?: string | null | 
       </aside>
       <section className="welcome-card">
         <p className="step-label">WELCOME HOME</p>
-        <h1>Good evening, {user.username ?? user.name}.</h1>
+        <h1>Good evening, {playerName}.</h1>
         <p>Your journey starts here. Set your look before the city opens further.</p>
         <button className="primary" onClick={() => setCreatorOpen(true)}>Customise character</button>
       </section>
@@ -276,6 +292,34 @@ function GameShell({ user }: { user: { name: string; username?: string | null | 
 
 export function App() {
   const session = authClient.useSession();
-  if (session.isPending) return <div className="loading-screen">Loading Lagos…</div>;
+  const [autoSignInPending, setAutoSignInPending] = useState(false);
+  const manual = new URLSearchParams(location.search).has("manual");
+
+  useEffect(() => {
+    if (
+      session.isPending ||
+      session.data ||
+      manual ||
+      !["localhost", "127.0.0.1"].includes(location.hostname) ||
+      sessionStorage.getItem("lagos-dev-sign-in-attempted")
+    ) {
+      return;
+    }
+    sessionStorage.setItem("lagos-dev-sign-in-attempted", "1");
+    setAutoSignInPending(true);
+    fetch(`${apiUrl}/api/dev/sign-in`, {
+      method: "POST",
+      credentials: "include",
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error("Development sign-in unavailable");
+        location.reload();
+      })
+      .catch(() => setAutoSignInPending(false));
+  }, [manual, session.data, session.isPending]);
+
+  if (session.isPending || autoSignInPending) {
+    return <div className="loading-screen">Entering local test session…</div>;
+  }
   return session.data ? <GameShell user={session.data.user} /> : <AuthScreen />;
 }

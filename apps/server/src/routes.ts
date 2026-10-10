@@ -1,5 +1,6 @@
 import { defaultAppearance, saveCharacterSchema } from "@lagos-living/shared";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
+import { createHmac } from "node:crypto";
 import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
 import { auth } from "./auth.js";
@@ -39,6 +40,50 @@ export function configureRoutes(app: Express) {
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", service: "lagos-living-server" });
+  });
+
+  app.post("/api/dev/sign-in", async (req, res) => {
+    const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(req.hostname);
+    if (config.NODE_ENV !== "development" || !isLocalHost) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const credentials = {
+      email: "local-tester@lagosliving.local",
+      password: `${createHmac("sha256", config.BETTER_AUTH_SECRET)
+        .update("lagos-living-local-tester")
+        .digest("hex")}!Dev1`,
+    };
+    let response = await auth.api.signInEmail({
+      body: credentials,
+      headers: fromNodeHeaders(req.headers),
+      asResponse: true,
+    });
+    if (!response.ok) {
+      response = await auth.api.signUpEmail({
+        body: {
+          ...credentials,
+          name: "Local Tester",
+          username: "LocalTester",
+        },
+        headers: fromNodeHeaders(req.headers),
+        asResponse: true,
+      });
+      if (!response.ok) {
+        response = await auth.api.signInEmail({
+          body: credentials,
+          headers: fromNodeHeaders(req.headers),
+          asResponse: true,
+        });
+      }
+    }
+
+    const setCookies = response.headers.getSetCookie();
+    if (setCookies.length > 0) res.setHeader("set-cookie", setCookies);
+    const contentType = response.headers.get("content-type");
+    if (contentType) res.setHeader("content-type", contentType);
+    res.status(response.status).send(Buffer.from(await response.arrayBuffer()));
   });
 
   app.post("/api/multiplayer-token", requirePlayer, (req, res) => {

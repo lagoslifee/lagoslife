@@ -5,7 +5,7 @@ async function registerResident(page: Page, prefix: string) {
   const unique = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const email = `${prefix}-${unique}@example.test`;
   const playerName = `${prefix}${unique.slice(-7)}`;
-  await page.goto("/");
+  await page.goto("/?manual=1");
   await page.getByRole("button", { name: "Create account" }).click();
   await page.getByLabel("Player name").fill(playerName);
   await page.getByLabel("Email").fill(email);
@@ -26,7 +26,7 @@ test("registers, renders Lagos, and persists character appearance", async ({ pag
   });
   page.on("pageerror", (error) => errors.push(error.message));
 
-  await page.goto("/");
+  await page.goto("/?manual=1");
   await expect(page.getByRole("heading", { name: /live lagos/i })).toBeVisible();
   await page.getByRole("button", { name: "Create account" }).click();
   await page.getByLabel("Player name").fill(playerName);
@@ -86,6 +86,12 @@ test("registers, renders Lagos, and persists character appearance", async ({ pag
   expect(errors).toEqual([]);
 });
 
+test("localhost enters the development account automatically", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("Ikoyi Preview")).toBeVisible();
+  await expect(page.locator(".profile-menu strong")).toHaveText("LocalTester");
+});
+
 test("two authenticated residents share authoritative movement", async ({ browser }) => {
   test.setTimeout(120_000);
   const firstContext = await browser.newContext({ viewport: { width: 1000, height: 700 } });
@@ -123,7 +129,7 @@ test("completes password recovery through captured development email", async ({ 
   const unique = `${Date.now().toString(36)}r`;
   const email = `recovery-${unique}@example.test`;
   const playerName = `Recover${unique.slice(-7)}`;
-  await page.goto("/");
+  await page.goto("/?manual=1");
   await page.getByRole("button", { name: "Create account" }).click();
   await page.getByLabel("Player name").fill(playerName);
   await page.getByLabel("Email").fill(email);

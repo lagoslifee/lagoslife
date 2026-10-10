@@ -22,6 +22,11 @@ Open http://localhost:5173. The API and multiplayer server listen on
 http://localhost:2567. Mailpit captures password-reset email at
 http://localhost:8025.
 
+On localhost, development mode automatically creates and signs in the
+`LocalTester` account. Open http://localhost:5173/?manual=1 to test registration,
+login, logout, or multiple separate accounts. Automatic sign-in is unavailable
+when `NODE_ENV` is not `development`.
+
 ## Commands
 
 ```bash
