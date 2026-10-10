@@ -456,6 +456,7 @@ export async function loadPlayerPlace(userId: string) {
 export async function resetTestProgress(userId: string) {
   await withTransaction(async (client) => {
     await client.query(`DELETE FROM player_vehicle WHERE owner_user_id = $1`, [userId]);
+    await client.query(`DELETE FROM community_visit WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM furniture_placement WHERE placed_by = $1`, [userId]);
     await client.query(`DELETE FROM property_storage WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM property_guest WHERE guest_user_id = $1 OR granted_by = $1`, [userId]);

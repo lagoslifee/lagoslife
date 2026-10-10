@@ -36,6 +36,7 @@ export type ApiError = {
 
 export * from "./world.js";
 export * from "./vehicles.js";
+export * from "./community.js";
 import { worldVehicleSchema } from "./vehicles.js";
 
 export const motionStates = ["idle", "walk", "jog", "sprint", "sit", "wave", "dance", "drive"] as const;

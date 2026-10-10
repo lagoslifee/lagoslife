@@ -1,5 +1,6 @@
 import {
   acquirePropertySchema,
+  communityVisitSchema,
   completeJobRequestSchema,
   defaultAppearance,
   defaultSettings,
@@ -24,6 +25,7 @@ import { config } from "./config.js";
 import { pool } from "./database.js";
 import { markProgressReset } from "./player-presence.js";
 import { createMultiplayerToken } from "./multiplayer-token.js";
+import { getCommunityStatus, visitQuietPlace, volunteerShift } from "./community-service.js";
 import { z } from "zod";
 import {
   cancelDelivery,
@@ -299,6 +301,15 @@ export function configureRoutes(app: Express) {
 
   app.post("/api/vehicles/:vehicleId/retrieve", requirePlayer, rateLimited, guarded("Vehicle could not be retrieved", (req, userId) =>
     retrieveVehicle(userId, String(req.params.vehicleId))));
+
+  app.get("/api/community", requirePlayer, guarded("Community status unavailable", (_req, userId) =>
+    getCommunityStatus(userId)));
+
+  app.post("/api/community/visit", requirePlayer, rateLimited, guarded("Visit could not be recorded", (req, userId) =>
+    visitQuietPlace(userId, communityVisitSchema.parse(req.body).placeId)));
+
+  app.post("/api/community/volunteer", requirePlayer, rateLimited, guarded("Volunteer shift could not be recorded", (req, userId) =>
+    volunteerShift(userId, communityVisitSchema.parse(req.body).placeId)));
 
   app.get("/api/settings", requirePlayer, guarded("Settings unavailable", async (_req, userId) => {
     await ensureProfile(pool, userId);
