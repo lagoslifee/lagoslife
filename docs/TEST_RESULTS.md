@@ -40,6 +40,17 @@ mostly of frames over 0.5 s counts as slow.
 - `e2e/adaptive-quality.spec.ts`: 1 / 1 passed (1.3 min). Uses a new account on the medium preset on this VM. It started at 1.1 fps and reached step 3 after 18.7 s (scaling up, shadows off, 760 m view). The HUD showed "auto detail −3". Switching the toggle off restored the exact preset values, which held for 12 s, and the choice survived a reload. The first run of this spec found that frames over 0.5 s were all discarded, so a device this slow never adapted. That was fixed before this pass.
 - On this VM it still ran at only 1.5 fps at step 3, because SwiftShader is software rendering. How much a real phone or GPU gains has not been measured.
 
+## Captions
+
+Speech (danfo stop announcements) is subtitled in quotes. Meaningful sounds get
+bracketed, italic captions when Subtitles is on: a car honking because you are
+blocking its lane, and your car hitting something. Ambient horns and your own
+horn are not captioned.
+
+- `e2e/captions.spec.ts`: 1 / 1 passed (1.4 min). Uses dev hooks to step into a lane an ambient car will reach about 9 s later. The car stopped, honked, and the caption "[A car honks — you are blocking the road]" appeared.
+- The first run passed, but its screenshot was solid dark red. The car had stopped behind the resident, and the follow camera, which already avoided danfos and buildings, was inside its body. The camera now also avoids ambient cars. The test checks six times, 250 ms apart, that the camera is outside every car, and the re-run passed.
+- The impact caption was not exercised by a browser test.
+
 ## Automated suites
 
 | Suite | Result |
@@ -302,4 +313,3 @@ district tests. The earlier miniature-scale
 - Any public deployment, TLS proxy or managed database. The production images and compose stack were only run on this VM.
 - Citation evasion: impacts are reported by the client, so a modified client can avoid citations.
 - Touch controls on a physical device (layout is implemented and responsive).
-- Audio subtitles beyond stop announcements.
