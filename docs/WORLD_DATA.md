@@ -117,7 +117,12 @@ collision and `walkable()` agree on both sides.
   from Admiralty Way west of Adebayo Doherty, round the Ikoyi Bridge
   Roundabout, over both Lekki - Ikoyi Bridge carriageways, round Alexander
   Roundabout, and down Alexander Avenue to Bourdillon Road. The bridge's
-  642 m straight is subdivided every 50 m. Stop names are composed from the real
+  642 m straight is subdivided every 50 m. X2 Falomo Bridge Shuttle (about
+  3.95 km, 4 stops) is built the same way. It runs from Bourdillon Road east of
+  Falomo Roundabout, south over the Alfred Rewane carriageway and north back
+  over the Falomo Bridge carriageway, to Akin Adesola Street at Adeola Odeku
+  Street. No cross street meets Bourdillon Road at its Ikoyi stops, so they are
+  named by position ("east of Falomo Roundabout"). Stop names are composed from the real
   road and cross-street names at each location; OSM maps no bus stops on these
   roads, so stop positions and the U-turns at each end are game placements.
 
