@@ -214,6 +214,31 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 
 .bus-panel { position: absolute; left: 20px; bottom: 80px; width: 320px; padding: 12px 16px; border-radius: 12px; }
 .bus-panel p { margin: 4px 0; }
+.speedometer { position: absolute; left: 20px; bottom: 80px; display: flex; gap: 14px; align-items: center; padding: 12px 16px; border-radius: 14px; backdrop-filter: blur(8px); background: var(--hud-bg); border: 1px solid var(--hud-line); color: #f5f2e8; max-width: 440px; }
+.speedometer.limp { border-color: #db705c; }
+.speed-readout { display: grid; justify-items: center; min-width: 78px; }
+.speed-readout strong { font-size: calc(40px * var(--text-scale)); line-height: 1; font-variant-numeric: tabular-nums; }
+.speed-readout span { font-size: 11px; letter-spacing: .1em; color: #e7bd62; font-weight: 800; }
+.speed-meta p { margin: 3px 0; font-size: calc(13px * var(--text-scale)); }
+.speed-meta kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 4px; border-radius: 5px; background: #f5f2e8; color: #142b29; font: 800 10px Inter, Arial, sans-serif; }
+.speedometer.limp .condition-line { color: #ffb4a3; font-weight: 800; }
+.plate { display: inline-block; padding: 1px 6px; border-radius: 4px; background: #f7f5ee; color: #13322d; border: 1px solid #2c5a3f; font: 800 11px ui-monospace, monospace; letter-spacing: .06em; }
+.vehicle-tag { background: rgba(247,245,238,.92); color: #13322d; font-family: ui-monospace, monospace; }
+.condition { position: relative; display: block; height: 16px; margin: 6px 0; border-radius: 8px; background: #e3dfd3; overflow: hidden; }
+.condition i { position: absolute; inset: 0 auto 0 0; background: #2f9d6a; }
+.condition.warn i { background: #d69a2d; }
+.condition.bad i { background: #c4482f; }
+.condition b { position: relative; display: block; text-align: center; font-size: 11px; line-height: 16px; color: #10231f; }
+.sheet.wide { width: min(680px, 96vw); }
+.vehicle-menu li { align-items: flex-start; }
+.swatches { display: flex; gap: 8px; margin-top: 8px; }
+.swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #d5d1c4; padding: 0; }
+.swatch.selected { border-color: #116c60; box-shadow: 0 0 0 3px rgba(17,108,96,.35); }
+.vehicle-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.vehicle-card { padding: 12px; border-radius: 12px; background: #fffdf8; border: 1px solid #e0ddd2; }
+.vehicle-card .row.wrap { margin-top: 8px; }
+.vehicle-card .secondary, .vehicle-card .primary { padding: 7px 10px; font-size: 12px; }
+.paint-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,.3); vertical-align: -1px; }
 .preview-banner { position: absolute; left: 50%; top: 120px; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; padding: 10px 14px; border-radius: 12px; }
 .preview-banner strong, .preview-banner span { display: block; }
 .preview-banner span { color: #d4dbd7; font-size: calc(12px * var(--text-scale)); }
@@ -360,4 +385,6 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
   .map-panel { width: calc(100% - 20px); left: 10px; top: 10px; max-height: 45%; }
   .toasts { width: 70vw; top: 120px; right: 10px; }
   .bus-panel { width: calc(100% - 20px); left: 10px; bottom: 240px; }
+  .speedometer { left: 10px; bottom: 240px; max-width: calc(100% - 20px); }
+  .speed-meta .muted { display: none; }
 }

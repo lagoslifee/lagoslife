@@ -1,4 +1,4 @@
-import type { PlayerSettings } from "@lagos-living/shared";
+import type { OwnedVehicle, PlayerSettings } from "@lagos-living/shared";
 import { apiUrl } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -66,6 +66,15 @@ export type InteriorState = {
   home: { hunger: number; energy: number; cleanliness: number };
 };
 
+export type MyVehicle = OwnedVehicle & {
+  modelName: string;
+  insured: boolean;
+  premium: number;
+  serviceDue: boolean;
+  serviceQuote: { repair: number; fullRepair: number; total: number };
+};
+type VehicleResult = { vehicle: MyVehicle; balance?: number; replayed?: boolean; charged?: number };
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -112,6 +121,15 @@ export const api = {
   settings: () => request<PlayerSettings>("/api/settings"),
   saveSettings: (settings: PlayerSettings) => request<PlayerSettings>("/api/settings", { method: "PUT", body: JSON.stringify(settings) }),
   resetProgress: () => post<{ reset: boolean }>("/api/dev/reset-progress"),
+  vehicles: () => request<MyVehicle[]>("/api/vehicles"),
+  buyVehicle: (modelId: string, colour: string, idempotencyKey: string) =>
+    post<VehicleResult>("/api/vehicles/purchase", { modelId, colour, idempotencyKey }),
+  serviceVehicle: (id: string) => post<VehicleResult>(`/api/vehicles/${id}/service`, { idempotencyKey: crypto.randomUUID() }),
+  insureVehicle: (id: string) => post<VehicleResult>(`/api/vehicles/${id}/insure`, { idempotencyKey: crypto.randomUUID() }),
+  towVehicle: (id: string) => post<VehicleResult>(`/api/vehicles/${id}/tow`, { idempotencyKey: crypto.randomUUID() }),
+  garageVehicle: (id: string, propertyId: string) =>
+    post<VehicleResult>(`/api/vehicles/${id}/garage`, { propertyId, idempotencyKey: crypto.randomUUID() }),
+  retrieveVehicle: (id: string) => post<VehicleResult>(`/api/vehicles/${id}/retrieve`),
 };
 
 export const naira = (value: number) => `₦${Math.round(value).toLocaleString("en-NG")}`;

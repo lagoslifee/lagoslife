@@ -1,8 +1,9 @@
 import { TRANSIT, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
-import { api, naira, type EconomyState, type InteriorState, type PropertyListing } from "../api";
+import { api, naira, type EconomyState, type InteriorState, type MyVehicle, type PropertyListing } from "../api";
 import { actionLabels, keyLabel, type Action, type Bindings } from "../game/controller";
 import type { HudState } from "../game/engine";
+import { VehiclesApp } from "./VehicleSheets";
 
 export type PhoneApp = "home" | "map" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "friends" | "notifications" | "settings" | "help";
 
@@ -25,6 +26,7 @@ type Props = {
   onClose: () => void;
   economy: EconomyState | null;
   properties: PropertyListing[];
+  vehicles: MyVehicle[];
   hud: HudState | null;
   notices: Array<Notice & { at: number }>;
   settings: PlayerSettings;
@@ -91,10 +93,16 @@ export function Phone(props: Props) {
         {app === "wallet" && <WalletApp {...props} />}
         {app === "property" && <PropertyApp {...props} />}
         {app === "vehicles" && (
-          <div className="app-section">
-            <p>You don't own a vehicle yet.</p>
-            <p className="muted">Dealerships, garages and driving arrive in the vehicles milestone. For now, ride the {TRANSIT.routeNumber} danfo along Admiralty Way.</p>
-          </div>
+          <VehiclesApp
+            vehicles={props.vehicles}
+            properties={props.properties}
+            position={props.hud ? [props.hud.x, props.hud.z] : null}
+            drivingId={props.hud?.vehicle?.id ?? null}
+            onNavigate={props.onNavigate}
+            onRefresh={props.onRefresh}
+            onToast={props.onToast}
+            onClose={onClose}
+          />
         )}
         {app === "friends" && (
           <div className="app-section">

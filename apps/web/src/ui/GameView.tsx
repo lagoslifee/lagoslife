@@ -1,6 +1,6 @@
 import { defaultSettings, TRANSIT, type Notice, type Place, type PlayerSettings, type SelfState, type Vec2 } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, naira, type EconomyState, type PropertyListing } from "../api";
+import { api, naira, type EconomyState, type MyVehicle, type PropertyListing } from "../api";
 import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
 import { EngineDisposedError, GameEngine, type HudState, type Interaction } from "../game/engine";
 import type { Quality } from "../game/materials";
@@ -8,6 +8,7 @@ import { FullMap, Minimap } from "./MapView";
 import { currentObjective } from "./objectives";
 import { Phone, type PhoneApp } from "./Phone";
 import { PlaceSheet } from "./Sheets";
+import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
 
 type Toast = Notice & { id: number; at: number };
 
@@ -40,6 +41,7 @@ export function GameView({ playerName, onCustomise, onSignOut, overlayOpen }: { 
   const [hud, setHud] = useState<HudState | null>(null);
   const [economy, setEconomy] = useState<EconomyState | null>(null);
   const [properties, setProperties] = useState<PropertyListing[]>([]);
+  const [vehicles, setVehicles] = useState<MyVehicle[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [log, setLog] = useState<Array<Notice & { at: number }>>([]);
   const [subtitle, setSubtitle] = useState<string | null>(null);
@@ -68,9 +70,10 @@ export function GameView({ playerName, onCustomise, onSignOut, overlayOpen }: { 
 
   const refresh = useCallback(async () => {
     try {
-      const [nextEconomy, nextProperties] = await Promise.all([api.economy(), api.properties()]);
+      const [nextEconomy, nextProperties, nextVehicles] = await Promise.all([api.economy(), api.properties(), api.vehicles()]);
       setEconomy(nextEconomy);
       setProperties(nextProperties);
+      setVehicles(nextVehicles);
     } catch (error) {
       toast({ tone: "error", text: `Could not refresh your progress: ${(error as Error).message}` });
     }
@@ -263,7 +266,7 @@ export function GameView({ playerName, onCustomise, onSignOut, overlayOpen }: { 
       {hud && engine && engine.data && (
         <>
           <section className="hud-location" aria-live="polite" data-testid="current-location">
-            <p className="eyebrow">{hud.location === "bus" ? `ABOARD ${TRANSIT.routeNumber} DANFO` : hud.location === "interior" ? "INDOORS" : "YOU ARE ON"}</p>
+            <p className="eyebrow">{hud.location === "bus" ? `ABOARD ${TRANSIT.routeNumber} DANFO` : hud.location === "interior" ? "INDOORS" : hud.vehicle ? "DRIVING ON" : "YOU ARE ON"}</p>
             <h2 className={hud.streetNamed || hud.location !== "street" ? "" : "unnamed"}>{hud.street}</h2>
             <p>{hud.district}</p>
           </section>
@@ -317,6 +320,24 @@ export function GameView({ playerName, onCustomise, onSignOut, overlayOpen }: { 
               <div className="row">
                 <button className="secondary" disabled={hud.bus.stopRequested} onClick={() => engine.requestStop()}>{hud.bus.stopRequested ? "Stop requested" : `Request stop (${keyLabel(bindings.stop)})`}</button>
                 <button className="primary" onClick={() => engine.alight()}>{hud.bus.atStop ? "Step off (E)" : "Step off at next stop"}</button>
+              </div>
+            </section>
+          )}
+
+          {hud.vehicle && (
+            <section className={`speedometer ${hud.vehicle.limp ? "limp" : ""}`} data-testid="speedometer" aria-label="Speedometer">
+              <div className="speed-readout">
+                <strong>{hud.vehicle.kmh}</strong>
+                <span>km/h{hud.vehicle.reversing ? " · R" : ""}</span>
+              </div>
+              <div className="speed-meta">
+                <p><b>{hud.vehicle.name}</b> · <span className="plate">{hud.vehicle.plate}</span></p>
+                <p className="condition-line">
+                  Condition {hud.vehicle.condition}%{hud.vehicle.limp ? ` · LIMP MODE (max ${hud.vehicle.topKmh} km/h)` : ""}
+                </p>
+                <p className="muted small">
+                  <kbd>{keyLabel(bindings.forward)}</kbd>/<kbd>{keyLabel(bindings.back)}</kbd> drive · <kbd>{keyLabel(bindings.left)}</kbd>/<kbd>{keyLabel(bindings.right)}</kbd> steer · <kbd>{keyLabel(bindings.jump)}</kbd> handbrake · <kbd>{keyLabel(bindings.stop)}</kbd> horn
+                </p>
               </div>
             </section>
           )}
@@ -379,13 +400,31 @@ export function GameView({ playerName, onCustomise, onSignOut, overlayOpen }: { 
             <li><kbd>{keyLabel(bindings.sprint)}</kbd> Sprint (6 m/s) · <kbd>{keyLabel(bindings.walk)}</kbd> Walk (1.5 m/s)</li>
             <li><kbd>Mouse</kbd> Look — click to lock, <kbd>Esc</kbd> to release</li>
             <li><kbd>{keyLabel(bindings.interact)}</kbd> Interact · <kbd>{keyLabel(bindings.stop)}</kbd> Request danfo stop</li>
+            <li>In your car: <kbd>{keyLabel(bindings.forward)}</kbd>/<kbd>{keyLabel(bindings.back)}</kbd> accelerate/brake, <kbd>{keyLabel(bindings.jump)}</kbd> handbrake, <kbd>{keyLabel(bindings.interact)}</kbd> step out</li>
             <li><kbd>{keyLabel(bindings.phone)}</kbd> Phone · <kbd>{keyLabel(bindings.map)}</kbd> Map · <kbd>{keyLabel(bindings.help)}</kbd> This card</li>
           </ul>
           <p className="muted small">Signed in as {playerName}. Stuck? Phone → Help → “Get me unstuck”.</p>
         </aside>
       )}
 
-      {sheet && (
+      {sheet?.kind === "dealership" && (
+        <DealershipSheet
+          place={sheet}
+          economy={economy}
+          vehicles={vehicles}
+          onClose={() => setSheet(null)}
+          onRefresh={refresh}
+          onToast={toast}
+          onBought={(vehicle) => {
+            setSheet(null);
+            if (vehicle.x !== null && vehicle.z !== null) setManualTarget({ point: [vehicle.x, vehicle.z], label: `Your ${vehicle.modelName}` });
+          }}
+        />
+      )}
+      {sheet?.kind === "mechanic" && (
+        <MechanicSheet place={sheet} economy={economy} vehicles={vehicles} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} />
+      )}
+      {sheet && sheet.kind !== "dealership" && sheet.kind !== "mechanic" && (
         <PlaceSheet
           place={sheet}
           economy={economy}
@@ -408,6 +447,7 @@ export function GameView({ playerName, onCustomise, onSignOut, overlayOpen }: { 
           onClose={() => setPhone(null)}
           economy={economy}
           properties={properties}
+          vehicles={vehicles}
           hud={hud}
           notices={log}
           settings={settings}
