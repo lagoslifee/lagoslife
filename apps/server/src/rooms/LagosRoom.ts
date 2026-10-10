@@ -17,6 +17,8 @@ import {
   impactDamage,
   VEHICLE_RULES,
   vehicleImpactSchema,
+  vehicleSignalSchema,
+  vehicleSeats,
   type WorldVehicle,
   getPlace,
   INTERIOR_HALF,
@@ -129,6 +131,7 @@ type Player = {
   driveMetres: number;
   lastVehicleSaveAt: number;
   lastImpactAt: number;
+  lastHornAt: number;
   lastCitationCheckAt: number;
   /** Unit direction of the last accepted move. */
   heading: [number, number] | null;
@@ -253,6 +256,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("unstuck", (client) => this.handleUnstuck(client));
     this.onMessage("enterVehicle", (client, payload) => void this.handleEnterVehicle(client, payload));
     this.onMessage("exitVehicle", (client) => void this.handleExitVehicle(client));
+    this.onMessage("vehicleSignal", (client, payload) => this.handleVehicleSignal(client, payload));
     this.onMessage("vehicleImpact", (client, payload) => void this.handleVehicleImpact(client, payload));
     this.onMessage("chat", (client, payload) => void this.handleChat(client, payload));
     this.onMessage("requestLooks", (client) => this.sendLooks(client));
@@ -321,6 +325,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       driveMetres: 0,
       lastVehicleSaveAt: now,
       lastImpactAt: 0,
+      lastHornAt: 0,
       lastCitationCheckAt: 0,
       heading: null,
       entering: false,
@@ -757,9 +762,12 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const forwardZ = Math.cos(vehicle.yaw);
     const side = model.width / 2 + 0.7;
     const end = model.length / 2 + 0.8;
+    const seat = vehicleSeats(model)[0]!.z;
+    const cx = vehicle.x + forwardX * seat;
+    const cz = vehicle.z + forwardZ * seat;
     const candidates: Array<[number, number]> = [
-      [vehicle.x - rightX * side, vehicle.z - rightZ * side],
-      [vehicle.x + rightX * side, vehicle.z + rightZ * side],
+      [cx - rightX * side, cz - rightZ * side],
+      [cx + rightX * side, cz + rightZ * side],
       [vehicle.x - forwardX * end, vehicle.z - forwardZ * end],
       [vehicle.x + forwardX * end, vehicle.z + forwardZ * end],
     ];
@@ -779,6 +787,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     player.motion = "idle";
     if (!vehicle) return null;
     vehicle.driverSessionId = null;
+    vehicle.lights = false;
     await saveDrivingVehicle(vehicleId, vehicle, metres, true);
     return vehicle;
   }
@@ -844,6 +853,25 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     void this.persist(player).catch(() => undefined);
     if (!quiet && vehicle) this.notify(client, { tone: "info", text: `Parked ${vehicle.plate}.` });
     this.sendSelf(client, player, "parked");
+  }
+
+  private handleVehicleSignal(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = vehicleSignalSchema.safeParse(payload);
+    if (!player?.vehicleId || !parsed.success) return;
+    const vehicle = this.vehicles.get(player.vehicleId);
+    if (!vehicle || vehicle.driverSessionId !== client.sessionId) return;
+    if (parsed.data.lights !== undefined) vehicle.lights = parsed.data.lights;
+    if (parsed.data.horn) {
+      const now = Date.now();
+      if (now - player.lastHornAt < 400) return;
+      player.lastHornAt = now;
+      for (const other of this.clients) {
+        const listener = this.players.get(other.sessionId);
+        if (!listener || other.sessionId === client.sessionId || listener.location !== "street") continue;
+        if (Math.hypot(listener.x - vehicle.x, listener.z - vehicle.z) < 80) other.send("horn", { vehicleId: vehicle.id, x: vehicle.x, z: vehicle.z });
+      }
+    }
   }
 
   private async handleVehicleImpact(client: Client, payload: unknown) {
@@ -1037,6 +1065,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         z: vehicle.z,
         yaw: vehicle.yaw,
         driverSessionId: vehicle.driverSessionId,
+        lights: vehicle.lights,
         ownerName: vehicle.ownerName,
         mine: vehicle.ownerUserId === viewer.userId,
       });

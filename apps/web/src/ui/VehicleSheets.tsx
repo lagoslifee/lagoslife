@@ -2,6 +2,7 @@ import {
   getPlace,
   insurancePremium,
   VEHICLE_MODELS,
+  vehicleCategoryLabels,
   VEHICLE_RULES,
   vehicleModelById,
   type Notice,
@@ -54,7 +55,8 @@ export function DealershipSheet({ place, economy, vehicles, onClose, onRefresh, 
   const [colours, setColours] = useState<Record<string, string>>(() => Object.fromEntries(VEHICLE_MODELS.map((model) => [model.id, model.colours[0]!])));
   const [confirming, setConfirming] = useState<{ modelId: string; key: string } | null>(null);
   const balance = economy?.balance ?? 0;
-  const full = vehicles.length >= 3;
+  const bicycles = vehicles.filter((owned) => vehicleModelById.get(owned.modelId)?.body === "bicycle").length;
+  const isFull = (model: { body: string }) => (model.body === "bicycle" ? bicycles >= 2 : vehicles.length - bicycles >= 3);
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>
@@ -66,19 +68,21 @@ export function DealershipSheet({ place, economy, vehicles, onClose, onRefresh, 
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close">✕</button>
         </header>
-        <p className="muted">Fictional models, paid in game naira. Your car is parked outside on Admiralty Way the moment you sign. You own {vehicles.length} of 3 allowed.</p>
+        <p className="muted">Fictional models, paid in game naira. Your car is parked outside on Admiralty Way the moment you sign. Up to 3 motor vehicles and 2 bicycles each.</p>
         <ul className="menu vehicle-menu">
           {VEHICLE_MODELS.map((model) => {
             const colour = colours[model.id]!;
             const affordable = balance >= model.price;
             const pending = confirming?.modelId === model.id;
+            const full = isFull(model);
             return (
               <li key={model.id} data-testid={`model-${model.id}`}>
                 <div>
                   <strong>{model.name}</strong>
                   <span>{model.description}</span>
                   <em>
-                    Top speed {kmh(model.topSpeed)} km/h · 0–50 km/h in {(13.9 / model.acceleration).toFixed(1)} s · cover {naira(insurancePremium(model))}/week
+                    {vehicleCategoryLabels[model.category]} · {model.seats} {model.seats === 1 ? "seat" : "seats"} · top speed {kmh(model.topSpeed)} km/h
+                    {model.body === "bicycle" ? "" : ` · 0–50 km/h in ${(13.9 / model.acceleration).toFixed(1)} s · cover ${naira(insurancePremium(model))}/week`}
                   </em>
                   <div className="swatches" role="radiogroup" aria-label={`${model.name} colour`}>
                     {model.colours.map((hex) => (

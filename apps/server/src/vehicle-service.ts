@@ -1,4 +1,5 @@
 import {
+  VEHICLE_MODELS,
   getPlace,
   getVehicleModel,
   walkable,
@@ -23,6 +24,7 @@ import { vehicleEvents } from "./vehicle-events.js";
 import "./world-footprints.js";
 
 export const MAX_VEHICLES = 3;
+export const MAX_BICYCLES = 2;
 export const GARAGE_CAPACITY = 2;
 const DESK_RANGE = 6;
 const KERB_RANGE = 12;
@@ -210,12 +212,15 @@ export async function purchaseVehicle(userId: string, modelId: string, colour: s
         if (await hasOverdueFines(client, userId)) {
           throw new EconomyError("Settle your overdue traffic fines (Phone → Justice) before buying another vehicle.", 409);
         }
+        const bicycle = model.body === "bicycle";
+        const sameKind = VEHICLE_MODELS.filter((entry) => (entry.body === "bicycle") === bicycle).map((entry) => entry.id);
         const owned = await client.query(
-          `SELECT COUNT(*)::INTEGER AS count FROM player_vehicle WHERE owner_user_id = $1`,
-          [userId],
+          `SELECT COUNT(*)::INTEGER AS count FROM player_vehicle WHERE owner_user_id = $1 AND model_id = ANY($2)`,
+          [userId, sameKind],
         );
-        if (owned.rows[0].count >= MAX_VEHICLES) {
-          throw new EconomyError(`Residents may own up to ${MAX_VEHICLES} vehicles.`, 409);
+        const cap = bicycle ? MAX_BICYCLES : MAX_VEHICLES;
+        if (owned.rows[0].count >= cap) {
+          throw new EconomyError(bicycle ? `Residents may own up to ${cap} bicycles.` : `Residents may own up to ${cap} motor vehicles.`, 409);
         }
         const plate = newPlate();
         const balance = await debitWallet(client, userId, model.price, "vehicle_purchase",
@@ -390,6 +395,7 @@ export type RoomVehicle = {
   z: number;
   yaw: number;
   driverSessionId: string | null;
+  lights: boolean;
 };
 
 const roomColumns = `vehicle.id, vehicle.owner_user_id, vehicle.model_id, vehicle.colour, vehicle.plate,
@@ -409,6 +415,7 @@ function toRoomVehicle(row: Record<string, unknown>): RoomVehicle {
     z: Number(row.z),
     yaw: Number(row.yaw),
     driverSessionId: (row.driver_session_id as string | null) ?? null,
+    lights: false,
   };
 }
 
