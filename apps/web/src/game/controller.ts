@@ -192,6 +192,14 @@ export class InputState {
 export type MoveMode = "walk" | "jog" | "sprint";
 
 /** Frame-rate independent third-person locomotion with acceleration, turn rate and push-out collision. */
+/**
+ * Longest frame simulated at full length. Movement runs in 120 Hz substeps, so a
+ * slow device (down to 1 fps) still moves at full speed; longer stalls, such as
+ * a background tab, are cut short.
+ */
+export const MAX_FRAME_DT = 1;
+export const SUBSTEP_DT = 1 / 120;
+
 export class LocomotionController {
   x = 0;
   z = 0;

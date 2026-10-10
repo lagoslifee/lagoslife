@@ -58,7 +58,7 @@ import { CityAudio } from "./audio";
 import { Avatar, AvatarFactory } from "./avatar";
 import { CarController } from "./car-controller";
 import { VehicleFactory, type VehicleView } from "./vehicles";
-import { defaultBindings, InputState, LocomotionController, type Bindings, type MoveMode } from "./controller";
+import { defaultBindings, InputState, LocomotionController, MAX_FRAME_DT, SUBSTEP_DT, type Bindings, type MoveMode } from "./controller";
 import { DanfoFactory, type DanfoView } from "./danfo";
 import { MeshBuilderBatch } from "./geometry";
 import { buildInterior, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
@@ -207,7 +207,7 @@ export class GameEngine {
   private disposed = false;
   private frameDrawCalls = 0;
   private justAlighted: { busId: string; at: number } | null = null;
-  private maxFrameDt = 0.25;
+  private maxFrameDt = MAX_FRAME_DT;
   private frameMs = 0;
   private updateMs = 0;
   private readonly callbacks: EngineCallbacks;
@@ -483,7 +483,7 @@ export class GameEngine {
     if (pilot) [throttle, steer] = pilot;
     const handbrake = this.input.held("jump") || this.input.touchSprint;
     const topSpeed = effectiveTopSpeed(car.model, driving.condition);
-    const steps = Math.max(1, Math.ceil(dt / (1 / 120)));
+    const steps = Math.max(1, Math.ceil(dt / SUBSTEP_DT));
     let impact = 0;
     for (let step = 0; step < steps; step += 1) {
       impact = Math.max(impact, car.step(dt / steps, { throttle, steer, handbrake }, topSpeed, this.collideCar));
@@ -677,7 +677,7 @@ export class GameEngine {
         if (this.autopilot) mode = this.autopilot.sprint ? "sprint" : "jog";
       }
       if (move[0] || move[1]) this.emote = null;
-      const steps = Math.max(1, Math.ceil(dt / (1 / 120)));
+      const steps = Math.max(1, Math.ceil(dt / SUBSTEP_DT));
       for (let step = 0; step < steps; step += 1) this.controller.step(dt / steps, move, this.cameraYaw, mode);
       if (this.input.consume("jump")) this.controller.jump();
       if (this.input.consume("interact")) this.interaction?.();

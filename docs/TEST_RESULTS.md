@@ -12,10 +12,14 @@ machine only. Performance on player hardware has not yet been measured.
 | Live browser, holding W (± Shift, C) on a straight 30 m stretch of Admiralty Way at about 10 fps | 20.09 s | 8.68 s | 5.13 s |
 | Live browser, sprint autopilot over 381 m including corners | — | — | 5.88 m/s average |
 
-Acceleration to jog takes about 0.16 s, and stopping takes about 0.13 s. Frames
-longer than 250 ms are clamped to protect collision, so a device rendering
-below 4 fps moves proportionally slower. On this VM at 2–4 fps that happened in
-one run: 2.6 m/s jog and 4.1 m/s sprint. The 10 fps run above was not affected.
+Acceleration to jog takes about 0.16 s, and stopping takes about 0.13 s.
+Walking and driving run in 120 Hz substeps inside each frame, and frames up to
+1 s are simulated at full length, so slow devices keep full speed. (Until
+2026-10-10 frames were clamped at 250 ms, which slowed movement below 4 fps;
+one earlier run at 2–4 fps measured 2.6 m/s jog and 4.1 m/s sprint.) The unit
+test now also covers 2, 4 and 10 fps and fails with the old clamp. Live check
+after the change: sprinting along Adeola Odeku Street at 3.5 fps covered
+5.90 m/s of path.
 
 CPU profile (medium preset, 8 s): the main thread was 87% idle and game
 `update()` cost about 2.5 ms per frame. The rest of each frame is the software
