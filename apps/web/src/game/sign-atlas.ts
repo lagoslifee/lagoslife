@@ -1,0 +1,103 @@
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import type { Scene } from "@babylonjs/core/scene";
+
+export type SignStyle = "street" | "shop" | "rent" | "sale" | "bus" | "plate" | "danfo";
+
+export type UvRect = { u0: number; v0: number; u1: number; v1: number };
+
+const SIZE = 2048;
+const SLOT_W = 512;
+const SLOT_H = 96;
+const COLUMNS = SIZE / SLOT_W;
+const ROWS = Math.floor(SIZE / SLOT_H);
+
+const palettes: Record<SignStyle, { bg: string; fg: string; border?: string; font: string }> = {
+  street: { bg: "#0d5b3b", fg: "#ffffff", border: "#ffffff", font: "600 40px Inter, Arial, sans-serif" },
+  shop: { bg: "#f6efe2", fg: "#1f2a24", font: "800 46px Inter, Arial, sans-serif" },
+  rent: { bg: "#d9332b", fg: "#ffffff", font: "900 44px Inter, Arial, sans-serif" },
+  sale: { bg: "#1b4fa0", fg: "#ffffff", font: "900 44px Inter, Arial, sans-serif" },
+  bus: { bg: "#f2c230", fg: "#1a1a1a", font: "800 38px Inter, Arial, sans-serif" },
+  plate: { bg: "#1f2422", fg: "#f4e9c9", font: "700 36px Inter, Arial, sans-serif" },
+  danfo: { bg: "#151515", fg: "#ffcf3a", font: "800 42px Inter, Arial, sans-serif" },
+};
+
+/**
+ * All in-world text (street blades, shop fascia, For Rent boards) is drawn into
+ * one canvas texture so signs batch into a single material and draw call.
+ */
+export class SignAtlas {
+  readonly texture: DynamicTexture;
+  readonly material: PBRMaterial;
+  private next = 0;
+  private cache = new Map<string, UvRect>();
+  private ctx: CanvasRenderingContext2D;
+
+  constructor(scene: Scene) {
+    this.texture = new DynamicTexture("sign atlas", { width: SIZE, height: SIZE }, scene, true);
+    this.texture.hasAlpha = false;
+    this.ctx = this.texture.getContext() as unknown as CanvasRenderingContext2D;
+    this.ctx.fillStyle = "#808080";
+    this.ctx.fillRect(0, 0, SIZE, SIZE);
+    this.material = new PBRMaterial("signs", scene);
+    this.material.albedoTexture = this.texture;
+    this.material.emissiveTexture = this.texture;
+    this.material.emissiveColor = new Color3(0.28, 0.28, 0.28);
+    this.material.roughness = 0.55;
+    this.material.metallic = 0;
+    this.material.environmentIntensity = 0.5;
+  }
+
+  /** Returns UVs for a text sign, drawing it on first use. */
+  get(text: string, style: SignStyle, sub?: string, color?: string): UvRect {
+    const key = `${style}|${text}|${sub ?? ""}|${color ?? ""}`;
+    const cached = this.cache.get(key);
+    if (cached) return cached;
+    if (this.next >= COLUMNS * ROWS) return this.cache.values().next().value!;
+    const slot = this.next++;
+    const x = (slot % COLUMNS) * SLOT_W;
+    const y = Math.floor(slot / COLUMNS) * SLOT_H;
+    const palette = palettes[style];
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.fillStyle = color ?? palette.bg;
+    ctx.fillRect(x, y, SLOT_W, SLOT_H);
+    if (palette.border) {
+      ctx.strokeStyle = palette.border;
+      ctx.lineWidth = 5;
+      ctx.strokeRect(x + 7, y + 7, SLOT_W - 14, SLOT_H - 14);
+    }
+    ctx.fillStyle = palette.fg;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    let size = Number(/(\d+)px/.exec(palette.font)?.[1] ?? 40);
+    const fontFor = (px: number) => palette.font.replace(/\d+px/, `${px}px`);
+    ctx.font = fontFor(size);
+    while (ctx.measureText(text).width > SLOT_W - 40 && size > 16) {
+      size -= 2;
+      ctx.font = fontFor(size);
+    }
+    if (sub) {
+      ctx.fillText(text, x + SLOT_W / 2, y + SLOT_H * 0.38);
+      ctx.font = `600 ${Math.round(size * 0.55)}px Inter, Arial, sans-serif`;
+      ctx.fillText(sub, x + SLOT_W / 2, y + SLOT_H * 0.76);
+    } else {
+      ctx.fillText(text, x + SLOT_W / 2, y + SLOT_H / 2 + 2);
+    }
+    ctx.restore();
+    this.texture.update(true);
+    // Inset half a texel so neighbouring slots never bleed under mipmapping.
+    const inset = 2;
+    const rect = {
+      u0: (x + inset) / SIZE,
+      u1: (x + SLOT_W - inset) / SIZE,
+      v0: 1 - (y + SLOT_H - inset) / SIZE,
+      v1: 1 - (y + inset) / SIZE,
+    };
+    this.cache.set(key, rect);
+    return rect;
+  }
+
+  static aspect = SLOT_W / SLOT_H;
+}
