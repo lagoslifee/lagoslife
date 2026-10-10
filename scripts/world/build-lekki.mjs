@@ -277,18 +277,49 @@ const placeSeeds = [
   { id: "mama-titi-buka", kind: "food", name: "Mama Titi's Buka", building: 1268315326, street: "Admiralty Way" },
   { id: "corner-kiosk", kind: "shop", name: "Kayode Corner Mart", building: 775899028, street: "Admiralty Way" },
   { id: "home-and-style", kind: "furniture", name: "Home & Style Furnishings", building: 1270250897, street: "Admiralty Way" },
+  { id: "lekki-motors", kind: "dealership", name: "Lekki Motors", building: 1270250907, street: "Admiralty Way" },
+  { id: "ade-auto-works", kind: "mechanic", name: "Ade Auto Works", building: 1268314576, street: "Admiralty Way" },
   { id: "drop-chief-okoro", kind: "delivery", name: "Residence on Chief Okoro Avenue", building: 1270055968, street: "Chief Okoro Avenue" },
   { id: "drop-grace-anjos", kind: "delivery", name: "Residence on Grace Anjos Drive", building: 1268315312, street: "Grace Anjos Drive" },
   { id: "drop-adebayo", kind: "delivery", name: "Residence on Adebayo Doherty Road", building: 1270045946, street: "Adebayo Doherty Road" },
 ];
-const places = placeSeeds.map((seed) => ({
-  id: seed.id,
-  kind: seed.kind,
-  name: seed.name,
-  street: seed.street,
-  buildingId: seed.building,
-  ...doorFor(seed.building, seed.street),
-}));
+/** Kerbside parking spot on the place's street, nearest its door, facing along the near lane. */
+function kerbFor(door, streetName) {
+  let best = null;
+  for (const road of roads.filter((candidate) => candidate.name === streetName)) {
+    for (let p = 1; p < road.points.length; p += 1) {
+      const r0 = road.points[p - 1];
+      const r1 = road.points[p];
+      const dx = r1[0] - r0[0];
+      const dz = r1[1] - r0[1];
+      const length = Math.hypot(dx, dz) || 1;
+      const t = Math.max(0, Math.min(1, ((door[0] - r0[0]) * dx + (door[1] - r0[1]) * dz) / (length * length)));
+      const point = [r0[0] + dx * t, r0[1] + dz * t];
+      const distance = Math.hypot(point[0] - door[0], point[1] - door[1]);
+      if (!best || distance < best.distance) best = { point, distance, ux: dx / length, uz: dz / length, width: road.width };
+    }
+  }
+  // Pick the side of the carriageway nearest the door; right-hand traffic means travel along +u on the right side.
+  const side = (door[0] - best.point[0]) * best.uz - (door[1] - best.point[1]) * best.ux >= 0 ? 1 : -1;
+  // A lay-by just past the carriageway edge keeps parked cars out of the danfo's kerb lane.
+  const offset = Math.min(best.width / 2 + 1.1, Math.max(best.width / 2 - 1.3, best.distance - 2.5));
+  const round = (value) => Math.round(value * 100) / 100;
+  const kerb = [round(best.point[0] + best.uz * offset * side), round(best.point[1] - best.ux * offset * side)];
+  const yaw = side > 0 ? Math.atan2(best.ux, best.uz) : Math.atan2(-best.ux, -best.uz);
+  return { kerb, kerbYaw: round(yaw) };
+}
+const places = placeSeeds.map((seed) => {
+  const door = doorFor(seed.building, seed.street);
+  return {
+    id: seed.id,
+    kind: seed.kind,
+    name: seed.name,
+    street: seed.street,
+    buildingId: seed.building,
+    ...door,
+    ...kerbFor(door.door, seed.street),
+  };
+});
 
 const transit = {
   routeId: "admiralty-loop",

@@ -35,8 +35,10 @@ export type ApiError = {
 };
 
 export * from "./world.js";
+export * from "./vehicles.js";
+import { worldVehicleSchema } from "./vehicles.js";
 
-export const motionStates = ["idle", "walk", "jog", "sprint", "sit", "wave", "dance"] as const;
+export const motionStates = ["idle", "walk", "jog", "sprint", "sit", "wave", "dance", "drive"] as const;
 export type MotionState = (typeof motionStates)[number];
 
 /**
@@ -71,6 +73,7 @@ export const networkPlayerSchema = z.object({
   seat: z.number().int().nullable(),
   carrying: z.boolean(),
   connected: z.boolean(),
+  vehicleId: z.string().nullable(),
 });
 
 export const busStateSchema = z.object({
@@ -95,6 +98,7 @@ export const worldSnapshotSchema = z.object({
   serverTime: z.number(),
   players: z.array(networkPlayerSchema),
   buses: z.array(busStateSchema),
+  vehicles: z.array(worldVehicleSchema),
   online: z.number().int().nonnegative(),
 });
 
@@ -110,6 +114,7 @@ export const selfStateSchema = z.object({
   previewOnly: z.boolean(),
   busId: z.string().nullable(),
   seat: z.number().int().nullable(),
+  vehicleId: z.string().nullable(),
   reason: z.string(),
 });
 export type SelfState = z.infer<typeof selfStateSchema>;

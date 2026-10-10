@@ -479,6 +479,8 @@ function placeFromListing(listing: PropertyListing): Place {
     facade: listing.door,
     facing: 0,
     frontage: 0,
+    kerb: listing.door,
+    kerbYaw: 0,
   };
 }
 

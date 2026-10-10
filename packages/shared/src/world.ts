@@ -10,7 +10,9 @@ export type PlaceKind =
   | "food"
   | "shop"
   | "furniture"
-  | "delivery";
+  | "delivery"
+  | "dealership"
+  | "mechanic";
 
 export type Place = {
   id: string;
@@ -22,6 +24,9 @@ export type Place = {
   facade: Vec2;
   facing: number;
   frontage: number;
+  /** Kerbside parking point on the place's street and the yaw along the near lane. */
+  kerb: Vec2;
+  kerbYaw: number;
 };
 
 export type TransitStop = {

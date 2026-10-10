@@ -114,6 +114,8 @@ const PLACE_ACTIONS: Record<Place["kind"], string> = {
   shop: "Shop",
   furniture: "Furniture",
   delivery: "Deliver parcel",
+  dealership: "Browse cars",
+  mechanic: "Mechanic",
 };
 
 export class EngineDisposedError extends Error {
