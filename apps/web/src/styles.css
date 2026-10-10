@@ -370,6 +370,70 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .touch-buttons button { width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.5); background: rgba(10,20,18,.7); color: white; font-weight: 900; }
 .touch-buttons button.active { background: #116c60; }
 
+/* ---------- Chat and safety ---------- */
+.chat-panel { position: absolute; left: 20px; bottom: 60px; width: min(400px, 60vw); display: grid; gap: 6px; z-index: 5; font-size: calc(13px * var(--text-scale)); }
+.game-view:has(.speedometer) .chat-panel { bottom: 190px; }
+.chat-lines { list-style: none; margin: 0; padding: 8px 10px; max-height: 200px; overflow-y: auto; display: grid; gap: 4px; border-radius: 12px; background: rgba(10,20,18,.55); color: #f5f2e8; }
+.chat-panel.open .chat-lines { max-height: 260px; background: var(--hud-bg); border: 1px solid var(--hud-line); backdrop-filter: blur(8px); }
+.chat-lines li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; line-height: 1.35; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+.chat-lines li b, .chat-name { font-weight: 800; color: var(--accent); }
+.chat-lines li.own b { color: #8fe3cf; }
+.chat-name { padding: 0; border: 0; background: none; text-decoration: underline dotted; }
+.chat-lines li span { overflow-wrap: anywhere; }
+.chat-lines time { margin-left: auto; font-size: 10px; opacity: .6; }
+.chat-actions { display: flex; gap: 10px; width: 100%; }
+.chat-actions .link { color: #ffcf3a; }
+.chat-input { display: flex; gap: 6px; }
+.chat-input input { flex: 1; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--hud-line); background: rgba(10,20,18,.88); color: #fff; }
+.chat-open { justify-self: start; padding: 6px 10px; border-radius: 10px; backdrop-filter: blur(8px); background: var(--hud-bg); border: 1px solid var(--hud-line); color: #f5f2e8; font-size: calc(12px * var(--text-scale)); }
+.chat-open kbd { margin-left: 4px; font-size: 10px; }
+.chat-bubble { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); max-width: 240px; width: max-content; padding: 6px 10px; border-radius: 12px; white-space: normal; overflow-wrap: anywhere; color: #17312e; background: #fffdf5; font-weight: 600; box-shadow: 0 4px 12px rgba(0,0,0,.3); }
+.reported-line { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid #c8102e; background: #fff; }
+.sheet label { display: grid; gap: 4px; margin-bottom: 10px; font-weight: 600; }
+.sheet label.checkbox { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.sheet select, .sheet textarea, .app-section textarea, .app-section input, .mod-console input, .mod-console select, .mod-console textarea { padding: 8px 10px; border-radius: 8px; border: 1px solid #cfcabd; font: inherit; background: #fff; color: #17312e; }
+.warning-list { padding-left: 18px; }
+.error-text { color: #b3261e; font-weight: 700; }
+.citation-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
+.citation-list li { padding: 10px 12px; border-radius: 10px; background: #fffdf8; border: 1px solid #e0ddd2; }
+.citation-list li.unpaid { border-color: #db705c; }
+.citation-list p { margin: 4px 0; }
+.pill.unpaid { background: #b3261e; }
+.pill.appealed { background: #9a6b00; }
+.pill.overturned, .pill.paid { background: #5b6770; }
+.pill.active { background: #b3261e; }
+.appeal-form { display: grid; gap: 6px; margin-top: 6px; }
+.suspended .auth-card { max-width: 520px; text-align: left; }
+
+/* ---------- Moderation console ---------- */
+.mod-console { min-height: 100%; padding: 24px 4vw 60px; background: #f2efe6; color: #17312e; font-size: 14px; overflow-y: auto; height: 100%; }
+.mod-header { display: flex; flex-wrap: wrap; gap: 20px; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.mod-header h1 { margin: 4px 0 0; font-size: 22px; }
+.mod-stats { display: flex; gap: 12px; margin: 0; }
+.mod-stats div { padding: 8px 14px; border-radius: 10px; background: #fff; border: 1px solid #e0ddd2; }
+.mod-stats dt { font-size: 11px; color: #6a7773; }
+.mod-stats dd { margin: 0; font-size: 20px; font-weight: 800; }
+.mod-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.mod-tabs button { padding: 8px 14px; border-radius: 8px; border: 1px solid #cfcabd; background: #fff; font-weight: 700; }
+.mod-tabs button.active { background: #116c60; color: #fff; border-color: #116c60; }
+.mod-message { padding: 8px 12px; border-radius: 8px; }
+.mod-message.success { background: #dff3ea; }
+.mod-message.error { background: #fde3df; color: #8a1c12; }
+.mod-panel { display: grid; gap: 12px; }
+.mod-panel .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mod-panel .spread { justify-content: space-between; }
+.mod-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.mod-list > li { padding: 12px 14px; border-radius: 10px; background: #fff; border: 1px solid #e0ddd2; display: grid; gap: 6px; }
+.mod-list.compact > li { padding: 6px 10px; }
+.mod-list blockquote, .mod-panel blockquote { margin: 0; padding: 6px 10px; border-left: 3px solid #c8102e; background: #faf8f2; }
+.mod-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.mod-chat { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; display: grid; gap: 4px; }
+.mod-chat time { color: #6a7773; font-size: 11px; margin-right: 6px; }
+.mod-action { display: grid; gap: 8px; max-width: 520px; padding: 14px; border-radius: 10px; background: #fff; border: 1px solid #e0ddd2; }
+.mod-action label { display: grid; gap: 4px; font-weight: 600; }
+.mod-table { width: 100%; border-collapse: collapse; background: #fff; }
+.mod-table th, .mod-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #e0ddd2; vertical-align: top; }
+
 @media (max-width: 820px) {
   .landing-shell { grid-template-columns: 1fr; }
   .brand-panel { min-height: 44vh; padding: 25px; }
@@ -393,4 +457,6 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
   .bus-panel { width: calc(100% - 20px); left: 10px; bottom: 240px; }
   .speedometer { left: 10px; bottom: 240px; max-width: calc(100% - 20px); }
   .speed-meta .muted { display: none; }
+  .chat-panel { left: 10px; bottom: 210px; width: calc(100% - 160px); }
+  .mod-columns { grid-template-columns: 1fr; }
 }

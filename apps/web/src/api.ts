@@ -1,4 +1,4 @@
-import type { CommunityStatus, OwnedVehicle, PlayerSettings } from "@lagos-living/shared";
+import type { Citation, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
 import { apiUrl } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -133,6 +133,70 @@ export const api = {
   community: () => request<CommunityStatus>("/api/community"),
   visitQuietPlace: (placeId: string) => post<QuietVisitResult>("/api/community/visit", { placeId }),
   volunteer: (placeId: string) => post<VolunteerResult>("/api/community/volunteer", { placeId }),
+  standing: () => request<{ suspension: Suspension | null }>("/api/account/standing"),
+  safety: () => request<SafetyStatus>("/api/safety"),
+  block: (userName: string) => post<SafetyStatus>("/api/safety/block", { userName }),
+  unblock: (userName: string) => post<SafetyStatus>("/api/safety/unblock", { userName }),
+  report: (input: { userName: string; reason: ReportReason; details: string; chatMessageId?: string }) =>
+    post<{ reportId: string | null; alreadyOpen: boolean; reported: string }>("/api/safety/report", input),
+  acknowledgeWarnings: () => post<SafetyStatus>("/api/safety/warnings/acknowledge"),
+  citations: () => request<Citation[]>("/api/justice"),
+  payCitation: (id: string) => post<{ citation: Citation; balance: number; replayed: boolean }>(`/api/justice/${id}/pay`, { idempotencyKey: crypto.randomUUID() }),
+  appealCitation: (id: string, statement: string) => post<Citation>(`/api/justice/${id}/appeal`, { statement }),
+  becomeStaff: (role: StaffRole | null) => post<{ role: StaffRole | null }>("/api/dev/staff", { role }),
+  devCitation: () => post<Citation | null>("/api/dev/citation"),
+};
+
+export type Suspension = { reason: string; until: string | null };
+
+export type ModReport = {
+  id: string;
+  reason: ReportReason;
+  details: string;
+  status: string;
+  createdAt: string;
+  resolutionNote: string | null;
+  reportedId: string;
+  reportedName: string;
+  reporterName: string;
+  messageShown: string | null;
+  messageOriginal: string | null;
+  messageAt: string | null;
+  openAgainst: number;
+};
+export type ResidentRecord = {
+  id: string;
+  name: string;
+  role: StaffRole | null;
+  chat: Array<{ id: string; body: string; shown: string; filtered: boolean; location: string; at: string }>;
+  reports: Array<{ id: string; reason: string; details: string; status: string; createdAt: string }>;
+  sanctions: Array<{ id: string; kind: string; reason: string; createdAt: string; endsAt: string | null; liftedAt: string | null; active: boolean }>;
+  history: Array<{ id: string; actorName: string; action: string; reason: string; createdAt: string }>;
+};
+export type AuditEntry = { id: string; actorName: string; targetName: string | null; action: string; reason: string; details: Record<string, unknown>; createdAt: string };
+export type Appeal = Citation & { userId: string; userName: string };
+export type StaffOverview = {
+  openReports: number;
+  pendingAppeals: number;
+  activeSuspensions: number;
+  activeMutes: number;
+  chatLast24h: number;
+  staff: Array<{ userId: string; userName: string; role: StaffRole; grantedAt: string }>;
+};
+
+export const modApi = {
+  overview: () => request<StaffOverview>("/api/mod/overview"),
+  reports: (status: "open" | "actioned" | "dismissed" = "open") => request<ModReport[]>(`/api/mod/reports?status=${status}`),
+  resolveReport: (id: string, resolution: "actioned" | "dismissed", note: string) => post(`/api/mod/reports/${id}/resolve`, { resolution, note }),
+  resident: (userId: string) => request<ResidentRecord>(`/api/mod/residents/${encodeURIComponent(userId)}`),
+  findResident: (name: string) => request<ResidentRecord>(`/api/mod/residents?name=${encodeURIComponent(name)}`),
+  act: (input: { targetUserId: string; action: ModerationActionKind; reason: string; durationHours?: number; reportId?: string }) =>
+    post<{ action: string; endsAt: string | null }>("/api/mod/actions", input),
+  appeals: () => request<Appeal[]>("/api/mod/appeals"),
+  decideAppeal: (id: string, outcome: "upheld" | "overturned", note: string) => post<Citation>(`/api/mod/appeals/${id}/decide`, { outcome, note }),
+  citationHistory: (id: string) => request<Array<{ event: string; actorName: string; note: string | null; createdAt: string }>>(`/api/mod/citations/${id}/history`),
+  audit: () => request<AuditEntry[]>("/api/mod/audit?limit=200"),
+  setRole: (userName: string, role: StaffRole | null, reason: string) => post("/api/admin/roles", { userName, role, reason }),
 };
 
 type Needs = { hunger: number; energy: number };

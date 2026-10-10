@@ -1,5 +1,7 @@
 import { Client, type Room } from "@colyseus/sdk";
 import {
+  chatMessageSchema,
+  type ChatMessage,
   noticeSchema,
   positionUpdateSchema,
   selfStateSchema,
@@ -24,6 +26,8 @@ export type MultiplayerHandlers = {
   saved: (at: number) => void;
   status: (status: MultiplayerStatus) => void;
   vehicleStatus: (status: { vehicleId: string; condition: number; damage?: number }) => void;
+  chat: (message: ChatMessage) => void;
+  suspended: (info: { reason: string; until: string | null }) => void;
 };
 
 export class MultiplayerConnection {
@@ -71,6 +75,14 @@ export class MultiplayerConnection {
       room.onMessage("vehicleStatus", (payload: { vehicleId: string; condition: number; damage?: number }) => {
         if (typeof payload?.vehicleId === "string" && Number.isFinite(payload.condition)) this.handlers.vehicleStatus(payload);
       });
+      room.onMessage("chat", (payload: unknown) => {
+        const parsed = chatMessageSchema.safeParse(payload);
+        if (parsed.success) this.handlers.chat(parsed.data);
+      });
+      room.onMessage("suspended", (payload: { reason?: unknown; until?: unknown }) => {
+        this.closed = true;
+        this.handlers.suspended({ reason: String(payload?.reason ?? ""), until: typeof payload?.until === "string" ? payload.until : null });
+      });
       room.onLeave(() => {
         if (this.closed) return;
         this.room = undefined;
@@ -89,6 +101,11 @@ export class MultiplayerConnection {
     if (!this.room) return;
     const payload = positionUpdateSchema.parse({ sequence: this.sequence++, x, z, yaw: Math.atan2(Math.sin(yaw), Math.cos(yaw)), motion });
     this.room.send("position", payload);
+  }
+
+  sendChat(text: string) {
+    this.room?.send("chat", { text });
+    return Boolean(this.room);
   }
 
   send(

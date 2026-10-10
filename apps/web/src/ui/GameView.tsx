@@ -1,4 +1,4 @@
-import { defaultSettings, districtAt, TRANSIT, type Notice, type Place, type PlayerSettings, type SelfState, type Vec2 } from "@lagos-living/shared";
+import { defaultSettings, districtAt, TRANSIT, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type SelfState, type Vec2 } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PropertyListing } from "../api";
 import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
@@ -10,6 +10,7 @@ import { Phone, type PhoneApp } from "./Phone";
 import { COMMUNITY_KINDS, CommunitySheet } from "./CommunitySheets";
 import { PlaceSheet } from "./Sheets";
 import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
+import { ChatPanel, ReportDialog, WarningNotice, type ReportTarget } from "./SafetyUI";
 
 type Toast = Notice & { id: number; at: number };
 
@@ -33,7 +34,19 @@ function ago(at: number | null, now: number) {
   return seconds < 5 ? "Saved just now" : seconds < 60 ? `Saved ${seconds}s ago` : `Saved ${Math.round(seconds / 60)}m ago`;
 }
 
-export function GameView({ playerName, onCustomise, onSignOut, overlayOpen }: { playerName: string; onCustomise: () => void; onSignOut: () => void; overlayOpen: boolean }) {
+export function GameView({
+  playerName,
+  onCustomise,
+  onSignOut,
+  onSuspended,
+  overlayOpen,
+}: {
+  playerName: string;
+  onCustomise: () => void;
+  onSignOut: () => void;
+  onSuspended: (info: { reason: string; until: string | null }) => void;
+  overlayOpen: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<GameEngine | null>(null);
@@ -60,6 +73,12 @@ export function GameView({ playerName, onCustomise, onSignOut, overlayOpen }: { 
   const [visitedHome, setVisitedHome] = useState(() => localStorage.getItem("lagos-visited-home") === "1");
   const touch = useMemo(() => matchMedia("(pointer: coarse)").matches, []);
   const toastId = useRef(0);
+  const [chat, setChat] = useState<Array<ChatMessage & { own: boolean }>>([]);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  const [safety, setSafety] = useState<SafetyStatus | null>(null);
+  const suspendedRef = useRef(onSuspended);
+  suspendedRef.current = onSuspended;
 
   const toast = useCallback((notice: Notice) => {
     const id = ++toastId.current;
@@ -110,6 +129,8 @@ export function GameView({ playerName, onCustomise, onSignOut, overlayOpen }: { 
           if (panel === "map") setMapOpen((current) => !current);
           if (panel === "help") setHelpOpen((current) => !current);
         },
+        chat: (message, own) => setChat((current) => [...current.slice(-59), { ...message, own }]),
+        suspended: (info) => suspendedRef.current(info),
       },
       quality,
       defaultSettings,
@@ -127,6 +148,7 @@ export function GameView({ playerName, onCustomise, onSignOut, overlayOpen }: { 
         setFatal(error.message || "The game could not start.");
       });
     void refresh();
+    api.safety().then(setSafety).catch(() => undefined);
     api.settings().then((loaded) => {
       setSettings(loaded);
       instance.setSettings(loaded);
@@ -166,7 +188,31 @@ export function GameView({ playerName, onCustomise, onSignOut, overlayOpen }: { 
     }
   }, [hud?.x, hud?.z]);
 
-  const blocking = Boolean(sheet || phone || mapOpen || overlayOpen || loading || fatal);
+  const warnings = safety?.warnings ?? [];
+  const blocking = Boolean(sheet || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (event.code !== "Enter" || chatOpen || blocking || !engine) return;
+      if (target && ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName)) return;
+      event.preventDefault();
+      if (document.pointerLockElement) document.exitPointerLock();
+      setChatOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [chatOpen, blocking, engine]);
+
+  const blockResident = useCallback((userName: string) => {
+    api.block(userName)
+      .then((next) => {
+        setSafety(next);
+        setChat((current) => current.filter((message) => message.own || message.userName !== userName));
+        toast({ tone: "success", text: `${userName} is blocked. You will not see each other's chat. Undo in Phone → Safety.` });
+      })
+      .catch((error: Error) => toast({ tone: "error", text: error.message }));
+  }, [toast]);
   useEffect(() => {
     engine?.setInputEnabled(!blocking);
   }, [engine, blocking]);
@@ -384,6 +430,29 @@ export function GameView({ playerName, onCustomise, onSignOut, overlayOpen }: { 
         </>
       )}
 
+      {hud && engine && (
+        <ChatPanel
+          messages={chat}
+          open={chatOpen}
+          onOpen={() => setChatOpen(true)}
+          onClose={() => setChatOpen(false)}
+          onSend={(text) => {
+            if (engine.sendChat(text)) return true;
+            toast({ tone: "error", text: "Not connected — your message was not sent." });
+            return false;
+          }}
+          onReport={setReportTarget}
+          onBlock={blockResident}
+        />
+      )}
+      {reportTarget && <ReportDialog target={reportTarget} onClose={() => setReportTarget(null)} onToast={toast} />}
+      {warnings.length > 0 && !loading && (
+        <WarningNotice
+          warnings={warnings}
+          onAcknowledge={() => api.acknowledgeWarnings().then(setSafety).catch((error: Error) => toast({ tone: "error", text: error.message }))}
+        />
+      )}
+
       <div className="toasts" aria-live="polite">
         {toasts.map((entry) => (
           <div key={entry.id} className={`toast ${entry.tone}`}>{entry.text}</div>
@@ -497,6 +566,7 @@ export function GameView({ playerName, onCustomise, onSignOut, overlayOpen }: { 
             }
           }}
           onInteriorChanged={() => void engine.refreshInterior()}
+          onReport={(target) => { setPhone(null); setReportTarget(target); }}
           onCustomise={() => { setPhone(null); onCustomise(); }}
           onSignOut={onSignOut}
           playerName={playerName}

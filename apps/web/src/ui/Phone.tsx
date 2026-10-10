@@ -5,8 +5,9 @@ import { actionLabels, keyLabel, type Action, type Bindings } from "../game/cont
 import type { HudState } from "../game/engine";
 import { CommunityApp } from "./CommunitySheets";
 import { VehiclesApp } from "./VehicleSheets";
+import { JusticeApp, SafetyApp, type ReportTarget } from "./SafetyUI";
 
-export type PhoneApp = "home" | "map" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "community" | "friends" | "notifications" | "settings" | "help";
+export type PhoneApp = "home" | "map" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
 
 const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
   { id: "map", label: "Map", icon: "🗺" },
@@ -16,6 +17,8 @@ const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
   { id: "property", label: "My Home", icon: "🏠" },
   { id: "vehicles", label: "Vehicles", icon: "🚗" },
   { id: "community", label: "Community", icon: "🤝" },
+  { id: "justice", label: "Justice", icon: "⚖" },
+  { id: "safety", label: "Safety", icon: "🛡" },
   { id: "friends", label: "Friends", icon: "👥" },
   { id: "notifications", label: "Alerts", icon: "🔔" },
   { id: "settings", label: "Settings", icon: "⚙" },
@@ -45,6 +48,7 @@ type Props = {
   onReset: () => Promise<void>;
   onEat: (itemId: string) => Promise<void>;
   onInteriorChanged: () => void;
+  onReport: (target: ReportTarget) => void;
   onCustomise: () => void;
   onSignOut: () => void;
   playerName: string;
@@ -107,10 +111,12 @@ export function Phone(props: Props) {
           />
         )}
         {app === "community" && <CommunityApp onNavigate={props.onNavigate} onClose={onClose} />}
+        {app === "justice" && <JusticeApp onToast={props.onToast} onRefresh={props.onRefresh} />}
+        {app === "safety" && <SafetyApp onToast={props.onToast} onReport={props.onReport} />}
         {app === "friends" && (
           <div className="app-section">
             <p><strong>{props.hud?.online ?? 1}</strong> resident{props.hud?.online === 1 ? "" : "s"} online in this world.</p>
-            <p className="muted">Name tags show nearby residents. Friend requests and chat are planned with moderation tools — they are not available yet.</p>
+            <p className="muted">Name tags show nearby residents. Press Enter to chat with anyone within 40 m. Friend lists are not available yet.</p>
           </div>
         )}
         {app === "notifications" && (

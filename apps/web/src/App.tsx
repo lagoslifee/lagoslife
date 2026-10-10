@@ -10,6 +10,24 @@ import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 import { apiUrl, authClient } from "./auth-client";
 
 const GameView = lazy(() => import("./ui/GameView").then((module) => ({ default: module.GameView })));
+const ModerationConsole = lazy(() => import("./ui/ModerationConsole").then((module) => ({ default: module.ModerationConsole })));
+
+type Suspension = { reason: string; until: string | null };
+
+function SuspendedScreen({ suspension }: { suspension: Suspension }) {
+  return (
+    <main className="loading-screen suspended" role="alert" data-testid="suspended-screen">
+      <div className="auth-card">
+        <p className="step-label">ACCOUNT SUSPENDED</p>
+        <h2>You cannot enter Lagos right now</h2>
+        <p>Reason given by a moderator: <strong>{suspension.reason}</strong></p>
+        <p>{suspension.until ? `The suspension ends ${new Date(suspension.until).toLocaleString("en-NG")}.` : "This suspension has no end date."}</p>
+        <p className="muted small">Your homes, cars and game naira are kept. If you think this is a mistake, contact the moderation team.</p>
+        <button className="secondary" onClick={async () => { await authClient.signOut(); location.assign("/?manual=1"); }}>Sign out</button>
+      </div>
+    </main>
+  );
+}
 
 type AuthMode = "login" | "register" | "forgot" | "reset";
 
@@ -232,6 +250,14 @@ function GameShell({
   const playerName = user.displayUsername ?? user.username ?? user.name;
   const [appearance, setAppearance] = useState(defaultAppearance);
   const [creatorOpen, setCreatorOpen] = useState(false);
+  const [standing, setStanding] = useState<{ checked: boolean; suspension: Suspension | null }>({ checked: false, suspension: null });
+
+  useEffect(() => {
+    fetch(`${apiUrl}/api/account/standing`, { credentials: "include" })
+      .then((response) => response.json())
+      .then((data: { suspension?: Suspension | null }) => setStanding({ checked: true, suspension: data.suspension ?? null }))
+      .catch(() => setStanding({ checked: true, suspension: null }));
+  }, []);
 
   useEffect(() => {
     fetch(`${apiUrl}/api/character`, { credentials: "include" })
@@ -240,11 +266,22 @@ function GameShell({
       .catch(() => undefined);
   }, []);
 
+  if (!standing.checked) return <div className="loading-screen">Preparing Lagos…</div>;
+  if (standing.suspension) return <SuspendedScreen suspension={standing.suspension} />;
+  if (location.pathname === "/moderation") {
+    return (
+      <Suspense fallback={<div className="loading-screen">Opening the moderation console…</div>}>
+        <ModerationConsole staffName={playerName} />
+      </Suspense>
+    );
+  }
+
   return (
     <main className="game-shell">
       <Suspense fallback={<div className="loading-screen">Preparing Lagos…</div>}>
         <GameView
           playerName={playerName}
+          onSuspended={(suspension) => setStanding({ checked: true, suspension })}
           overlayOpen={creatorOpen}
           onCustomise={() => setCreatorOpen(true)}
           onSignOut={async () => {

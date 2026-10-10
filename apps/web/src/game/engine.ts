@@ -36,6 +36,7 @@ import {
   TRANSIT,
   withinWorld,
   type BusState,
+  type ChatMessage,
   type MotionState,
   type NetworkPlayer,
   type Notice,
@@ -104,6 +105,8 @@ export type EngineCallbacks = {
   loading: (text: string, progress: number) => void;
   ready: () => void;
   toggle: (panel: "phone" | "map" | "help") => void;
+  chat: (message: ChatMessage, own: boolean) => void;
+  suspended: (info: { reason: string; until: string | null }) => void;
 };
 
 type Remote = {
@@ -260,6 +263,12 @@ export class GameEngine {
       status: (status) => {
         this.status = status;
       },
+      chat: (message) => {
+        const own = message.sessionId === this.net.sessionId;
+        if (!own) this.showBubble(message);
+        this.callbacks.chat(message, own);
+      },
+      suspended: (info) => this.callbacks.suspended(info),
     });
   }
 
@@ -1058,6 +1067,21 @@ export class GameEngine {
         remote.avatar.update(remote.speed, b.motion, dt);
       }
     }
+  }
+
+  private showBubble(message: ChatMessage) {
+    const remote = this.remotes.get(message.sessionId);
+    if (!remote) return;
+    remote.tag.querySelector(".chat-bubble")?.remove();
+    const bubble = document.createElement("span");
+    bubble.className = "chat-bubble";
+    bubble.textContent = message.text;
+    remote.tag.prepend(bubble);
+    setTimeout(() => bubble.remove(), 7_000);
+  }
+
+  sendChat(text: string) {
+    return this.net.sendChat(text);
   }
 
   private project(x: number, y: number, z: number) {
