@@ -7,7 +7,7 @@ import {
   type CharacterAppearance,
 } from "@lagos-living/shared";
 import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
-import { apiUrl, authClient } from "./auth-client";
+import { apiConfigured, apiUrl, authClient } from "./auth-client";
 
 const GameView = lazy(() => import("./ui/GameView").then((module) => ({ default: module.GameView })));
 const CharacterPreview = lazy(() => import("./ui/CharacterPreview").then((module) => ({ default: module.CharacterPreview })));
@@ -302,7 +302,24 @@ function GameShell({
   );
 }
 
+function ServerMissingScreen() {
+  return (
+    <main className="loading-screen" role="alert" data-testid="server-missing">
+      <div className="auth-card">
+        <p className="step-label">GAME SERVER NOT CONFIGURED</p>
+        <h2>Lagos Living can't reach its game server</h2>
+        <p>This site was built without <code>VITE_API_URL</code>, so it doesn't know where accounts and multiplayer are hosted.</p>
+        <p className="muted small">Set <code>VITE_API_URL</code> to the game server's HTTPS address in the hosting environment, then rebuild.</p>
+      </div>
+    </main>
+  );
+}
+
 export function App() {
+  return apiConfigured ? <Main /> : <ServerMissingScreen />;
+}
+
+function Main() {
   const session = authClient.useSession();
   const [autoSignInPending, setAutoSignInPending] = useState(false);
   const query = new URLSearchParams(location.search);

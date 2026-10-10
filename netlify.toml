@@ -1,0 +1,32 @@
+# Netlify hosts only the web client. The game server (Express + Colyseus + PostgreSQL) needs a host that runs
+# long-lived Node processes with WebSockets; set VITE_API_URL in the Netlify site's environment variables to its
+# HTTPS origin before building. See docs/OPERATIONS.md#netlify-web-client.
+[build]
+  base = "."
+  command = "npm run build -w @lagos-living/web"
+  publish = "apps/web/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600, must-revalidate"

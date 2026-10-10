@@ -42,6 +42,25 @@ certificate. Every `/api/dev/*` route answers 404 before authentication unless
 the server is in development and reached on localhost. That covers automatic
 sign-in, progress reset, spawn-at, staff grants and test citations.
 
+## Netlify web client
+
+`netlify.toml` builds the web client from the repository root
+(`npm run build -w @lagos-living/web`), publishes `apps/web/dist`, and routes
+unknown paths to `index.html`. Netlify serves static files only. The game
+server (Express, Colyseus WebSockets, PostgreSQL) has to run on a host that
+keeps Node processes alive, such as the compose stack below.
+
+- In the Netlify site settings, set the environment variable `VITE_API_URL` to
+  the game server's HTTPS origin and redeploy. Without it, the site shows a
+  "game server not configured" screen.
+- Set the server's `WEB_ORIGIN` to the Netlify site's origin, or the server
+  rejects the requests.
+- Sign-in cookies are set by the API origin. Browsers block cookies between
+  unrelated sites (for example `*.netlify.app` and another provider's domain),
+  so sign-in only works reliably when the web client and API share a parent
+  domain: for example `play.example.com` on Netlify and `api.example.com` for
+  the server.
+
 ## Single-host stack (`docker-compose.prod.yml`)
 
 ```bash
