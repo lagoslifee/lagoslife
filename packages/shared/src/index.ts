@@ -33,3 +33,32 @@ export const healthResponseSchema = z.object({
 export type ApiError = {
   error: string;
 };
+
+export const movementInputSchema = z.object({
+  sequence: z.number().int().nonnegative(),
+  forward: z.number().min(-1).max(1),
+  right: z.number().min(-1).max(1),
+  run: z.boolean(),
+  yaw: z.number().finite().min(-Math.PI * 2).max(Math.PI * 2),
+});
+
+export type MovementInput = z.infer<typeof movementInputSchema>;
+
+export const networkPlayerSchema = z.object({
+  sessionId: z.string().min(1),
+  name: z.string().min(1).max(20),
+  x: z.number().finite(),
+  z: z.number().finite(),
+  yaw: z.number().finite(),
+  speed: z.number().finite().nonnegative(),
+  motion: z.enum(["idle", "walk", "run"]),
+  connected: z.boolean(),
+});
+
+export const worldSnapshotSchema = z.object({
+  tick: z.number().int().nonnegative(),
+  players: z.array(networkPlayerSchema),
+});
+
+export type NetworkPlayer = z.infer<typeof networkPlayerSchema>;
+export type WorldSnapshot = z.infer<typeof worldSnapshotSchema>;

@@ -247,7 +247,7 @@ function GameShell({ user }: { user: { name: string; username?: string | null | 
       <aside className="location-card">
         <p className="eyebrow">CURRENT DISTRICT</p>
         <h2>Ikoyi Preview</h2>
-        <p>Playable movement zone · geography integration begins in Milestone 3</p>
+        <p>Bourdillon–Glover starter extract · gameplay-scaled OpenStreetMap layout</p>
       </aside>
       <aside className="minimap" aria-label="Development minimap">
         <div className="map-water" />

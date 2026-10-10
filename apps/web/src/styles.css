@@ -1,7 +1,5 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap");
-
 :root {
-  font-family: "DM Sans", sans-serif;
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
   color: #f5f2e8;
   background: #081b1a;
   font-synthesis: none;
@@ -46,7 +44,7 @@ button { cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 12px;
-  font: 800 14px/1 "Manrope";
+  font: 800 14px/1 Inter, "Segoe UI", Arial, sans-serif;
   letter-spacing: .12em;
 }
 .wordmark span {
@@ -74,7 +72,7 @@ button { cursor: pointer; }
 }
 .hero-copy h1 {
   margin: 15px 0 24px;
-  font: 800 clamp(54px, 7vw, 104px)/.92 "Manrope";
+  font: 800 clamp(54px, 7vw, 104px)/.92 Inter, "Segoe UI", Arial, sans-serif;
   letter-spacing: -.06em;
 }
 .hero-copy > p:not(.eyebrow) { max-width: 550px; color: #b8c9c3; font-size: 18px; line-height: 1.65; }
@@ -98,7 +96,7 @@ button { cursor: pointer; }
 
 .auth-panel { display: grid; place-items: center; padding: 48px; background: #f1eee3; color: #142b29; }
 .auth-card { width: min(420px, 100%); }
-.auth-card h2, .creator-card h2 { margin: 10px 0 6px; font: 800 34px/1.1 "Manrope"; letter-spacing: -.035em; }
+.auth-card h2, .creator-card h2 { margin: 10px 0 6px; font: 800 34px/1.1 Inter, "Segoe UI", Arial, sans-serif; letter-spacing: -.035em; }
 .muted { color: #6a7773; line-height: 1.5; margin-bottom: 30px; }
 label { display: grid; gap: 8px; margin: 17px 0; font-size: 13px; font-weight: 700; }
 input, select {
@@ -147,6 +145,14 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .movement-hud strong { color: #e7bd62; font-size: 12px; text-transform: uppercase; letter-spacing: .1em; }
 .movement-hud span { font-variant-numeric: tabular-nums; font-size: 12px; }
 .movement-hud small { opacity: .72; }
+.multiplayer-hud {
+  position: absolute; top: 150px; left: 340px; display: flex; align-items: center; gap: 7px;
+  padding: 7px 11px; color: #e8f2ee; background: rgba(5,30,28,.72);
+  border-radius: 20px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+}
+.multiplayer-hud i { width: 7px; height: 7px; border-radius: 50%; background: #e0ad55; }
+.multiplayer-hud.connected i { background: #64d991; box-shadow: 0 0 8px #64d991; }
+.multiplayer-hud.offline i { background: #db705c; }
 .graphics-control {
   position: absolute; right: 30px; top: 300px; width: 180px; margin: 0; padding: 11px 13px;
   color: #e8f2ee; background: rgba(5, 30, 28, .72); border-radius: 8px;
@@ -157,6 +163,11 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
   position: absolute; left: 50%; bottom: 30px; transform: translateX(-50%);
   padding: 8px 13px; border-radius: 20px; color: rgba(255,255,255,.9);
   background: rgba(5,30,28,.66); font-size: 11px; letter-spacing: .05em;
+}
+.osm-attribution {
+  position: absolute; right: 30px; bottom: 56px; padding: 5px 8px;
+  color: rgba(255,255,255,.85); background: rgba(5,30,28,.68); border-radius: 4px;
+  font-size: 9px; text-decoration: none;
 }
 .touch-controls { display: none; }
 .game-nav {
@@ -182,7 +193,7 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
   box-shadow: 0 16px 55px rgba(3,20,19,.18);
 }
 .location-card { left: 30px; top: 105px; width: 290px; padding: 20px; border-radius: 12px; }
-.location-card h2 { margin: 4px 0; font: 800 22px "Manrope"; }
+.location-card h2 { margin: 4px 0; font: 800 22px Inter, "Segoe UI", Arial, sans-serif; }
 .location-card p:last-child { color: #697a76; font-size: 12px; line-height: 1.45; }
 .minimap { right: 30px; top: 105px; width: 180px; height: 180px; border-radius: 50%; overflow: hidden; background: #b8b080; }
 .map-water { position: absolute; right: -20px; width: 90px; height: 220px; transform: rotate(15deg); background: #4aa1a3; }
@@ -192,7 +203,7 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .minimap i { position: absolute; left: 84px; top: 82px; width: 14px; height: 14px; z-index: 2; background: #d45b3c; border: 3px solid white; border-radius: 50%; }
 .minimap span { position: absolute; z-index: 2; left: 75px; top: 102px; padding: 2px 5px; font-size: 8px; color: white; background: #18312e; border-radius: 3px; }
 .welcome-card { left: 30px; bottom: 30px; max-width: 480px; padding: 24px; border-radius: 14px; }
-.welcome-card h1 { margin: 4px 0 7px; font: 800 28px "Manrope"; }
+.welcome-card h1 { margin: 4px 0 7px; font: 800 28px Inter, "Segoe UI", Arial, sans-serif; }
 .welcome-card > p:not(.step-label) { color: #65736f; }
 .development-notice {
   position: absolute; right: 30px; bottom: 30px; padding: 8px 12px;
@@ -236,11 +247,13 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
   .location-card { left: 15px; top: 88px; width: 225px; }
   .minimap { right: 15px; top: 88px; width: 120px; height: 120px; }
   .movement-hud { left: 15px; top: 205px; }
+  .multiplayer-hud { left: 15px; top: 250px; }
   .graphics-control { right: 15px; top: 220px; width: 120px; }
   .welcome-card { left: 15px; right: 15px; bottom: 15px; }
   .welcome-card { display: none; }
   .development-notice { display: none; }
   .desktop-help { display: none; }
+  .osm-attribution { right: 15px; bottom: 12px; max-width: 180px; }
   .touch-controls {
     position: absolute; display: grid; left: 18px; bottom: 22px;
     grid-template: repeat(3, 48px) / repeat(3, 48px); gap: 5px;

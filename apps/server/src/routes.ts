@@ -5,9 +5,10 @@ import type { Express, NextFunction, Request, Response } from "express";
 import { auth } from "./auth.js";
 import { config } from "./config.js";
 import { pool } from "./database.js";
+import { createMultiplayerToken } from "./multiplayer-token.js";
 
 type AuthenticatedRequest = Request & {
-  player: { userId: string };
+  player: { userId: string; name: string };
 };
 
 async function requirePlayer(req: Request, res: Response, next: NextFunction) {
@@ -18,7 +19,10 @@ async function requirePlayer(req: Request, res: Response, next: NextFunction) {
     res.status(401).json({ error: "Authentication required" });
     return;
   }
-  (req as AuthenticatedRequest).player = { userId: session.user.id };
+  (req as AuthenticatedRequest).player = {
+    userId: session.user.id,
+    name: session.user.username ?? session.user.name,
+  };
   next();
 }
 
@@ -35,6 +39,11 @@ export function configureRoutes(app: Express) {
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", service: "lagos-living-server" });
+  });
+
+  app.post("/api/multiplayer-token", requirePlayer, (req, res) => {
+    const { userId, name } = (req as AuthenticatedRequest).player;
+    res.json({ token: createMultiplayerToken({ userId, name }) });
   });
 
   app.get("/api/character", requirePlayer, async (req, res) => {

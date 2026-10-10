@@ -1,11 +1,8 @@
-import { defineRoom, defineServer, Room } from "colyseus";
+import { defineRoom, defineServer } from "@colyseus/core";
 import express from "express";
 import { config } from "./config.js";
+import { LagosRoom } from "./rooms/LagosRoom.js";
 import { configureRoutes } from "./routes.js";
-
-class LagosRoom extends Room {
-  maxClients = 32;
-}
 
 const gameServer = defineServer({
   rooms: {

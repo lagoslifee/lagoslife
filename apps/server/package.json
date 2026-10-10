@@ -12,20 +12,22 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@colyseus/core": "^0.18.18",
+    "@colyseus/schema": "^5.0.36",
+    "@colyseus/ws-transport": "^0.18.4",
     "@lagos-living/shared": "*",
     "better-auth": "^1.7.7",
-    "colyseus": "^0.18.9",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
-    "nodemailer": "^8.0.3",
+    "nodemailer": "^10.0.16",
     "pg": "^8.20.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^24.12.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/node": "^24.12.0",
     "@types/nodemailer": "^7.0.11",
     "@types/pg": "^8.18.0",
     "tsx": "^4.21.0",

@@ -16,7 +16,9 @@ owns validated wire contracts.
 - [x] Milestone 2 — temporary licensed humanoid, animation blending,
   accelerated movement, collision, third-person camera, graphics presets, and
   tested touch controls. Final modular character replacement remains tracked.
-- [ ] Milestone 3 — licensed OSM starter section and authoritative multiplayer.
+- [x] Milestone 3 — licensed OSM Ikoyi starter section, visible attribution,
+  authenticated authoritative movement, remote avatars, interpolation, and
+  two-account browser verification.
 - [ ] Milestone 4 — durable economy, delivery job, wallet, shop, and inventory.
 - [ ] Milestone 5 — property access, interiors, furniture, and daily life.
 - [ ] Milestone 6 — vehicle ownership, garage, driving, service, and insurance.
@@ -38,6 +40,13 @@ software-rendered high preset measured approximately 6 FPS, so this is not
 evidence of acceptable mobile performance. Mobile support remains provisional;
 real-device profiling and world/renderer optimisation are required before it
 can be advertised as fully supported.
+
+### Milestone 3 verification note
+
+Two isolated browser accounts were verified in one room: both observed two
+online residents and the second received changing server-authoritative
+coordinates when the first moved. The room is capped at 32 by design, but only
+two concurrent clients have been measured; no higher capacity is claimed.
 
 ## Architecture decisions
 

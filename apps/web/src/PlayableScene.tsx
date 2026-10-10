@@ -9,12 +9,13 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Scalar } from "@babylonjs/core/Maths/math.scalar";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import { Scene } from "@babylonjs/core/scene";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { useEffect, useRef, useState } from "react";
+import { MultiplayerConnection, type MultiplayerStatus } from "./multiplayer";
 
 type Direction = "forward" | "backward" | "left" | "right" | "run";
 type InputState = Record<Direction, boolean>;
@@ -57,41 +58,6 @@ function createWorld(scene: Scene, shadows: ShadowGenerator) {
   lagoon.position.set(0, -0.24, 82);
   lagoon.material = water;
 
-  for (const [x, z, width, depth] of [
-    [0, 5, 150, 12],
-    [-36, -20, 10, 90],
-    [43, -15, 9, 80],
-  ] as const) {
-    const road = MeshBuilder.CreateBox(`road-${x}-${z}`, { width, depth, height: 0.16 }, scene);
-    road.position.set(x, 0.02, z);
-    road.material = roadMaterial;
-    road.checkCollisions = true;
-    road.receiveShadows = true;
-  }
-
-  const buildings = [
-    [-64, -39, 17, 17, 14, 0],
-    [-14, -38, 24, 16, 20, 2],
-    [17, -35, 21, 18, 11, 1],
-    [67, -31, 23, 18, 18, 0],
-    [-65, 31, 16, 22, 25, 2],
-    [-10, 31, 23, 17, 13, 0],
-    [20, 30, 18, 16, 22, 2],
-    [68, 31, 22, 20, 15, 1],
-  ] as const;
-  buildings.forEach(([x, z, width, depth, height, style], index) => {
-    const building = MeshBuilder.CreateBox(`development-building-${index}`, {
-      width,
-      depth,
-      height,
-    }, scene);
-    building.position.set(x, height / 2, z);
-    building.material = wallMaterials[style]!;
-    building.checkCollisions = true;
-    building.receiveShadows = true;
-    shadows.addShadowCaster(building);
-  });
-
   // A collision-tested compound entrance demonstrates curb/stair traversal.
   for (let step = 0; step < 4; step += 1) {
     const stair = MeshBuilder.CreateBox(`compound-step-${step}`, {
@@ -130,6 +96,93 @@ function createWorld(scene: Scene, shadows: ShadowGenerator) {
     crown.material = green;
     shadows.addShadowCaster(crown);
   }
+
+  return { roadMaterial, wallMaterials };
+}
+
+type OsmElement =
+  | { type: "node"; id: number; lat: number; lon: number }
+  | { type: "way"; id: number; nodes: number[]; tags?: Record<string, string> };
+
+async function createMappedIkoyi(
+  scene: Scene,
+  shadows: ShadowGenerator,
+  roadMaterial: StandardMaterial,
+  wallMaterials: StandardMaterial[],
+) {
+  const response = await fetch("/assets/world/ikoyi-starter.osm.json");
+  if (!response.ok) throw new Error("Could not load the Ikoyi map extract.");
+  const data = (await response.json()) as { elements: OsmElement[] };
+  const nodes = new Map<number, { x: number; z: number }>();
+  const centerLat = 6.4495;
+  const centerLon = 3.43;
+  const scale = 0.12;
+  for (const element of data.elements) {
+    if (element.type !== "node") continue;
+    nodes.set(element.id, {
+      x: (element.lon - centerLon) * 110_600 * scale,
+      z: -(element.lat - centerLat) * 111_320 * scale,
+    });
+  }
+
+  let roadCount = 0;
+  let buildingCount = 0;
+  for (const element of data.elements) {
+    if (element.type !== "way" || !element.tags) continue;
+    const points = element.nodes.map((id) => nodes.get(id)).filter((point) => point !== undefined);
+    if (points.length < 2) continue;
+    if (element.tags.highway) {
+      const roadWidth =
+        element.tags.highway === "primary" || element.tags.highway === "secondary"
+          ? 1.4
+          : element.tags.highway === "residential"
+            ? 0.85
+            : 0.55;
+      for (let index = 1; index < points.length; index += 1) {
+        const from = points[index - 1]!;
+        const to = points[index]!;
+        const dx = to.x - from.x;
+        const dz = to.z - from.z;
+        const length = Math.hypot(dx, dz);
+        if (length < 0.08) continue;
+        const segment = MeshBuilder.CreateBox(`osm-road-${element.id}-${index}`, {
+          width: roadWidth,
+          depth: length,
+          height: 0.12,
+        }, scene);
+        segment.position.set((from.x + to.x) / 2, 0.025, (from.z + to.z) / 2);
+        segment.rotation.y = Math.atan2(dx, dz);
+        segment.material = roadMaterial;
+        segment.checkCollisions = true;
+        segment.receiveShadows = true;
+        roadCount += 1;
+      }
+    } else if (element.tags.building && points.length >= 4) {
+      const minX = Math.min(...points.map(({ x }) => x));
+      const maxX = Math.max(...points.map(({ x }) => x));
+      const minZ = Math.min(...points.map(({ z }) => z));
+      const maxZ = Math.max(...points.map(({ z }) => z));
+      const width = maxX - minX;
+      const depth = maxZ - minZ;
+      if (width < 0.35 || depth < 0.35 || width > 35 || depth > 35) continue;
+      const levels = Number(element.tags["building:levels"]);
+      const height = Number.isFinite(levels) && levels > 0
+        ? Math.min(18, levels * 1.1)
+        : 1.8 + ((element.id % 7) * 0.55);
+      const building = MeshBuilder.CreateBox(`osm-building-${element.id}`, {
+        width,
+        depth,
+        height,
+      }, scene);
+      building.position.set((minX + maxX) / 2, height / 2, (minZ + maxZ) / 2);
+      building.material = wallMaterials[element.id % wallMaterials.length]!;
+      building.checkCollisions = true;
+      building.receiveShadows = true;
+      shadows.addShadowCaster(building);
+      buildingCount += 1;
+    }
+  }
+  return { roadCount, buildingCount };
 }
 
 async function createPlayer(
@@ -144,7 +197,7 @@ async function createPlayer(
     radius: 0.38,
     tessellation: 8,
   }, scene);
-  collider.position.set(0, 1, -2);
+  collider.position.set(-10, 1, 0);
   collider.isVisible = false;
   collider.checkCollisions = true;
   collider.ellipsoid = new Vector3(0.42, 0.9, 0.42);
@@ -187,7 +240,7 @@ async function createPlayer(
   const direction = new Vector3();
   const displacement = new Vector3();
 
-  return () => {
+  const update = () => {
     const dt = Math.min(scene.getEngine().getDeltaTime() / 1000, 0.05);
     const input = getInput();
     const forwardAmount = Number(input.forward) - Number(input.backward);
@@ -218,7 +271,7 @@ async function createPlayer(
     displacement.y = -9.81 * dt;
     collider.moveWithCollisions(displacement);
     if (collider.position.y < -8 || Math.abs(collider.position.x) > 110 || Math.abs(collider.position.z) > 100) {
-      collider.position.set(0, 1, -2);
+      collider.position.set(-10, 1, 0);
       speed = 0;
     }
 
@@ -244,6 +297,7 @@ async function createPlayer(
       });
     }
   };
+  return { update, root };
 }
 
 export default function PlayableScene() {
@@ -251,7 +305,10 @@ export default function PlayableScene() {
   const inputRef = useRef<InputState>({ ...initialInput });
   const [loading, setLoading] = useState(true);
   const [quality, setQuality] = useState<Quality>("high");
-  const [telemetry, setTelemetry] = useState({ x: 0, z: -2, speed: 0, motion: "Idle", fps: 0 });
+  const [telemetry, setTelemetry] = useState({ x: -10, z: 0, speed: 0, motion: "Idle", fps: 0 });
+  const [multiplayer, setMultiplayer] = useState<MultiplayerStatus>({ state: "connecting" });
+  const [onlinePlayers, setOnlinePlayers] = useState(0);
+  const [remotePosition, setRemotePosition] = useState("");
   const engineRef = useRef<Engine | null>(null);
   const shadowsRef = useRef<ShadowGenerator | null>(null);
 
@@ -293,18 +350,75 @@ export default function PlayableScene() {
     shadows.useBlurExponentialShadowMap = true;
     shadows.blurKernel = 18;
     shadowsRef.current = shadows;
-    createWorld(scene, shadows);
+    const materials = createWorld(scene, shadows);
     let updatePlayer: () => void = () => undefined;
-    void createPlayer(scene, camera, shadows, () => inputRef.current, (value) => {
-      if (!disposed) {
-        canvas.dataset.telemetry = JSON.stringify(value);
-        setTelemetry(value);
-      }
-    })
-      .then((update) => {
+    let connection: MultiplayerConnection | undefined;
+    let inputTimer: ReturnType<typeof setInterval> | undefined;
+    const remotes = new Map<
+      string,
+      { anchor: TransformNode; targetX: number; targetZ: number; targetYaw: number }
+    >();
+    void createMappedIkoyi(scene, shadows, materials.roadMaterial, materials.wallMaterials)
+      .then(() =>
+        createPlayer(scene, camera, shadows, () => inputRef.current, (value) => {
+          if (!disposed) {
+            canvas.dataset.telemetry = JSON.stringify(value);
+            setTelemetry(value);
+          }
+        }),
+      )
+      .then((player) => {
         if (!disposed) {
-          updatePlayer = update;
+          updatePlayer = player.update;
           setLoading(false);
+          connection = new MultiplayerConnection(
+            (snapshot, ownSessionId) => {
+              const active = new Set<string>();
+              const remotePlayers = snapshot.players.filter(
+                (networkPlayer) => networkPlayer.sessionId !== ownSessionId,
+              );
+              for (const networkPlayer of remotePlayers) {
+                active.add(networkPlayer.sessionId);
+                let remote = remotes.get(networkPlayer.sessionId);
+                if (!remote) {
+                  const anchor = new TransformNode(`remote-${networkPlayer.sessionId}`, scene);
+                  anchor.position.set(networkPlayer.x, 0.9, networkPlayer.z);
+                  player.root.clone(`remote-avatar-${networkPlayer.sessionId}`, anchor);
+                  remote = {
+                    anchor,
+                    targetX: networkPlayer.x,
+                    targetZ: networkPlayer.z,
+                    targetYaw: networkPlayer.yaw,
+                  };
+                  remotes.set(networkPlayer.sessionId, remote);
+                }
+                remote.targetX = networkPlayer.x;
+                remote.targetZ = networkPlayer.z;
+                remote.targetYaw = networkPlayer.yaw;
+              }
+              for (const [sessionId, remote] of remotes) {
+                if (active.has(sessionId)) continue;
+                remote.anchor.dispose(false, true);
+                remotes.delete(sessionId);
+              }
+              setOnlinePlayers(snapshot.players.filter(({ connected }) => connected).length);
+              const firstRemote = remotePlayers[0];
+              setRemotePosition(
+                firstRemote ? `${firstRemote.x.toFixed(2)},${firstRemote.z.toFixed(2)}` : "",
+              );
+            },
+            setMultiplayer,
+          );
+          void connection.connect();
+          inputTimer = setInterval(() => {
+            const cameraForward = camera.getForwardRay().direction;
+            connection?.send({
+              forward: Number(inputRef.current.forward) - Number(inputRef.current.backward),
+              right: Number(inputRef.current.right) - Number(inputRef.current.left),
+              run: inputRef.current.run,
+              yaw: Math.atan2(cameraForward.x, cameraForward.z),
+            });
+          }, 50);
         }
       })
       .catch((error) => {
@@ -341,6 +455,16 @@ export default function PlayableScene() {
 
     engine.runRenderLoop(() => {
       updatePlayer();
+      const interpolation = 1 - Math.exp(-12 * Math.min(engine.getDeltaTime() / 1000, 0.05));
+      for (const remote of remotes.values()) {
+        remote.anchor.position.x = Scalar.Lerp(remote.anchor.position.x, remote.targetX, interpolation);
+        remote.anchor.position.z = Scalar.Lerp(remote.anchor.position.z, remote.targetZ, interpolation);
+        remote.anchor.rotation.y +=
+          Math.atan2(
+            Math.sin(remote.targetYaw - remote.anchor.rotation.y),
+            Math.cos(remote.targetYaw - remote.anchor.rotation.y),
+          ) * interpolation;
+      }
       scene.render();
     });
     const resize = () => engine.resize();
@@ -351,6 +475,8 @@ export default function PlayableScene() {
       document.removeEventListener("keydown", down);
       document.removeEventListener("keyup", up);
       window.removeEventListener("blur", clear);
+      if (inputTimer) clearInterval(inputTimer);
+      void connection?.disconnect();
       scene.dispose();
       engine.dispose();
       engineRef.current = null;
@@ -396,6 +522,18 @@ export default function PlayableScene() {
         <small>{telemetry.speed.toFixed(1)} m/s</small>
         <small>{Math.round(telemetry.fps)} fps</small>
       </div>
+      <div
+        className={`multiplayer-hud ${multiplayer.state}`}
+        data-testid="multiplayer-status"
+        data-remote-position={remotePosition}
+      >
+        <i />
+        {multiplayer.state === "connected"
+          ? `${onlinePlayers} online`
+          : multiplayer.state === "connecting"
+            ? "Joining city…"
+            : multiplayer.reason}
+      </div>
       <label className="graphics-control">
         Graphics
         <select value={quality} onChange={(event) => changeQuality(event.target.value as Quality)}>
@@ -405,6 +543,14 @@ export default function PlayableScene() {
         </select>
       </label>
       <div className="desktop-help">WASD move · Shift run · Drag camera · Wheel zoom</div>
+      <a
+        className="osm-attribution"
+        href="https://www.openstreetmap.org/copyright"
+        target="_blank"
+        rel="noreferrer"
+      >
+        Map data © OpenStreetMap contributors · ODbL
+      </a>
       <div className="touch-controls" aria-label="Touch movement controls">
         <button className="touch-up" aria-label="Move forward" {...bindTouch("forward")}>▲</button>
         <button className="touch-left" aria-label="Move left" {...bindTouch("left")}>◀</button>

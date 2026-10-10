@@ -1,4 +1,20 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { Client } from "@colyseus/sdk";
+
+async function registerResident(page: Page, prefix: string) {
+  const unique = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const email = `${prefix}-${unique}@example.test`;
+  const playerName = `${prefix}${unique.slice(-7)}`;
+  await page.goto("/");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByLabel("Player name").fill(playerName);
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill("NetworkPass!42");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByText("Ikoyi Preview")).toBeVisible();
+  await expect(page.getByText("Loading resident…")).toBeHidden();
+  return { email, playerName };
+}
 
 test("registers, renders Lagos, and persists character appearance", async ({ page }) => {
   const unique = Date.now().toString(36);
@@ -40,6 +56,7 @@ test("registers, renders Lagos, and persists character appearance", async ({ pag
   const position = page.getByTestId("player-position");
   await expect(position).toBeVisible();
   await expect(page.getByText("Loading resident…")).toBeHidden();
+  await expect(page.getByTestId("multiplayer-status")).toContainText("online");
   const start = await position.textContent();
   await page.keyboard.down("w");
   await expect(page.locator("canvas")).toHaveAttribute("data-last-input", "forward:down");
@@ -67,6 +84,39 @@ test("registers, renders Lagos, and persists character appearance", async ({ pag
     fullPage: true,
   });
   expect(errors).toEqual([]);
+});
+
+test("two authenticated residents share authoritative movement", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const firstContext = await browser.newContext({ viewport: { width: 1000, height: 700 } });
+  const secondContext = await browser.newContext({ viewport: { width: 1000, height: 700 } });
+  const first = await firstContext.newPage();
+  const second = await secondContext.newPage();
+  try {
+    await Promise.all([
+      registerResident(first, "First"),
+      registerResident(second, "Second"),
+    ]);
+    await first.getByLabel("Graphics").selectOption("low");
+    await second.getByLabel("Graphics").selectOption("low");
+    await expect(first.getByTestId("multiplayer-status")).toContainText("2 online");
+    await expect(second.getByTestId("multiplayer-status")).toContainText("2 online");
+
+    const secondStatus = second.getByTestId("multiplayer-status");
+    await expect(secondStatus).not.toHaveAttribute("data-remote-position", "");
+    const before = await secondStatus.getAttribute("data-remote-position");
+    await first.keyboard.down("w");
+    await first.waitForTimeout(900);
+    await first.keyboard.up("w");
+    await expect.poll(() => secondStatus.getAttribute("data-remote-position")).not.toBe(before);
+  } finally {
+    await firstContext.close();
+    await secondContext.close();
+  }
+});
+
+test("multiplayer rejects unauthenticated room joins", async () => {
+  await expect(new Client("http://localhost:2567").joinOrCreate("lagos", {})).rejects.toThrow();
 });
 
 test("completes password recovery through captured development email", async ({ page, request }) => {

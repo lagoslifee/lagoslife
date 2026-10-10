@@ -6,7 +6,8 @@
 | code-world | Water, roads, palms, and skyline forms | Generated at runtime; project code | Temporary | Deliberately stylised development scene; not presented as final buildings or exact replicas. |
 | cesium-man | CesiumMan.glb | © 2017 Cesium; [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CesiumMan); CC-BY 4.0 with trademark limitations | Temporary | Inspected with glTF Transform: 438 KB, 4,672 triangles, 3,273 uploaded vertices, 1,024² JPEG (~5.59 MB GPU), 1 skin animation/2 seconds, 1.51 m tall, no required extensions. Used for movement development only; the Cesium logo is not a Lagos Living mark. Must be replaced by the final modular resident asset. |
 | ll-mark | Lagos Living LL interface mark and favicon | Original project vector/code | Final | Flat vector identity used by the development interface. |
-| ui-fonts | DM Sans and Manrope via Google Fonts | SIL Open Font License 1.1 | Final | Loaded from fonts.googleapis.com; self-host before production for privacy and availability. |
+| ui-fonts | Inter/Segoe UI/Arial system font stack | Browser/operating system | Final | No external font request or distributed font file. |
+| ikoyi-osm-20261010 | Selective road and building extract, bbox 6.4445,3.4240–6.4545,3.4360 | © OpenStreetMap contributors; ODbL 1.0; fetched from Overpass API 2026-10-10 | Temporary geography dataset | 5,434 elements: 221 highway ways and 631 building ways. The original machine-readable extract is distributed at `public/assets/world/ikoyi-starter.osm.json` under ODbL. Building footprints are rendered as gameplay-scaled bounding forms, not exact replicas. |
 
 No Meshy or equivalent 3D-generation integration was available during the
 2026-10-10 inspection. A connected Meshy account/API (with explicit spending
