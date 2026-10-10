@@ -45,7 +45,7 @@ describe("building plots", () => {
     for (const plot of PLOTS) {
       for (const design of HOUSE_DESIGNS) {
         for (const corner of houseFootprint(plot, design)) expect(inRectangle(corner, plot), `${plot.id} ${design.id}`).toBe(true);
-        const door = houseDoor(plot, design);
+        const door = houseDoor(plot);
         expect(inRectangle(door, plot)).toBe(true);
         expect(walkable(...door)).toBe(true);
       }

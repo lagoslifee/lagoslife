@@ -34,7 +34,7 @@ function requireAtListing(userId: string, listing: { id: string; world_x: number
   }
 }
 
-async function releaseBelongings(client: PoolClient, propertyId: string) {
+export async function releaseBelongings(client: PoolClient, propertyId: string) {
   await client.query(`DELETE FROM furniture_placement WHERE property_id = $1`, [propertyId]);
   const stored = await client.query(
     `DELETE FROM property_storage WHERE property_id = $1 RETURNING user_id, item_id, quantity`,
@@ -102,7 +102,7 @@ export async function listProperties(userId: string) {
             ) AS "hasGuestAccess"
      FROM property_listing listing
      LEFT JOIN property_tenure tenure ON tenure.property_id = listing.id
-     WHERE listing.active = TRUE
+     WHERE listing.active = TRUE AND (listing.listing_type <> 'built' OR tenure.owner_user_id = $1)
      ORDER BY listing.monthly_rent`,
     [userId],
   );
@@ -150,6 +150,7 @@ export async function acquireProperty(
     );
     if (!listing.rowCount) throw new EconomyError("Property is unavailable", 404);
     const row = listing.rows[0];
+    if (row.listing_type === "built") throw new EconomyError("This house belongs to the resident who built it.", 409);
     if (tenure === "owned" && row.listing_type === "rental") {
       throw new EconomyError("This property is offered for rent only.");
     }

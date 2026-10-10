@@ -199,6 +199,14 @@ export function registerFootprints(buildings: Array<{ id: number; points: Vec2[]
   }
 }
 
+export function unregisterFootprint(id: number) {
+  if (!registeredFootprints.delete(id)) return;
+  for (const [key, list] of footprintGrid) {
+    const kept = list.filter((footprint) => footprint.id !== id);
+    if (kept.length !== list.length) footprintGrid.set(key, kept);
+  }
+}
+
 export function registeredFootprintCount() {
   return registeredFootprints.size;
 }

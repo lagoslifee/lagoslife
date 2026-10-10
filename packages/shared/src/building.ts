@@ -1,5 +1,5 @@
 import plots from "./generated/lagos-plots.json" with { type: "json" };
-import type { Vec2 } from "./world.js";
+import { registerFootprints, unregisterFootprint, type Vec2 } from "./world.js";
 
 /**
  * A fictional building plot laid out inside mapped construction land (scripts/world/build-plots.mjs).
@@ -127,11 +127,15 @@ export function builtHomeId(plotId: string) {
   return `built-${plotId}`;
 }
 
-/** World-space corners of a house footprint centred on its plot, slightly back from the gate. */
+/** Every house's front wall stands this far in from the plot's street edge, so the door is fixed per plot. */
+const FRONT_SETBACK = 3;
+
+/** World-space corners of a house footprint on its plot, front wall facing the gate. */
 export function houseFootprint(plot: Plot, design: Pick<HouseDesign, "width" | "depth">): Vec2[] {
-  const back = 1.5;
-  const cx = plot.center[0] + plot.inward[0] * back;
-  const cz = plot.center[1] + plot.inward[1] * back;
+  const front = -plot.depth / 2 + FRONT_SETBACK;
+  const centre = front + design.depth / 2;
+  const cx = plot.center[0] + plot.inward[0] * centre;
+  const cz = plot.center[1] + plot.inward[1] * centre;
   const hw = design.width / 2;
   const hd = design.depth / 2;
   const { along: a, inward: n } = plot;
@@ -143,8 +147,52 @@ export function houseFootprint(plot: Plot, design: Pick<HouseDesign, "width" | "
   ];
 }
 
-/** Front door of the finished house: middle of the street-facing wall, a step outside it. */
-export function houseDoor(plot: Plot, design: Pick<HouseDesign, "depth">): Vec2 {
-  const offset = 1.5 - design.depth / 2 - 0.8;
+/** Where a resident stands to use the front door: a step outside the middle of the front wall. */
+export function houseDoor(plot: Plot): Vec2 {
+  const offset = -plot.depth / 2 + FRONT_SETBACK - 0.9;
   return [plot.center[0] + plot.inward[0] * offset, plot.center[1] + plot.inward[1] * offset];
+}
+
+/** The plot a finished house stands on, from its property id. */
+export function plotForHome(propertyId: string) {
+  return propertyId.startsWith("built-") ? plotById(propertyId.slice("built-".length)) : null;
+}
+
+/** Name and door of a finished house, shaped like a mapped place for door checks. */
+export function builtHomePlace(propertyId: string) {
+  const plot = plotForHome(propertyId);
+  return plot ? { id: propertyId, name: `${plot.name}, ${plot.site}`, door: houseDoor(plot), street: plot.street ?? plot.site } : null;
+}
+
+/** What stands on a plot, as far as collision is concerned. */
+export type PlotStructure = { plotId: string; designId: string; stagesPaid: number };
+
+/** Walls go up with the blockwork stage; from then on the house blocks movement like any mapped building. */
+export const SOLID_FROM_STAGE = 2;
+
+const solidPlots = new Map<string, string>();
+
+/** Footprint ids for plot houses are negative so they never collide with OSM building ids. */
+function plotFootprintId(plotId: string) {
+  return -1 - PLOTS.findIndex((plot) => plot.id === plotId);
+}
+
+/** Registers or removes plot houses in the shared collision grid so client and server agree on what is solid. */
+export function syncPlotFootprints(structures: PlotStructure[]) {
+  const wanted = new Map<string, string>();
+  for (const structure of structures) {
+    if (structure.stagesPaid >= SOLID_FROM_STAGE && plotById(structure.plotId) && houseDesign(structure.designId)) {
+      wanted.set(structure.plotId, structure.designId);
+    }
+  }
+  for (const [plotId, designId] of solidPlots) {
+    if (wanted.get(plotId) === designId) continue;
+    unregisterFootprint(plotFootprintId(plotId));
+    solidPlots.delete(plotId);
+  }
+  for (const [plotId, designId] of wanted) {
+    if (solidPlots.has(plotId)) continue;
+    registerFootprints([{ id: plotFootprintId(plotId), points: houseFootprint(plotById(plotId)!, houseDesign(designId)!) }]);
+    solidPlots.set(plotId, designId);
+  }
 }

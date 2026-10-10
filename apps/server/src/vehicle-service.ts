@@ -5,6 +5,8 @@ import {
   insurancePremium,
   kerbSlot,
   propertyPlace,
+  plotForHome,
+  builtHomePlace,
   repairCost,
   VEHICLE_RULES,
   vehicleModelById,
@@ -94,6 +96,9 @@ type Spot = Pick<Place, "name" | "door" | "kerb" | "kerbYaw">;
 async function propertySpot(client: PoolClient, propertyId: string): Promise<Spot> {
   const place = propertyPlace(propertyId);
   if (place) return place;
+  const plot = plotForHome(propertyId);
+  const built = builtHomePlace(propertyId);
+  if (plot && built) return { name: built.name, door: built.door, kerb: plot.kerb, kerbYaw: Math.atan2(plot.along[0], plot.along[1]) };
   const listing = await client.query(`SELECT name, world_x, world_z FROM property_listing WHERE id = $1`, [propertyId]);
   if (!listing.rowCount) throw new EconomyError("Unknown property", 404);
   const door: [number, number] = [Number(listing.rows[0].world_x), Number(listing.rows[0].world_z)];

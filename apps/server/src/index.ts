@@ -2,6 +2,7 @@ import { defineRoom, defineServer } from "@colyseus/core";
 import { RedisDriver } from "@colyseus/redis-driver";
 import { RedisPresence } from "@colyseus/redis-presence";
 import express from "express";
+import { buildingEvents, refreshPlotFootprints } from "./building-service.js";
 import { bridgeEmitter, joinCluster } from "./cluster.js";
 import { config } from "./config.js";
 import { profileEvents } from "./profile-service.js";
@@ -16,8 +17,11 @@ if (presence) {
   bridgeEmitter("vehicle", vehicleEvents);
   bridgeEmitter("profile", profileEvents);
   bridgeEmitter("safety", safetyEvents);
+  bridgeEmitter("building", buildingEvents);
   await joinCluster(presence);
 }
+
+await refreshPlotFootprints();
 
 const gameServer = defineServer({
   ...(presence && {

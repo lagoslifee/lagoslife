@@ -28,6 +28,7 @@ import {
   nearestSafePoint,
   positionUpdateSchema,
   propertyPlace,
+  builtHomePlace,
   routeDistanceAhead,
   routeLength,
   ROUTES,
@@ -68,6 +69,7 @@ import {
   type RoomVehicle,
 } from "../vehicle-service.js";
 import { loadAppearance, profileEvents } from "../profile-service.js";
+import { buildingEvents } from "../building-service.js";
 import "../world-footprints.js";
 
 export const LagosState = schema({
@@ -202,6 +204,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private onSanctioned = (userId: string, kind: string, reason: string, endsAt: number | null) => this.applySanction(userId, kind, reason, endsAt);
   private onBlocksChanged = (userIds: string[]) => void this.refreshHidden(userIds);
   private onAppearance = (userId: string, appearance: CharacterAppearance) => this.updateAppearance(userId, appearance);
+  private onPlotsChanged = () => this.broadcast("plots", {});
 
   onAuth(_client: LagosClient, options: { token?: unknown }, _context: AuthContext) {
     return verifyMultiplayerToken(options.token);
@@ -213,6 +216,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     safetyEvents.on("sanctioned", this.onSanctioned);
     safetyEvents.on("blocksChanged", this.onBlocksChanged);
     profileEvents.on("appearance", this.onAppearance);
+    buildingEvents.on("changed", this.onPlotsChanged);
     try {
       await parkAbandonedVehicles();
       for (const vehicle of await loadStreetVehicles()) this.vehicles.set(vehicle.id, vehicle);
@@ -401,6 +405,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     safetyEvents.off("sanctioned", this.onSanctioned);
     safetyEvents.off("blocksChanged", this.onBlocksChanged);
     profileEvents.off("appearance", this.onAppearance);
+    buildingEvents.off("changed", this.onPlotsChanged);
     await Promise.all(
       [...this.players.values()].map(async (player) => {
         await this.parkPlayerVehicle(player).catch(() => undefined);
@@ -641,7 +646,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (player.location !== "street" || player.busId) return;
     if (player.vehicleId) return this.notify(client, { tone: "info", text: "Park and step out of your car first." });
     const { propertyId, mode } = parsed.data;
-    const place = propertyId === "starter-home" ? getPlace("starter-home") : propertyPlace(propertyId);
+    const place = propertyId === "starter-home" ? getPlace("starter-home") : (propertyPlace(propertyId) ?? builtHomePlace(propertyId));
     if (!place) return this.notify(client, { tone: "error", text: "That home is not on the map." });
     if (Math.hypot(player.x - place.door[0], player.z - place.door[1]) > 4.5) {
       return this.notify(client, { tone: "error", text: `Walk up to the door of ${place.name}.` });

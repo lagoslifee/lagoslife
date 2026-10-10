@@ -32,6 +32,7 @@ import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
 import { auth } from "./auth.js";
+import { acquirePlot, listPlots, payNextStage, renewPlotLease, startConstruction } from "./building-service.js";
 import { config } from "./config.js";
 import { pool } from "./database.js";
 import { getPlayerPosition, markProgressReset } from "./player-presence.js";
@@ -315,6 +316,24 @@ export function configureRoutes(app: Express) {
 
   app.get("/api/properties", requirePlayer, guarded("Listings unavailable", (_req, userId) =>
     listProperties(userId)));
+
+  app.get("/api/plots", requirePlayer, guarded("Plots unavailable", (_req, userId) => listPlots(userId)));
+
+  app.post("/api/plots/:plotId/acquire", requirePlayer, rateLimited, guarded("Plot could not be acquired", (req, userId) => {
+    const body = z.object({ tenure: z.enum(["leased", "owned"]), idempotencyKey: z.string().min(8).max(80) }).parse(req.body);
+    return acquirePlot(userId, String(req.params.plotId), body.tenure, body.idempotencyKey);
+  }));
+
+  app.post("/api/plots/:plotId/renew", requirePlayer, rateLimited, guarded("Ground rent could not be paid", (req, userId) =>
+    renewPlotLease(userId, String(req.params.plotId), tenancyActionSchema.parse(req.body).idempotencyKey)));
+
+  app.post("/api/plots/:plotId/build", requirePlayer, rateLimited, guarded("Building could not start", (req, userId) => {
+    const body = z.object({ designId: z.string().min(1).max(40), idempotencyKey: z.string().min(8).max(80) }).parse(req.body);
+    return startConstruction(userId, String(req.params.plotId), body.designId, body.idempotencyKey);
+  }));
+
+  app.post("/api/plots/:plotId/next-stage", requirePlayer, rateLimited, guarded("The builders could not be paid", (req, userId) =>
+    payNextStage(userId, String(req.params.plotId), tenancyActionSchema.parse(req.body).idempotencyKey)));
 
   app.post("/api/properties/acquire", requirePlayer, rateLimited, guarded("Property could not be acquired", (req, userId) => {
     const body = acquirePropertySchema.parse(req.body);
