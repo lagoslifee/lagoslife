@@ -12,7 +12,8 @@ export type Action =
   | "phone"
   | "map"
   | "help"
-  | "jump";
+  | "jump"
+  | "lights";
 
 export type Bindings = Record<Action, string>;
 
@@ -29,6 +30,7 @@ export const defaultBindings: Bindings = {
   map: "KeyM",
   help: "KeyH",
   jump: "Space",
+  lights: "KeyL",
 };
 
 export const actionLabels: Record<Action, string> = {
@@ -43,7 +45,8 @@ export const actionLabels: Record<Action, string> = {
   phone: "Phone",
   map: "Full map",
   help: "Controls help",
-  jump: "Hop",
+  jump: "Hop / handbrake",
+  lights: "Vehicle lights",
 };
 
 export function keyLabel(code: string) {
@@ -65,6 +68,8 @@ export class InputState {
   zoom = 0;
   touchMove: [number, number] = [0, 0];
   touchSprint = false;
+  /** On-screen pedals and steering while driving; null when not in use. */
+  touchDrive: { throttle: number; brake: number; steer: number } | null = null;
   private dragging = false;
   private cleanup: Array<() => void> = [];
 

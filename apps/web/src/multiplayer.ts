@@ -29,6 +29,7 @@ export type MultiplayerHandlers = {
   saved: (at: number) => void;
   status: (status: MultiplayerStatus) => void;
   vehicleStatus: (status: { vehicleId: string; condition: number; damage?: number }) => void;
+  horn: (at: { x: number; z: number }) => void;
   chat: (message: ChatMessage) => void;
   suspended: (info: { reason: string; until: string | null }) => void;
   looks: (looks: Look[]) => void;
@@ -79,6 +80,9 @@ export class MultiplayerConnection {
       room.onMessage("saved", (payload: { at: number }) => this.handlers.saved(payload?.at ?? Date.now()));
       room.onMessage("vehicleStatus", (payload: { vehicleId: string; condition: number; damage?: number }) => {
         if (typeof payload?.vehicleId === "string" && Number.isFinite(payload.condition)) this.handlers.vehicleStatus(payload);
+      });
+      room.onMessage("horn", (payload: { x: number; z: number }) => {
+        if (Number.isFinite(payload?.x) && Number.isFinite(payload?.z)) this.handlers.horn(payload);
       });
       room.onMessage("chat", (payload: unknown) => {
         const parsed = chatMessageSchema.safeParse(payload);
@@ -140,7 +144,8 @@ export class MultiplayerConnection {
       | "carrying"
       | "enterVehicle"
       | "exitVehicle"
-      | "vehicleImpact",
+      | "vehicleImpact"
+      | "vehicleSignal",
     payload?: unknown,
   ) {
     this.room?.send(type, payload);

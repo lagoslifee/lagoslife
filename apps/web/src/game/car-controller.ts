@@ -5,7 +5,11 @@ export type CarInput = { throttle: number; steer: number; handbrake: boolean };
 export type CircleResolver = (x: number, z: number, radius: number) => [number, number];
 
 const ROLLING_DRAG = 1.8;
+const AERO_DRAG = 0.004;
 const SLIDE_DRAG = 3;
+/** Sideways acceleration the tyres can hold (m/s²); caps how sharply a fast vehicle can turn. */
+const CAR_GRIP = 7;
+const BIKE_GRIP = 4.5;
 
 /**
  * Arcade bicycle-model car. The body is three circles along its length so it
@@ -19,6 +23,10 @@ export class CarController {
   /** Signed metres per second along the heading; negative is reverse. */
   speed = 0;
   steer = 0;
+  /** Outputs for lamps, body motion and sound. */
+  braking = false;
+  accel = 0;
+  yawRate = 0;
 
   constructor(public model: VehicleModel) {}
 
@@ -28,6 +36,9 @@ export class CarController {
     this.yaw = yaw;
     this.speed = 0;
     this.steer = 0;
+    this.braking = false;
+    this.accel = 0;
+    this.yawRate = 0;
   }
 
   private circles(x: number, z: number, yaw: number) {
@@ -57,34 +68,52 @@ export class CarController {
     const throttle = Math.max(-1, Math.min(1, input.throttle));
     let accel: number;
     let slowing = false;
+    let braking = false;
     if (input.handbrake) {
       accel = -Math.sign(this.speed) * model.braking * 1.1;
       slowing = true;
+      braking = true;
     } else if (throttle > 0) {
       if (this.speed < -0.3) {
         accel = model.braking * throttle;
         slowing = true;
-      } else accel = model.acceleration * throttle;
+        braking = true;
+      } else {
+        const ratio = topSpeed > 0 ? Math.max(0, this.speed) / topSpeed : 1;
+        accel = model.acceleration * throttle * (1 - 0.7 * ratio * ratio);
+      }
     } else if (throttle < 0) {
       if (this.speed > 0.3) {
         accel = model.braking * throttle;
         slowing = true;
+        braking = true;
       } else accel = model.acceleration * 0.7 * throttle;
     } else {
-      accel = -Math.sign(this.speed) * ROLLING_DRAG;
+      accel = -Math.sign(this.speed) * (ROLLING_DRAG + AERO_DRAG * this.speed * this.speed);
       slowing = true;
     }
+    const before = this.speed;
     let next = this.speed + accel * dt;
     if (slowing && Math.sign(next) !== Math.sign(this.speed)) next = 0;
     if (next > topSpeed) next = Math.max(topSpeed, this.speed - model.braking * 0.5 * dt);
     next = Math.max(-model.reverseSpeed, next);
     if (topSpeed <= 0) next = 0;
     this.speed = next;
+    this.braking = braking && Math.abs(before) > 0.05;
+    this.accel = dt > 0 ? (next - before) / dt : 0;
 
+    // Heavier vehicles turn the wheel more slowly; the wheel recentres a little faster than it turns.
     const steerLimit = model.maxSteer / (1 + Math.abs(this.speed) / 10);
     const targetSteer = Math.max(-1, Math.min(1, input.steer)) * steerLimit;
-    this.steer += (targetSteer - this.steer) * Math.min(1, dt * 8);
-    const yaw = this.yaw + ((this.speed * Math.tan(this.steer)) / model.wheelbase) * dt;
+    const rate = model.maxSteer * Math.max(1.8, Math.min(4.5, 4.5 - model.mass / 1000)) * (targetSteer === 0 ? 1.5 : 1);
+    const delta = targetSteer - this.steer;
+    this.steer += Math.sign(delta) * Math.min(Math.abs(delta), rate * dt);
+    let yawRate = (this.speed * Math.tan(this.steer)) / model.wheelbase;
+    const grip = model.body === "bicycle" ? BIKE_GRIP : CAR_GRIP;
+    const maxRate = grip / Math.max(1, Math.abs(this.speed));
+    yawRate = Math.max(-maxRate, Math.min(maxRate, yawRate));
+    this.yawRate = yawRate;
+    const yaw = this.yaw + yawRate * dt;
 
     const dx = Math.sin(yaw) * this.speed * dt;
     const dz = Math.cos(yaw) * this.speed * dt;

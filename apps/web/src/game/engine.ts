@@ -94,7 +94,7 @@ export type HudState = {
   prompt: Prompt | null;
   secondaryPrompt: Prompt | null;
   bus: { id: string; routeNumber: string; routeName: string; seat: number | null; nextStop: string; atStop: string | null; stopRequested: boolean; occupied: number; capacity: number } | null;
-  vehicle: { id: string; name: string; plate: string; kmh: number; topKmh: number; condition: number; limp: boolean; reversing: boolean } | null;
+  vehicle: { id: string; name: string; plate: string; kmh: number; topKmh: number; condition: number; limp: boolean; reversing: boolean; bicycle: boolean; lights: boolean; seats: number } | null;
   speed: number;
   mode: MoveMode;
   motion: MotionState;
@@ -239,6 +239,7 @@ export class GameEngine {
   private vehicles = new Map<string, { view: VehicleView; state: WorldVehicle; tag: HTMLDivElement }>();
   private car: CarController | null = null;
   private driving: { vehicleId: string; condition: number } | null = null;
+  private lights = false;
   private pendingDrive: string | null = null;
   private lastContactAt = 0;
   private lastImpactSentAt = 0;
@@ -292,6 +293,7 @@ export class GameEngine {
         this.driving.condition = condition;
         if (damage && damage >= 4 && condition > 0) this.callbacks.notice({ tone: "info", text: `Bump! −${damage}% condition (${condition}% left).` });
       },
+      horn: ({ x, z }) => this.hornAt(x, z),
       status: (status) => {
         this.status = status;
       },
@@ -505,7 +507,11 @@ export class GameEngine {
     if (this.input.held("back")) throttle -= 1;
     if (this.input.held("right")) steer += 1;
     if (this.input.held("left")) steer -= 1;
-    if (this.input.touchMove[0] || this.input.touchMove[1]) [steer, throttle] = this.input.touchMove;
+    const pedals = this.input.touchDrive;
+    if (pedals) {
+      throttle = pedals.brake > 0 ? -pedals.brake : pedals.throttle;
+      steer = pedals.steer;
+    } else if (this.input.touchMove[0] || this.input.touchMove[1]) [steer, throttle] = this.input.touchMove;
     const pilot = this.runCarPilot(now);
     if (pilot) [throttle, steer] = pilot;
     const handbrake = this.input.held("jump") || this.input.touchSprint;
@@ -525,7 +531,8 @@ export class GameEngine {
     car.yaw = Math.atan2(Math.sin(car.yaw), Math.cos(car.yaw));
     this.controller.teleport(car.x, car.z);
     this.controller.yaw = car.yaw;
-    if (this.input.consume("stop")) this.audio.horn(1);
+    if (this.input.consume("stop")) this.honk();
+    if (this.input.consume("lights")) this.toggleLights();
     if (this.input.consume("interact")) {
       if (Math.abs(car.speed) < 2) this.exitVehicle();
       else this.callbacks.notice({ tone: "info", text: "Slow down to step out." });
@@ -553,6 +560,7 @@ export class GameEngine {
   }
 
   private stopDriving() {
+    this.lights = false;
     this.car = null;
     this.driving = null;
     this.pendingDrive = null;
@@ -581,6 +589,7 @@ export class GameEngine {
         view.setPose(state.x, this.world.groundHeight(state.x, state.z), state.z, state.yaw);
       }
       entry.state = state;
+      if (state.id !== this.driving?.vehicleId) entry.view.setLights(state.lights);
       entry.tag.textContent = `${state.plate} · ${state.mine ? "Your car" : state.ownerName}`;
       if (state.driverSessionId) entry.view.push(now, state.x, state.z, state.yaw);
     }
@@ -593,14 +602,21 @@ export class GameEngine {
     if (this.pendingDrive && this.vehicles.has(this.pendingDrive)) this.startDriving(this.pendingDrive);
   }
 
-  private updateVehicles(now: number) {
+  private updateVehicles(now: number, dt: number) {
+    const { x: cx, z: cz } = this.controller;
     for (const [id, { view, state }] of this.vehicles) {
       let pose: { x: number; z: number; yaw: number } | null;
-      if (id === this.driving?.vehicleId && this.car) pose = this.car;
+      const mine = id === this.driving?.vehicleId && this.car;
+      if (mine) pose = this.car;
       else if (state.driverSessionId) pose = view.sample(now);
       else pose = state;
       if (pose) view.setPose(pose.x, this.interior ? -50 : this.world.groundHeight(pose.x, pose.z), pose.z, pose.yaw);
       view.root.setEnabled(!this.interior);
+      if (this.interior) continue;
+      const car = this.car;
+      if (mine && car) view.animate(dt, { speed: car.speed, steer: car.steer, braking: car.braking, accel: car.accel, yawRate: car.yawRate });
+      else view.track(dt);
+      view.setDetail(Math.hypot(view.x - cx, view.z - cz) < 35);
     }
   }
 
@@ -727,7 +743,14 @@ export class GameEngine {
     const inCar = Boolean(this.car && this.driving);
     const speed = inCar ? Math.abs(this.car!.speed) : this.controller.speed();
     const motion: MotionState = inCar ? "drive" : this.emote && speed < 0.1 ? this.emote : bus ? "sit" : this.controller.motion();
-    if (this.player) {
+    const seatView = inCar ? this.vehicles.get(this.driving!.vehicleId)?.view : undefined;
+    if (this.player && seatView) {
+      const seat = seatView.seat(0);
+      this.player.root.position.set(seat.x, this.world.groundHeight(seat.x, seat.z) + seatView.seatHeight(), seat.z);
+      this.player.root.rotation.y = seat.yaw;
+      this.player.root.setEnabled(true);
+      this.player.update(0, "sit", dt);
+    } else if (this.player) {
       this.player.root.position.set(x, this.groundY + this.controller.hop, z);
       this.player.root.rotation.y = this.controller.yaw;
       this.player.root.setEnabled(!bus && !inCar);
@@ -753,7 +776,7 @@ export class GameEngine {
     }
 
     this.updateRemotes(now, dt);
-    this.updateVehicles(now);
+    this.updateVehicles(now, dt);
     if (!this.interior) {
       this.world.stream(x, z);
       this.world.pump(this.readyFired ? 8 : 200);
@@ -840,17 +863,18 @@ export class GameEngine {
     const target = bus
       ? new Vector3(bus.root.position.x, 2.1, bus.root.position.z)
       : car
-        ? new Vector3(car.x, this.groundY + 1.45, car.z)
+        ? new Vector3(car.x, this.groundY + Math.max(1.2, car.model.height * 0.9), car.z)
         : new Vector3(this.controller.x, this.groundY + 1.55, this.controller.z);
-    if (car && performance.now() - this.lastLookAt > 1200 && car.speed > 1) {
+    if (car && performance.now() - this.lastLookAt > 1200 && Math.abs(car.speed) > 1) {
       let delta = car.yaw - this.cameraYaw;
       delta = Math.atan2(Math.sin(delta), Math.cos(delta));
-      this.cameraYaw += delta * Math.min(1, dt * 2.5);
+      this.cameraYaw += delta * Math.min(1, dt * (car.speed > 0 ? 3 : 1.5));
       this.cameraPitch += (0.26 - this.cameraPitch) * Math.min(1, dt * 1.5);
     }
     const lag = 1 - Math.exp(-dt * (car ? 12 : 20));
     this.cameraTarget.addInPlace(target.subtract(this.cameraTarget).scale(lag));
-    const distance = bus || car ? Math.max(this.cameraDistance, car ? 7.5 : 8.5) : this.interior ? Math.min(this.cameraDistance, 3.6) : this.cameraDistance;
+    const chase = car ? car.model.length * 1.15 + 2.6 + Math.abs(car.speed) * 0.08 : 8.5;
+    const distance = bus || car ? Math.max(this.cameraDistance, chase) : this.interior ? Math.min(this.cameraDistance, 3.6) : this.cameraDistance;
     const cosPitch = Math.cos(this.cameraPitch);
     const dir = new Vector3(Math.sin(this.cameraYaw) * cosPitch, Math.sin(this.cameraPitch), Math.cos(this.cameraYaw) * cosPitch);
     let allowed = distance;
@@ -1070,6 +1094,9 @@ export class GameEngine {
       condition: driving.condition,
       limp: driving.condition < VEHICLE_RULES.limpCondition,
       reversing: car.speed < -0.3,
+      bicycle: car.model.body === "bicycle",
+      lights: this.lights,
+      seats: car.model.seats,
     };
   }
 
@@ -1178,7 +1205,14 @@ export class GameEngine {
       while (dyaw < -Math.PI) dyaw += Math.PI * 2;
       const measured = Math.hypot(b.x - a.x, b.z - a.z) / (span / 1000);
       remote.speed += ((b.busId ? 0 : Math.min(7, measured)) - remote.speed) * Math.min(1, dt * 8);
-      if (remote.avatar) {
+      const seatView = b.vehicleId && !this.interior ? this.vehicles.get(b.vehicleId)?.view : undefined;
+      if (remote.avatar && seatView) {
+        const seat = seatView.seat(0);
+        remote.avatar.root.position.set(seat.x, this.world.groundHeight(seat.x, seat.z) + seatView.seatHeight(), seat.z);
+        remote.avatar.root.rotation.y = seat.yaw;
+        remote.avatar.root.setEnabled(true);
+        remote.avatar.update(0, "sit", dt);
+      } else if (remote.avatar) {
         remote.avatar.root.position.set(x, this.interior ? 0.02 : this.world.groundHeight(x, z), z);
         remote.avatar.root.rotation.y = a.yaw + dyaw * t;
         remote.avatar.root.setEnabled(!b.busId && !b.vehicleId);
@@ -1385,6 +1419,29 @@ export class GameEngine {
   setBindings(bindings: Bindings) {
     this.bindings = bindings;
     if (this.input) this.input.bindings = bindings;
+  }
+
+  setTouchDrive(pedals: { throttle: number; brake: number; steer: number } | null) {
+    if (this.input) this.input.touchDrive = pedals;
+  }
+
+  honk() {
+    if (!this.driving) return;
+    this.audio.horn(this.car?.model.body === "bicycle" ? 0.35 : 1);
+    this.net.send("vehicleSignal", { horn: true });
+  }
+
+  toggleLights() {
+    if (!this.driving) return;
+    this.lights = !this.lights;
+    this.vehicles.get(this.driving.vehicleId)?.view.setLights(this.lights);
+    this.net.send("vehicleSignal", { lights: this.lights });
+  }
+
+  /** Another driver's horn; quieter with distance. */
+  hornAt(x: number, z: number) {
+    const distance = Math.hypot(x - this.controller.x, z - this.controller.z);
+    if (distance < 80) this.audio.horn(Math.max(0.1, 1 - distance / 80));
   }
 
   setTouchMove(x: number, z: number, sprint: boolean) {

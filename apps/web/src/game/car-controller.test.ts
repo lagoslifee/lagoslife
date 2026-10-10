@@ -17,9 +17,11 @@ function run(car: CarController, seconds: number, input: { throttle: number; ste
 }
 
 describe("CarController", () => {
-  it("reaches top speed in a few seconds and never exceeds it", () => {
+  it("reaches top speed in a few seconds, easing in near the top, and never exceeds it", () => {
     const car = new CarController(saloon);
-    run(car, saloon.topSpeed / saloon.acceleration + 0.2, { throttle: 1, steer: 0 });
+    run(car, saloon.topSpeed / saloon.acceleration, { throttle: 1, steer: 0 });
+    expect(car.speed).toBeLessThan(saloon.topSpeed);
+    run(car, saloon.topSpeed / saloon.acceleration + 1, { throttle: 1, steer: 0 });
     expect(car.speed).toBeCloseTo(saloon.topSpeed, 5);
     run(car, 3, { throttle: 1, steer: 0 });
     expect(car.speed).toBeLessThanOrEqual(saloon.topSpeed);
