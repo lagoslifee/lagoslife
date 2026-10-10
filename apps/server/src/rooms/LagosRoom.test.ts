@@ -30,9 +30,25 @@ const vehicles = vi.hoisted(() => ({
 }));
 vi.mock("../vehicle-service.js", () => vehicles);
 
+const safety = vi.hoisted(() => ({
+  activeMute: vi.fn(async () => null),
+  activeSuspension: vi.fn(async () => null),
+  hiddenPlayers: vi.fn(async () => new Set<string>()),
+  recordChat: vi.fn(async (_message: Record<string, unknown>) => undefined),
+}));
+vi.mock("../safety-service.js", async () => {
+  const { EventEmitter } = await import("node:events");
+  return { ...safety, safetyEvents: new EventEmitter() };
+});
+const justice = vi.hoisted(() => ({
+  issueCitation: vi.fn(async (..._args: unknown[]): Promise<{ fine: number } | null> => ({ fine: 2_500 })),
+}));
+vi.mock("../justice-service.js", () => justice);
+const { safetyEvents } = await import("../safety-service.js");
+
 const { BUS_CAPACITY, LagosRoom, REBOARD_COOLDOWN_MS } = await import("./LagosRoom.js");
 
-type FakeClient = { sessionId: string; send: ReturnType<typeof vi.fn>; auth: { userId: string; name: string } };
+type FakeClient = { sessionId: string; send: ReturnType<typeof vi.fn>; leave: ReturnType<typeof vi.fn>; auth: { userId: string; name: string } };
 type RoomInternals = {
   players: Map<string, Record<string, unknown>>;
   buses: Array<{ seats: Array<string | null>; [key: string]: unknown }>;
@@ -43,6 +59,8 @@ type RoomInternals = {
   handleExitVehicle(client: FakeClient): Promise<void>;
   handleVehicleImpact(client: FakeClient, payload: unknown): Promise<void>;
   handlePosition(client: FakeClient, payload: unknown): void;
+  handleChat(client: FakeClient, payload: unknown): Promise<void>;
+  applySanction(userId: string, kind: string, reason: string, endsAt: number | null): void;
   vehicles: Map<string, Record<string, unknown>>;
   onLeave(client: FakeClient): Promise<void>;
   allowReconnection: () => Promise<unknown>;
@@ -71,7 +89,7 @@ function setup() {
   const clients: FakeClient[] = [];
   Object.defineProperty(room, "clients", { value: clients });
   const join = (name: string) => {
-    const client: FakeClient = { sessionId: `s-${name}`, send: vi.fn(), auth: { userId: `u-${name}`, name } };
+    const client: FakeClient = { sessionId: `s-${name}`, send: vi.fn(), leave: vi.fn(), auth: { userId: `u-${name}`, name } };
     clients.push(client);
     room.players.set(client.sessionId, {
       sessionId: client.sessionId,
@@ -104,6 +122,11 @@ function setup() {
       lastVehicleSaveAt: Date.now(),
       lastImpactAt: 0,
       entering: false,
+      chatTimes: [],
+      mutedUntil: null,
+      hidden: new Set<string>(),
+      travel: [],
+      kicked: false,
     });
     return client;
   };
@@ -348,5 +371,157 @@ describe("LagosRoom water and bridges", () => {
     move(1, deck[0], deck[1] + edge + 1);
     expect(player(ada).z).toBeCloseTo(deck[1]);
     expect(ada.send.mock.calls.some(([type]) => type === "correction")).toBe(true);
+  });
+});
+
+describe("LagosRoom chat", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+  });
+  const chats = (client: FakeClient) =>
+    client.send.mock.calls.filter(([type]) => type === "chat").map(([, message]) => message as { text: string; userName: string; id: string });
+
+  function crowd() {
+    const context = setup();
+    const ada = context.join("ada");
+    const near = context.join("near");
+    const far = context.join("far");
+    const inside = context.join("inside");
+    const origin = context.player(ada);
+    Object.assign(context.player(near), { x: (origin.x as number) + 25, z: origin.z });
+    Object.assign(context.player(far), { x: (origin.x as number) + 120, z: origin.z });
+    Object.assign(context.player(inside), { location: "home:glover-court-2b" });
+    return { ...context, ada, near, far, inside };
+  }
+
+  it("reaches the sender and nearby residents in the same place only, and stores the line first", async () => {
+    const { room, ada, near, far, inside } = crowd();
+    await room.handleChat(ada, { text: "  Ẹ kú àárọ̀ everyone  " });
+    expect(chats(ada).map(({ text }) => text)).toEqual(["Ẹ kú àárọ̀ everyone"]);
+    expect(chats(near)).toHaveLength(1);
+    expect(chats(far)).toHaveLength(0);
+    expect(chats(inside)).toHaveLength(0);
+    expect(safety.recordChat).toHaveBeenCalledWith(expect.objectContaining({ id: chats(ada)[0]!.id, userId: "u-ada", recipients: 1, filtered: false }));
+  });
+
+  it("masks blocked words and contact details but keeps the original for moderators", async () => {
+    const { room, ada, near } = crowd();
+    await room.handleChat(ada, { text: "shit, call me on 0803 555 1234" });
+    const [shown] = chats(near);
+    expect(shown!.text).not.toMatch(/shit|0803/);
+    expect(safety.recordChat).toHaveBeenCalledWith(expect.objectContaining({ body: "shit, call me on 0803 555 1234", filtered: true }));
+  });
+
+  it("rate-limits bursts and rapid repeats", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { room, ada, notices } = crowd();
+    await room.handleChat(ada, { text: "one" });
+    await room.handleChat(ada, { text: "two, too soon" });
+    expect(chats(ada)).toHaveLength(1);
+    for (let index = 0; index < 6; index += 1) {
+      vi.advanceTimersByTime(1_000);
+      await room.handleChat(ada, { text: `line ${index}` });
+    }
+    expect(chats(ada)).toHaveLength(5);
+    expect(notices(ada).filter((text) => text.startsWith("Slow down"))).toHaveLength(3);
+    vi.advanceTimersByTime(10_000);
+    await room.handleChat(ada, { text: "after a pause" });
+    expect(chats(ada)).toHaveLength(6);
+  });
+
+  it("never carries chat between residents who blocked each other, in either direction", async () => {
+    const { room, ada, near, player } = crowd();
+    player(near).hidden = new Set(["u-ada"]);
+    await room.handleChat(ada, { text: "can you hear me" });
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    await room.handleChat(near, { text: "and me?" });
+    expect(chats(near).map(({ userName }) => userName)).toEqual(["near"]);
+    expect(chats(ada).map(({ userName }) => userName)).toEqual(["ada"]);
+  });
+
+  it("rejects empty or oversized messages and does not send chat it could not store", async () => {
+    const { room, ada, near, notices } = crowd();
+    await room.handleChat(ada, { text: "   " });
+    await room.handleChat(ada, { text: "x".repeat(201) });
+    expect(safety.recordChat).not.toHaveBeenCalled();
+    safety.recordChat.mockRejectedValueOnce(new Error("db down"));
+    await room.handleChat(ada, { text: "hello" });
+    expect(chats(near)).toHaveLength(0);
+    expect(notices(ada).at(-1)).toMatch(/not sent/);
+  });
+
+  it("applies mutes live, and a suspension removes the player without holding their slot", async () => {
+    const { room, ada, near, notices, player } = crowd();
+    room.applySanction("u-ada", "mute", "Spamming", Date.now() + 3_600_000);
+    await room.handleChat(ada, { text: "let me talk" });
+    expect(chats(near)).toHaveLength(0);
+    expect(notices(ada).at(-1)).toMatch(/muted/);
+    room.applySanction("u-ada", "lift_mute", "Expired early", null);
+    await room.handleChat(ada, { text: "thanks" });
+    expect(chats(near)).toHaveLength(1);
+
+    room.applySanction("u-near", "suspend", "Repeated harassment", null);
+    expect(near.send).toHaveBeenCalledWith("suspended", { reason: "Repeated harassment", until: null });
+    expect(near.leave).toHaveBeenCalledWith(4003);
+    const reconnect = vi.fn(async () => undefined);
+    room.allowReconnection = reconnect;
+    await room.onLeave(near);
+    expect(reconnect).not.toHaveBeenCalled();
+    expect(room.players.has(near.sessionId)).toBe(false);
+    expect(player(ada)).toBeTruthy();
+  });
+});
+
+describe("LagosRoom careless-driving citations", () => {
+  const start = stop.s + 60;
+  const parked = sampleRoute(start);
+  beforeEach(() => vi.clearAllMocks());
+
+  async function driving() {
+    const context = setup();
+    context.room.vehicles.set("car-1", {
+      id: "car-1", ownerUserId: "u-ada", ownerName: "ada", modelId: "tokunbo-saloon", colour: "#d9d9d6",
+      plate: "EKO 123 AB", condition: 100, x: parked.x, z: parked.z, yaw: parked.yaw, driverSessionId: null,
+    });
+    const ada = context.join("ada");
+    Object.assign(context.player(ada), { x: parked.x + 1.5, z: parked.z });
+    await context.room.handleEnterVehicle(ada, { vehicleId: "car-1" });
+    const step = (sequence: number, metres: number) => {
+      context.player(ada).lastAcceptedAt = Date.now() - 500;
+      const pose = sampleRoute(start + metres);
+      context.room.handlePosition(ada, { sequence, x: pose.x, z: pose.z, yaw: pose.yaw, motion: "drive" });
+    };
+    return { ...context, ada, step };
+  }
+
+  it("cites a crash when the server measured the car at speed", async () => {
+    const { room, ada, step, notices } = await driving();
+    step(1, 9);
+    step(2, 18);
+    await room.handleVehicleImpact(ada, { speed: 17 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(justice.issueCitation).toHaveBeenCalledTimes(1);
+    const [userId, offence, evidence] = justice.issueCitation.mock.calls[0]! as [string, string, { speed: number; district: string }];
+    expect([userId, offence]).toEqual(["u-ada", "careless_driving"]);
+    expect(evidence.speed).toBeCloseTo(18, 0);
+    expect(evidence.district).toBe("Lekki Phase 1");
+    expect(notices(ada).at(-1)).toMatch(/careless driving at 6\d km\/h/);
+  });
+
+  it("does not cite when the client claims a hard crash the server did not see", async () => {
+    const { room, ada, step } = await driving();
+    step(1, 2);
+    step(2, 4);
+    await room.handleVehicleImpact(ada, { speed: 25 });
+    expect(justice.issueCitation).not.toHaveBeenCalled();
+  });
+
+  it("does not cite a gentle bump after fast driving", async () => {
+    const { room, ada, step } = await driving();
+    step(1, 9);
+    step(2, 18);
+    await room.handleVehicleImpact(ada, { speed: 6 });
+    expect(justice.issueCitation).not.toHaveBeenCalled();
   });
 });

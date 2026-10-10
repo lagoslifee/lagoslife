@@ -16,6 +16,16 @@ import {
   purchaseVehicleSchema,
   placeById,
   vehicleActionSchema,
+  appealCitationSchema,
+  blockSchema,
+  decideAppealSchema,
+  districtAt,
+  JUSTICE,
+  moderationActionSchema,
+  payCitationSchema,
+  reportSchema,
+  resolveReportSchema,
+  roleChangeSchema,
 } from "@lagos-living/shared";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { createHmac } from "node:crypto";
@@ -24,7 +34,33 @@ import type { Express, NextFunction, Request, Response } from "express";
 import { auth } from "./auth.js";
 import { config } from "./config.js";
 import { pool } from "./database.js";
-import { markProgressReset } from "./player-presence.js";
+import { getPlayerPosition, markProgressReset } from "./player-presence.js";
+import {
+  appealCitation,
+  citationHistory,
+  decideAppeal,
+  issueCitation,
+  listAppeals,
+  listCitations,
+  payCitation,
+} from "./justice-service.js";
+import {
+  acknowledgeWarnings,
+  activeSuspension,
+  applyModerationAction,
+  blockPlayer,
+  findResident,
+  getSafetyStatus,
+  listAudit,
+  listReports,
+  reportPlayer,
+  requireStaff,
+  residentRecord,
+  resolveReport,
+  setStaffRole,
+  staffOverview,
+  unblockPlayer,
+} from "./safety-service.js";
 import { createMultiplayerToken } from "./multiplayer-token.js";
 import { getCommunityStatus, visitQuietPlace, volunteerShift } from "./community-service.js";
 import { z } from "zod";
@@ -107,7 +143,7 @@ type AuthenticatedRequest = Request & {
   player: { userId: string; name: string };
 };
 
-async function requirePlayer(req: Request, res: Response, next: NextFunction) {
+async function requireSession(req: Request, res: Response, next: NextFunction) {
   const session = await auth.api.getSession({
     headers: fromNodeHeaders(req.headers),
   });
@@ -120,6 +156,39 @@ async function requirePlayer(req: Request, res: Response, next: NextFunction) {
     name: session.user.username ?? session.user.name,
   };
   next();
+}
+
+/** A signed-in player whose account is not suspended. */
+function requirePlayer(req: Request, res: Response, next: NextFunction) {
+  void requireSession(req, res, async () => {
+    const suspension = await activeSuspension((req as AuthenticatedRequest).player.userId).catch(() => null);
+    if (suspension) {
+      res.status(403).json({
+        error: "This account is suspended.",
+        suspension: { reason: suspension.reason, until: suspension.endsAt?.toISOString() ?? null },
+      });
+      return;
+    }
+    next();
+  });
+}
+
+function staffOnly(role: "moderator" | "admin") {
+  return (req: Request, res: Response, next: NextFunction) => {
+    requireStaff((req as AuthenticatedRequest).player.userId, role)
+      .then(() => next())
+      .catch(() => res.status(404).json({ error: "Not found" }));
+  };
+}
+
+const actorOf = (req: Request) => {
+  const { userId, name } = (req as AuthenticatedRequest).player;
+  return { userId, name };
+};
+
+function devOnly(req: Request) {
+  const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(req.hostname);
+  if (config.NODE_ENV !== "development" || !isLocalHost) throw new EconomyError("Not found", 404);
 }
 
 export function configureRoutes(app: Express) {
@@ -312,6 +381,90 @@ export function configureRoutes(app: Express) {
 
   app.post("/api/community/volunteer", requirePlayer, rateLimited, guarded("Volunteer shift could not be recorded", (req, userId) =>
     volunteerShift(userId, communityVisitSchema.parse(req.body).placeId)));
+
+  app.get("/api/account/standing", requireSession, guarded("Standing unavailable", async (_req, userId) => {
+    const suspension = await activeSuspension(userId);
+    return { suspension: suspension ? { reason: suspension.reason, until: suspension.endsAt?.toISOString() ?? null } : null };
+  }));
+
+  app.get("/api/safety", requirePlayer, guarded("Safety settings unavailable", (_req, userId) =>
+    getSafetyStatus(userId)));
+
+  app.post("/api/safety/block", requirePlayer, rateLimited, guarded("Could not block", (req, userId) =>
+    blockPlayer(userId, blockSchema.parse(req.body).userName)));
+
+  app.post("/api/safety/unblock", requirePlayer, rateLimited, guarded("Could not unblock", (req, userId) =>
+    unblockPlayer(userId, blockSchema.parse(req.body).userName)));
+
+  app.post("/api/safety/report", requirePlayer, rateLimited, guarded("Report could not be sent", (req, userId) =>
+    reportPlayer(userId, reportSchema.parse(req.body))));
+
+  app.post("/api/safety/warnings/acknowledge", requirePlayer, guarded("Could not acknowledge", (_req, userId) =>
+    acknowledgeWarnings(userId)));
+
+  app.get("/api/justice", requirePlayer, guarded("Citations unavailable", (_req, userId) =>
+    listCitations(userId)));
+
+  app.post("/api/justice/:citationId/pay", requirePlayer, rateLimited, guarded("Fine could not be paid", (req, userId) =>
+    payCitation(userId, String(req.params.citationId), payCitationSchema.parse(req.body).idempotencyKey)));
+
+  app.post("/api/justice/:citationId/appeal", requirePlayer, rateLimited, guarded("Appeal could not be filed", (req, userId) =>
+    appealCitation(userId, String(req.params.citationId), appealCitationSchema.parse(req.body).statement)));
+
+  const moderator = [requirePlayer, staffOnly("moderator")];
+
+  app.get("/api/mod/overview", ...moderator, guarded("Overview unavailable", () => staffOverview()));
+
+  app.get("/api/mod/reports", ...moderator, guarded("Reports unavailable", (req) =>
+    listReports(z.enum(["open", "actioned", "dismissed"]).default("open").parse(req.query.status))));
+
+  app.post("/api/mod/reports/:reportId/resolve", ...moderator, rateLimited, guarded("Report could not be resolved", (req) => {
+    const body = resolveReportSchema.parse(req.body);
+    return resolveReport(actorOf(req), String(req.params.reportId), body.resolution, body.note);
+  }));
+
+  app.get("/api/mod/residents", ...moderator, guarded("Resident not found", async (req) =>
+    residentRecord((await findResident(z.string().min(1).max(40).parse(req.query.name))).id)));
+
+  app.get("/api/mod/residents/:userId", ...moderator, guarded("Resident not found", (req) =>
+    residentRecord(String(req.params.userId))));
+
+  app.post("/api/mod/actions", ...moderator, rateLimited, guarded("Action could not be applied", (req) =>
+    applyModerationAction(actorOf(req), moderationActionSchema.parse(req.body))));
+
+  app.get("/api/mod/appeals", ...moderator, guarded("Appeals unavailable", () => listAppeals()));
+
+  app.post("/api/mod/appeals/:citationId/decide", ...moderator, rateLimited, guarded("Appeal could not be decided", (req) => {
+    const body = decideAppealSchema.parse(req.body);
+    return decideAppeal(actorOf(req), String(req.params.citationId), body.outcome, body.note);
+  }));
+
+  app.get("/api/mod/citations/:citationId/history", ...moderator, guarded("History unavailable", (req) =>
+    citationHistory(String(req.params.citationId))));
+
+  app.get("/api/mod/audit", ...moderator, guarded("Audit log unavailable", (req) =>
+    listAudit(z.coerce.number().int().default(100).parse(req.query.limit))));
+
+  app.post("/api/admin/roles", requirePlayer, staffOnly("admin"), rateLimited, guarded("Role could not be changed", (req) => {
+    const body = roleChangeSchema.parse(req.body);
+    return setStaffRole(actorOf(req), body.userName, body.role, body.reason);
+  }));
+
+  /** Local test harness: makes the signed-in account staff, recorded in the audit log as a console action. */
+  app.post("/api/dev/staff", requireSession, guarded("Role change failed", async (req) => {
+    devOnly(req);
+    const { role } = z.object({ role: z.enum(["moderator", "admin"]).nullable() }).parse(req.body);
+    return setStaffRole({ userId: "console", name: "dev console" }, actorOf(req).name, role, "local development");
+  }));
+
+  /** Local test harness: issues a careless-driving citation where the player stands, as the room does on a crash. */
+  app.post("/api/dev/citation", requirePlayer, guarded("Citation failed", async (req, userId) => {
+    devOnly(req);
+    const position = getPlayerPosition(userId);
+    const x = position?.x ?? 0;
+    const z = position?.z ?? 0;
+    return issueCitation(userId, "careless_driving", { x, z, speed: JUSTICE.carelessDrivingSpeed + 2, district: districtAt(x, z)?.name ?? null });
+  }));
 
   app.get("/api/settings", requirePlayer, guarded("Settings unavailable", async (_req, userId) => {
     await ensureProfile(pool, userId);

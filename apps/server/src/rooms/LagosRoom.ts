@@ -1,6 +1,12 @@
 import {
   boardRequestSchema,
+  CHAT,
+  chatSendSchema,
+  districtAt,
   effectiveTopSpeed,
+  filterChat,
+  JUSTICE,
+  type ChatMessage,
   emoteRequestSchema,
   enterPropertySchema,
   enterVehicleSchema,
@@ -43,6 +49,8 @@ import { verifyMultiplayerToken, type MultiplayerIdentity } from "../multiplayer
 import { clearProgressReset, removePlayerPosition, setPlayerPosition, wasProgressReset } from "../player-presence.js";
 import { isPropertyAvailable, requirePropertyAccess } from "../property-service.js";
 import { vehicleEvents } from "../vehicle-events.js";
+import { issueCitation } from "../justice-service.js";
+import { activeMute, activeSuspension, hiddenPlayers, recordChat, safetyEvents } from "../safety-service.js";
 import {
   claimVehicle,
   damageVehicle,
@@ -104,7 +112,16 @@ type Player = {
   lastVehicleSaveAt: number;
   lastImpactAt: number;
   entering: boolean;
+  chatTimes: number[];
+  mutedUntil: number | null;
+  /** Players blocked by, or blocking, this player. Chat never flows between them. */
+  hidden: Set<string>;
+  /** Metres covered by recently accepted position updates, for the server's own speed estimate. */
+  travel: Array<{ at: number; metres: number; seconds: number }>;
+  kicked: boolean;
 };
+
+const SPEED_WINDOW_MS = 1_500;
 
 const VEHICLE_SAVE_MS = 10_000;
 const IMPACT_COOLDOWN_MS = 800;
@@ -144,6 +161,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private vehicles = new Map<string, RoomVehicle>();
   private onVehicleChanged = (vehicleId: string) => void this.refreshVehicle(vehicleId);
   private onVehicleOwnerReset = (userId: string) => this.dropOwnerVehicles(userId);
+  private onSanctioned = (userId: string, kind: string, reason: string, endsAt: number | null) => this.applySanction(userId, kind, reason, endsAt);
+  private onBlocksChanged = (userIds: string[]) => void this.refreshHidden(userIds);
 
   onAuth(_client: LagosClient, options: { token?: unknown }, _context: AuthContext) {
     return verifyMultiplayerToken(options.token);
@@ -152,6 +171,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   async onCreate() {
     vehicleEvents.on("changed", this.onVehicleChanged);
     vehicleEvents.on("ownerReset", this.onVehicleOwnerReset);
+    safetyEvents.on("sanctioned", this.onSanctioned);
+    safetyEvents.on("blocksChanged", this.onBlocksChanged);
     try {
       await parkAbandonedVehicles();
       for (const vehicle of await loadStreetVehicles()) this.vehicles.set(vehicle.id, vehicle);
@@ -186,6 +207,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("enterVehicle", (client, payload) => void this.handleEnterVehicle(client, payload));
     this.onMessage("exitVehicle", (client) => void this.handleExitVehicle(client));
     this.onMessage("vehicleImpact", (client, payload) => void this.handleVehicleImpact(client, payload));
+    this.onMessage("chat", (client, payload) => void this.handleChat(client, payload));
     this.onMessage("emote", (client, payload) => {
       const player = this.players.get(client.sessionId);
       const parsed = emoteRequestSchema.safeParse(payload);
@@ -201,6 +223,12 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   }
 
   async onJoin(client: LagosClient) {
+    const [suspension, mute, hidden] = await Promise.all([
+      activeSuspension(client.auth.userId).catch(() => null),
+      activeMute(client.auth.userId).catch(() => null),
+      hiddenPlayers(client.auth.userId).catch(() => new Set<string>()),
+    ]);
+    if (suspension) throw new Error("This account is suspended.");
     clearProgressReset(client.auth.userId);
     const home = getPlace("starter-home");
     const saved = await loadPlayerPlace(client.auth.userId).catch(() => null);
@@ -240,6 +268,11 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       lastVehicleSaveAt: now,
       lastImpactAt: 0,
       entering: false,
+      chatTimes: [],
+      mutedUntil: mute ? (mute.endsAt?.getTime() ?? Infinity) : null,
+      hidden,
+      travel: [],
+      kicked: false,
     };
     for (const [sessionId, existing] of this.players) {
       if (existing.userId === player.userId) {
@@ -258,6 +291,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (!player) return;
     player.connected = false;
     try {
+      if (player.kicked) throw new Error("removed by a moderator");
       await this.allowReconnection(client, 25);
       player.connected = true;
       player.lastAcceptedAt = Date.now();
@@ -280,6 +314,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   async onDispose() {
     vehicleEvents.off("changed", this.onVehicleChanged);
     vehicleEvents.off("ownerReset", this.onVehicleOwnerReset);
+    safetyEvents.off("sanctioned", this.onSanctioned);
+    safetyEvents.off("blocksChanged", this.onBlocksChanged);
     await Promise.all(
       [...this.players.values()].map(async (player) => {
         await this.parkPlayerVehicle(player).catch(() => undefined);
@@ -362,6 +398,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     player.yaw = parsed.data.yaw;
     player.motion = vehicle ? "drive" : parsed.data.motion === "drive" ? "idle" : parsed.data.motion;
     player.lastAcceptedAt = now;
+    player.travel.push({ at: now, metres: distance, seconds: elapsed });
+    while (player.travel.length && now - player.travel[0]!.at > SPEED_WINDOW_MS) player.travel.shift();
     if (vehicle) {
       vehicle.x = player.x;
       vehicle.z = player.z;
@@ -720,6 +758,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const model = getVehicleModel(vehicle.modelId);
     const speed = Math.min(parsed.data.speed, model.topSpeed * 1.3);
     const damage = impactDamage(speed);
+    this.considerCitation(client, player, speed);
     if (damage <= 0) return;
     const result = await damageVehicle(player.userId, vehicle.id, damage, speed).catch(() => null);
     if (!result) return;
@@ -734,6 +773,103 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       });
     } else if (result.condition < VEHICLE_RULES.limpCondition && result.condition + damage >= VEHICLE_RULES.limpCondition) {
       this.notify(client, { tone: "error", text: "Warning light: limp mode. Top speed is reduced until it is repaired." });
+    }
+  }
+
+  /** Speed measured by the server from accepted updates over the last moment, so a client cannot talk it down. */
+  private measuredSpeed(player: Player) {
+    const now = Date.now();
+    const recent = player.travel.filter(({ at }) => now - at <= SPEED_WINDOW_MS);
+    const seconds = recent.reduce((sum, sample) => sum + sample.seconds, 0);
+    return seconds > 0 ? recent.reduce((sum, { metres }) => sum + metres, 0) / seconds : 0;
+  }
+
+  /** A hard crash at speed earns one careless-driving citation; both the reported impact and the measured speed must agree. */
+  private considerCitation(client: Client, player: Player, reportedSpeed: number) {
+    const measured = this.measuredSpeed(player);
+    if (reportedSpeed < JUSTICE.carelessDrivingSpeed || measured < JUSTICE.carelessDrivingSpeed) return;
+    const evidence = { x: player.x, z: player.z, speed: Math.round(measured * 10) / 10, district: districtAt(player.x, player.z)?.name ?? null };
+    void issueCitation(player.userId, "careless_driving", evidence)
+      .then((citation) => {
+        if (!citation) return;
+        this.notify(client, {
+          tone: "error",
+          text: `${JUSTICE.authority}: careless driving at ${Math.round(evidence.speed * 3.6)} km/h. Fine ₦${citation.fine.toLocaleString("en-NG")} — pay or appeal within ${JUSTICE.dueHours} hours in Phone → Justice.`,
+        });
+      })
+      .catch(() => undefined);
+  }
+
+  private chatRecipients(sender: Player) {
+    const place = sender.busId ? "street" : sender.location;
+    return [...this.players.values()].filter((other) => {
+      if (!other.connected) return false;
+      if (other === sender) return true;
+      if ((other.busId ? "street" : other.location) !== place) return false;
+      if (sender.hidden.has(other.userId) || other.hidden.has(sender.userId)) return false;
+      return Math.hypot(other.x - sender.x, other.z - sender.z) <= CHAT.radius;
+    });
+  }
+
+  private async handleChat(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = chatSendSchema.safeParse(payload);
+    if (!player || !parsed.success) return;
+    const now = Date.now();
+    if (player.mutedUntil !== null && player.mutedUntil > now) {
+      const until = Number.isFinite(player.mutedUntil) ? ` until ${new Date(player.mutedUntil).toUTCString()}` : "";
+      return this.notify(client, { tone: "error", text: `A moderator has muted your chat${until}.` });
+    }
+    player.chatTimes = player.chatTimes.filter((at) => now - at < CHAT.burstWindowMs);
+    const last = player.chatTimes[player.chatTimes.length - 1];
+    if (player.chatTimes.length >= CHAT.burst || (last !== undefined && now - last < CHAT.minIntervalMs)) {
+      return this.notify(client, { tone: "error", text: "Slow down a little — wait a few seconds before chatting again." });
+    }
+    player.chatTimes.push(now);
+    const { text, filtered } = filterChat(parsed.data.text);
+    const recipients = this.chatRecipients(player);
+    const message: ChatMessage = { id: randomUUID(), sessionId: player.sessionId, userName: player.name, text, at: now, filtered };
+    try {
+      await recordChat({
+        id: message.id,
+        userId: player.userId,
+        userName: player.name,
+        location: player.busId ? `bus:${player.busId}` : player.location,
+        x: player.x,
+        z: player.z,
+        body: parsed.data.text,
+        shown: text,
+        filtered,
+        recipients: recipients.length - 1,
+      });
+    } catch {
+      return this.notify(client, { tone: "error", text: "Chat is unavailable right now. Your message was not sent." });
+    }
+    for (const recipient of recipients) this.clientFor(recipient)?.send("chat", message);
+  }
+
+  private applySanction(userId: string, kind: string, reason: string, endsAt: number | null) {
+    for (const player of this.players.values()) {
+      if (player.userId !== userId) continue;
+      if (kind === "mute") player.mutedUntil = endsAt ?? Infinity;
+      if (kind === "lift_mute") player.mutedUntil = null;
+      const client = this.clientFor(player);
+      if (!client) continue;
+      if (kind === "warn") this.notify(client, { tone: "error", text: `Moderator warning: ${reason}` });
+      if (kind === "mute") this.notify(client, { tone: "error", text: `A moderator has muted your chat: ${reason}` });
+      if (kind === "lift_mute") this.notify(client, { tone: "info", text: "Your chat mute has been lifted." });
+      if (kind === "suspend") {
+        player.kicked = true;
+        client.send("suspended", { reason, until: endsAt ? new Date(endsAt).toISOString() : null });
+        client.leave(4003);
+      }
+    }
+  }
+
+  private async refreshHidden(userIds: string[]) {
+    for (const player of this.players.values()) {
+      if (!userIds.includes(player.userId)) continue;
+      player.hidden = await hiddenPlayers(player.userId).catch(() => player.hidden);
     }
   }
 

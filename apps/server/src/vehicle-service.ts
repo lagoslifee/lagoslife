@@ -16,6 +16,7 @@ import type { PoolClient } from "pg";
 import { pool } from "./database.js";
 import { debitWallet, EconomyError, ensureWallet, markProgress, withTransaction } from "./economy-service.js";
 import { getPlayerPosition } from "./player-presence.js";
+import { hasOverdueFines } from "./justice-service.js";
 import { vehicleEvents } from "./vehicle-events.js";
 import "./world-footprints.js";
 
@@ -200,6 +201,9 @@ export async function purchaseVehicle(userId: string, modelId: string, colour: s
         );
         if (existing.rowCount) {
           return { balance: wallet.balance, replayed: true, vehicle: toOwned(existing.rows[0]!) };
+        }
+        if (await hasOverdueFines(client, userId)) {
+          throw new EconomyError("Settle your overdue traffic fines (Phone → Justice) before buying another vehicle.", 409);
         }
         const owned = await client.query(
           `SELECT COUNT(*)::INTEGER AS count FROM player_vehicle WHERE owner_user_id = $1`,
