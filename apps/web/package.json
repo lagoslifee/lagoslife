@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@babylonjs/core": "^9.30.0",
+    "@babylonjs/loaders": "^9.30.0",
     "@lagos-living/shared": "*",
     "better-auth": "^1.7.7",
     "react": "^19.3.0",

@@ -4,6 +4,7 @@
 |---|---|---|---|---|
 | code-sky | Sky gradient and daylight | Generated at runtime; project code | Temporary | Replace/augment with an optimised, licensed Lagos daylight environment map. |
 | code-world | Water, roads, palms, and skyline forms | Generated at runtime; project code | Temporary | Deliberately stylised development scene; not presented as final buildings or exact replicas. |
+| cesium-man | CesiumMan.glb | © 2017 Cesium; [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CesiumMan); CC-BY 4.0 with trademark limitations | Temporary | Inspected with glTF Transform: 438 KB, 4,672 triangles, 3,273 uploaded vertices, 1,024² JPEG (~5.59 MB GPU), 1 skin animation/2 seconds, 1.51 m tall, no required extensions. Used for movement development only; the Cesium logo is not a Lagos Living mark. Must be replaced by the final modular resident asset. |
 | ll-mark | Lagos Living LL interface mark and favicon | Original project vector/code | Final | Flat vector identity used by the development interface. |
 | ui-fonts | DM Sans and Manrope via Google Fonts | SIL Open Font License 1.1 | Final | Loaded from fonts.googleapis.com; self-host before production for privacy and availability. |
 

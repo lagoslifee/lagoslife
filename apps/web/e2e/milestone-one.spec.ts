@@ -8,6 +8,7 @@ test("registers, renders Lagos, and persists character appearance", async ({ pag
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
+  page.on("pageerror", (error) => errors.push(error.message));
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /live lagos/i })).toBeVisible();
@@ -36,8 +37,33 @@ test("registers, renders Lagos, and persists character appearance", async ({ pag
   await expect(page.getByLabel("Outfit")).toHaveValue("ankara-day");
   await page.getByRole("button", { name: "Cancel" }).click();
 
+  const position = page.getByTestId("player-position");
+  await expect(position).toBeVisible();
+  await expect(page.getByText("Loading resident…")).toBeHidden();
+  const start = await position.textContent();
+  await page.keyboard.down("w");
+  await expect(page.locator("canvas")).toHaveAttribute("data-last-input", "forward:down");
+  await expect(page.locator("canvas")).toHaveAttribute("data-telemetry", /Walking/);
+  await page.keyboard.up("w");
+  await expect.poll(() => position.textContent()).not.toBe(start);
+  await page.keyboard.down("Shift");
+  await page.keyboard.down("w");
+  await expect(page.getByText("Running", { exact: true })).toBeVisible();
+  await page.keyboard.up("w");
+  await page.keyboard.up("Shift");
+  await expect(page.getByText("Idle", { exact: true })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileStart = await position.textContent();
+  const forward = page.getByRole("button", { name: "Move forward" });
+  await forward.dispatchEvent("pointerdown", { pointerId: 1 });
+  await page.waitForTimeout(500);
+  await forward.dispatchEvent("pointerup", { pointerId: 1 });
+  await expect.poll(() => position.textContent()).not.toBe(mobileStart);
+  await page.setViewportSize({ width: 1440, height: 900 });
+
   await page.screenshot({
-    path: "/opt/cursor/artifacts/lagos-living-milestone-1.png",
+    path: "/opt/cursor/artifacts/lagos-living-milestone-2.png",
     fullPage: true,
   });
   expect(errors).toEqual([]);

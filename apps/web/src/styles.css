@@ -134,6 +134,31 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 
 .game-shell { width: 100%; height: 100%; position: relative; overflow: hidden; background: #8cc6c9; }
 .game-shell canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.playable-scene { position: absolute; inset: 0; }
+.scene-loading {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  color: #e7bd62; background: rgba(6, 28, 26, .68); letter-spacing: .12em;
+}
+.movement-hud {
+  position: absolute; top: 105px; left: 340px; display: flex; gap: 10px; align-items: baseline;
+  padding: 9px 13px; color: #ecf5f0; background: rgba(5, 30, 28, .72);
+  border: 1px solid rgba(255,255,255,.18); border-radius: 8px; backdrop-filter: blur(8px);
+}
+.movement-hud strong { color: #e7bd62; font-size: 12px; text-transform: uppercase; letter-spacing: .1em; }
+.movement-hud span { font-variant-numeric: tabular-nums; font-size: 12px; }
+.movement-hud small { opacity: .72; }
+.graphics-control {
+  position: absolute; right: 30px; top: 300px; width: 180px; margin: 0; padding: 11px 13px;
+  color: #e8f2ee; background: rgba(5, 30, 28, .72); border-radius: 8px;
+  backdrop-filter: blur(8px); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+}
+.graphics-control select { margin-top: 6px; padding: 8px; }
+.desktop-help {
+  position: absolute; left: 50%; bottom: 30px; transform: translateX(-50%);
+  padding: 8px 13px; border-radius: 20px; color: rgba(255,255,255,.9);
+  background: rgba(5,30,28,.66); font-size: 11px; letter-spacing: .05em;
+}
+.touch-controls { display: none; }
 .game-nav {
   position: absolute;
   inset: 0 0 auto;
@@ -210,8 +235,24 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
   .server-pill { display: none; }
   .location-card { left: 15px; top: 88px; width: 225px; }
   .minimap { right: 15px; top: 88px; width: 120px; height: 120px; }
+  .movement-hud { left: 15px; top: 205px; }
+  .graphics-control { right: 15px; top: 220px; width: 120px; }
   .welcome-card { left: 15px; right: 15px; bottom: 15px; }
+  .welcome-card { display: none; }
   .development-notice { display: none; }
+  .desktop-help { display: none; }
+  .touch-controls {
+    position: absolute; display: grid; left: 18px; bottom: 22px;
+    grid-template: repeat(3, 48px) / repeat(3, 48px); gap: 5px;
+  }
+  .touch-controls button {
+    border: 1px solid rgba(255,255,255,.4); border-radius: 50%;
+    color: white; background: rgba(5,30,28,.7); touch-action: none;
+    box-shadow: 0 4px 14px rgba(0,0,0,.2);
+  }
+  .touch-up { grid-area: 1 / 2; }.touch-left { grid-area: 2 / 1; }
+  .touch-down { grid-area: 2 / 2; }.touch-right { grid-area: 2 / 3; }
+  .touch-run { grid-area: 3 / 3; font-size: 9px; font-weight: 800; }
   .creator-card { grid-template-columns: 1fr; max-height: 90vh; overflow-y: auto; }
   .character-preview { min-height: 260px; }
   .avatar { transform: scale(.72); }

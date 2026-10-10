@@ -13,8 +13,9 @@ owns validated wire contracts.
 - [x] Confirm current official architecture guidance.
 - [x] Milestone 1 — local setup, account flow, character creation foundation,
   and browser-rendered scene.
-- [ ] Milestone 2 — production-quality modular humanoid, animation blending,
-  movement, collision, third-person camera, and touch controls.
+- [x] Milestone 2 — temporary licensed humanoid, animation blending,
+  accelerated movement, collision, third-person camera, graphics presets, and
+  tested touch controls. Final modular character replacement remains tracked.
 - [ ] Milestone 3 — licensed OSM starter section and authoritative multiplayer.
 - [ ] Milestone 4 — durable economy, delivery job, wallet, shop, and inventory.
 - [ ] Milestone 5 — property access, interiors, furniture, and daily life.
@@ -28,6 +29,15 @@ owns validated wire contracts.
 Every milestone must keep `npm run build`, `npm run typecheck`, and `npm test`
 green. Browser milestones also require an inspected desktop playthrough.
 Mobile support remains provisional until device-profile performance testing.
+
+### Milestone 2 verification note
+
+Desktop keyboard and responsive touch controls are covered by browser automation,
+including movement-state transitions and position changes. The cloud browser's
+software-rendered high preset measured approximately 6 FPS, so this is not
+evidence of acceptable mobile performance. Mobile support remains provisional;
+real-device profiling and world/renderer optimisation are required before it
+can be advertised as fully supported.
 
 ## Architecture decisions
 

@@ -9,7 +9,7 @@ import {
 import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 import { apiUrl, authClient } from "./auth-client";
 
-const LagosScene = lazy(() => import("./LagosScene"));
+const PlayableScene = lazy(() => import("./PlayableScene"));
 
 type AuthMode = "login" | "register" | "forgot" | "reset";
 
@@ -234,7 +234,7 @@ function GameShell({ user }: { user: { name: string; username?: string | null | 
   return (
     <main className="game-shell">
       <Suspense fallback={<div className="loading-screen">Preparing the island…</div>}>
-        <LagosScene />
+        <PlayableScene />
       </Suspense>
       <header className="game-nav">
         <div className="wordmark"><span>LL</span> LAGOS LIVING</div>
@@ -247,7 +247,7 @@ function GameShell({ user }: { user: { name: string; username?: string | null | 
       <aside className="location-card">
         <p className="eyebrow">CURRENT DISTRICT</p>
         <h2>Ikoyi Preview</h2>
-        <p>Development scene · geography integration begins in Milestone 3</p>
+        <p>Playable movement zone · geography integration begins in Milestone 3</p>
       </aside>
       <aside className="minimap" aria-label="Development minimap">
         <div className="map-water" />
