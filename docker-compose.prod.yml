@@ -1,0 +1,76 @@
+# Production-shaped stack for a single host. Nothing here is deployed automatically.
+#
+#   cp .env.production.example .env.production   # fill in real values; the file is gitignored
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# Both published ports bind to 127.0.0.1: put a TLS reverse proxy (HTTPS for the web origin, HTTPS + WSS for the
+# API origin) in front of them. See docs/OPERATIONS.md.
+name: lagos-living
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lagos_living
+      POSTGRES_USER: lagos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lagos -d lagos_living"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    image: lagos-living-server:${RELEASE:-local}
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    command: ["node", "dist/migrate.js"]
+    environment: &server-env
+      NODE_ENV: production
+      DATABASE_URL: postgresql://lagos:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/lagos_living
+      # The database is reachable only on the compose network; use `require` with a managed database.
+      DATABASE_SSL: ${DATABASE_SSL:-disable}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${API_ORIGIN:?set API_ORIGIN}
+      WEB_ORIGIN: ${WEB_ORIGIN:?set WEB_ORIGIN}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:?set SMTP_FROM}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  server:
+    image: lagos-living-server:${RELEASE:-local}
+    restart: unless-stopped
+    environment: *server-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${SERVER_PORT:-2567}:2567"
+
+  web:
+    image: lagos-living-web:${RELEASE:-local}
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: ${API_ORIGIN:?set API_ORIGIN}
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:8080"
+
+volumes:
+  postgres_data:
