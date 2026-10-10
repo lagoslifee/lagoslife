@@ -39,6 +39,8 @@ const configSchema = z
     WORLD_TILE_DIR: z.string().optional(),
     /** Shared Redis for running several server processes; unset keeps everything in one process. */
     REDIS_URL: z.string().optional(),
+    /** Testing only: `POST /api/guest` gives each visitor a throwaway account, so no sign-in is needed. Always on in development. */
+    GUEST_MODE: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
     /** Address clients use to reach this process directly (host[:port][/path]) when several processes run. */
     PUBLIC_ADDRESS: z.string().optional(),
   })

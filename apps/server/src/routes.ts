@@ -28,7 +28,7 @@ import {
   roleChangeSchema,
 } from "@lagos-living/shared";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
 import { auth } from "./auth.js";
@@ -201,6 +201,7 @@ export function configureRoutes(app: Express) {
       origin: config.WEB_ORIGIN,
       credentials: true,
       methods: ["GET", "POST", "PUT", "OPTIONS"],
+      exposedHeaders: ["set-auth-token"],
     }),
   );
 
@@ -247,6 +248,34 @@ export function configureRoutes(app: Express) {
     const contentType = response.headers.get("content-type");
     if (contentType) res.setHeader("content-type", contentType);
     res.status(response.status).send(Buffer.from(await response.arrayBuffer()));
+  });
+
+  app.post("/api/guest", async (req, res) => {
+    if (!config.GUEST_MODE && config.NODE_ENV !== "development") {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      if (!(await withinRate(`guest:${req.ip ?? "unknown"}`, 20, 3_600_000))) {
+        res.status(429).json({ error: "Too many guest accounts from this address. Try again later." });
+        return;
+      }
+      const tag = randomBytes(4).toString("hex").slice(0, 6);
+      const result = await auth.api.signUpEmail({
+        body: {
+          email: `guest-${randomUUID()}@guest.lagosliving.local`,
+          password: randomBytes(24).toString("base64url"),
+          name: `Guest ${tag}`,
+          username: `Guest_${tag}`,
+        },
+        headers: fromNodeHeaders(req.headers),
+      });
+      if (!result.token) throw new Error("Guest sign-up returned no session");
+      res.json({ token: result.token, name: `Guest_${tag}` });
+    } catch (error) {
+      console.error("Guest account failed", error);
+      res.status(500).json({ error: "Could not start a guest session." });
+    }
   });
 
   app.post("/api/multiplayer-token", requirePlayer, (req, res) => {

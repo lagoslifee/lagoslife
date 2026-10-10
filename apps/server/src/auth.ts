@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { username } from "better-auth/plugins";
+import { bearer, username } from "better-auth/plugins";
 import nodemailer from "nodemailer";
 import { config } from "./config.js";
 import { pool } from "./database.js";
@@ -34,6 +34,8 @@ export const auth = betterAuth({
     },
   },
   plugins: [
+    // Lets a web client on another site (where browsers block the session cookie) send the session as a header.
+    bearer(),
     username({
       minUsernameLength: 3,
       maxUsernameLength: 20,
