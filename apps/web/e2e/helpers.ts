@@ -17,6 +17,9 @@ type LagosHooks = {
   setCamera(yaw: number, pitch?: number, distance?: number): void;
   setMaxFrameDt(seconds: number): void;
   fps(): number;
+  honks(): number;
+  cameraInsideCar(): boolean;
+  lanesAhead(seconds: number): Array<{ x: number; z: number; now: Vec2; kind: string }>;
   vehicles(): Array<{ id: string; modelId: string; plate: string; mine: boolean; driverSessionId: string | null; x: number; z: number; yaw: number; cx: number; cz: number }>;
   driving(): { vehicleId: string; condition: number; x: number; z: number; speed: number } | null;
   enterVehicle(id: string): void;

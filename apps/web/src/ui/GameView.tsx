@@ -60,7 +60,7 @@ export function GameView({
   const [vehicles, setVehicles] = useState<MyVehicle[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [log, setLog] = useState<Array<Notice & { at: number }>>([]);
-  const [subtitle, setSubtitle] = useState<string | null>(null);
+  const [subtitle, setSubtitle] = useState<{ text: string; kind: "speech" | "sound" } | null>(null);
   const [sheet, setSheet] = useState<Place | null>(null);
   const [phone, setPhone] = useState<PhoneApp | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
@@ -117,9 +117,10 @@ export function GameView({
           toast(notice);
           if (/Fare paid|stepped off/.test(notice.text)) void refresh();
         },
-        subtitle: (text) => {
-          setSubtitle(text);
-          setTimeout(() => setSubtitle((current) => (current === text ? null : current)), 5000);
+        subtitle: (text, kind = "speech") => {
+          const shown = { text, kind };
+          setSubtitle(shown);
+          setTimeout(() => setSubtitle((current) => (current === shown ? null : current)), kind === "sound" ? 3000 : 5000);
         },
         interact: (interaction) => handlers.current.interact(interaction),
         self: (self) => handlers.current.self(self),
@@ -422,7 +423,11 @@ export function GameView({
             </div>
           )}
 
-          {subtitle && settings.subtitles && <div className="subtitle" role="status">“{subtitle}”</div>}
+          {subtitle && settings.subtitles && (
+            <div className={`subtitle ${subtitle.kind}`} role="status" data-testid="subtitle">
+              {subtitle.kind === "sound" ? `[${subtitle.text}]` : `“${subtitle.text}”`}
+            </div>
+          )}
 
           <Minimap engine={engine} data={engine.data} markers={markers} onOpen={() => setMapOpen(true)} />
 

@@ -200,6 +200,29 @@ export class AmbientLife {
     }
   }
 
+  /** Whether a point is inside (or within `margin` of) an ambient car's body. */
+  carAt(x: number, y: number, z: number, margin = 0.25) {
+    if (y > 1.6 + margin) return false;
+    return this.cars.some((car) => {
+      const dx = x - car.mesh.position.x;
+      const dz = z - car.mesh.position.z;
+      const forward = dx * Math.sin(car.yaw) + dz * Math.cos(car.yaw);
+      const lateral = dx * Math.cos(car.yaw) - dz * Math.sin(car.yaw);
+      return Math.abs(forward) < 2.2 + margin && Math.abs(lateral) < 0.89 + margin;
+    });
+  }
+
+  /** Dev-only: where each car's lane will be after `seconds` at cruise speed, for tests that need to meet one. */
+  lanesAhead(seconds: number) {
+    return this.cars.map((car) => {
+      const s = Math.max(0, Math.min(car.length, car.s + car.cruise * car.direction * seconds));
+      const p = pointAt(car.points, s);
+      const dirX = p.dx * car.direction;
+      const dirZ = p.dz * car.direction;
+      return { x: p.x + dirZ * car.lane, z: p.z - dirX * car.lane, now: [car.mesh.position.x, car.mesh.position.z] as Vec2, kind: car.road.kind };
+    });
+  }
+
   update(dt: number, player: Vec2, buses: DanfoView[], seed: number) {
     for (const car of this.cars) {
       const p = pointAt(car.points, car.s);

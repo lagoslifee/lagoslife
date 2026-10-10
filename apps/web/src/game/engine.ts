@@ -108,7 +108,8 @@ export type Interaction =
 export type EngineCallbacks = {
   hud: (state: HudState) => void;
   notice: (notice: Notice) => void;
-  subtitle: (text: string) => void;
+  /** Speech is shown in quotes; sound captions describe meaningful non-speech audio. */
+  subtitle: (text: string, kind?: "speech" | "sound") => void;
   interact: (interaction: Interaction) => void;
   self: (self: SelfState) => void;
   saved: (at: number) => void;
@@ -393,7 +394,10 @@ export class GameEngine {
     this.parcel.setEnabled(false);
 
     this.life = new AmbientLife(scene, this.world, this.data.roads, this.materials, this.avatars, this.quality);
-    this.life.onHonk = () => this.audio.horn(0.8);
+    this.life.onHonk = () => {
+      this.audio.horn(0.8);
+      this.caption("A car honks — you are blocking the road");
+    };
     this.vehicleFactory = new VehicleFactory(scene, this.materials);
 
     this.input = new InputState(this.canvas, this.bindings);
@@ -498,6 +502,7 @@ export class GameEngine {
       this.lastImpactSentAt = now;
       this.net.send("vehicleImpact", { speed: impact });
       this.audio.horn(0.15);
+      this.caption("Crunch — your car hit something");
     }
     if (impact > 0.5) this.lastContactAt = now;
     car.yaw = Math.atan2(Math.sin(car.yaw), Math.cos(car.yaw));
@@ -846,7 +851,7 @@ export class GameEngine {
           const [bx, bz] = danfo.pushOut(px, pz, 0.25);
           return bx !== px || bz !== pz;
         });
-        if (inBus || (py < 9 && resolveBuildingCollision(px, pz, 0.25).some((value, index) => Math.abs(value - (index ? pz : px)) > 0.01))) {
+        if (inBus || this.life?.carAt(px, py, pz) || (py < 9 && resolveBuildingCollision(px, pz, 0.25).some((value, index) => Math.abs(value - (index ? pz : px)) > 0.01))) {
           allowed = Math.max(0.6, d - 0.3);
           break;
         }
@@ -1314,6 +1319,10 @@ export class GameEngine {
     }
   }
 
+  private caption(text: string) {
+    if (this.settings.subtitles) this.callbacks.subtitle(text, "sound");
+  }
+
   private applyQualityStep(level: number) {
     if (!this.engine || !this.scene) return;
     const step = qualityStep(level);
@@ -1494,6 +1503,9 @@ export class GameEngine {
           this.autopilot = { path: [[x, z]], index: 0, sprint: false, resolve, lastProgress: performance.now(), lastPoint: [this.controller.x, this.controller.z], deadline: performance.now() + timeoutMs };
         }),
       interact: () => this.triggerInteract(),
+      honks: () => this.life?.honks ?? 0,
+      cameraInsideCar: () => Boolean(this.life?.carAt(this.camera.position.x, this.camera.position.y, this.camera.position.z, 0)),
+      lanesAhead: (seconds: number) => this.life?.lanesAhead(seconds) ?? [],
       prompt: () => this.prompt,
       board: (id: string) => this.board(id),
       requestStop: () => this.requestStop(),
