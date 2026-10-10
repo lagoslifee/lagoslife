@@ -9,7 +9,8 @@
     "test:e2e": "playwright test",
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests --exclude 'e2e/**'"
+    "test": "vitest run --passWithNoTests --exclude 'e2e/**' --exclude 'e2e-prod/**'",
+    "test:e2e:prod": "playwright test -c playwright.prod.config.ts"
   },
   "dependencies": {
     "@babylonjs/core": "^9.30.0",
