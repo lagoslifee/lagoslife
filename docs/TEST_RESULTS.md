@@ -55,14 +55,14 @@ horn are not captioned.
 
 | Suite | Result |
 |---|---|
-| `npm test -w @lagos-living/server` (PostgreSQL integration, room unit and config tests) | 109 / 109 passed after the X1 and X2 bridge shuttles (source tests only; compiled copies in `dist/` are excluded) |
+| `npm test -w @lagos-living/server` (PostgreSQL integration, room unit and config tests) | 113 / 113 passed after the bridge shuttles and server-side contact detection (source tests only; compiled copies in `dist/` are excluded) |
 | `npm test -w @lagos-living/shared` | 23 / 23 passed |
 | Playwright `e2e/transit-districts.spec.ts` on its own | 1 / 1 passed (5.8 min) |
 | **Full Playwright suite in one run**, after the danfo loops and session fix | **12 / 13 passed (42.8 min)**. The venues journey in `districts.spec.ts` failed one 1.2 km walk from Ikoyi to the mosque (3 × 90 s attempts at about 3 fps); run on its own straight after, it passed (7.0 min). Frame rate at the mosque was 3.4 fps with and without danfos drawn, so the new routes did not cause it. The walk helper now scales its timeout with distance. |
 | **Full Playwright suite in one run**, after the walk-timeout change | **13 / 13 passed (42.2 min)** |
 | Production smoke `e2e-prod/smoke.spec.ts` against a fresh compose stack, after the danfo loops and session fix | 1 / 1 passed (1.7 min). Images rebuilt; all nine migrations applied to an empty volume; server and web healthy. |
 | Playwright `e2e/playable-loop.spec.ts` on its own, after multi-unit housing | 2 / 2 passed (8.1 min) |
-| `apps/web` unit tests (`npm test -w @lagos-living/web`), after automatic quality | 28 / 28 passed |
+| `apps/web` unit tests (`npm test -w @lagos-living/web`), after the push-out fix | 29 / 29 passed |
 | `apps/web` `controller.test.ts`, `car-controller.test.ts` and `appearance.test.ts` | 17 / 17 passed |
 | Playwright `e2e/accounts.spec.ts` on its own, after the 3D character looks | 5 / 5 passed (2.2 min) |
 | **Full Playwright suite in one run** (accounts, districts, playable loop, safety, vehicles), after the 3D character looks | **12 / 12 passed (30.4 min)**: districts 13.2 min, playable loop 8.6 min, the rest under 5 min each. (After the milestone 8 changes: 12 / 12 in 29.1 min.) |
@@ -201,7 +201,14 @@ Browser (`e2e/safety.spec.ts`, two real browser contexts, a moderator and a newl
    - A separate, newly registered moderator overturned it with a note, and the resident's phone showed "Overturned on appeal" and the note.
    - A second citation's Pay button was double-clicked. ₦2,500 was debited once, and the only citation was `paid`.
 
-The browser test issues citations through the dev-only `/api/dev/citation` route. The real trigger is covered by room unit tests: a client-reported impact plus the server's own speed measurement both have to be at least 13.9 m/s (50 km/h), with a 10-minute cooldown. Collisions are detected on the client, so a modified client could withhold impact reports and avoid citations. Citations are therefore a fictional-game nuisance, not an anti-cheat measure.
+The browser test issues citations through the dev-only `/api/dev/citation` route. The real trigger is covered by room unit tests: a client-reported impact plus the server's own speed measurement both have to be at least 13.9 m/s (50 km/h), with a 10-minute cooldown. The server also checks every accepted driving update itself. It sweeps the car from its previous position to its new one against pedestrians on the street (1.3 m), other parked or driven cars (2.0 m centre distance) and danfos (2.3 m). At 50 km/h or more by its own measurement, it cites with `detectedBy: "server"` and the kind of thing struck, with no client report needed. Room tests cover:
+
+- a pedestrian hit with no impact report;
+- a parked car passed through between two updates;
+- slow contact and a fast pass 4 m from a pedestrian, which are not cited;
+- one citation, not two, when the server and the client both see the same crash.
+
+With the server check disabled, the first two tests fail. Crashes into buildings and kerbs still rely on the client's report, so a modified client can avoid citations for those. Citations remain a fictional-game nuisance, not an anti-cheat system.
 
 Server tests (`safety-service.test.ts`, `justice-service.test.ts`, `LagosRoom.test.ts`, PostgreSQL):
 
@@ -282,6 +289,9 @@ p99, and RSS stayed at 116 MB.
 
 ## Bugs found and fixed during this pass
 
+- Re-running the world build deleted and recreated the tiles directory. The running Vite dev server then answered every tile request with `index.html`, the client silently stored each tile as empty, and the world loaded with no buildings. The X1, X2, caption and vehicle runs on 2026-10-10 were affected; they passed but were re-run (below). The build now rewrites tiles in place. The client retries a failed tile twice (2 s, then 4 s later) before giving it up as empty, and logs a warning each time. `e2e/tile-retry.spec.ts` refuses the spawn tile twice and checks that every loaded tile's building count matches the files on disk (1 / 1 passed, 17.8 s). Against the old client code it fails.
+- Collision push-outs became walking speed. Squeezed between a parked car and an obstacle, a resident was flung at 41 m/s, the server corrected every update, and the vehicles test failed walking to the mechanic. Only velocity into the obstacle is now removed. A unit test reproduces the 40.8 m/s squeeze without the fix.
+
 - React StrictMode's double mount crashed the first engine mid-start, and a missing `StandardMaterial` side-effect import stopped the game loading.
 - Room tick-rate units were wrong, so danfos moved about 1/1000th of their intended speed and never reached stops.
 - A second fare could be charged by pressing E right after auto-alighting.
@@ -311,5 +321,5 @@ district tests. The earlier miniature-scale
 - Frame rate on real GPUs and phones, and tile-streaming hitches on them.
 - More than two concurrent *browser* players. 100 bot clients were measured in one room on this VM (see the load test above), but not over real networks, on other hosts, or with rendering clients. The room cap is 100, and snapshots carry the nearest 40.
 - Any public deployment, TLS proxy or managed database. The production images and compose stack were only run on this VM.
-- Citation evasion: impacts are reported by the client, so a modified client can avoid citations.
+- Citation evasion for crashes into buildings and kerbs, which the server does not detect itself. Pedestrian, car and danfo contact is detected on the server.
 - Touch controls on a physical device (layout is implemented and responsive).

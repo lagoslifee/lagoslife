@@ -125,8 +125,9 @@ Deployment configuration:
 
 The images were built and the compose stack ran from scratch on this VM, where
 a page-driven production smoke test passed. Nothing was deployed publicly.
-Remaining gaps: impacts are detected on the client, so a modified client can
-avoid citations; horizontal scaling isn't configured; and no TLS proxy was
+Remaining gaps: the server detects contact with pedestrians, cars and danfos
+itself, but buildings and kerbs still rely on the client's impact report;
+horizontal scaling isn't configured; and no TLS proxy was
 exercised.
 
 ### Milestone 6 verification note
