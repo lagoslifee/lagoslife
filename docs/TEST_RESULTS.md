@@ -354,6 +354,21 @@ answered `/api/health` with `REDIS_URL` set. Not tested: more than two
 processes, other hosts, a reverse proxy routing to each process's
 `PUBLIC_ADDRESS`, or Redis restarts.
 
+Rate limits are shared through Postgres:
+
+- **Sign-in limit:** two production-mode bundled processes (ports 2581 and
+  2582) got wrong-password sign-ins from one forwarded IP, alternating between
+  them. Attempts 1 to 3 got 401; attempts 4 and 5 got 429, although attempt 4
+  was only the second to reach its process. With Better Auth's memory storage
+  swapped back in, all five got 401.
+- **Per-player limit:** with two development processes, 27 alternating
+  `PUT /api/character` requests from one player were counted together.
+  Requests 26 and 27 got 429, though each process saw about 13. The bodies were
+  deliberately invalid (400), and the limit applies before validation.
+- **Unit tests:** `request-rate.test.ts` (3 tests, PostgreSQL) covers the limit
+  and the next refusal, 40 concurrent requests from two connection pools
+  allowing exactly 25, a new window once the old one passes, and purging.
+
 ## Not yet verified
 
 - Frame rate on real GPUs and phones, and tile-streaming hitches on them.
@@ -361,4 +376,4 @@ processes, other hosts, a reverse proxy routing to each process's
 - Any public deployment, TLS proxy or managed database. The production images and compose stack were only run on this VM.
 - Citation evasion for kerb strikes, which the server does not model. Pedestrian, car, danfo and building contact is detected on the server.
 - Touch controls on a physical device (layout is implemented and responsive).
-- Several server processes beyond two on one VM, behind a reverse proxy, or across hosts. Rate limits are still per process.
+- Several server processes beyond two on one VM, behind a reverse proxy, or across hosts.

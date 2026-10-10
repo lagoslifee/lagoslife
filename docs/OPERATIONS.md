@@ -169,9 +169,10 @@ Measured results and caveats are in
   player gets a second room instance, which is a separate city: players in
   different rooms don't see each other.
 - Each snapshot carries at most the 40 nearest players within 180 m.
-- The in-app rate limits and Better Auth's rate-limit store are in memory per
-  process. With several processes, each enforces its own limits, so the
-  effective limit is that many times higher.
+- Rate-limit counters live in Postgres: Better Auth's (production only) in its
+  `rateLimit` table and the per-player limit on money-moving routes (25 per
+  10 s) in `request_rate`. Every server process enforces the same counts;
+  expired `request_rate` windows are purged hourly.
 
 ## Several server processes
 

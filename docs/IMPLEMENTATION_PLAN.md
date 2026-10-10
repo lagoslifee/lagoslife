@@ -180,4 +180,3 @@ Still deferred:
 
 - a fictional court beyond moderator-decided appeals;
 - real-device performance work;
-- shared rate-limit storage across server processes (each process enforces its own).
