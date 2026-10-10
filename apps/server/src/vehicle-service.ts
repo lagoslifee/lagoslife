@@ -415,6 +415,8 @@ export type RoomVehicle = {
   locked: boolean;
   /** Present only on temporary dealer cars, which are never written to the database. */
   testDrive?: { endsAt: number; origin: [number, number]; yaw: number; warned: boolean };
+  /** Lagos Living Ride car, driven for a rider by a non-player driver; never stored. */
+  npc?: boolean;
 };
 
 const roomColumns = `vehicle.id, vehicle.owner_user_id, vehicle.model_id, vehicle.colour, vehicle.plate,

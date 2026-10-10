@@ -1,16 +1,18 @@
-import { nearestStop, ROUTES, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
+import { nearestStop, ROUTES, type RideState, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import { api, naira, type EconomyState, type InteriorState, type MyVehicle, type PropertyListing } from "../api";
 import { actionLabels, keyLabel, type Action, type Bindings } from "../game/controller";
-import type { HudState } from "../game/engine";
+import type { GameEngine, HudState } from "../game/engine";
+import { RideApp } from "./RideApp";
 import { CommunityApp } from "./CommunitySheets";
 import { VehiclesApp } from "./VehicleSheets";
 import { JusticeApp, SafetyApp, type ReportTarget } from "./SafetyUI";
 
-export type PhoneApp = "home" | "map" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
+export type PhoneApp = "home" | "map" | "ride" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
 
 const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
   { id: "map", label: "Map", icon: "🗺" },
+  { id: "ride", label: "Ride", icon: "🚕" },
   { id: "transport", label: "Transport", icon: "🚌" },
   { id: "jobs", label: "Jobs", icon: "📦" },
   { id: "wallet", label: "Wallet", icon: "₦" },
@@ -52,6 +54,8 @@ type Props = {
   onCustomise: () => void;
   onSignOut: () => void;
   playerName: string;
+  engine: GameEngine | null;
+  ride: RideState | null;
 };
 
 function days(iso: string | null) {
@@ -94,6 +98,7 @@ export function Phone(props: Props) {
             ))}
           </div>
         )}
+        {app === "ride" && <RideApp engine={props.engine} ride={props.ride} properties={props.properties} onNavigate={props.onNavigate} onClose={onClose} />}
         {app === "transport" && <TransportApp {...props} />}
         {app === "jobs" && <JobsApp {...props} />}
         {app === "wallet" && <WalletApp {...props} />}

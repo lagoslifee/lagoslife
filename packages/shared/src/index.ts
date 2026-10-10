@@ -51,6 +51,7 @@ export * from "./community.js";
 export * from "./safety.js";
 export * from "./homes.js";
 export * from "./building.js";
+export * from "./rides.js";
 import { worldVehicleSchema } from "./vehicles.js";
 
 export const motionStates = ["idle", "walk", "jog", "sprint", "sit", "wave", "dance", "drive"] as const;

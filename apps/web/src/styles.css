@@ -658,3 +658,29 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .vehicle-menu li.selected { outline: 2px solid #e6bd62; outline-offset: -2px; }
 @media (max-height: 520px) { .vehicle-preview { height: 150px; } }
 .sheet .vehicle-preview { position: sticky; top: 0; z-index: 1; }
+
+/* Turn-by-turn line under the street name. */
+.nav-line { margin: 6px 0 0; padding-top: 6px; border-top: 1px solid var(--hud-line); color: #f5f2e8; font-weight: 700; font-size: 13px; line-height: 1.3; }
+.nav-line b { display: inline-block; min-width: 22px; color: #2fd3ff; font-size: 18px; }
+.nav-line small { color: #c9c3b6; font-weight: 600; }
+.nav-line.warn { color: #ffb4a3; }
+.game-view.touch .nav-line { font-size: 12px; }
+.game-view.touch .nav-line small { display: none; }
+
+/* Lagos Living Ride */
+.ride-line { display: block; width: 100%; margin-top: 6px; padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255, 207, 58, .45); background: rgba(255, 207, 58, .12); color: #ffe59a; font-weight: 700; font-size: 12px; text-align: left; cursor: pointer; }
+.ride-app .ride-driver { display: flex; align-items: center; gap: 10px; }
+.ride-app .ride-driver > div { flex: 1; }
+.ride-app .ride-driver p { margin: 0; }
+.ride-avatar { font-size: 28px; }
+.ride-fare { font-weight: 800; }
+.ride-results { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.ride-results button { width: 100%; text-align: left; display: grid; gap: 2px; padding: 8px 10px; }
+.ride-results small { color: #a9a395; text-transform: capitalize; }
+.ride-quote dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
+.ride-quote dl div { padding: 8px; border-radius: 8px; background: rgba(255, 255, 255, .06); }
+.ride-quote dt { font-size: 11px; color: #a9a395; }
+.ride-quote dd { margin: 2px 0 0; font-weight: 800; }
+.callout.warn { border-color: rgba(255, 140, 110, .5); color: #ffc7b8; }
+.ride-app .field { display: grid; gap: 4px; margin-top: 8px; font-size: 12px; color: #c9c3b6; }
+.ride-app .field input { width: 100%; padding: 9px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, .18); background: rgba(0, 0, 0, .3); color: inherit; font-size: 15px; }

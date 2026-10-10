@@ -23,6 +23,11 @@ import {
   kerbSlot,
   testDriveSchema,
   TEST_DRIVE,
+  RIDE,
+  rideFare,
+  rideBookSchema,
+  rideCancelSchema,
+  type RideState,
   type WorldVehicle,
   getPlace,
   INTERIOR_HALF,
@@ -49,7 +54,7 @@ import {
 } from "@lagos-living/shared";
 import { Client, Room, type AuthContext } from "@colyseus/core";
 import { schema, t, type SchemaType } from "@colyseus/schema";
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import {
   chargeFare,
   EconomyError,
@@ -76,6 +81,7 @@ import {
 } from "../vehicle-service.js";
 import { loadAppearance, profileEvents } from "../profile-service.js";
 import { buildingEvents } from "../building-service.js";
+import { chargeRide, refundRide } from "../ride-service.js";
 import "../world-footprints.js";
 
 export const LagosState = schema({
@@ -86,6 +92,8 @@ export type LagosState = SchemaType<typeof LagosState>;
 type LagosClient = Client & { auth: MultiplayerIdentity };
 
 export const BUS_CAPACITY = 14;
+const RIDE_DRIVERS = ["Tunde", "Chioma", "Emeka", "Aisha", "Segun", "Ngozi", "Ibrahim", "Folake", "Kelechi", "Bisi"];
+const RIDE_COLOURS = ["#d9d9d6", "#f2f2ee", "#101418", "#5b6770"];
 const BUS_CRUISE = 12.5;
 const BUS_ACCEL = 1.8;
 const BUS_BRAKE = 2.4;
@@ -134,6 +142,7 @@ type Player = {
   /** 0 when driving; a passenger seat index otherwise. */
   vehicleSeat: number | null;
   lastTestDriveAt: number;
+  ride: RideState | null;
   /** Metres driven since the odometer was last written. */
   driveMetres: number;
   lastVehicleSaveAt: number;
@@ -263,6 +272,10 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("unstuck", (client) => this.handleUnstuck(client));
     this.onMessage("enterVehicle", (client, payload) => void this.handleEnterVehicle(client, payload));
     this.onMessage("exitVehicle", (client) => void this.handleExitVehicle(client));
+    this.onMessage("rideBook", (client, payload) => void this.handleRideBook(client, payload));
+    this.onMessage("rideBoard", (client) => this.handleRideBoard(client));
+    this.onMessage("rideArrive", (client) => void this.handleRideArrive(client));
+    this.onMessage("rideCancel", (client, payload) => void this.handleRideCancel(client, payload));
     this.onMessage("testDrive", (client, payload) => this.handleTestDrive(client, payload));
     this.onMessage("vehicleSignal", (client, payload) => this.handleVehicleSignal(client, payload));
     this.onMessage("vehicleImpact", (client, payload) => void this.handleVehicleImpact(client, payload));
@@ -332,6 +345,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       vehicleId: null,
       vehicleSeat: null,
       lastTestDriveAt: 0,
+      ride: null,
       driveMetres: 0,
       lastVehicleSaveAt: now,
       lastImpactAt: 0,
@@ -407,6 +421,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         player.z = stop.alight[1];
         this.releaseSeat(player, "interrupted", stop.id);
       }
+      await this.endRide(player, "cancelled", "You disconnected, so the ride ended.", "system").catch(() => undefined);
       await this.parkPlayerVehicle(player).catch(() => undefined);
       await this.persist(player).catch(() => undefined);
       if (this.players.get(client.sessionId) === player) this.players.delete(client.sessionId);
@@ -481,7 +496,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     player.lastSequence = parsed.data.sequence;
     if (player.busId) return;
     if (player.entering) return;
-    if (player.vehicleSeat) return;
+    if (player.vehicleSeat && player.ride?.status !== "riding") return;
     const now = Date.now();
     const elapsed = Math.min(1.5, Math.max(0.03, (now - player.lastAcceptedAt) / 1_000));
     const vehicle = player.vehicleId ? this.vehicles.get(player.vehicleId) : undefined;
@@ -518,14 +533,14 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         rider.lastAcceptedAt = now;
         setPlayerPosition(rider.userId, rider.x, rider.z, "street");
       }
-      const struck = this.contactAlong(player, vehicle.id, from, [player.x, player.z]);
+      const struck = vehicle.npc ? null : this.contactAlong(player, vehicle.id, from, [player.x, player.z]);
       if (struck) this.considerCitation(client, player, null, struck);
       else if (speedBefore >= JUSTICE.carelessDrivingSpeed && distance / elapsed < WALL_STOP_SPEED && player.heading && this.wallAhead(player, player.heading)) {
         this.considerCitation(client, player, null, "building", speedBefore);
       }
       if (distance > 0.05) player.heading = [(player.x - from[0]) / distance, (player.z - from[1]) / distance];
       player.driveMetres += distance;
-      if (!vehicle.testDrive && now - player.lastVehicleSaveAt > VEHICLE_SAVE_MS) {
+      if (!vehicle.testDrive && !vehicle.npc && now - player.lastVehicleSaveAt > VEHICLE_SAVE_MS) {
         const metres = player.driveMetres;
         player.driveMetres = 0;
         player.lastVehicleSaveAt = now;
@@ -866,6 +881,213 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.sendSelf(client, player, "boarded");
   }
 
+  private sendRide(player: Player) {
+    const client = this.clientFor(player);
+    if (client) client.send("ride", player.ride);
+  }
+
+  private async handleRideBook(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = rideBookSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
+    const fail = (text: string) => this.notify(client, { tone: "error", text });
+    if (player.ride && (player.ride.status === "approaching" || player.ride.status === "waiting" || player.ride.status === "riding")) return fail("You already have a ride booked.");
+    if (player.location !== "street" || player.busId || player.vehicleId) return fail("Book a ride from the street, not from inside a vehicle or building.");
+    const { pickup, dropoff, destination, label, roadMetres, idempotencyKey } = parsed.data;
+    if (Math.hypot(pickup[0] - player.x, pickup[1] - player.z) > RIDE.pickupRange || !walkable(pickup[0], pickup[1], 0.5)) {
+      return fail("Move closer to a road so the driver can reach you.");
+    }
+    if (!walkable(dropoff[0], dropoff[1], 0.5) || Math.hypot(dropoff[0] - destination[0], dropoff[1] - destination[1]) > 400) {
+      return fail(`No road reaches ${label}. Pick a place on the map near a street.`);
+    }
+    const straight = Math.hypot(dropoff[0] - pickup[0], dropoff[1] - pickup[1]);
+    if (straight < RIDE.minMetres) return fail(`${label} is a short walk from here.`);
+    if (straight > RIDE.maxMetres) return fail(`${label} is outside the Lagos Living Ride service area.`);
+    const metres = Math.min(straight * RIDE.maxRoadFactor, Math.max(straight * RIDE.minRoadFactor, roadMetres));
+    const fare = rideFare(metres);
+    const id = randomUUID();
+    const now = Date.now();
+    player.ride = {
+      id,
+      status: "approaching",
+      pickup,
+      pickupYaw: parsed.data.pickupYaw,
+      dropoff,
+      label,
+      fare,
+      driverName: RIDE_DRIVERS[randomInt(RIDE_DRIVERS.length)]!,
+      plate: `LLR ${100 + randomInt(900)} ${String.fromCharCode(65 + randomInt(26))}${String.fromCharCode(65 + randomInt(26))}`,
+      colour: RIDE_COLOURS[randomInt(RIDE_COLOURS.length)]!,
+      modelId: RIDE.modelId,
+      vehicleId: null,
+      bookedAt: now,
+      arrivesAt: now + (RIDE.pickupSecondsMin + randomInt(RIDE.pickupSecondsMax - RIDE.pickupSecondsMin)) * 1_000,
+      waitUntil: null,
+      refunded: 0,
+      message: null,
+    };
+    const ride = player.ride;
+    try {
+      const balance = await chargeRide(player.userId, fare, label, idempotencyKey);
+      this.notify(client, { tone: "success", text: `Ride booked: ${ride.driverName} is on the way. Fare ₦${fare.toLocaleString("en-NG")} paid, balance ₦${balance.toLocaleString("en-NG")}.` });
+      this.sendRide(player);
+    } catch (error) {
+      if (player.ride === ride) player.ride = null;
+      const message = (error as Error).message;
+      fail(/duplicate|unique/i.test(message) ? "That booking was already made." : message.includes("Insufficient") ? `You need ₦${fare.toLocaleString("en-NG")} for this ride.` : "The ride could not be booked.");
+    }
+  }
+
+  private handleRideBoard(client: Client) {
+    const player = this.players.get(client.sessionId);
+    const ride = player?.ride;
+    if (!player || !ride || ride.status !== "waiting" || !ride.vehicleId) return;
+    const vehicle = this.vehicles.get(ride.vehicleId);
+    if (!vehicle) return;
+    if (player.location !== "street" || player.busId || player.vehicleId) return this.notify(client, { tone: "error", text: "Step out onto the street first." });
+    if (Math.hypot(player.x - vehicle.x, player.z - vehicle.z) > RIDE.boardRange) return this.notify(client, { tone: "error", text: `Walk to ${ride.driverName}'s car (${ride.plate}).` });
+    ride.status = "riding";
+    ride.waitUntil = null;
+    vehicle.driverSessionId = client.sessionId;
+    player.vehicleId = vehicle.id;
+    player.vehicleSeat = Math.min(3, getVehicleModel(vehicle.modelId).seats - 1);
+    [player.x, player.z, player.yaw] = [vehicle.x, vehicle.z, vehicle.yaw];
+    player.motion = "sit";
+    player.lastAcceptedAt = Date.now();
+    setPlayerPosition(player.userId, player.x, player.z, "street");
+    this.notify(client, { tone: "success", text: `${ride.driverName}: "Good evening! Heading to ${ride.label}."` });
+    this.sendSelf(client, player, "boarded");
+    this.sendRide(player);
+  }
+
+  private async handleRideArrive(client: Client) {
+    const player = this.players.get(client.sessionId);
+    const ride = player?.ride;
+    if (!player || !ride || ride.status !== "riding") return;
+    if (Math.hypot(player.x - ride.dropoff[0], player.z - ride.dropoff[1]) > RIDE.arriveRange) {
+      return this.notify(client, { tone: "error", text: "Not there yet." });
+    }
+    await this.endRide(player, "completed", `Arrived at ${ride.label}. Thanks for riding with Lagos Living Ride!`, "arrived");
+  }
+
+  private async handleRideCancel(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const ride = player?.ride;
+    const parsed = rideCancelSchema.safeParse(payload ?? {});
+    if (!player || !ride || !parsed.success) return;
+    if (ride.status === "riding" && parsed.data.reason === "rider") {
+      const vehicle = ride.vehicleId ? this.vehicles.get(ride.vehicleId) : undefined;
+      if (vehicle && this.measuredSpeed(player) > 2.5) return this.notify(client, { tone: "info", text: `${ride.driverName} is pulling over — try again once the car stops.` });
+    }
+    if (ride.status === "approaching" || ride.status === "waiting" || ride.status === "riding") {
+      await this.endRide(player, "cancelled", parsed.data.reason === "stuck" ? `${ride.driverName} could not get through, so the ride ended here.` : "Ride cancelled.", parsed.data.reason === "stuck" ? "system" : "rider");
+    }
+  }
+
+  /**
+   * Single exit point for every ride outcome. The status changes before any await so a ride
+   * is settled once, and refunds use a per-ride transaction key so they cannot repeat.
+   */
+  private async endRide(player: Player, status: "completed" | "cancelled", message: string, cause: "arrived" | "rider" | "system" | "no-show") {
+    const ride = player.ride;
+    if (!ride || ride.status === "completed" || ride.status === "cancelled") return;
+    const previous = ride.status;
+    ride.status = status;
+    ride.message = message;
+    const now = Date.now();
+    let refund = 0;
+    let reason = "";
+    if (cause === "system") {
+      refund = previous === "riding" ? this.unusedFare(player, ride) : ride.fare;
+      reason = "service problem";
+    } else if (cause === "no-show") {
+      refund = ride.fare - Math.min(ride.fare, RIDE.noShowFee);
+      reason = `no-show (₦${RIDE.noShowFee} fee kept)`;
+    } else if (cause === "rider") {
+      if (previous === "approaching") {
+        const free = now - ride.bookedAt <= RIDE.freeCancelSeconds * 1_000;
+        refund = free ? ride.fare : ride.fare - Math.min(ride.fare, RIDE.lateCancelFee);
+        reason = free ? "cancelled within a minute" : `late cancellation (₦${RIDE.lateCancelFee} fee kept)`;
+      } else if (previous === "waiting") {
+        refund = ride.fare - Math.min(ride.fare, RIDE.noShowFee);
+        reason = `driver had arrived (₦${RIDE.noShowFee} fee kept)`;
+      } else if (previous === "riding") {
+        refund = this.unusedFare(player, ride);
+        reason = "ended early, unused distance";
+      }
+    }
+    const vehicle = ride.vehicleId ? this.vehicles.get(ride.vehicleId) : undefined;
+    if (vehicle) {
+      if (player.vehicleId === vehicle.id) {
+        [player.x, player.z] = this.exitPoint(vehicle, player.vehicleSeat ?? 3);
+        player.vehicleId = null;
+        player.vehicleSeat = null;
+        player.motion = "idle";
+        player.lastAcceptedAt = now;
+        setPlayerPosition(player.userId, player.x, player.z, "street");
+        const client = this.clientFor(player);
+        if (client) this.sendSelf(client, player, "parked");
+      }
+      this.vehicles.delete(vehicle.id);
+    }
+    ride.vehicleId = null;
+    if (refund > 0) {
+      try {
+        await refundRide(player.userId, ride.id, refund, reason);
+        ride.refunded = refund;
+        ride.message = `${message} ₦${refund.toLocaleString("en-NG")} refunded (${reason}).`;
+      } catch (error) {
+        console.error("Ride refund failed", error);
+        ride.message = `${message} The refund could not be paid right now; please report it from Phone → Safety.`;
+      }
+    }
+    const client = this.clientFor(player);
+    if (client) this.notify(client, { tone: status === "completed" ? "success" : "info", text: ride.message ?? message });
+    this.sendRide(player);
+  }
+
+  /** Share of the fare for distance not yet travelled, measured on the straight line to the drop-off. */
+  private unusedFare(player: Player, ride: RideState) {
+    const total = Math.max(1, Math.hypot(ride.dropoff[0] - ride.pickup[0], ride.dropoff[1] - ride.pickup[1]));
+    const left = Math.hypot(ride.dropoff[0] - player.x, ride.dropoff[1] - player.z);
+    const share = Math.max(0, Math.min(1, left / total));
+    return Math.round((ride.fare - RIDE.baseFare) * share / 50) * 50;
+  }
+
+  private checkRides(now: number) {
+    for (const player of this.players.values()) {
+      const ride = player.ride;
+      if (!ride) continue;
+      if (ride.status === "approaching" && now >= ride.arrivesAt) {
+        const vehicle: RoomVehicle = {
+          id: `ride-${ride.id}`,
+          ownerUserId: player.userId,
+          ownerName: `Lagos Living Ride · ${ride.driverName}`,
+          modelId: ride.modelId,
+          colour: ride.colour,
+          plate: ride.plate,
+          condition: 100,
+          x: ride.pickup[0],
+          z: ride.pickup[1],
+          yaw: ride.pickupYaw,
+          driverSessionId: null,
+          lights: false,
+          locked: true,
+          npc: true,
+        };
+        this.vehicles.set(vehicle.id, vehicle);
+        ride.vehicleId = vehicle.id;
+        ride.status = "waiting";
+        ride.waitUntil = now + RIDE.waitSeconds * 1_000;
+        const client = this.clientFor(player);
+        if (client) this.notify(client, { tone: "success", text: `${ride.driverName} has arrived: ${ride.plate}. Walk to the car and get in.`, announcement: "Your ride has arrived" });
+        this.sendRide(player);
+      } else if (ride.status === "waiting" && ride.waitUntil && now >= ride.waitUntil) {
+        void this.endRide(player, "cancelled", `${ride.driverName} waited ${RIDE.waitSeconds / 60} minutes and left.`, "no-show");
+      }
+    }
+  }
+
   private handleTestDrive(client: Client, payload: unknown) {
     const player = this.players.get(client.sessionId);
     const parsed = testDriveSchema.safeParse(payload);
@@ -965,6 +1187,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (Math.hypot(player.x - vehicle.x, player.z - vehicle.z) > VEHICLE_RULES.enterRange + 1) {
       return this.notify(client, { tone: "error", text: "Walk up to the car door." });
     }
+    if (vehicle.npc) return this.notify(client, { tone: "error", text: "That is a Lagos Living Ride car. Book your own from Phone → Ride." });
     if (vehicle.testDrive && !owner) return this.notify(client, { tone: "error", text: "That is someone's dealer test car." });
     if (!owner && vehicle.locked) {
       return this.notify(client, { tone: "error", text: `This vehicle belongs to ${vehicle.ownerName}. It is locked.` });
@@ -1245,8 +1468,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         lights: vehicle.lights,
         locked: vehicle.locked,
         testDriveEndsAt: vehicle.testDrive?.endsAt ?? null,
+        npc: Boolean(vehicle.npc),
         ownerName: vehicle.ownerName,
-        mine: vehicle.ownerUserId === viewer.userId,
+        mine: !vehicle.npc && vehicle.ownerUserId === viewer.userId,
       });
     }
     return list;
@@ -1256,7 +1480,10 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const seconds = dt / 1_000;
     const now = Date.now();
     this.state.tick = (this.state.tick + 1) >>> 0;
-    if (this.state.tick % 25 === 0) this.checkTestDrives(now);
+    if (this.state.tick % 25 === 0) {
+      this.checkTestDrives(now);
+      this.checkRides(now);
+    }
     for (const bus of this.buses) {
       const { route } = bus;
       const length = routeLength(route);

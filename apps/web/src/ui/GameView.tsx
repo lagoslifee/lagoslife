@@ -1,7 +1,8 @@
-import { defaultSettings, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type SelfState, type Vec2 } from "@lagos-living/shared";
+import { defaultSettings, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type RideState, type SelfState, type Vec2 } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
+import { describeTurn, turnArrow } from "../game/navigation";
 import { EngineDisposedError, GameEngine, type HudState, type Interaction } from "../game/engine";
 import type { Quality } from "../game/materials";
 import { FullMap, Minimap } from "./MapView";
@@ -86,8 +87,28 @@ export function GameView({
   const [now, setNow] = useState(Date.now());
   const [settings, setSettings] = useState<PlayerSettings>(defaultSettings);
   const [bindings, setBindings] = useState<Bindings>(loadBindings);
-  const [quality] = useState<Quality>(loadQuality);
+  const [quality, setQuality] = useState<Quality>(loadQuality);
+  const [restarts, setRestarts] = useState(0);
+  const restartsRef = useRef(0);
+  const [graphicsPaused, setGraphicsPaused] = useState(false);
+  const lostTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** Rebuilds the 3D view in place (same session, same server connection afterwards) at low graphics. */
+  const restartGraphics = useCallback((why: string) => {
+    clearTimeout(lostTimer.current);
+    setGraphicsPaused(false);
+    if (restartsRef.current >= 3) {
+      setFatal(`${why} This device ran out of graphics memory several times. Close other tabs and apps, then try again.`);
+      return;
+    }
+    restartsRef.current += 1;
+    localStorage.setItem("lagos-quality", "low");
+    setFatal(null);
+    setEngine(null);
+    setQuality("low");
+    setRestarts(restartsRef.current);
+  }, []);
   const [manualTarget, setManualTarget] = useState<{ point: Vec2; label: string } | null>(null);
+  const [ride, setRide] = useState<RideState | null>(null);
   const [visitedHome, setVisitedHome] = useState(() => localStorage.getItem("lagos-visited-home") === "1");
   const touch = useMemo(() => matchMedia("(pointer: coarse)").matches, []);
   const toastId = useRef(0);
@@ -162,6 +183,22 @@ export function GameView({
         chat: (message, own) => setChat((current) => [...current.slice(-59), { ...message, own }]),
         suspended: (info) => suspendedRef.current(info),
         plotsChanged: () => void refreshPlots(),
+        graphics: (event) => {
+          if (event === "restored") {
+            clearTimeout(lostTimer.current);
+            setGraphicsPaused(false);
+          } else if (event === "lost") {
+            setGraphicsPaused(true);
+            clearTimeout(lostTimer.current);
+            lostTimer.current = setTimeout(() => restartGraphics("Graphics did not come back."), 6_000);
+          } else {
+            restartGraphics("The game hit repeated errors.");
+          }
+        },
+        ride: (next) => {
+          setRide(next);
+          if (next && (next.status === "approaching" || next.status === "completed" || next.status === "cancelled")) void refresh();
+        },
       },
       quality,
       defaultSettings,
@@ -178,6 +215,11 @@ export function GameView({
       .catch((error: Error) => {
         if (!live || error instanceof EngineDisposedError) return;
         console.error("Game start failed", error);
+        // A GPU that just dropped a context (common on phones after a freeze) often refuses textures for a moment.
+        if (/texture|webgl|context|shader|gpu/i.test(error.message) && restartsRef.current < 3) {
+          setTimeout(() => live && restartGraphics("Graphics could not start."), 1_500);
+          return;
+        }
         setFatal(error.message || "The game could not start.");
       });
     void refresh();
@@ -191,7 +233,7 @@ export function GameView({
       void instance.dispose();
       engineRef.current = null;
     };
-  }, [quality, refresh, refreshPlots, toast]);
+  }, [quality, restarts, refresh, refreshPlots, toast, restartGraphics]);
 
   const finishingAt = plots.find((plot) => plot.status === "mine" && plot.construction && !plot.construction.completed && plot.construction.stagesPaid === 4)?.construction?.stageReadyAt;
   useEffect(() => {
@@ -234,7 +276,13 @@ export function GameView({
     localStorage.removeItem("lagos-guide-hidden");
     setManualTarget(null);
   };
-  const target = manualTarget ?? objective?.target ?? null;
+  const rideTarget =
+    ride?.status === "approaching" || ride?.status === "waiting"
+      ? { point: ride.pickup, label: `Pickup · ${ride.driverName}` }
+      : ride?.status === "riding"
+        ? { point: ride.dropoff, label: ride.label }
+        : null;
+  const target = rideTarget ?? manualTarget ?? objective?.target ?? null;
 
   useEffect(() => {
     engine?.setWaypoint(target);
@@ -373,11 +421,22 @@ export function GameView({
           <div className="progress"><i style={{ width: `${Math.round(loading.progress * 100)}%` }} /></div>
         </div>
       )}
+      {graphicsPaused && !fatal && (
+        <div className="loading-overlay" role="status" data-testid="graphics-paused">
+          <div className="wordmark"><span>LL</span> LAGOS LIVING</div>
+          <p>Your device paused the graphics to free memory. Restoring the city…</p>
+        </div>
+      )}
       {fatal && (
         <div className="loading-overlay error" role="alert">
           <h2>The city could not load</h2>
           <p>{fatal}</p>
-          <button className="primary" onClick={() => location.reload()}>Try again</button>
+          <div className="row">
+            <button className="primary" onClick={() => location.reload()}>Try again</button>
+            {quality !== "low" && (
+              <button onClick={() => { localStorage.setItem("lagos-quality", "low"); location.reload(); }}>Try with low graphics</button>
+            )}
+          </div>
         </div>
       )}
 
@@ -387,6 +446,12 @@ export function GameView({
             <p className="eyebrow">{hud.location === "bus" ? `ABOARD ${hud.bus?.routeNumber ?? ""} DANFO` : hud.location === "interior" ? "INDOORS" : hud.vehicle ? "DRIVING ON" : "YOU ARE ON"}</p>
             <h2 className={hud.streetNamed || hud.location !== "street" ? "" : "unnamed"}>{hud.street}</h2>
             <p>{hud.district}</p>
+            {ride && (ride.status === "approaching" || ride.status === "waiting" || ride.status === "riding") && (
+              <button className="ride-line" data-testid="ride-line" onClick={() => setPhone("ride")}>
+                🚕 {ride.status === "approaching" ? `${ride.driverName} arriving · ${ride.plate}` : ride.status === "waiting" ? `${ride.driverName} is waiting · ${ride.plate}` : `Riding with ${ride.driverName}`}
+              </button>
+            )}
+            <NavLine engine={engine} />
           </section>
 
           <section className="hud-status">
@@ -679,6 +744,8 @@ export function GameView({
           onCustomise={() => { setPhone(null); onCustomise(); }}
           onSignOut={onSignOut}
           playerName={playerName}
+          engine={engine}
+          ride={ride}
         />
       )}
 
@@ -739,6 +806,28 @@ function TouchLook({ engine }: { engine: GameEngine }) {
       onPointerCancel={end}
       onLostPointerCapture={end}
     />
+  );
+}
+
+const metresLabel = (metres: number) => (metres >= 1000 ? `${(metres / 1000).toFixed(1)} km` : `${Math.max(10, Math.round(metres / 10) * 10)} m`);
+
+/** Next turn for the current destination, re-read on every HUD refresh. */
+function NavLine({ engine }: { engine: GameEngine }) {
+  const nav = engine.navigation();
+  if (!nav) return null;
+  if (!nav.reachable) {
+    return <p className="nav-line warn" data-testid="nav-line">No road reaches {nav.label}. Head there on foot using the map.</p>;
+  }
+  const guidance = nav.guidance;
+  if (!guidance) return null;
+  const tail = nav.gap > 40 ? ` · the road ends ${metresLabel(nav.gap)} short, walk the rest` : "";
+  if (nav.rerouting) return <p className="nav-line" data-testid="nav-line"><b>⟳</b> Rerouting to {nav.label}…</p>;
+  if (guidance.turn === "arrive" && guidance.remaining < 15) return <p className="nav-line" data-testid="nav-line"><b>◎</b> You have arrived at {nav.label}{tail}</p>;
+  return (
+    <p className="nav-line" data-testid="nav-line">
+      <b>{turnArrow[guidance.turn]}</b> {metresLabel(guidance.distance)} · {describeTurn(guidance)}
+      <small> · {metresLabel(guidance.remaining)} to {nav.label}{tail}</small>
+    </p>
   );
 }
 

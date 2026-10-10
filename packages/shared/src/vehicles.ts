@@ -323,6 +323,8 @@ export const worldVehicleSchema = z.object({
   locked: z.boolean().default(true),
   /** Epoch milliseconds when a dealer test drive ends; null for owned vehicles. */
   testDriveEndsAt: z.number().nullable().default(null),
+  /** Driven by a non-player driver (Lagos Living Ride). */
+  npc: z.boolean().default(false),
   ownerName: z.string(),
   /** Per viewer: true when the receiving player owns this vehicle. */
   mine: z.boolean(),

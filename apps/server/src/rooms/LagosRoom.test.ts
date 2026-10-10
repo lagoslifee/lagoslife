@@ -44,6 +44,8 @@ const justice = vi.hoisted(() => ({
   issueCitation: vi.fn(async (..._args: unknown[]): Promise<{ fine: number } | null> => ({ fine: 2_500 })),
 }));
 vi.mock("../justice-service.js", () => justice);
+const rides = vi.hoisted(() => ({ chargeRide: vi.fn(async () => 1_000), refundRide: vi.fn(async () => 1_000) }));
+vi.mock("../ride-service.js", () => rides);
 vi.mock("../profile-service.js", async () => {
   const { EventEmitter } = await import("node:events");
   return { loadAppearance: vi.fn(async () => ({ skinTone: "rich", hairstyle: "low-fade", outfit: "island-casual", accessory: "none" })), profileEvents: new EventEmitter() };
@@ -298,14 +300,26 @@ describe("LagosRoom driving", () => {
     expect(room.vehicles.get("car-1")!.driverSessionId).toBe(ada.sessionId);
   });
 
-  it("keeps other residents out of a car they do not own", async () => {
+  it("keeps other residents out of a locked car they do not own", async () => {
     const { room, join, player, notices } = withCar();
+    room.vehicles.get("car-1")!.locked = true;
     const tunde = join("tunde");
     Object.assign(player(tunde), { x: parked.x - 1.5, z: parked.z });
     await room.handleEnterVehicle(tunde, { vehicleId: "car-1" });
     expect(vehicles.claimVehicle).not.toHaveBeenCalled();
     expect(player(tunde).vehicleId).toBeNull();
-    expect(notices(tunde).at(-1)).toMatch(/belongs to ada/);
+    expect(notices(tunde).at(-1)).toMatch(/belongs to ada.*locked/);
+  });
+
+  it("lets other residents ride as passengers in an unlocked car, never as driver", async () => {
+    const { room, join, player } = withCar();
+    room.vehicles.get("car-1")!.locked = false;
+    const tunde = join("tunde");
+    Object.assign(player(tunde), { x: parked.x - 1.5, z: parked.z });
+    await room.handleEnterVehicle(tunde, { vehicleId: "car-1" });
+    expect(vehicles.claimVehicle).not.toHaveBeenCalled();
+    expect(player(tunde).vehicleId).toBe("car-1");
+    expect(player(tunde).vehicleSeat).toBeGreaterThan(0);
   });
 
   it("accepts car speeds while driving but corrects anything faster than the model allows", async () => {
@@ -852,5 +866,86 @@ describe("LagosRoom sessions", () => {
     await leaving;
     expect(economy.savePlayerPlace).not.toHaveBeenCalled();
     expect([...room.players.keys()]).toEqual(["s-new"]);
+  });
+});
+
+describe("LagosRoom Lagos Living Ride", () => {
+  type RideRoom = {
+    handleRideBook(client: FakeClient, payload: unknown): Promise<void>;
+    handleRideCancel(client: FakeClient, payload: unknown): Promise<void>;
+    handleRideBoard(client: FakeClient): void;
+    handleEnterVehicle(client: FakeClient, payload: unknown): Promise<void>;
+    checkRides(now: number): void;
+    vehicles: Map<string, { npc?: boolean }>;
+  };
+  const here = sampleRoute(lekki, stop.s + 40);
+  const there = [150, 250, 350, 450].map((ahead) => sampleRoute(lekki, stop.s + 40 + ahead)).find((pose) => Math.hypot(pose.x - here.x, pose.z - here.z) > 140)!;
+
+  function booked() {
+    const context = setup();
+    const ada = context.join("ada");
+    Object.assign(context.player(ada), { x: here.x, z: here.z });
+    const room = context.room as unknown as RideRoom;
+    const book = () =>
+      room.handleRideBook(ada, {
+        pickup: [here.x, here.z],
+        pickupYaw: here.yaw,
+        dropoff: [there.x, there.z],
+        destination: [there.x, there.z],
+        label: "Ade Auto Works",
+        roadMetres: 660,
+        idempotencyKey: crypto.randomUUID(),
+      });
+    return { ...context, ada, room, book, ride: () => context.player(ada).ride! };
+  }
+
+  beforeEach(() => {
+    rides.chargeRide.mockClear();
+    rides.refundRide.mockClear();
+  });
+
+  it("charges the fare once and refuses a second booking while one is active", async () => {
+    const { book, ride, notices, ada } = booked();
+    await book();
+    expect(notices(ada)).toEqual([expect.stringContaining("Ride booked")]);
+    expect(ride().status).toBe("approaching");
+    expect(rides.chargeRide).toHaveBeenCalledWith("u-ada", ride().fare, "Ade Auto Works", expect.any(String));
+    await book();
+    expect(rides.chargeRide).toHaveBeenCalledTimes(1);
+  });
+
+  it("refunds everything when cancelled inside the free minute", async () => {
+    const { book, room, ada, ride } = booked();
+    await book();
+    await room.handleRideCancel(ada, { reason: "rider" });
+    expect(ride().status).toBe("cancelled");
+    expect(rides.refundRide).toHaveBeenCalledWith("u-ada", ride().id, ride().fare, expect.stringContaining("within a minute"));
+  });
+
+  it("keeps the no-show fee once the driver is waiting, and nobody can drive the ride car", async () => {
+    const { book, room, ada, ride, join, player } = booked();
+    await book();
+    room.checkRides(ride().arrivesAt + 1);
+    expect(ride().status).toBe("waiting");
+    const carId = ride().vehicleId!;
+    const car = room.vehicles.get(carId)!;
+    expect(car.npc).toBe(true);
+    const tunde = join("tunde");
+    Object.assign(player(tunde), { x: here.x, z: here.z });
+    await room.handleEnterVehicle(tunde, { vehicleId: ride().vehicleId });
+    expect(player(tunde).vehicleId).toBeNull();
+    await room.handleRideCancel(ada, { reason: "rider" });
+    expect(rides.refundRide).toHaveBeenCalledWith("u-ada", ride().id, ride().fare - 300, expect.stringContaining("fee kept"));
+    expect(room.vehicles.has(carId)).toBe(false);
+  });
+
+  it("boards the rider into a passenger seat when the car has arrived", async () => {
+    const { book, room, ada, ride, player } = booked();
+    await book();
+    room.checkRides(ride().arrivesAt + 1);
+    room.handleRideBoard(ada);
+    expect(ride().status).toBe("riding");
+    expect(player(ada).vehicleId).toBe(ride().vehicleId);
+    expect(player(ada).vehicleSeat).toBeGreaterThan(0);
   });
 });

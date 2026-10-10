@@ -13,6 +13,7 @@ import {
   type Notice,
   type SelfState,
   type WorldSnapshot,
+  type RideState,
 } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
@@ -34,6 +35,7 @@ export type MultiplayerHandlers = {
   suspended: (info: { reason: string; until: string | null }) => void;
   looks: (looks: Look[]) => void;
   plots: () => void;
+  ride: (ride: RideState | null) => void;
 };
 
 export class MultiplayerConnection {
@@ -97,6 +99,7 @@ export class MultiplayerConnection {
         if (parsed.success) this.handlers.looks(parsed.data);
       });
       room.onMessage("plots", () => this.handlers.plots());
+      room.onMessage("ride", (ride: RideState | null) => this.handlers.ride(ride));
       room.onMessage("suspended", (payload: { reason?: unknown; until?: unknown }) => {
         this.closed = true;
         this.handlers.suspended({ reason: String(payload?.reason ?? ""), until: typeof payload?.until === "string" ? payload.until : null });
@@ -146,7 +149,11 @@ export class MultiplayerConnection {
       | "exitVehicle"
       | "vehicleImpact"
       | "vehicleSignal"
-      | "testDrive",
+      | "testDrive"
+      | "rideBook"
+      | "rideBoard"
+      | "rideArrive"
+      | "rideCancel",
     payload?: unknown,
   ) {
     this.room?.send(type, payload);
