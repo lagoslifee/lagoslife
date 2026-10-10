@@ -90,6 +90,8 @@ export const networkPlayerSchema = z.object({
   carrying: z.boolean().default(false),
   connected: z.boolean().default(true),
   vehicleId: z.string().nullable().default(null),
+  /** 0 is the driver's seat; higher numbers are passenger seats. */
+  vehicleSeat: z.number().int().nullable().default(null),
 });
 
 export const busStateSchema = z.object({
@@ -135,6 +137,7 @@ export const selfStateSchema = z.object({
   busId: z.string().nullable(),
   seat: z.number().int().nullable(),
   vehicleId: z.string().nullable(),
+  vehicleSeat: z.number().int().nullable().default(null),
   reason: z.string(),
 });
 export type SelfState = z.infer<typeof selfStateSchema>;

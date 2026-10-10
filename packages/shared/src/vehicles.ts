@@ -227,14 +227,14 @@ export function vehicleSeats(model: VehicleModel): Array<{ x: number; z: number 
   const across = model.width * 0.22;
   const front = model.length * { hatch: -0.05, saloon: 0.01, suv: 0.06, pickup: 0.06, van: 0.3 }[model.body];
   const seats = [{ x: -across, z: front }, { x: across, z: front }];
-  const rowGap = model.body === "van" ? 1.05 : 0.95;
-  let row = 1;
-  while (seats.length < model.seats) {
-    const z = front - rowGap * row;
-    const perRow = model.body === "van" ? 3 : model.seats - seats.length >= 3 && row === 1 && model.seats <= 5 ? 3 : 2;
-    const xs = perRow === 3 ? [-across * 1.3, 0, across * 1.3] : [-across, across];
-    for (const x of xs) if (seats.length < model.seats) seats.push({ x, z });
-    row += 1;
+  const rest = model.seats - 2;
+  const rows = Math.ceil(rest / 3);
+  const rowGap = rows ? Math.min(model.body === "van" ? 1.05 : 0.95, (front + model.length / 2 - 0.75) / rows) : 0;
+  for (let row = 1; row <= rows; row += 1) {
+    const left = model.seats - seats.length;
+    const perRow = Math.min(3, left);
+    const xs = perRow === 3 ? [-across * 1.3, 0, across * 1.3] : perRow === 2 ? [-across, across] : [-across];
+    for (const x of xs) seats.push({ x, z: front - rowGap * row });
   }
   return seats;
 }
@@ -305,6 +305,8 @@ export type OwnedVehicle = {
   yaw: number | null;
   garagePropertyId: string | null;
   insuredUntil: string | null;
+  /** Locked vehicles admit only their owner; unlocked ones let other players ride as passengers. */
+  locked: boolean;
 };
 
 /** What other players need to draw a vehicle. */
@@ -318,6 +320,9 @@ export const worldVehicleSchema = z.object({
   yaw: z.number().finite(),
   driverSessionId: z.string().nullable(),
   lights: z.boolean().default(false),
+  locked: z.boolean().default(true),
+  /** Epoch milliseconds when a dealer test drive ends; null for owned vehicles. */
+  testDriveEndsAt: z.number().nullable().default(null),
   ownerName: z.string(),
   /** Per viewer: true when the receiving player owns this vehicle. */
   mine: z.boolean(),
@@ -331,6 +336,18 @@ export const purchaseVehicleSchema = z.object({
 });
 export const vehicleActionSchema = z.object({ idempotencyKey: z.uuid() });
 export const garageVehicleSchema = z.object({ propertyId: z.string().min(1).max(100), idempotencyKey: z.uuid() });
-export const enterVehicleSchema = z.object({ vehicleId: z.string().min(1).max(60) });
+export const enterVehicleSchema = z.object({ vehicleId: z.string().min(1).max(60), seat: z.enum(["driver", "passenger"]).optional() });
+export const vehicleLockSchema = z.object({ locked: z.boolean() });
+export const testDriveSchema = z.object({ modelId: z.string().min(1).max(40), colour: z.string().regex(/^#[0-9a-f]{6}$/i) });
+
+export const TEST_DRIVE = {
+  dealerPlaceId: "lekki-motors",
+  /** Must be this close to the dealership door to book one. */
+  bookRange: 40,
+  seconds: 180,
+  /** Leaving this radius around the dealership ends the drive and returns the car. */
+  radius: 450,
+  cooldownMs: 15_000,
+} as const;
 export const vehicleSignalSchema = z.object({ lights: z.boolean().optional(), horn: z.literal(true).optional() });
 export const vehicleImpactSchema = z.object({ speed: z.number().finite().min(0).max(80) });

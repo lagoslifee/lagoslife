@@ -33,7 +33,7 @@ export const DEALERSHIP_ID = "lekki-motors";
 export const MECHANIC_ID = "ade-auto-works";
 
 const vehicleColumns = `id, owner_user_id, model_id, colour, plate, condition, odometer_m, service_odometer_m,
-  status, driver_session_id, x, z, yaw, garage_property_id, insured_until`;
+  status, driver_session_id, x, z, yaw, garage_property_id, insured_until, locked`;
 
 type VehicleRow = {
   id: string;
@@ -51,6 +51,7 @@ type VehicleRow = {
   yaw: number | null;
   garage_property_id: string | null;
   insured_until: Date | null;
+  locked: boolean;
 };
 
 function isInsured(row: Pick<VehicleRow, "insured_until">) {
@@ -81,6 +82,7 @@ function toOwned(row: VehicleRow) {
     yaw: row.yaw === null ? null : Number(row.yaw),
     garagePropertyId: row.garage_property_id,
     insuredUntil: row.insured_until ? new Date(row.insured_until).toISOString() : null,
+    locked: row.locked !== false,
   };
   return {
     ...vehicle,
@@ -364,6 +366,20 @@ export async function garageVehicle(userId: string, vehicleId: string, propertyI
   return result;
 }
 
+export async function setVehicleLock(userId: string, vehicleId: string, locked: boolean) {
+  const result = await withTransaction(async (client) => {
+    const row = await lockOwnVehicle(client, userId, vehicleId);
+    const updated = await client.query<VehicleRow>(
+      `UPDATE player_vehicle SET locked = $2, updated_at = NOW() WHERE id = $1 RETURNING ${vehicleColumns}`,
+      [row.id, locked],
+    );
+    await logEvent(client, vehicleId, userId, locked ? "lock" : "unlock", 0, {});
+    return { vehicle: toOwned(updated.rows[0]!) };
+  });
+  vehicleEvents.emit("changed", vehicleId);
+  return result;
+}
+
 export async function retrieveVehicle(userId: string, vehicleId: string) {
   const result = await withTransaction(async (client) => {
     const row = await lockOwnVehicle(client, userId, vehicleId);
@@ -396,10 +412,13 @@ export type RoomVehicle = {
   yaw: number;
   driverSessionId: string | null;
   lights: boolean;
+  locked: boolean;
+  /** Present only on temporary dealer cars, which are never written to the database. */
+  testDrive?: { endsAt: number; origin: [number, number]; yaw: number; warned: boolean };
 };
 
 const roomColumns = `vehicle.id, vehicle.owner_user_id, vehicle.model_id, vehicle.colour, vehicle.plate,
-  vehicle.condition, vehicle.x, vehicle.z, vehicle.yaw, vehicle.driver_session_id, vehicle.status,
+  vehicle.condition, vehicle.x, vehicle.z, vehicle.yaw, vehicle.driver_session_id, vehicle.status, vehicle.locked,
   COALESCE("user".username, "user".name) AS owner_name`;
 
 function toRoomVehicle(row: Record<string, unknown>): RoomVehicle {
@@ -416,6 +435,7 @@ function toRoomVehicle(row: Record<string, unknown>): RoomVehicle {
     yaw: Number(row.yaw),
     driverSessionId: (row.driver_session_id as string | null) ?? null,
     lights: false,
+    locked: row.locked !== false,
   };
 }
 

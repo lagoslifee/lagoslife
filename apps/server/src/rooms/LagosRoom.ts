@@ -19,6 +19,10 @@ import {
   vehicleImpactSchema,
   vehicleSignalSchema,
   vehicleSeats,
+  vehicleModelById,
+  kerbSlot,
+  testDriveSchema,
+  TEST_DRIVE,
   type WorldVehicle,
   getPlace,
   INTERIOR_HALF,
@@ -127,6 +131,9 @@ type Player = {
   alightAtNext: boolean;
   alighted: { busId: string; at: number } | null;
   vehicleId: string | null;
+  /** 0 when driving; a passenger seat index otherwise. */
+  vehicleSeat: number | null;
+  lastTestDriveAt: number;
   /** Metres driven since the odometer was last written. */
   driveMetres: number;
   lastVehicleSaveAt: number;
@@ -256,6 +263,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("unstuck", (client) => this.handleUnstuck(client));
     this.onMessage("enterVehicle", (client, payload) => void this.handleEnterVehicle(client, payload));
     this.onMessage("exitVehicle", (client) => void this.handleExitVehicle(client));
+    this.onMessage("testDrive", (client, payload) => this.handleTestDrive(client, payload));
     this.onMessage("vehicleSignal", (client, payload) => this.handleVehicleSignal(client, payload));
     this.onMessage("vehicleImpact", (client, payload) => void this.handleVehicleImpact(client, payload));
     this.onMessage("chat", (client, payload) => void this.handleChat(client, payload));
@@ -322,6 +330,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       alightAtNext: false,
       alighted: null,
       vehicleId: null,
+      vehicleSeat: null,
+      lastTestDriveAt: 0,
       driveMetres: 0,
       lastVehicleSaveAt: now,
       lastImpactAt: 0,
@@ -453,6 +463,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       busId: player.busId,
       seat: player.seat,
       vehicleId: player.vehicleId,
+      vehicleSeat: player.vehicleSeat,
       reason,
     };
     client.send("self", self);
@@ -470,6 +481,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     player.lastSequence = parsed.data.sequence;
     if (player.busId) return;
     if (player.entering) return;
+    if (player.vehicleSeat) return;
     const now = Date.now();
     const elapsed = Math.min(1.5, Math.max(0.03, (now - player.lastAcceptedAt) / 1_000));
     const vehicle = player.vehicleId ? this.vehicles.get(player.vehicleId) : undefined;
@@ -501,6 +513,11 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       vehicle.x = player.x;
       vehicle.z = player.z;
       vehicle.yaw = player.yaw;
+      for (const rider of this.passengersOf(vehicle.id)) {
+        [rider.x, rider.z, rider.yaw] = [player.x, player.z, player.yaw];
+        rider.lastAcceptedAt = now;
+        setPlayerPosition(rider.userId, rider.x, rider.z, "street");
+      }
       const struck = this.contactAlong(player, vehicle.id, from, [player.x, player.z]);
       if (struck) this.considerCitation(client, player, null, struck);
       else if (speedBefore >= JUSTICE.carelessDrivingSpeed && distance / elapsed < WALL_STOP_SPEED && player.heading && this.wallAhead(player, player.heading)) {
@@ -508,7 +525,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       }
       if (distance > 0.05) player.heading = [(player.x - from[0]) / distance, (player.z - from[1]) / distance];
       player.driveMetres += distance;
-      if (now - player.lastVehicleSaveAt > VEHICLE_SAVE_MS) {
+      if (!vehicle.testDrive && now - player.lastVehicleSaveAt > VEHICLE_SAVE_MS) {
         const metres = player.driveMetres;
         player.driveMetres = 0;
         player.lastVehicleSaveAt = now;
@@ -732,20 +749,30 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (fresh === undefined) return;
     const cached = this.vehicles.get(vehicleId);
     if (cached?.driverSessionId) {
-      if (fresh) cached.condition = fresh.condition;
+      if (fresh) {
+        cached.condition = fresh.condition;
+        cached.locked = fresh.locked;
+      }
       return;
     }
-    if (fresh) this.vehicles.set(vehicleId, fresh);
-    else this.vehicles.delete(vehicleId);
+    if (fresh && cached && Math.hypot(fresh.x - cached.x, fresh.z - cached.z) > 5) this.ejectPassengers(vehicleId);
+    if (fresh) this.vehicles.set(vehicleId, { ...fresh, lights: cached?.lights ?? false });
+    else {
+      this.ejectPassengers(vehicleId);
+      this.vehicles.delete(vehicleId);
+    }
   }
 
   private dropOwnerVehicles(userId: string) {
     for (const [id, vehicle] of this.vehicles) {
-      if (vehicle.ownerUserId === userId) this.vehicles.delete(id);
+      if (vehicle.ownerUserId !== userId) continue;
+      this.ejectPassengers(id);
+      this.vehicles.delete(id);
     }
     for (const player of this.players.values()) {
       if (player.userId !== userId || !player.vehicleId) continue;
       player.vehicleId = null;
+      player.vehicleSeat = null;
       player.driveMetres = 0;
       player.motion = "idle";
       const client = this.clientFor(player);
@@ -754,20 +781,21 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   }
 
   /** Driver door first, then the passenger side, then behind and ahead. */
-  private exitPoint(vehicle: RoomVehicle): [number, number] {
+  private exitPoint(vehicle: RoomVehicle, seatIndex = 0): [number, number] {
     const model = getVehicleModel(vehicle.modelId);
+    const seatInfo = vehicleSeats(model)[seatIndex] ?? vehicleSeats(model)[0]!;
     const rightX = Math.cos(vehicle.yaw);
     const rightZ = -Math.sin(vehicle.yaw);
     const forwardX = Math.sin(vehicle.yaw);
     const forwardZ = Math.cos(vehicle.yaw);
     const side = model.width / 2 + 0.7;
     const end = model.length / 2 + 0.8;
-    const seat = vehicleSeats(model)[0]!.z;
-    const cx = vehicle.x + forwardX * seat;
-    const cz = vehicle.z + forwardZ * seat;
+    const cx = vehicle.x + forwardX * seatInfo.z;
+    const cz = vehicle.z + forwardZ * seatInfo.z;
+    const near = seatInfo.x > 0 ? 1 : -1;
     const candidates: Array<[number, number]> = [
-      [cx - rightX * side, cz - rightZ * side],
-      [cx + rightX * side, cz + rightZ * side],
+      [cx + near * rightX * side, cz + near * rightZ * side],
+      [cx - near * rightX * side, cz - near * rightZ * side],
       [vehicle.x - forwardX * end, vehicle.z - forwardZ * end],
       [vehicle.x + forwardX * end, vehicle.z + forwardZ * end],
     ];
@@ -782,14 +810,148 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (!vehicleId) return null;
     const vehicle = this.vehicles.get(vehicleId);
     const metres = player.driveMetres;
+    const seat = player.vehicleSeat ?? 0;
     player.vehicleId = null;
+    player.vehicleSeat = null;
     player.driveMetres = 0;
     player.motion = "idle";
     if (!vehicle) return null;
+    if (seat > 0) return vehicle;
     vehicle.driverSessionId = null;
     vehicle.lights = false;
+    if (vehicle.testDrive) {
+      this.ejectPassengers(vehicleId);
+      this.vehicles.delete(vehicleId);
+      return vehicle;
+    }
     await saveDrivingVehicle(vehicleId, vehicle, metres, true);
     return vehicle;
+  }
+
+  private passengersOf(vehicleId: string) {
+    return [...this.players.values()].filter((other) => other.vehicleId === vehicleId && (other.vehicleSeat ?? 0) > 0);
+  }
+
+  /** Passengers step out beside their seat when a vehicle leaves the street. */
+  private ejectPassengers(vehicleId: string) {
+    const vehicle = this.vehicles.get(vehicleId);
+    for (const rider of this.passengersOf(vehicleId)) {
+      if (vehicle) [rider.x, rider.z] = this.exitPoint(vehicle, rider.vehicleSeat ?? 1);
+      rider.vehicleId = null;
+      rider.vehicleSeat = null;
+      rider.motion = "idle";
+      rider.lastAcceptedAt = Date.now();
+      setPlayerPosition(rider.userId, rider.x, rider.z, "street");
+      const client = this.clientFor(rider);
+      if (client) {
+        this.sendSelf(client, rider, "parked");
+        this.notify(client, { tone: "info", text: "The vehicle left the street, so you stepped out." });
+      }
+    }
+  }
+
+  private seatPassenger(client: Client, player: Player, vehicle: RoomVehicle) {
+    const model = getVehicleModel(vehicle.modelId);
+    const taken = new Set(this.passengersOf(vehicle.id).map((rider) => rider.vehicleSeat));
+    let seat = 1;
+    while (taken.has(seat)) seat += 1;
+    if (seat >= model.seats) return this.notify(client, { tone: "error", text: `All ${model.seats - 1} passenger seats are taken.` });
+    player.vehicleId = vehicle.id;
+    player.vehicleSeat = seat;
+    [player.x, player.z, player.yaw] = [vehicle.x, vehicle.z, vehicle.yaw];
+    player.motion = "sit";
+    player.lastAcceptedAt = Date.now();
+    setPlayerPosition(player.userId, player.x, player.z, "street");
+    this.notify(client, { tone: "success", text: `You're riding in ${vehicle.ownerName}'s ${model.name}. Step out any time.` });
+    this.sendSelf(client, player, "boarded");
+  }
+
+  private handleTestDrive(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = testDriveSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
+    if (player.location !== "street" || player.busId || player.vehicleId || player.entering) {
+      return this.notify(client, { tone: "error", text: "Step out onto the street first." });
+    }
+    const model = vehicleModelById.get(parsed.data.modelId);
+    if (!model || !model.colours.includes(parsed.data.colour)) return this.notify(client, { tone: "error", text: "That model is not in the showroom." });
+    const dealer = getPlace(TEST_DRIVE.dealerPlaceId);
+    if (Math.hypot(player.x - dealer.door[0], player.z - dealer.door[1]) > TEST_DRIVE.bookRange) {
+      return this.notify(client, { tone: "error", text: `Test drives start at ${dealer.name}.` });
+    }
+    const now = Date.now();
+    if (now - player.lastTestDriveAt < TEST_DRIVE.cooldownMs) return this.notify(client, { tone: "error", text: "The dealer is preparing the next car — try again in a few seconds." });
+    if ([...this.vehicles.values()].some((vehicle) => vehicle.testDrive && vehicle.ownerUserId === player.userId)) return;
+    let spot: [number, number] = dealer.kerb;
+    for (let index = 0; index < 12; index += 1) {
+      const candidate = kerbSlot(dealer.kerb, dealer.kerbYaw, index);
+      if ([...this.vehicles.values()].every((vehicle) => Math.hypot(vehicle.x - candidate[0], vehicle.z - candidate[1]) > 6)) {
+        spot = candidate;
+        break;
+      }
+    }
+    player.lastTestDriveAt = now;
+    const vehicle: RoomVehicle = {
+      id: `test-${randomUUID()}`,
+      ownerUserId: player.userId,
+      ownerName: `${dealer.name} test car`,
+      modelId: model.id,
+      colour: parsed.data.colour,
+      plate: "TEST",
+      condition: 100,
+      x: spot[0],
+      z: spot[1],
+      yaw: dealer.kerbYaw,
+      driverSessionId: client.sessionId,
+      lights: false,
+      locked: true,
+      testDrive: { endsAt: now + TEST_DRIVE.seconds * 1_000, origin: spot, yaw: dealer.kerbYaw, warned: false },
+    };
+    this.vehicles.set(vehicle.id, vehicle);
+    player.vehicleId = vehicle.id;
+    player.vehicleSeat = 0;
+    [player.x, player.z, player.yaw] = [vehicle.x, vehicle.z, vehicle.yaw];
+    player.motion = "drive";
+    player.driveMetres = 0;
+    player.lastAcceptedAt = now;
+    setPlayerPosition(player.userId, player.x, player.z, "street");
+    this.notify(client, { tone: "success", text: `Test drive: ${model.name} for ${TEST_DRIVE.seconds / 60} minutes within ${TEST_DRIVE.radius} m of ${dealer.name}. Free, no damage charged.` });
+    this.sendSelf(client, player, "drive");
+    client.send("vehicleStatus", { vehicleId: vehicle.id, condition: 100 });
+  }
+
+  /** Time up or out of bounds: the dealer collects the car and the driver is walked back to the showroom. */
+  private checkTestDrives(now: number) {
+    for (const vehicle of this.vehicles.values()) {
+      const drive = vehicle.testDrive;
+      if (!drive) continue;
+      const driver = [...this.players.values()].find((player) => player.sessionId === vehicle.driverSessionId);
+      if (!driver) {
+        this.vehicles.delete(vehicle.id);
+        continue;
+      }
+      const client = this.clientFor(driver);
+      const distance = Math.hypot(vehicle.x - drive.origin[0], vehicle.z - drive.origin[1]);
+      if (!drive.warned && distance > TEST_DRIVE.radius * 0.8 && client) {
+        drive.warned = true;
+        this.notify(client, { tone: "info", text: "Nearing the test-drive limit — turn back towards Lekki Motors." });
+      }
+      const timeUp = now >= drive.endsAt;
+      if (!timeUp && distance <= TEST_DRIVE.radius) continue;
+      this.ejectPassengers(vehicle.id);
+      [vehicle.x, vehicle.z, vehicle.yaw] = [drive.origin[0], drive.origin[1], drive.yaw];
+      [driver.x, driver.z] = this.exitPoint(vehicle);
+      driver.vehicleId = null;
+      driver.vehicleSeat = null;
+      driver.motion = "idle";
+      driver.lastAcceptedAt = now;
+      this.vehicles.delete(vehicle.id);
+      setPlayerPosition(driver.userId, driver.x, driver.z, "street");
+      if (client) {
+        this.notify(client, { tone: "info", text: timeUp ? "Test drive over. The car is back at Lekki Motors — buy it from the showroom if you liked it." : "You left the test-drive area, so the dealer took the car back to Lekki Motors." });
+        this.sendSelf(client, driver, "recovered");
+      }
+    }
   }
 
   private async handleEnterVehicle(client: Client, payload: unknown) {
@@ -799,13 +961,19 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (player.location !== "street" || player.busId || player.vehicleId || player.entering) return;
     const vehicle = this.vehicles.get(parsed.data.vehicleId);
     if (!vehicle) return this.notify(client, { tone: "error", text: "That vehicle is no longer here." });
-    if (vehicle.ownerUserId !== player.userId) {
-      return this.notify(client, { tone: "error", text: `This car belongs to ${vehicle.ownerName}. It is locked.` });
-    }
-    if (vehicle.driverSessionId) return this.notify(client, { tone: "error", text: "Someone is already driving it." });
+    const owner = vehicle.ownerUserId === player.userId;
     if (Math.hypot(player.x - vehicle.x, player.z - vehicle.z) > VEHICLE_RULES.enterRange + 1) {
       return this.notify(client, { tone: "error", text: "Walk up to the car door." });
     }
+    if (vehicle.testDrive && !owner) return this.notify(client, { tone: "error", text: "That is someone's dealer test car." });
+    if (!owner && vehicle.locked) {
+      return this.notify(client, { tone: "error", text: `This vehicle belongs to ${vehicle.ownerName}. It is locked.` });
+    }
+    if (!owner || parsed.data.seat === "passenger") {
+      if (getVehicleModel(vehicle.modelId).seats < 2) return this.notify(client, { tone: "error", text: "There is no passenger seat." });
+      return this.seatPassenger(client, player, vehicle);
+    }
+    if (vehicle.driverSessionId) return this.notify(client, { tone: "error", text: "Someone is already driving it." });
     if (vehicle.condition <= 0) {
       return this.notify(client, { tone: "error", text: "It will not start. Book a tow to the mechanic from Phone → Vehicles." });
     }
@@ -820,6 +988,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       vehicle.driverSessionId = client.sessionId;
       vehicle.condition = claim.condition;
       player.vehicleId = vehicle.id;
+      player.vehicleSeat = 0;
       player.x = vehicle.x;
       player.z = vehicle.z;
       player.yaw = vehicle.yaw;
@@ -846,8 +1015,16 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private async handleExitVehicle(client: Client, quiet = false) {
     const player = this.players.get(client.sessionId);
     if (!player?.vehicleId) return;
+    const seat = player.vehicleSeat ?? 0;
+    const testCar = Boolean(this.vehicles.get(player.vehicleId)?.testDrive);
     const vehicle = await this.parkPlayerVehicle(player).catch(() => null);
-    if (vehicle) [player.x, player.z] = this.exitPoint(vehicle);
+    if (vehicle) [player.x, player.z] = this.exitPoint(vehicle, seat);
+    if (testCar && !quiet) this.notify(client, { tone: "info", text: "Test drive finished. Lekki Motors has collected the car." });
+    if (seat > 0 || testCar) {
+      player.lastAcceptedAt = Date.now();
+      setPlayerPosition(player.userId, player.x, player.z, "street");
+      return this.sendSelf(client, player, "parked");
+    }
     player.lastAcceptedAt = Date.now();
     setPlayerPosition(player.userId, player.x, player.z, "street");
     void this.persist(player).catch(() => undefined);
@@ -879,7 +1056,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const parsed = vehicleImpactSchema.safeParse(payload);
     if (!player?.vehicleId || !parsed.success) return;
     const vehicle = this.vehicles.get(player.vehicleId);
-    if (!vehicle) return;
+    if (!vehicle || vehicle.driverSessionId !== client.sessionId || vehicle.testDrive) return;
     const now = Date.now();
     if (now - player.lastImpactAt < IMPACT_COOLDOWN_MS) return;
     player.lastImpactAt = now;
@@ -1066,6 +1243,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         yaw: vehicle.yaw,
         driverSessionId: vehicle.driverSessionId,
         lights: vehicle.lights,
+        locked: vehicle.locked,
+        testDriveEndsAt: vehicle.testDrive?.endsAt ?? null,
         ownerName: vehicle.ownerName,
         mine: vehicle.ownerUserId === viewer.userId,
       });
@@ -1077,6 +1256,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const seconds = dt / 1_000;
     const now = Date.now();
     this.state.tick = (this.state.tick + 1) >>> 0;
+    if (this.state.tick % 25 === 0) this.checkTestDrives(now);
     for (const bus of this.buses) {
       const { route } = bus;
       const length = routeLength(route);
@@ -1205,6 +1385,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (player.carrying) wire.carrying = true;
     if (!player.connected) wire.connected = false;
     if (player.vehicleId) wire.vehicleId = player.vehicleId;
+    if (player.vehicleSeat) wire.vehicleSeat = player.vehicleSeat;
     return wire;
   }
 

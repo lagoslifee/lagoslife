@@ -13,6 +13,7 @@ import {
   purchaseRequestSchema,
   saveCharacterSchema,
   garageVehicleSchema,
+  vehicleLockSchema,
   purchaseVehicleSchema,
   placeById,
   vehicleActionSchema,
@@ -99,6 +100,7 @@ import {
   listVehicles,
   purchaseVehicle,
   retrieveVehicle,
+  setVehicleLock,
   serviceVehicle,
   towVehicle,
 } from "./vehicle-service.js";
@@ -390,6 +392,9 @@ export function configureRoutes(app: Express) {
 
   app.post("/api/vehicles/:vehicleId/garage", requirePlayer, rateLimited, guarded("Vehicle could not be garaged", (req, userId) =>
     garageVehicle(userId, String(req.params.vehicleId), garageVehicleSchema.parse(req.body).propertyId)));
+
+  app.post("/api/vehicles/:vehicleId/lock", requirePlayer, rateLimited, guarded("Lock could not be changed", (req, userId) =>
+    setVehicleLock(userId, String(req.params.vehicleId), vehicleLockSchema.parse(req.body).locked)));
 
   app.post("/api/vehicles/:vehicleId/retrieve", requirePlayer, rateLimited, guarded("Vehicle could not be retrieved", (req, userId) =>
     retrieveVehicle(userId, String(req.params.vehicleId))));
