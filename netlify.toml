@@ -8,6 +8,11 @@
 
 [build.environment]
   NODE_VERSION = "22"
+  # Testing server: a Cloudflare quick tunnel to a server on the development VM. It changes whenever the tunnel
+  # restarts and stops when the VM does; replace it with the real API origin for a lasting deployment.
+  VITE_API_URL = "https://omaha-celebrate-promising-test.trycloudflare.com"
+  # Testing only: visitors get a guest account instead of the sign-in page.
+  VITE_GUEST_MODE = "true"
 
 [[redirects]]
   from = "/*"
