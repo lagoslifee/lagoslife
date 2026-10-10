@@ -27,6 +27,12 @@ import {
   VEHICLE_RULES,
   type WorldVehicle,
   blockedByWater,
+  builtHomeId,
+  houseDesign,
+  houseDoor,
+  PLOT_TERMS,
+  PLOTS,
+  syncPlotFootprints,
   defaultAppearance,
   districtAt,
   insideBuilding,
@@ -53,6 +59,8 @@ import {
   type Vec2,
 } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "../auth-client";
+import type { PlotState } from "../api";
+import { buildProgress, PlotsView } from "./plots";
 import { MultiplayerConnection, type MultiplayerStatus } from "../multiplayer";
 import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, MAX_AUTO_SCALING, qualityStep } from "./adaptive-quality";
 import { CityAudio } from "./audio";
@@ -103,7 +111,8 @@ export type HudState = {
 export type Interaction =
   | { kind: "place"; place: Place }
   | { kind: "delivery" }
-  | { kind: "interior"; spot: InteriorSpot["id"] };
+  | { kind: "interior"; spot: InteriorSpot["id"] }
+  | { kind: "plot"; plotId: string };
 
 export type EngineCallbacks = {
   hud: (state: HudState) => void;
@@ -118,6 +127,7 @@ export type EngineCallbacks = {
   toggle: (panel: "phone" | "map" | "help") => void;
   chat: (message: ChatMessage, own: boolean) => void;
   suspended: (info: { reason: string; until: string | null }) => void;
+  plotsChanged: () => void;
 };
 
 type Remote = {
@@ -182,6 +192,9 @@ export class GameEngine {
   private buses = new Map<string, DanfoView>();
   private busTags = new Map<string, HTMLDivElement>();
   private interior: InteriorView | null = null;
+  private plotsView: PlotsView | null = null;
+  private plotStates: PlotState[] = [];
+  private lastPlotDraw = 0;
   private self: SelfState | null = null;
   private status: MultiplayerStatus = { state: "connecting" };
   private online = 1;
@@ -288,6 +301,7 @@ export class GameEngine {
       },
       suspended: (info) => this.callbacks.suspended(info),
       looks: (looks) => this.onLooks(looks),
+      plots: () => this.callbacks.plotsChanged(),
     });
   }
 
@@ -360,6 +374,8 @@ export class GameEngine {
       const map = this.shadows?.getShadowMap();
       if (map) map.renderList!.push(...meshes.filter((mesh) => /plaster|roof|walls|gate/.test(mesh.name)));
     };
+    this.plotsView = new PlotsView(scene, this.materials, (x, z) => this.world!.groundHeight(x, z), (mesh) => this.shadows?.addShadowCaster(mesh, false));
+    this.plotsView.update(this.plotStates, Date.now());
     const spawn = getPlace("starter-home").door;
     await this.primeTiles(spawn[0], spawn[1]);
     this.assertLive();
@@ -642,6 +658,11 @@ export class GameEngine {
     if (this.readyFired && this.settings.autoGraphics && !document.hidden) {
       const level = this.adaptive.sample(this.engine.getDeltaTime(), now);
       if (level !== null) this.applyQualityStep(level);
+    }
+
+    if (this.plotsView && now - this.lastPlotDraw > 500) {
+      this.lastPlotDraw = now;
+      this.plotsView.update(this.plotStates, Date.now());
     }
 
     if (this.input.consume("phone")) this.callbacks.toggle("phone");
@@ -929,6 +950,34 @@ export class GameEngine {
         offer(distance - 0.5, { key: bind("interact"), label: `Drive ${view.model.name}`, detail: state.plate }, () => this.enterVehicle(state.id));
       } else {
         offer(distance + 1, { key: "🔒", label: `${state.ownerName}'s ${view.model.name}`, detail: "Locked", disabled: true }, () => undefined);
+      }
+    }
+    for (const plot of PLOTS) {
+      const state = this.plotStates.find((entry) => entry.id === plot.id);
+      const construction = state?.construction ?? null;
+      const gate = Math.hypot(plot.gate[0] - x, plot.gate[1] - z);
+      if (gate < PLOT_TERMS.range - 3.5) {
+        const design = construction ? houseDesign(construction.designId) : null;
+        let label = `${plot.name} · lease or buy land`;
+        let detail: string | undefined = `₦${PLOT_TERMS.leaseRent.toLocaleString()}/week or ₦${PLOT_TERMS.purchasePrice.toLocaleString()}`;
+        if (state?.status === "mine") {
+          if (!construction) [label, detail] = [`${plot.name} · choose a house to build`, "Your land"];
+          else if (construction.completed) [label, detail] = [`${plot.name} · manage your land`, design?.name];
+          else {
+            const progress = buildProgress(construction, Date.now());
+            [label, detail] = [progress.waitingForPayment ? `${plot.name} · pay builders for the next stage` : `${plot.name} · check the builders`, design?.name];
+          }
+        } else if (state?.status === "taken") [label, detail] = [`${plot.name} · held by a resident`, undefined];
+        const disabled = state?.status === "taken";
+        offer(gate, { key: disabled ? "🔒" : bind("interact"), label, detail, disabled }, () => !disabled && this.callbacks.interact({ kind: "plot", plotId: plot.id }));
+      }
+      if (construction?.completed) {
+        const [doorX, doorZ] = houseDoor(plot);
+        const distance = Math.hypot(doorX - x, doorZ - z);
+        if (distance < INTERACTION_RANGE) {
+          if (state?.status === "mine") offer(distance - 0.5, { key: bind("interact"), label: "Enter your house", detail: plot.name }, () => this.enterProperty(builtHomeId(plot.id), "enter"));
+          else offer(distance, { key: "🔒", label: "Private house", detail: "Locked", disabled: true }, () => undefined);
+        }
       }
     }
     for (const place of PLACES) {
@@ -1367,6 +1416,12 @@ export class GameEngine {
     this.net.send("requestStop");
   }
 
+  setPlots(states: PlotState[]) {
+    this.plotStates = states;
+    syncPlotFootprints(states.flatMap((state) => (state.construction ? [{ plotId: state.id, designId: state.construction.designId, stagesPaid: state.construction.stagesPaid }] : [])));
+    this.plotsView?.update(states, Date.now());
+  }
+
   enterProperty(propertyId: string, mode: "enter" | "preview") {
     this.net.send("enterProperty", { propertyId, mode });
   }
@@ -1512,6 +1567,7 @@ export class GameEngine {
       junctions: () => this.world.junctionSigns,
       stops: () => STOPS.map(({ route, ...stop }) => ({ ...stop, routeId: route.routeId })),
       places: () => PLACES.map((place) => ({ id: place.id, name: place.name, kind: place.kind, door: place.door, kerb: place.kerb })),
+      plots: () => PLOTS.map((plot) => ({ id: plot.id, gate: plot.gate, door: houseDoor(plot), state: this.plotStates.find((entry) => entry.id === plot.id) ?? null })),
       stats: () => this.stats(),
       loadedTiles: () => this.world.loadedTiles(),
       meshSummary: () => {
@@ -1562,6 +1618,7 @@ export class GameEngine {
     this.input?.dispose();
     this.audio.dispose();
     this.life?.dispose();
+    syncPlotFootprints([]);
     for (const remote of this.remotes.values()) remote.tag.remove();
     for (const tag of this.busTags.values()) tag.remove();
     for (const { tag } of this.vehicles.values()) tag.remove();

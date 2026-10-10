@@ -1,4 +1,4 @@
-import type { Citation, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
+import type { Citation, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -34,7 +34,7 @@ export type PropertyListing = {
   addressLabel: string;
   street: string | null;
   description: string | null;
-  listingType: "rental" | "sale" | "rental_or_sale";
+  listingType: "rental" | "sale" | "rental_or_sale" | "built";
   purchasePrice: number;
   rent: number;
   deposit: number;
@@ -54,6 +54,22 @@ export type PropertyListing = {
   placeId: string | null;
   isHome: boolean;
   overdue: boolean;
+};
+export type PlotState = {
+  id: string;
+  status: "available" | "mine" | "taken";
+  tenureType: "leased" | "owned" | null;
+  nextPaymentAt: string | null;
+  accessEndsAt: string | null;
+  overdue: boolean;
+  construction: null | {
+    designId: HouseDesign["id"];
+    stagesPaid: number;
+    stageStartedAt: string;
+    stageReadyAt: string;
+    completed: boolean;
+    homeId: string | null;
+  };
 };
 export type InteriorState = {
   id: string;
@@ -111,6 +127,11 @@ export const api = {
   startDelivery: () => post<ActiveJob & { resumed: boolean }>("/api/jobs/delivery/start"),
   completeDelivery: (jobId: string) => post<{ balance: number; reward: number; replayed: boolean }>("/api/jobs/delivery/complete", { jobId }),
   cancelDelivery: () => post<{ cancelled: boolean }>("/api/jobs/delivery/cancel"),
+  plots: () => request<PlotState[]>("/api/plots"),
+  acquirePlot: (plotId: string, tenure: "leased" | "owned") => post<{ balance: number }>(`/api/plots/${plotId}/acquire`, { tenure, idempotencyKey: crypto.randomUUID() }),
+  renewPlot: (plotId: string) => post<{ balance: number }>(`/api/plots/${plotId}/renew`, { idempotencyKey: crypto.randomUUID() }),
+  startBuilding: (plotId: string, designId: HouseDesign["id"]) => post<{ balance: number }>(`/api/plots/${plotId}/build`, { designId, idempotencyKey: crypto.randomUUID() }),
+  payNextStage: (plotId: string) => post<{ balance: number }>(`/api/plots/${plotId}/next-stage`, { idempotencyKey: crypto.randomUUID() }),
   acquire: (propertyId: string, tenure: "owned" | "rented") => post<{ balance: number }>("/api/properties/acquire", { propertyId, tenure, idempotencyKey: crypto.randomUUID() }),
   renew: (propertyId: string) => post<{ balance: number }>(`/api/properties/${propertyId}/renew`, { idempotencyKey: crypto.randomUUID() }),
   cancelTenancy: (propertyId: string) => post<{ cancelled: boolean; refunded: number }>(`/api/properties/${propertyId}/cancel`, { idempotencyKey: crypto.randomUUID() }),

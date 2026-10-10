@@ -32,6 +32,7 @@ export type MultiplayerHandlers = {
   chat: (message: ChatMessage) => void;
   suspended: (info: { reason: string; until: string | null }) => void;
   looks: (looks: Look[]) => void;
+  plots: () => void;
 };
 
 export class MultiplayerConnection {
@@ -91,6 +92,7 @@ export class MultiplayerConnection {
         const parsed = looksSchema.safeParse(payload);
         if (parsed.success) this.handlers.looks(parsed.data);
       });
+      room.onMessage("plots", () => this.handlers.plots());
       room.onMessage("suspended", (payload: { reason?: unknown; until?: unknown }) => {
         this.closed = true;
         this.handlers.suspended({ reason: String(payload?.reason ?? ""), until: typeof payload?.until === "string" ? payload.until : null });

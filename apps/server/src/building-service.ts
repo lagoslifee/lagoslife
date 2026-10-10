@@ -80,6 +80,16 @@ async function releasePlot(client: PoolClient, plotId: string) {
   await client.query(`DELETE FROM plot_tenure WHERE plot_id = $1`, [plotId]);
 }
 
+/** Test-progress reset: hands back the player's land and any house on it. */
+export async function releasePlotsOf(userId: string) {
+  await announce(
+    withTransaction(async (client) => {
+      const held = await client.query(`SELECT plot_id FROM plot_tenure WHERE owner_user_id = $1 FOR UPDATE`, [userId]);
+      for (const { plot_id: plotId } of held.rows) await releasePlot(client, plotId);
+    }),
+  );
+}
+
 export async function settleExpiredPlotLeases() {
   const expired = await pool.query(`SELECT plot_id FROM plot_tenure WHERE expires_at IS NOT NULL AND expires_at <= NOW()`);
   for (const { plot_id: plotId } of expired.rows) {

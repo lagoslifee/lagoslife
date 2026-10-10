@@ -1,6 +1,6 @@
 import { defaultSettings, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type SelfState, type Vec2 } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, naira, type EconomyState, type MyVehicle, type PropertyListing } from "../api";
+import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
 import { EngineDisposedError, GameEngine, type HudState, type Interaction } from "../game/engine";
 import type { Quality } from "../game/materials";
@@ -9,6 +9,7 @@ import { currentObjective } from "./objectives";
 import { Phone, type PhoneApp } from "./Phone";
 import { COMMUNITY_KINDS, CommunitySheet } from "./CommunitySheets";
 import { PlaceSheet } from "./Sheets";
+import { PlotSheet } from "./PlotSheet";
 import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
 import { ChatPanel, ReportDialog, WarningNotice, type ReportTarget } from "./SafetyUI";
 
@@ -62,6 +63,8 @@ export function GameView({
   const [log, setLog] = useState<Array<Notice & { at: number }>>([]);
   const [subtitle, setSubtitle] = useState<{ text: string; kind: "speech" | "sound" } | null>(null);
   const [sheet, setSheet] = useState<Place | null>(null);
+  const [plotSheet, setPlotSheet] = useState<string | null>(null);
+  const [plots, setPlots] = useState<PlotState[]>([]);
   const [phone, setPhone] = useState<PhoneApp | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(() => !localStorage.getItem("lagos-help-seen"));
@@ -75,6 +78,7 @@ export function GameView({
   const [visitedHome, setVisitedHome] = useState(() => localStorage.getItem("lagos-visited-home") === "1");
   const touch = useMemo(() => matchMedia("(pointer: coarse)").matches, []);
   const toastId = useRef(0);
+  const engineRef = useRef<GameEngine | null>(null);
   const [chat, setChat] = useState<Array<ChatMessage & { own: boolean }>>([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
@@ -90,9 +94,19 @@ export function GameView({
     setTimeout(() => setToasts((current) => current.filter((entry) => entry.id !== id)), notice.tone === "error" ? 6500 : 4500);
   }, []);
 
+  const refreshPlots = useCallback(async () => {
+    try {
+      const next = await api.plots();
+      setPlots(next);
+      engineRef.current?.setPlots(next);
+    } catch {
+      // Plots are refreshed again on the next change broadcast.
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
-      const [nextEconomy, nextProperties, nextVehicles] = await Promise.all([api.economy(), api.properties(), api.vehicles()]);
+      const [nextEconomy, nextProperties, nextVehicles] = await Promise.all([api.economy(), api.properties(), api.vehicles(), refreshPlots()]);
       setEconomy(nextEconomy);
       setProperties(nextProperties);
       setVehicles(nextVehicles);
@@ -101,7 +115,6 @@ export function GameView({
     }
   }, [toast]);
 
-  const engineRef = useRef<GameEngine | null>(null);
   const handlers = useRef<{ interact: (interaction: Interaction) => void; self: (self: SelfState) => void }>({ interact: () => undefined, self: () => undefined });
 
   useEffect(() => {
@@ -134,6 +147,7 @@ export function GameView({
         },
         chat: (message, own) => setChat((current) => [...current.slice(-59), { ...message, own }]),
         suspended: (info) => suspendedRef.current(info),
+        plotsChanged: () => void refreshPlots(),
       },
       quality,
       defaultSettings,
@@ -143,7 +157,9 @@ export function GameView({
     instance
       .start()
       .then(() => {
-        if (live) setEngine(instance);
+        if (!live) return;
+        setEngine(instance);
+        void refreshPlots();
       })
       .catch((error: Error) => {
         if (!live || error instanceof EngineDisposedError) return;
@@ -161,7 +177,14 @@ export function GameView({
       void instance.dispose();
       engineRef.current = null;
     };
-  }, [quality, refresh, toast]);
+  }, [quality, refresh, refreshPlots, toast]);
+
+  const finishingAt = plots.find((plot) => plot.status === "mine" && plot.construction && !plot.construction.completed && plot.construction.stagesPaid === 4)?.construction?.stageReadyAt;
+  useEffect(() => {
+    if (!finishingAt) return;
+    const timer = setTimeout(() => void refresh(), Math.max(0, Date.parse(finishingAt) - Date.now()) + 1500);
+    return () => clearTimeout(timer);
+  }, [finishingAt, refresh]);
 
   useEffect(() => {
     engine?.setAppearance(appearance);
@@ -196,7 +219,7 @@ export function GameView({
   }, [hud?.x, hud?.z]);
 
   const warnings = safety?.warnings ?? [];
-  const blocking = Boolean(sheet || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length);
+  const blocking = Boolean(sheet || plotSheet || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -227,14 +250,15 @@ export function GameView({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.code !== "Escape") return;
-      if (sheet) setSheet(null);
+      if (plotSheet) setPlotSheet(null);
+      else if (sheet) setSheet(null);
       else if (mapOpen) setMapOpen(false);
       else if (phone) setPhone(null);
       else if (helpOpen) setHelpOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sheet, mapOpen, phone, helpOpen]);
+  }, [sheet, plotSheet, mapOpen, phone, helpOpen]);
 
   const moving = (hud?.speed ?? 0) > 1;
   useEffect(() => {
@@ -249,6 +273,11 @@ export function GameView({
   handlers.current.interact = (interaction) => {
     if (interaction.kind === "place") {
       setSheet(interaction.place);
+      void refresh();
+      return;
+    }
+    if (interaction.kind === "plot") {
+      setPlotSheet(interaction.plotId);
       void refresh();
       return;
     }
@@ -522,6 +551,22 @@ export function GameView({
           onEnter={(propertyId, mode) => engine?.enterProperty(propertyId, mode)}
           onJobStarted={() => setManualTarget(null)}
           focusListingId={hud?.previewOnly ? hud.propertyId : null}
+        />
+      )}
+
+      {plotSheet && (
+        <PlotSheet
+          plotId={plotSheet}
+          state={plots.find((plot) => plot.id === plotSheet) ?? null}
+          economy={economy}
+          now={now}
+          onClose={() => setPlotSheet(null)}
+          onRefresh={async () => {
+            await refresh();
+            setSavedAt(Date.now());
+          }}
+          onToast={toast}
+          onEnter={(propertyId) => engine?.enterProperty(propertyId, "enter")}
         />
       )}
 

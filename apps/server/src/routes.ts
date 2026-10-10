@@ -32,7 +32,7 @@ import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
 import { auth } from "./auth.js";
-import { acquirePlot, listPlots, payNextStage, renewPlotLease, startConstruction } from "./building-service.js";
+import { acquirePlot, listPlots, payNextStage, releasePlotsOf, renewPlotLease, startConstruction } from "./building-service.js";
 import { config } from "./config.js";
 import { pool } from "./database.js";
 import { getPlayerPosition, markProgressReset } from "./player-presence.js";
@@ -498,6 +498,7 @@ export function configureRoutes(app: Express) {
 
   app.post("/api/dev/reset-progress", devOnly, requirePlayer, guarded("Reset failed", async (req, userId) => {
     markProgressReset(userId);
+    await releasePlotsOf(userId);
     await resetTestProgress(userId);
     return { reset: true };
   }));
