@@ -8,6 +8,7 @@ import {
 } from "@lagos-living/shared";
 import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 import { apiUrl, authClient } from "./auth-client";
+import { EconomyPanel } from "./EconomyPanel";
 
 const PlayableScene = lazy(() => import("./PlayableScene"));
 
@@ -260,6 +261,7 @@ function GameShell({
           </button>
         </div>
       </header>
+      <EconomyPanel />
       <aside className="location-card">
         <p className="eyebrow">CURRENT DISTRICT</p>
         <h2>Ikoyi Preview</h2>

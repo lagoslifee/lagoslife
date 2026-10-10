@@ -57,6 +57,17 @@ test("registers, renders Lagos, and persists character appearance", async ({ pag
   await expect(position).toBeVisible();
   await expect(page.getByText("Loading resident…")).toBeHidden();
   await expect(page.getByTestId("multiplayer-status")).toContainText("online");
+  await page.getByRole("button", { name: /game naira/i }).click();
+  await expect(page.getByRole("heading", { name: "Falomo Corner Shop" })).toBeVisible();
+  const water = page.locator(".catalogue-grid article").filter({ hasText: "Chilled Water" });
+  await water.getByRole("button", { name: /Buy/ }).click();
+  await expect(
+    page.locator(".economy-columns .economy-section").first().getByText("Chilled Water"),
+  ).toBeVisible();
+  await expect(page.locator(".economy-columns .economy-section").first()).toContainText("×1");
+  await page.getByRole("button", { name: "Start job" }).click();
+  await expect(page.getByText("Deliver to the gold marker")).toBeVisible();
+  await page.getByRole("button", { name: "Close wallet" }).click();
   const start = await position.textContent();
   await page.keyboard.down("w");
   await expect(page.locator("canvas")).toHaveAttribute("data-last-input", "forward:down");

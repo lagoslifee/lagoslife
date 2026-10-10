@@ -62,3 +62,12 @@ export const worldSnapshotSchema = z.object({
 
 export type NetworkPlayer = z.infer<typeof networkPlayerSchema>;
 export type WorldSnapshot = z.infer<typeof worldSnapshotSchema>;
+
+export const purchaseRequestSchema = z.object({
+  itemId: z.string().min(1).max(80),
+  idempotencyKey: z.uuid(),
+});
+
+export const completeJobRequestSchema = z.object({
+  jobId: z.uuid(),
+});

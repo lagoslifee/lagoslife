@@ -1,4 +1,9 @@
-import { defaultAppearance, saveCharacterSchema } from "@lagos-living/shared";
+import {
+  completeJobRequestSchema,
+  defaultAppearance,
+  purchaseRequestSchema,
+  saveCharacterSchema,
+} from "@lagos-living/shared";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { createHmac } from "node:crypto";
 import cors from "cors";
@@ -7,6 +12,13 @@ import { auth } from "./auth.js";
 import { config } from "./config.js";
 import { pool } from "./database.js";
 import { createMultiplayerToken } from "./multiplayer-token.js";
+import {
+  completeDelivery,
+  EconomyError,
+  getEconomyState,
+  purchaseItem,
+  startDelivery,
+} from "./economy-service.js";
 
 type AuthenticatedRequest = Request & {
   player: { userId: string; name: string };
@@ -122,5 +134,56 @@ export function configureRoutes(app: Express) {
       [userId, parsed.data.appearance],
     );
     res.json(result.rows[0]);
+  });
+
+  app.get("/api/economy", requirePlayer, async (req, res) => {
+    const { userId } = (req as AuthenticatedRequest).player;
+    res.json(await getEconomyState(userId));
+  });
+
+  app.post("/api/shop/purchase", requirePlayer, async (req, res) => {
+    const parsed = purchaseRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid purchase request" });
+      return;
+    }
+    try {
+      const { userId } = (req as AuthenticatedRequest).player;
+      res.json(await purchaseItem(userId, parsed.data.itemId, parsed.data.idempotencyKey));
+    } catch (error) {
+      const status = error instanceof EconomyError ? error.status : 500;
+      res.status(status).json({
+        error: error instanceof EconomyError ? error.message : "Purchase could not be completed",
+      });
+    }
+  });
+
+  app.post("/api/jobs/delivery/start", requirePlayer, async (req, res) => {
+    try {
+      const { userId } = (req as AuthenticatedRequest).player;
+      res.json(await startDelivery(userId));
+    } catch (error) {
+      const status = error instanceof EconomyError ? error.status : 500;
+      res.status(status).json({
+        error: error instanceof EconomyError ? error.message : "Job could not be started",
+      });
+    }
+  });
+
+  app.post("/api/jobs/delivery/complete", requirePlayer, async (req, res) => {
+    const parsed = completeJobRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid job completion request" });
+      return;
+    }
+    try {
+      const { userId } = (req as AuthenticatedRequest).player;
+      res.json(await completeDelivery(userId, parsed.data.jobId));
+    } catch (error) {
+      const status = error instanceof EconomyError ? error.status : 500;
+      res.status(status).json({
+        error: error instanceof EconomyError ? error.message : "Job could not be completed",
+      });
+    }
   });
 }

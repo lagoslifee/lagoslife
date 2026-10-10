@@ -2,6 +2,7 @@ import { movementInputSchema, type MovementInput, type WorldSnapshot } from "@la
 import { Client, Room, type AuthContext } from "@colyseus/core";
 import { schema, t, type SchemaType } from "@colyseus/schema";
 import { verifyMultiplayerToken, type MultiplayerIdentity } from "../multiplayer-token.js";
+import { removePlayerPosition, setPlayerPosition } from "../player-presence.js";
 
 export const NetworkPlayerState = schema({
   userId: t.string(),
@@ -83,6 +84,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
           player.z = Math.max(-60, Math.min(60, player.z + dz * player.speed * dt));
         }
         player.motion = player.speed > 4 ? "run" : player.speed > 0.2 ? "walk" : "idle";
+        setPlayerPosition(player.userId, player.x, player.z);
       }
 
       if (this.state.tick % 3 === 0) this.broadcastSnapshot();
@@ -94,6 +96,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     player.userId = client.auth.userId;
     player.name = client.auth.name;
     this.state.players.set(client.sessionId, player);
+    setPlayerPosition(player.userId, player.x, player.z);
     this.broadcastSnapshot();
   }
 
@@ -107,6 +110,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       player.connected = true;
     } catch {
       this.state.players.delete(client.sessionId);
+      removePlayerPosition(player.userId);
       this.lastSequences.delete(client.sessionId);
       this.rates.delete(client.sessionId);
       this.broadcastSnapshot();

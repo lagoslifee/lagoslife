@@ -13,6 +13,7 @@ const configSchema = z.object({
   SMTP_HOST: z.string().default("localhost"),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
   SMTP_FROM: z.string().default("Lagos Living <no-reply@lagosliving.local>"),
+  STARTING_NAIRA: z.coerce.number().int().nonnegative().default(250_000),
 });
 
 export const config = configSchema.parse(process.env);

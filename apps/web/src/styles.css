@@ -184,6 +184,20 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .server-pill i { display: inline-block; width: 7px; height: 7px; margin-right: 7px; background: #65db93; border-radius: 50%; }
 .profile-menu { justify-self: end; display: flex; gap: 16px; align-items: center; }
 .profile-menu button { color: #d5e5e1; }
+.wallet-pill {
+  position: absolute; z-index: 4; right: 225px; top: 105px; display: grid; justify-items: end;
+  padding: 8px 13px; color: white; border: 1px solid rgba(255,255,255,.22);
+  border-radius: 9px; background: rgba(5,30,28,.78); backdrop-filter: blur(8px);
+}
+.wallet-pill span { color: #e7bd62; font-size: 8px; letter-spacing: .14em; }
+.wallet-pill strong { margin-top: 2px; font-size: 14px; }
+.job-pill {
+  position: absolute; z-index: 4; right: 225px; top: 158px; display: grid; justify-items: end;
+  padding: 8px 13px; color: #17312e; border: 1px solid #f0c66a;
+  border-radius: 9px; background: rgba(247,215,142,.94);
+}
+.job-pill span { font-size: 8px; letter-spacing: .13em; }
+.job-pill strong { margin-top: 2px; font-size: 11px; }
 .location-card, .welcome-card, .minimap {
   position: absolute;
   color: #18312e;
@@ -213,6 +227,38 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .loading-screen { height: 100%; display: grid; place-items: center; background: #092421; color: #e6bd62; letter-spacing: .1em; }
 
 .modal-backdrop { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px; background: rgba(2,18,17,.76); }
+.economy-backdrop {
+  position: absolute; inset: 0; z-index: 20; display: flex; justify-content: flex-end;
+  background: rgba(2,18,17,.58);
+}
+.economy-panel {
+  width: min(620px, 100%); height: 100%; padding: 30px; overflow-y: auto;
+  color: #17312e; background: #f3f0e6; box-shadow: -20px 0 60px rgba(0,0,0,.25);
+}
+.economy-panel > header { display: flex; justify-content: space-between; align-items: flex-start; }
+.economy-panel > header h2 { margin: 5px 0 0; font-size: 32px; }
+.economy-panel > header small { color: #71807b; }
+.economy-panel > header button {
+  width: 38px; height: 38px; border: 0; border-radius: 50%; color: #17312e;
+  background: #e1e6df; font-size: 24px;
+}
+.economy-message { padding: 10px 12px; color: #733a2e; background: #f0d9c9; border-radius: 7px; }
+.economy-section { margin-top: 28px; }
+.economy-section h3 { margin: 0 0 12px; font-size: 15px; }
+.active-job {
+  display: flex; justify-content: space-between; align-items: center; gap: 18px;
+  padding: 16px; background: #e4e8df; border-radius: 10px;
+}
+.active-job p, .catalogue-grid p { margin: 5px 0 0; color: #697873; font-size: 12px; line-height: 1.45; }
+.catalogue-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.catalogue-grid article { padding: 14px; background: #fffdf8; border: 1px solid #d9ddd6; border-radius: 10px; }
+.catalogue-grid article > span { color: #b47e34; font-size: 9px; text-transform: uppercase; letter-spacing: .1em; }
+.catalogue-grid h4 { margin: 7px 0 0; }
+.catalogue-grid button { width: 100%; margin-top: 14px; padding: 9px; font-size: 11px; }
+.economy-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.ledger-row { display: flex; justify-content: space-between; gap: 10px; margin: 0; padding: 9px 0; border-bottom: 1px solid #d9ddd6; font-size: 12px; }
+.credit { color: #16715f; }.debit { color: #a24d3d; }
+.empty-copy { color: #71807b; font-size: 12px; }
 .creator-card {
   width: min(850px, 100%);
   min-height: 520px;
@@ -249,6 +295,8 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
   .movement-hud { left: 15px; top: 205px; }
   .multiplayer-hud { left: 15px; top: 250px; }
   .graphics-control { right: 15px; top: 220px; width: 120px; }
+  .wallet-pill { left: 15px; right: auto; top: 292px; }
+  .job-pill { left: 15px; right: auto; top: 345px; }
   .welcome-card { left: 15px; right: 15px; bottom: 15px; }
   .welcome-card { display: none; }
   .development-notice { display: none; }
@@ -267,6 +315,8 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
   .touch-down { grid-area: 2 / 2; }.touch-right { grid-area: 2 / 3; }
   .touch-run { grid-area: 3 / 3; font-size: 9px; font-weight: 800; }
   .creator-card { grid-template-columns: 1fr; max-height: 90vh; overflow-y: auto; }
+  .economy-panel { padding: 22px 18px; }
+  .catalogue-grid, .economy-columns { grid-template-columns: 1fr; }
   .character-preview { min-height: 260px; }
   .avatar { transform: scale(.72); }
 }

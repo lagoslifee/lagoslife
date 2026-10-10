@@ -19,7 +19,8 @@ owns validated wire contracts.
 - [x] Milestone 3 — licensed OSM Ikoyi starter section, visible attribution,
   authenticated authoritative movement, remote avatars, interpolation, and
   two-account browser verification.
-- [ ] Milestone 4 — durable economy, delivery job, wallet, shop, and inventory.
+- [x] Milestone 4 — durable transactional wallet, transaction history, Falomo
+  shop, inventory, and server-verified neighbourhood delivery job.
 - [ ] Milestone 5 — property access, interiors, furniture, and daily life.
 - [ ] Milestone 6 — vehicle ownership, garage, driving, service, and insurance.
 - [ ] Milestone 7 — streamed Ikoyi, Victoria Island, and Lekki Phase 1.
@@ -47,6 +48,14 @@ Two isolated browser accounts were verified in one room: both observed two
 online residents and the second received changing server-authoritative
 coordinates when the first moved. The room is capped at 32 by design, but only
 two concurrent clients have been measured; no higher capacity is claimed.
+
+### Milestone 4 verification note
+
+Automated PostgreSQL integration tests submit the same purchase concurrently
+and prove one deduction and one inventory increment. Delivery tests prove that
+remote completion is rejected, successful arrival pays once, and a repeated
+claim does not pay again. Browser automation purchases an item, observes it in
+inventory, and starts a persistent delivery through the real interface.
 
 ## Architecture decisions
 
