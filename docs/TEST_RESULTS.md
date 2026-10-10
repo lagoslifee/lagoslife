@@ -25,6 +25,20 @@ CPU profile (medium preset, 8 s): the main thread was 87% idle and game
 `update()` cost about 2.5 ms per frame. The rest of each frame is the software
 rasteriser.
 
+## Automatic quality
+
+While "Lower detail automatically when slow" is on (Phone → Settings, default
+on), the game measures frame time over 2 s windows. After two windows averaging
+over 33 ms (under about 30 fps), it drops one step. The steps are: resolution
+×1.35, then shadows off, then view distance 760 m with denser fog, then
+resolution ×1.35 again. After four windows under 20 ms it restores one step. It
+waits 4 s after each change. One-off long frames are ignored, but a window made
+mostly of frames over 0.5 s counts as slow.
+
+- `adaptive-quality.test.ts`: 8 / 8 passed. Covers 60 fps unchanged, 10 / 1.5 / 1 fps stepping down to the floor, stalls and single slow windows ignored, recovery, and the 20–33 ms band holding.
+- `e2e/adaptive-quality.spec.ts`: 1 / 1 passed (1.3 min). Uses a new account on the medium preset on this VM. It started at 1.1 fps and reached step 3 after 18.7 s (scaling up, shadows off, 760 m view). The HUD showed "auto detail −3". Switching the toggle off restored the exact preset values, which held for 12 s, and the choice survived a reload. The first run of this spec found that frames over 0.5 s were all discarded, so a device this slow never adapted. That was fixed before this pass.
+- On this VM it still ran at only 1.5 fps at step 3, because SwiftShader is software rendering. How much a real phone or GPU gains has not been measured.
+
 ## Automated suites
 
 | Suite | Result |
@@ -36,6 +50,7 @@ rasteriser.
 | **Full Playwright suite in one run**, after the walk-timeout change | **13 / 13 passed (42.2 min)** |
 | Production smoke `e2e-prod/smoke.spec.ts` against a fresh compose stack, after the danfo loops and session fix | 1 / 1 passed (1.7 min). Images rebuilt; all nine migrations applied to an empty volume; server and web healthy. |
 | Playwright `e2e/playable-loop.spec.ts` on its own, after multi-unit housing | 2 / 2 passed (8.1 min) |
+| `apps/web` unit tests (`npm test -w @lagos-living/web`), after automatic quality | 28 / 28 passed |
 | `apps/web` `controller.test.ts`, `car-controller.test.ts` and `appearance.test.ts` | 17 / 17 passed |
 | Playwright `e2e/accounts.spec.ts` on its own, after the 3D character looks | 5 / 5 passed (2.2 min) |
 | **Full Playwright suite in one run** (accounts, districts, playable loop, safety, vehicles), after the 3D character looks | **12 / 12 passed (30.4 min)**: districts 13.2 min, playable loop 8.6 min, the rest under 5 min each. (After the milestone 8 changes: 12 / 12 in 29.1 min.) |
