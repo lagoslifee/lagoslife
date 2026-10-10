@@ -422,6 +422,11 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
   /** Matches the shared walkable deck (`DECK_PAD` in the world build) plus the parapet's thickness. */
   const deckHalf = (road: WorldRoad) => road.width / 2 + 1;
   const bridges = data.roads.filter((road) => road.bridge);
+  const overWater = (x: number, z: number) => {
+    const col = Math.floor((x - data.water.originX) / data.water.cell);
+    const row = Math.floor((z - data.water.originZ) / data.water.cell);
+    return water(col, row) + water(col + 1, row) + water(col, row + 1) + water(col + 1, row + 1) > 0;
+  };
   const insideOtherDeck = (x: number, z: number, exclude: WorldRoad) => {
     for (const road of bridges) {
       if (road === exclude) continue;
@@ -526,7 +531,8 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       concrete.worldRibbon(dense, -edge, edge, 0.012, 4);
       concrete.worldRibbon(dense, -edge, edge, -1.4, 4);
       for (const side of [1, -1]) {
-        const keep = offsetPolyline(dense, side * edge).map(([x, z]) => !insideOtherDeck(x, z, road));
+        // Flyovers (Falomo Bridge over its roundabout) are drawn at street level, so parapets only stand over water.
+        const keep = offsetPolyline(dense, side * edge).map(([x, z]) => overWater(x, z) && !insideOtherDeck(x, z, road));
         let run: Vec2[] = [];
         const flush = () => {
           if (run.length >= 2) {
