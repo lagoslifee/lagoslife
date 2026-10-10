@@ -37,6 +37,10 @@ const configSchema = z
       .transform((value) => value.split(",").map((entry) => entry.trim()).filter(Boolean)),
     /** Directory holding the streamed world tiles (building footprints for collision). */
     WORLD_TILE_DIR: z.string().optional(),
+    /** Shared Redis for running several server processes; unset keeps everything in one process. */
+    REDIS_URL: z.string().optional(),
+    /** Address clients use to reach this process directly (host[:port][/path]) when several processes run. */
+    PUBLIC_ADDRESS: z.string().optional(),
   })
   .superRefine((value, context) => {
     if (value.NODE_ENV !== "production") return;

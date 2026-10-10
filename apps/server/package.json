@@ -12,10 +12,13 @@
     "test": "vitest run --passWithNoTests --dir src",
     "staff:role": "tsx src/staff.ts",
     "load-test": "tsx src/load-test.ts",
+    "cluster-check": "tsx src/cluster-check.ts",
     "db:migrate:dist": "node dist/migrate.js"
   },
   "dependencies": {
     "@colyseus/core": "^0.18.18",
+    "@colyseus/redis-driver": "^0.18.5",
+    "@colyseus/redis-presence": "^0.18.5",
     "@colyseus/schema": "^5.0.36",
     "@colyseus/ws-transport": "^0.18.4",
     "@lagos-living/shared": "*",

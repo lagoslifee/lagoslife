@@ -1,11 +1,29 @@
 import { defineRoom, defineServer } from "@colyseus/core";
+import { RedisDriver } from "@colyseus/redis-driver";
+import { RedisPresence } from "@colyseus/redis-presence";
 import express from "express";
+import { bridgeEmitter, joinCluster } from "./cluster.js";
 import { config } from "./config.js";
+import { profileEvents } from "./profile-service.js";
 import { LagosRoom } from "./rooms/LagosRoom.js";
 import { configureRoutes } from "./routes.js";
-import { purgeExpiredChat } from "./safety-service.js";
+import { purgeExpiredChat, safetyEvents } from "./safety-service.js";
+import { vehicleEvents } from "./vehicle-events.js";
+
+const presence = config.REDIS_URL ? new RedisPresence(config.REDIS_URL) : undefined;
+if (presence) {
+  bridgeEmitter("vehicle", vehicleEvents);
+  bridgeEmitter("profile", profileEvents);
+  bridgeEmitter("safety", safetyEvents);
+  await joinCluster(presence);
+}
 
 const gameServer = defineServer({
+  ...(presence && {
+    presence,
+    driver: new RedisDriver(config.REDIS_URL),
+    ...(config.PUBLIC_ADDRESS && { publicAddress: config.PUBLIC_ADDRESS }),
+  }),
   rooms: {
     lagos: defineRoom(LagosRoom),
   },
