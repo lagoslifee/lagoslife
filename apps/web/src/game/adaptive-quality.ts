@@ -99,6 +99,8 @@ export interface QualityStep {
 }
 
 export const FULL_VIEW_DISTANCE = 1600;
+/** Coarsest hardware scaling automatic quality may reach; beyond this text and faces turn to blocks. */
+export const MAX_AUTO_SCALING = 2.25;
 /** Must stay beyond the 700 m sky dome radius or the sky is clipped. */
 export const REDUCED_VIEW_DISTANCE = 760;
 export const FULL_FOG_DENSITY = 0.0024;

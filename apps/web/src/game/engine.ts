@@ -54,7 +54,7 @@ import {
 } from "@lagos-living/shared";
 import { apiUrl } from "../auth-client";
 import { MultiplayerConnection, type MultiplayerStatus } from "../multiplayer";
-import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, qualityStep } from "./adaptive-quality";
+import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, MAX_AUTO_SCALING, qualityStep } from "./adaptive-quality";
 import { CityAudio } from "./audio";
 import { Avatar, AvatarFactory } from "./avatar";
 import { CarController } from "./car-controller";
@@ -1317,7 +1317,7 @@ export class GameEngine {
   private applyQualityStep(level: number) {
     if (!this.engine || !this.scene) return;
     const step = qualityStep(level);
-    this.engine.setHardwareScalingLevel(this.baseScaling * step.scaling);
+    this.engine.setHardwareScalingLevel(Math.max(this.baseScaling, Math.min(MAX_AUTO_SCALING, this.baseScaling * step.scaling)));
     if (this.shadows) this.sun.shadowEnabled = step.shadows;
     this.camera.maxZ = step.viewDistance;
     this.scene.fogDensity = step.fogDensity;
