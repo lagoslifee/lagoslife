@@ -5,6 +5,7 @@ const economy = vi.hoisted(() => ({
   chargeFare: vi.fn(),
   endJourney: vi.fn(async () => undefined),
   loadPlayerPlace: vi.fn(async () => null),
+  markProgress: vi.fn(async () => undefined),
   savePlayerPlace: vi.fn(async (_userId: string, _x: number, _z: number, _place: string) => undefined),
 }));
 
@@ -16,6 +17,7 @@ vi.mock("../economy-service.js", async () => {
   }
   return { ...economy, EconomyError };
 });
+vi.mock("../database.js", () => ({ pool: {} }));
 vi.mock("../property-service.js", () => ({ isPropertyAvailable: vi.fn(), requirePropertyAccess: vi.fn() }));
 
 const { BUS_CAPACITY, LagosRoom, REBOARD_COOLDOWN_MS } = await import("./LagosRoom.js");

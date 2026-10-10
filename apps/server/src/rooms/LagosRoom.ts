@@ -29,8 +29,10 @@ import {
   EconomyError,
   endJourney,
   loadPlayerPlace,
+  markProgress,
   savePlayerPlace,
 } from "../economy-service.js";
+import { pool } from "../database.js";
 import { verifyMultiplayerToken, type MultiplayerIdentity } from "../multiplayer-token.js";
 import { clearProgressReset, removePlayerPosition, setPlayerPosition, wasProgressReset } from "../player-presence.js";
 import { isPropertyAvailable, requirePropertyAccess } from "../property-service.js";
@@ -467,6 +469,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     player.lastAcceptedAt = Date.now();
     setPlayerPosition(player.userId, player.x, player.z, location);
     void this.persist(player).catch(() => undefined);
+    if (!previewOnly && propertyId !== "starter-home") void markProgress(pool, player.userId, "visited_home").catch(() => undefined);
     this.sendSelf(client, player, previewOnly ? "preview" : "entered");
   }
 

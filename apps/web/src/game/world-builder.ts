@@ -989,7 +989,9 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     }
     const buffer = new Float32Array(matrices.length * 16);
     matrices.forEach((matrix, index) => matrix.copyToArray(buffer, index * 16));
+    template.doNotSyncBoundingInfo = false;
     template.thinInstanceSetBuffer("matrix", buffer, 16, true);
+    template.thinInstanceRefreshBoundingInfo(false);
     template.isPickable = false;
     template.alwaysSelectAsActiveMesh = false;
     instanced.push(template);

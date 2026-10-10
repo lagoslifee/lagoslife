@@ -68,7 +68,7 @@ export function currentObjective(economy: EconomyState | null, properties: Prope
       target: { point: rental.door, label: rental.name },
     };
   }
-  if (!(hud.location === "interior" && hud.propertyId === home.id) && !visitedHome) {
+  if (!(hud.location === "interior" && hud.propertyId === home.id) && !visitedHome && !done("visited_home")) {
     return { step: 6, total: TOTAL, title: `Go inside ${home.name}`, detail: "Use your digital key at the door (E). Progress saves automatically.", target: { point: home.door, label: home.name } };
   }
   return {

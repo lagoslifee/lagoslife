@@ -80,7 +80,8 @@ export function createMaterials(scene: Scene, quality: Quality) {
   paintWhite.zOffset = -4;
   const paintYellow = flat(scene, "yellow paint", "#e4b43a", 0.7);
   paintYellow.zOffset = -4;
-  const palmLeaf = flat(scene, "palm leaf", "#4f7a34", 0.75);
+  const palmLeaf = flat(scene, "palm leaf", "#2c4f1f", 0.8);
+  palmLeaf.environmentIntensity = 0.35;
   palmLeaf.backFaceCulling = false;
   const awningRed = flat(scene, "awning red", "#a2342a", 0.7);
   awningRed.backFaceCulling = false;
@@ -112,7 +113,7 @@ export function createMaterials(scene: Scene, quality: Quality) {
     paintYellow,
     rubber: flat(scene, "rubber", "#1c1c1c", 0.8),
     chrome: flat(scene, "chrome", "#c9ccd0", 0.15, 1),
-    palmBark: flat(scene, "palm bark", "#7d6248", 0.95),
+    palmBark: flat(scene, "palm bark", "#55412f", 0.95),
     palmLeaf,
     bush: flat(scene, "hedge", "#4a7136", 0.9),
     tank: flat(scene, "water tank", "#1f2425", 0.6),
