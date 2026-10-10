@@ -207,6 +207,7 @@ and chat every 20 s. Every figure is what the bots received:
 | 40 (30 s), before compaction | 40 | 20 Hz | 55 / 101 ms | 10.1 KB → 6.4 KB | 126 KB/s | 40 | 0 | 5 ms | 5.1% / 54% | 158 MB |
 | 40 (30 s), after compaction | 40 | 20 Hz | 52 / 58 ms | 6.3 KB → 4.0 KB | 78 KB/s | 40 | 0 | 4 ms | 4.1% / 51% | 161 MB |
 | **100 (60 s)**, one room | 100 | 20 Hz | 53 / 102 ms | 6.3 KB → 4.0 KB | 78 KB/s | 40 (nearest) | 0 | 5 ms | 10.3% / 69% | 180 MB |
+| **100 (60 s)**, re-run with 10 danfos on three loops | 100 | 20 Hz | 59 / 101 ms | 6.4 KB → 4.1 KB | 79 KB/s | 40 (nearest) | 0 | 9 ms | 11.1% / 85% | 224 MB |
 
 In the 100-bot run, joins took 88 ms at the median (154 ms max), and
 server-to-bot snapshot age was 3 ms at p99. Bots sent 67,393 position updates
@@ -270,7 +271,6 @@ district tests. The earlier miniature-scale
 
 - Frame rate on real GPUs and phones, and tile-streaming hitches on them.
 - No danfo crosses between districts; each of L1, I1 and V1 stays inside its district, so districts are linked by driving and walking only.
-- The 100-bot load test was measured with 3 danfos; there are now 10 (snapshots carry only those within 900 m). It has not been re-run.
 - More than two concurrent *browser* players. 100 bot clients were measured in one room on this VM (see the load test above), but not over real networks, on other hosts, or with rendering clients. The room cap is 100, and snapshots carry the nearest 40.
 - Any public deployment, TLS proxy or managed database. The production images and compose stack were only run on this VM.
 - Citation evasion: impacts are reported by the client, so a modified client can avoid citations.
