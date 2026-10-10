@@ -7,7 +7,9 @@ import { pool } from "./database.js";
 const mailer = nodemailer.createTransport({
   host: config.SMTP_HOST,
   port: config.SMTP_PORT,
-  secure: false,
+  secure: config.SMTP_SECURE,
+  requireTLS: config.NODE_ENV === "production" && !config.SMTP_SECURE,
+  auth: config.SMTP_USER ? { user: config.SMTP_USER, pass: config.SMTP_PASS ?? "" } : undefined,
 });
 
 export const auth = betterAuth({
@@ -16,6 +18,7 @@ export const auth = betterAuth({
   secret: config.BETTER_AUTH_SECRET,
   database: pool,
   trustedOrigins: [config.WEB_ORIGIN],
+  advanced: config.TRUSTED_PROXIES.length > 0 ? { ipAddress: { trustedProxies: config.TRUSTED_PROXIES } } : undefined,
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 10,

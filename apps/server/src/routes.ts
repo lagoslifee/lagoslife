@@ -186,9 +186,14 @@ const actorOf = (req: Request) => {
   return { userId, name };
 };
 
-function devOnly(req: Request) {
+/** Test-harness routes exist only for a development server reached on localhost; anywhere else they 404 before auth. */
+function devOnly(req: Request, res: Response, next: NextFunction) {
   const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(req.hostname);
-  if (config.NODE_ENV !== "development" || !isLocalHost) throw new EconomyError("Not found", 404);
+  if (config.NODE_ENV !== "development" || !isLocalHost) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  next();
 }
 
 export function configureRoutes(app: Express) {
@@ -206,12 +211,7 @@ export function configureRoutes(app: Express) {
     res.json({ status: "ok", service: "lagos-living-server" });
   });
 
-  app.post("/api/dev/sign-in", async (req, res) => {
-    const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(req.hostname);
-    if (config.NODE_ENV !== "development" || !isLocalHost) {
-      res.status(404).json({ error: "Not found" });
-      return;
-    }
+  app.post("/api/dev/sign-in", devOnly, async (req, res) => {
 
     const credentials = {
       email: "local-tester@lagosliving.local",
@@ -451,15 +451,13 @@ export function configureRoutes(app: Express) {
   }));
 
   /** Local test harness: makes the signed-in account staff, recorded in the audit log as a console action. */
-  app.post("/api/dev/staff", requireSession, guarded("Role change failed", async (req) => {
-    devOnly(req);
+  app.post("/api/dev/staff", devOnly, requireSession, guarded("Role change failed", async (req) => {
     const { role } = z.object({ role: z.enum(["moderator", "admin"]).nullable() }).parse(req.body);
     return setStaffRole({ userId: "console", name: "dev console" }, actorOf(req).name, role, "local development");
   }));
 
   /** Local test harness: issues a careless-driving citation where the player stands, as the room does on a crash. */
-  app.post("/api/dev/citation", requirePlayer, guarded("Citation failed", async (req, userId) => {
-    devOnly(req);
+  app.post("/api/dev/citation", devOnly, requirePlayer, guarded("Citation failed", async (req, userId) => {
     const position = getPlayerPosition(userId);
     const x = position?.x ?? 0;
     const z = position?.z ?? 0;
@@ -479,18 +477,14 @@ export function configureRoutes(app: Express) {
     return settings;
   }));
 
-  app.post("/api/dev/reset-progress", requirePlayer, guarded("Reset failed", async (req, userId) => {
-    const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(req.hostname);
-    if (config.NODE_ENV !== "development" || !isLocalHost) throw new EconomyError("Not found", 404);
+  app.post("/api/dev/reset-progress", devOnly, requirePlayer, guarded("Reset failed", async (req, userId) => {
     markProgressReset(userId);
     await resetTestProgress(userId);
     return { reset: true };
   }));
 
   /** Local test harness: the next session starts at a place's kerb, so far districts can be tested without the drive. */
-  app.post("/api/dev/spawn-at", requirePlayer, guarded("Spawn failed", async (req, userId) => {
-    const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(req.hostname);
-    if (config.NODE_ENV !== "development" || !isLocalHost) throw new EconomyError("Not found", 404);
+  app.post("/api/dev/spawn-at", devOnly, requirePlayer, guarded("Spawn failed", async (req, userId) => {
     const place = placeById.get(communityVisitSchema.parse(req.body).placeId);
     if (!place) throw new EconomyError("Unknown place", 404);
     markProgressReset(userId);
