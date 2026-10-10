@@ -55,7 +55,7 @@ horn are not captioned.
 
 | Suite | Result |
 |---|---|
-| `npm test -w @lagos-living/server` (PostgreSQL integration, room unit and config tests) | 113 / 113 passed after the bridge shuttles and server-side contact detection (source tests only; compiled copies in `dist/` are excluded) |
+| `npm test -w @lagos-living/server` (PostgreSQL integration, room unit and config tests) | 115 / 115 passed after the bridge shuttles and server-side contact and wall-crash detection (source tests only; compiled copies in `dist/` are excluded) |
 | `npm test -w @lagos-living/shared` | 23 / 23 passed |
 | Playwright `e2e/transit-districts.spec.ts` on its own | 1 / 1 passed (5.8 min) |
 | **Full Playwright suite in one run**, after the danfo loops and session fix | **12 / 13 passed (42.8 min)**. The venues journey in `districts.spec.ts` failed one 1.2 km walk from Ikoyi to the mosque (3 × 90 s attempts at about 3 fps); run on its own straight after, it passed (7.0 min). Frame rate at the mosque was 3.4 fps with and without danfos drawn, so the new routes did not cause it. The walk helper now scales its timeout with distance. |
@@ -334,5 +334,5 @@ district tests. The earlier miniature-scale
 - Frame rate on real GPUs and phones, and tile-streaming hitches on them.
 - More than two concurrent *browser* players. 100 bot clients were measured in one room on this VM (see the load test above), but not over real networks, on other hosts, or with rendering clients. The room cap is 100, and snapshots carry the nearest 40.
 - Any public deployment, TLS proxy or managed database. The production images and compose stack were only run on this VM.
-- Citation evasion for crashes into buildings and kerbs, which the server does not detect itself. Pedestrian, car and danfo contact is detected on the server.
+- Citation evasion for kerb strikes, which the server does not model. Pedestrian, car, danfo and building contact is detected on the server.
 - Touch controls on a physical device (layout is implemented and responsive).
