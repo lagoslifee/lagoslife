@@ -43,7 +43,7 @@ describe("snapshot wire format", () => {
     const { networkPlayerSchema } = await import("./index");
     expect(networkPlayerSchema.parse({ sessionId: "s1", name: "Ada", x: 1, z: 2, yaw: 0, motion: "jog" })).toEqual({
       sessionId: "s1", name: "Ada", x: 1, z: 2, yaw: 0, motion: "jog",
-      location: "street", busId: null, seat: null, carrying: false, connected: true, vehicleId: null,
+      location: "street", busId: null, seat: null, carrying: false, connected: true, vehicleId: null, vehicleSeat: null,
     });
   });
 });

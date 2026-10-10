@@ -124,7 +124,7 @@ describe("vehicle ownership", () => {
     await pool.query(`UPDATE wallet SET balance = 1000000 WHERE user_id = $1`, [collector.id]);
     for (let i = 1; i < MAX_VEHICLES; i += 1) await purchaseVehicle(collector.id, hatch.id, hatch.colours[0]!, randomUUID());
     await expect(purchaseVehicle(collector.id, hatch.id, hatch.colours[0]!, randomUUID())).rejects.toThrow(
-      `up to ${MAX_VEHICLES} vehicles`,
+      `up to ${MAX_VEHICLES} motor vehicles`,
     );
     expect(await balance(collector.id)).toBe(1_000_000 - (MAX_VEHICLES - 1) * hatch.price);
     expect(await listVehicles(collector.id)).toHaveLength(MAX_VEHICLES);
