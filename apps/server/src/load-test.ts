@@ -77,14 +77,17 @@ async function authenticate(index: number) {
   const name = `LoadBot${String(index).padStart(2, "0")}`;
   const email = `${name.toLowerCase()}@lagosliving.local`;
   const headers = { "content-type": "application/json", origin: values.origin! };
-  let response = await fetch(`${TARGET}/api/auth/sign-in/email`, { method: "POST", headers, body: JSON.stringify({ email, password: PASSWORD }) });
-  if (!response.ok) {
-    response = await fetch(`${TARGET}/api/auth/sign-up/email`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ email, password: PASSWORD, name, username: name }),
-    });
-  }
+  // Production builds enable Better Auth's per-IP rate limit, and every bot shares this machine's address.
+  const post = async (path: string, body: object) => {
+    for (let attempt = 0; ; attempt++) {
+      const response = await fetch(`${TARGET}/api/auth/${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+      if (response.status !== 429 || attempt === 20) return response;
+      const retryAfter = Number(response.headers.get("x-retry-after")) || 2;
+      await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000 + Math.random() * 1000));
+    }
+  };
+  let response = await post("sign-in/email", { email, password: PASSWORD });
+  if (!response.ok) response = await post("sign-up/email", { email, password: PASSWORD, name, username: name });
   if (!response.ok) throw new Error(`${name}: sign-in failed (${response.status}) ${await response.text()}`);
   const body = (await response.json()) as { user: { id: string } };
   const cookie = response.headers.getSetCookie().map((value) => value.split(";")[0]).join("; ");
