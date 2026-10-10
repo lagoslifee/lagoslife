@@ -70,9 +70,12 @@ inventory, and starts a persistent delivery through the real interface.
 
 Integration tests prove one winner under concurrent purchase, time-limited
 rental access, non-owner denial, explicit guest access, owner-only furniture
-placement, idempotent placement, and persisted sleep/cook/clean state. Browser
-automation acquires the Glover Court flat, places furniture, cleans the home,
-reloads, re-enters, and observes the saved interior.
+placement, idempotent placement, and persisted sleep/cook/clean state. Housing
+is not scarce: Adebayo Court has 12 rentable flats and Okoro Terrace has 6
+houses for sale, each unit behind its building's single door, and a test has
+two residents renting different flats at the same time. Browser automation
+rents a free Adebayo Court flat (the sheet shows "N of 12 flats free to rent"),
+moves in, reloads and keeps the tenancy.
 
 ### Milestone 7 verification note
 

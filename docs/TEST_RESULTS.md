@@ -25,8 +25,9 @@ rasteriser.
 
 | Suite | Result |
 |---|---|
-| `npm test -w @lagos-living/server` (PostgreSQL integration, room unit and config tests) | 93 / 93 passed (source tests only; compiled copies in `dist/` are excluded) |
-| `npm test -w @lagos-living/shared` | 18 / 18 passed |
+| `npm test -w @lagos-living/server` (PostgreSQL integration, room unit and config tests) | 97 / 97 passed after multi-unit housing (source tests only; compiled copies in `dist/` are excluded) |
+| `npm test -w @lagos-living/shared` | 20 / 20 passed |
+| Playwright `e2e/playable-loop.spec.ts` on its own, after multi-unit housing | 2 / 2 passed (8.1 min) |
 | `apps/web` `controller.test.ts`, `car-controller.test.ts` and `appearance.test.ts` | 17 / 17 passed |
 | Playwright `e2e/accounts.spec.ts` on its own, after the 3D character looks | 5 / 5 passed (2.2 min) |
 | **Full Playwright suite in one run** (accounts, districts, playable loop, safety, vehicles), after the 3D character looks | **12 / 12 passed (30.4 min)**: districts 13.2 min, playable loop 8.6 min, the rest under 5 min each. (After the milestone 8 changes: 12 / 12 in 29.1 min.) |
@@ -43,8 +44,8 @@ rasteriser.
 4. Requested a stop, was auto-alighted at the next stop, and pressing E again did not re-board ("You just stepped off this danfo"). Balance stayed at ₦249,700.
 5. Collected a parcel at Swift Parcel Hub, walked to the customer and delivered it. Wage ₦6,300 was credited once.
 6. Bought and ate food at Mama Titi's (hunger 95).
-7. Opened the Adebayo Court listing (rent ₦18,000 / 7 days, deposit ₦12,000, upfront ₦30,000, 3-day grace). Rented it and was charged exactly ₦30,000. The tenancy was assigned with its next due date.
-8. Entered with the digital key. Location `home:lekki-adebayo-flat-2`; the HUD shows "Adebayo Court".
+7. Opened the Adebayo Court sheet (rent ₦18,000 / 7 days, deposit ₦12,000, upfront ₦30,000, 3-day grace), which showed "N of 12 flats free to rent". Rented the offered flat and was charged exactly ₦30,000. The tenancy was assigned with its next due date.
+8. Entered with the digital key. Location `home:<that flat's listing id>`.
 9. Reloaded. Balance ₦225,400, tenancy, and all progress flags persisted.
 
 ### Vehicles (browser, real servers, LocalTester after a progress reset)

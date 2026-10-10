@@ -93,8 +93,9 @@ an on-screen joystick and buttons.
    stopped, press Q to request a stop, then step off.
 2. Collect a parcel at Swift Parcel Hub and deliver it for a wage.
 3. Buy and eat food at Mama Titi's.
-4. Rent Adebayo Court (₦30,000 upfront) at the red For Rent board, or buy
-   Okoro Terrace.
+4. Rent one of the 12 flats at Adebayo Court (₦30,000 upfront) at the red
+   For Rent board, or buy one of the 6 houses at Okoro Terrace. The sheet
+   shows how many units are still free.
 5. Go inside with your digital key. Progress saves automatically, and the HUD
    shows "Saved …".
 
