@@ -11,6 +11,9 @@ import {
   placeFurnitureSchema,
   purchaseRequestSchema,
   saveCharacterSchema,
+  garageVehicleSchema,
+  purchaseVehicleSchema,
+  vehicleActionSchema,
 } from "@lagos-living/shared";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { createHmac } from "node:crypto";
@@ -47,6 +50,15 @@ import {
   renewTenancy,
   setHome,
 } from "./property-service.js";
+import {
+  garageVehicle,
+  insureVehicle,
+  listVehicles,
+  purchaseVehicle,
+  retrieveVehicle,
+  serviceVehicle,
+  towVehicle,
+} from "./vehicle-service.js";
 
 type Handler = (req: Request, userId: string) => Promise<unknown>;
 
@@ -264,6 +276,29 @@ export function configureRoutes(app: Express) {
 
   app.post("/api/properties/:propertyId/guests", requirePlayer, rateLimited, guarded("Guest could not be invited", (req, userId) =>
     invitePropertyGuest(userId, String(req.params.propertyId), inviteGuestSchema.parse(req.body).username)));
+
+  app.get("/api/vehicles", requirePlayer, guarded("Vehicles unavailable", (_req, userId) =>
+    listVehicles(userId)));
+
+  app.post("/api/vehicles/purchase", requirePlayer, rateLimited, guarded("Vehicle could not be purchased", (req, userId) => {
+    const body = purchaseVehicleSchema.parse(req.body);
+    return purchaseVehicle(userId, body.modelId, body.colour, body.idempotencyKey);
+  }));
+
+  app.post("/api/vehicles/:vehicleId/service", requirePlayer, rateLimited, guarded("Service could not be completed", (req, userId) =>
+    serviceVehicle(userId, String(req.params.vehicleId), vehicleActionSchema.parse(req.body).idempotencyKey)));
+
+  app.post("/api/vehicles/:vehicleId/insure", requirePlayer, rateLimited, guarded("Cover could not be bought", (req, userId) =>
+    insureVehicle(userId, String(req.params.vehicleId), vehicleActionSchema.parse(req.body).idempotencyKey)));
+
+  app.post("/api/vehicles/:vehicleId/tow", requirePlayer, rateLimited, guarded("Tow could not be booked", (req, userId) =>
+    towVehicle(userId, String(req.params.vehicleId), vehicleActionSchema.parse(req.body).idempotencyKey)));
+
+  app.post("/api/vehicles/:vehicleId/garage", requirePlayer, rateLimited, guarded("Vehicle could not be garaged", (req, userId) =>
+    garageVehicle(userId, String(req.params.vehicleId), garageVehicleSchema.parse(req.body).propertyId)));
+
+  app.post("/api/vehicles/:vehicleId/retrieve", requirePlayer, rateLimited, guarded("Vehicle could not be retrieved", (req, userId) =>
+    retrieveVehicle(userId, String(req.params.vehicleId))));
 
   app.get("/api/settings", requirePlayer, guarded("Settings unavailable", async (_req, userId) => {
     await ensureProfile(pool, userId);

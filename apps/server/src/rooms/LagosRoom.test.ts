@@ -20,6 +20,16 @@ vi.mock("../economy-service.js", async () => {
 vi.mock("../database.js", () => ({ pool: {} }));
 vi.mock("../property-service.js", () => ({ isPropertyAvailable: vi.fn(), requirePropertyAccess: vi.fn() }));
 
+const vehicles = vi.hoisted(() => ({
+  claimVehicle: vi.fn(async (..._args: unknown[]): Promise<{ condition: number } | null> => ({ condition: 100 })),
+  damageVehicle: vi.fn(async (..._args: unknown[]) => ({ condition: 80, insured: false })),
+  loadStreetVehicle: vi.fn(async () => null),
+  loadStreetVehicles: vi.fn(async () => []),
+  parkAbandonedVehicles: vi.fn(async () => undefined),
+  saveDrivingVehicle: vi.fn(async (..._args: unknown[]) => undefined),
+}));
+vi.mock("../vehicle-service.js", () => vehicles);
+
 const { BUS_CAPACITY, LagosRoom, REBOARD_COOLDOWN_MS } = await import("./LagosRoom.js");
 
 type FakeClient = { sessionId: string; send: ReturnType<typeof vi.fn>; auth: { userId: string; name: string } };
@@ -29,6 +39,11 @@ type RoomInternals = {
   clients: FakeClient[];
   handleBoard(client: FakeClient, payload: unknown): Promise<void>;
   handleAlight(client: FakeClient): void;
+  handleEnterVehicle(client: FakeClient, payload: unknown): Promise<void>;
+  handleExitVehicle(client: FakeClient): Promise<void>;
+  handleVehicleImpact(client: FakeClient, payload: unknown): Promise<void>;
+  handlePosition(client: FakeClient, payload: unknown): void;
+  vehicles: Map<string, Record<string, unknown>>;
   onLeave(client: FakeClient): Promise<void>;
   allowReconnection: () => Promise<unknown>;
   busDoor(bus: unknown): { x: number; z: number };
@@ -84,6 +99,11 @@ function setup() {
       boarding: false,
       alightAtNext: false,
       alighted: null,
+      vehicleId: null,
+      driveMetres: 0,
+      lastVehicleSaveAt: Date.now(),
+      lastImpactAt: 0,
+      entering: false,
     });
     return client;
   };
@@ -188,5 +208,112 @@ describe("LagosRoom danfo boarding", () => {
     expect(player(ada).busId).toBe(bus.id);
     expect(bus.seats.filter((seat) => seat === "u-ada")).toHaveLength(1);
     expect(sampleRoute(bus.s as number)).toBeTruthy();
+  });
+});
+
+describe("LagosRoom driving", () => {
+  const start = stop.s + 60;
+  const parked = sampleRoute(start);
+
+  function withCar(condition = 100) {
+    const context = setup();
+    context.room.vehicles.set("car-1", {
+      id: "car-1",
+      ownerUserId: "u-ada",
+      ownerName: "ada",
+      modelId: "tokunbo-saloon",
+      colour: "#d9d9d6",
+      plate: "EKO 123 AB",
+      condition,
+      x: parked.x,
+      z: parked.z,
+      yaw: parked.yaw,
+      driverSessionId: null,
+    });
+    const ada = context.join("ada");
+    Object.assign(context.player(ada), { x: parked.x + 1.5, z: parked.z });
+    return { ...context, ada };
+  }
+
+  function drive(room: RoomInternals, client: FakeClient, sequence: number, metres: number, secondsAgo: number) {
+    const player = room.players.get(client.sessionId)!;
+    player.lastAcceptedAt = Date.now() - secondsAgo * 1_000;
+    const pose = sampleRoute(start + metres);
+    room.handlePosition(client, { sequence, x: pose.x, z: pose.z, yaw: pose.yaw, motion: "drive" });
+    return pose;
+  }
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it("lets the owner take the wheel once, even when E is pressed repeatedly", async () => {
+    const { room, ada, player } = withCar();
+    await Promise.all([
+      room.handleEnterVehicle(ada, { vehicleId: "car-1" }),
+      room.handleEnterVehicle(ada, { vehicleId: "car-1" }),
+    ]);
+    expect(vehicles.claimVehicle).toHaveBeenCalledTimes(1);
+    expect(player(ada).vehicleId).toBe("car-1");
+    expect(room.vehicles.get("car-1")!.driverSessionId).toBe(ada.sessionId);
+  });
+
+  it("keeps other residents out of a car they do not own", async () => {
+    const { room, join, player, notices } = withCar();
+    const tunde = join("tunde");
+    Object.assign(player(tunde), { x: parked.x - 1.5, z: parked.z });
+    await room.handleEnterVehicle(tunde, { vehicleId: "car-1" });
+    expect(vehicles.claimVehicle).not.toHaveBeenCalled();
+    expect(player(tunde).vehicleId).toBeNull();
+    expect(notices(tunde).at(-1)).toMatch(/belongs to ada/);
+  });
+
+  it("accepts car speeds while driving but corrects anything faster than the model allows", async () => {
+    const { room, ada, player } = withCar();
+    await room.handleEnterVehicle(ada, { vehicleId: "car-1" });
+    const pose = drive(room, ada, 1, 15, 1);
+    expect(player(ada).x).toBeCloseTo(pose.x);
+    expect(room.vehicles.get("car-1")!.x).toBeCloseTo(pose.x);
+    drive(room, ada, 2, 15 + 60, 1);
+    expect(player(ada).x).toBeCloseTo(pose.x);
+    expect(ada.send.mock.calls.some(([type]) => type === "correction")).toBe(true);
+  });
+
+  it("caps a limp-mode car at the reduced top speed", async () => {
+    const { room, ada, player } = withCar(20);
+    vehicles.claimVehicle.mockResolvedValueOnce({ condition: 20 });
+    await room.handleEnterVehicle(ada, { vehicleId: "car-1" });
+    drive(room, ada, 1, 18, 1);
+    expect(player(ada).x).toBeCloseTo(parked.x);
+  });
+
+  it("parks where the driver stops, records the distance and puts them beside the car", async () => {
+    const { room, ada, player } = withCar();
+    await room.handleEnterVehicle(ada, { vehicleId: "car-1" });
+    const pose = drive(room, ada, 1, 12, 1);
+    await room.handleExitVehicle(ada);
+    const [id, saved, metres, park] = vehicles.saveDrivingVehicle.mock.calls.at(-1)! as [string, { x: number }, number, boolean];
+    expect([id, park]).toEqual(["car-1", true]);
+    expect(saved.x).toBeCloseTo(pose.x);
+    expect(metres).toBeCloseTo(12, 0);
+    expect(player(ada).vehicleId).toBeNull();
+    expect(Math.hypot((player(ada).x as number) - pose.x, (player(ada).z as number) - pose.z)).toBeLessThan(4);
+    expect(room.vehicles.get("car-1")!.driverSessionId).toBeNull();
+  });
+
+  it("applies impact damage once per cooldown", async () => {
+    const { room, ada } = withCar();
+    await room.handleEnterVehicle(ada, { vehicleId: "car-1" });
+    await room.handleVehicleImpact(ada, { speed: 10 });
+    await room.handleVehicleImpact(ada, { speed: 10 });
+    expect(vehicles.damageVehicle).toHaveBeenCalledTimes(1);
+    expect(room.vehicles.get("car-1")!.condition).toBe(80);
+  });
+
+  it("parks the car when the driver disconnects for good", async () => {
+    const { room, ada } = withCar();
+    await room.handleEnterVehicle(ada, { vehicleId: "car-1" });
+    room.allowReconnection = () => Promise.reject(new Error("gone"));
+    await room.onLeave(ada);
+    expect(vehicles.saveDrivingVehicle).toHaveBeenCalledWith("car-1", expect.anything(), expect.any(Number), true);
+    expect(room.vehicles.get("car-1")!.driverSessionId).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ import type { PoolClient } from "pg";
 import { config } from "./config.js";
 import { pool } from "./database.js";
 import { getPlayerPosition, isNear } from "./player-presence.js";
+import { vehicleEvents } from "./vehicle-events.js";
 
 export class EconomyError extends Error {
   constructor(
@@ -454,6 +455,7 @@ export async function loadPlayerPlace(userId: string) {
 
 export async function resetTestProgress(userId: string) {
   await withTransaction(async (client) => {
+    await client.query(`DELETE FROM player_vehicle WHERE owner_user_id = $1`, [userId]);
     await client.query(`DELETE FROM furniture_placement WHERE placed_by = $1`, [userId]);
     await client.query(`DELETE FROM property_storage WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM property_guest WHERE guest_user_id = $1 OR granted_by = $1`, [userId]);
@@ -472,4 +474,5 @@ export async function resetTestProgress(userId: string) {
     );
     await ensureWallet(client, userId);
   });
+  vehicleEvents.emit("ownerReset", userId);
 }
