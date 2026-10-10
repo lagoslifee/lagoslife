@@ -31,7 +31,7 @@ owns validated wire contracts.
 - [x] Milestone 6 — vehicle ownership, garage, driving, service, and insurance.
 - [x] Milestone 7 — streamed Ikoyi, Victoria Island, and Lekki Phase 1, joined
   by the Link Bridge and Falomo Bridge, with community venues.
-- [ ] Milestone 8 — community systems, administration, fictional justice,
+- [x] Milestone 8 — community systems, administration, fictional justice,
   optimisation, load testing, and deployment configuration.
 
 ## Quality gates
@@ -92,6 +92,34 @@ and uses every kind of venue. Starting positions in far districts use a dev-only
 streaming hitches were only measured on the software renderer (about 100 ms per
 tile).
 
+### Milestone 8 verification note
+
+- **Chat:** nearby chat (40 m) is stored before it is broadcast, filtered (the moderators' copy keeps the original text), rate-limited, and hidden in both directions by blocks.
+- **Reports and moderation:** reports attach the reported line as evidence. Warn, mute and suspend are audited and take effect live. A suspension removes the player from the room at once and blocks API calls and multiplayer tokens. The audit and justice logs are append-only at the database level.
+- **Justice:** careless-driving citations need both the client's impact report and the server's own speed measurement. Fines are paid once. One appeal is allowed, decided by a different moderator, and overdue fines block car purchases. Fines are kept separate from account moderation.
+- **Tests:** PostgreSQL and room tests cover these rules, and `e2e/safety.spec.ts` runs two browser journeys with two accounts each.
+
+The load-test harness ran 100 real bot accounts in one room on this VM for 60 s:
+
+- snapshots held 20 Hz (p99 gap 53 ms), with no corrections;
+- downstream was 78 KB/s per bot after snapshot compaction (nearest 40 players, default fields omitted), down from 126 KB/s at 40 bots before it;
+- server CPU averaged 10% of one core.
+
+The bots shared the server's machine and localhost, so this says nothing
+about real networks or other hosts. One process runs one room, capped at 100.
+
+Deployment configuration:
+
+- server and web Dockerfiles, nginx with immutable caching for hashed chunks (Babylon has its own chunk), and `docker-compose.prod.yml` with one-off migrations and loopback-only ports;
+- production guards on secrets, origins and dev routes;
+- [operations notes](OPERATIONS.md).
+
+The images were built and the compose stack ran from scratch on this VM, where
+a page-driven production smoke test passed. Nothing was deployed publicly.
+Remaining gaps: impacts are detected on the client, so a modified client can
+avoid citations; horizontal scaling isn't configured; and no TLS proxy was
+exercised.
+
 ### Milestone 6 verification note
 
 PostgreSQL integration tests cover idempotent and concurrent car purchases,
@@ -130,10 +158,17 @@ frame rates measured here (1–10 fps) say nothing about player hardware.
   corrections. Danfos are server-driven along route distance and predicted on
   the client between 20 Hz snapshots.
 
-## Deferred expanded scope
+## Expanded scope
 
-Daily-life, religious, community, and fictional court systems begin only after
-core multiplayer, economy, housing, and vehicles are reliable. Each location
-must ship with an interaction and persistent state; labels alone do not count.
-Religious interaction will be optional and mechanically neutral. In-game law
-and account moderation remain separate systems with independent audit trails.
+Each location must ship with an interaction and persistent state; labels alone
+do not count. Religious venues (milestone 7) are optional and mechanically
+neutral. In-game law (citations and appeals) and account moderation
+(milestone 8) are separate systems with independent audit trails
+(`justice_event` and `moderation_audit`).
+
+Still deferred:
+
+- a fictional court beyond moderator-decided appeals;
+- danfo routes in Ikoyi and Victoria Island;
+- real-device performance work;
+- multi-instance scaling.

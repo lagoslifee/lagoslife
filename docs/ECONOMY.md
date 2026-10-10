@@ -20,6 +20,7 @@ Adebayo Court (₦30,000 upfront) straight away or to buy Okoro Terrace
 | Service at Ade Auto Works | ₦2,500 check-up plus repairs at 0.15% of the price per condition point; insured cars pay at most ₦2,000 towards repairs |
 | Tow to Ade Auto Works | ₦4,000, free when insured |
 | Volunteer shift (Island Community Hall, Victoria Island) | ₦1,500, once per Lagos calendar day (UTC+1); uses 10 energy and 5 hunger and needs at least 15 energy |
+| Careless-driving citation (Island Traffic Wardens, fictional) | ₦2,500 game naira, due in 72 h. Issued for a crash at 13.9 m/s (50 km/h) or more, when the server's measured speed agrees, at most once per 10 minutes. Paid from Phone → Justice as a `fine_payment` transaction. One appeal while unpaid; overturned fines are void, upheld ones get at least 24 h to pay. Overdue fines block buying cars |
 | Quiet places (Ikoyi Reading Room, Muri Okunola Park, Grace Assembly, Al-Noor Mosque) | Free. +8 energy, on one 30-minute cooldown shared by all four. Identical for every venue, and optional |
 
 Bumps at 3 m/s or more cost condition (2.5 points per m/s above 2, at most 35
@@ -47,6 +48,11 @@ won't start until it is towed and repaired. A routine service is due every
 - Car purchases are keyed per confirmation, so a double-clicked Confirm buys one
   car. Entering a car claims it with a single conditional update, so two players
   can't drive the same car, and only its owner can.
+
+- Paying a citation locks the wallet and the citation row. A paid citation
+  returns its earlier result instead of charging again, so a double-clicked
+  Pay charges once. Fines are never deducted automatically, and a balance
+  can't go negative to cover one.
 
 ## Development reset
 

@@ -58,6 +58,26 @@ Al-Noor Mosque are quiet places. Spending time at any of them gives the same
 gives more than another. Island Community Hall offers one volunteer shift per
 Lagos day for ₦1,500. Phone → Community lists them all with directions.
 
+**Chat and safety.** Press Enter to talk. Residents within 40 m hear you, and
+a bubble shows over your head. Lines are limited to 200 characters and five per
+10 seconds. Links, emails, phone numbers and slurs are masked. Click a name in
+chat to report or block that resident; blocking hides chat both ways. Phone →
+Safety lists your blocks, shows whether you are muted, and blocks or reports by
+name. Moderator warnings appear as a notice you acknowledge before playing on.
+
+Moderators and admins open the console at `/moderation`. It handles reports
+(showing the original text of a reported line), resident records, warn, mute
+and suspend actions, appeals, an append-only audit log, and staff roles (admins
+only). Grant the first admin with `npm run staff:role` (see
+[operations](docs/OPERATIONS.md#staff-roles)).
+
+**Fictional justice.** Crashing at 50 km/h or more, when the server's own speed
+measurement agrees, earns a careless-driving citation from the fictional Island
+Traffic Wardens: ₦2,500 game naira, at most one per 10 minutes. Phone → Justice
+lets you pay it, or appeal once within 72 hours; a different moderator decides
+the appeal. Overdue fines stop you buying another car. Citations are in-game law
+only and are separate from account moderation.
+
 Keys can be rebound under Phone → Settings, alongside mouse sensitivity,
 invert Y, subtitles, volumes, text size and graphics quality. Touch devices get
 an on-screen joystick and buttons.
@@ -85,7 +105,13 @@ npm run typecheck    # all TypeScript packages
 npm test             # unit and PostgreSQL integration tests
 npm run db:migrate   # apply PostgreSQL migrations
 npm run test:e2e -w @lagos-living/web   # Playwright, needs the dev servers running
+npm run staff:role -w @lagos-living/server -- <username> <moderator|admin|none> "<reason>"
+npm run load-test -w @lagos-living/server -- --bots 40 --duration 60   # local only
 ```
+
+`docker-compose.prod.yml` builds production images for the server and web
+(nginx) and runs migrations as a one-off step. Nothing is deployed
+automatically; see [operations](docs/OPERATIONS.md).
 
 ## Documentation
 

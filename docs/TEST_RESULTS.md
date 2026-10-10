@@ -1,4 +1,4 @@
-# Test results — playable vertical slice
+# Test results
 
 Recorded 2026-10-10 on the cloud development VM: 4 CPUs, **no GPU**, with WebGL
 running on SwiftShader (software rendering). Frame rates below reflect that
@@ -25,15 +25,14 @@ rasteriser.
 
 | Suite | Result |
 |---|---|
-| `npm test -w @lagos-living/server` (PostgreSQL integration and room unit tests) | 57 / 57 passed (source tests only; compiled copies in `dist/` are excluded) |
-| `npm test -w @lagos-living/shared` | 10 / 10 passed |
+| `npm test -w @lagos-living/server` (PostgreSQL integration, room unit and config tests) | 88 / 88 passed (source tests only; compiled copies in `dist/` are excluded) |
+| `npm test -w @lagos-living/shared` | 16 / 16 passed |
 | `apps/web` `controller.test.ts` and `car-controller.test.ts` | 13 / 13 passed |
-| Playwright `e2e/districts.spec.ts` | 2 / 2 passed (Link Bridge drive 7.0 min; venues 5.6 min). Both were re-run individually after parapets were restricted to over-water spans. One earlier drive run failed when a 300 s leg deadline expired with the car still moving on the deck at 6 fps; each leg now has 540 s. |
-| Playwright `e2e/vehicles.spec.ts` | 1 / 1 passed (3.8 min, run twice) |
-| Playwright `e2e/playable-loop.spec.ts` | 2 / 2 passed (8.4 min) |
-| Playwright `e2e/accounts.spec.ts` | 5 / 5 passed |
-| Full Playwright suite in one run (accounts, districts, playable loop, vehicles) | 10 / 10 passed (26 min), recorded before the over-water parapet change; the district tests were re-run individually afterwards |
-| `npm run build -w @lagos-living/web` and typechecks | passed |
+| **Full Playwright suite in one run** (accounts, districts, playable loop, safety, vehicles), after all milestone 8 changes | **12 / 12 passed (29.1 min)**: districts 12.9 min, playable loop 8.0 min, the rest under 5 min each |
+| Playwright `e2e/safety.spec.ts` on its own | 2 / 2 passed (2.3 min) |
+| Playwright `e2e/districts.spec.ts` on its own | 2 / 2 passed (Link Bridge drive 7.0 min; venues 5.6 min). One earlier drive run failed when a 300 s leg deadline expired with the car still moving on the deck at 6 fps; each leg now has 540 s. |
+| Production smoke `e2e-prod/smoke.spec.ts` | 1 / 1 passed against nginx plus the bundled server (1.1 min), and against the compose stack (1.2 min) |
+| `npm run build` (server bundle and web) and `npm run typecheck` | passed |
 
 ### Playable loop (browser, real servers, LocalTester after a progress reset)
 
@@ -100,6 +99,99 @@ across sign-out and sign-in, two newly registered residents both seeing
 "2 online" (and one moving), unauthenticated room joins rejected, and password
 recovery through Mailpit.
 
+### Chat, moderation and fictional justice (milestone 8)
+
+Browser (`e2e/safety.spec.ts`, two real browser contexts, a moderator and a newly registered resident):
+
+1. The resident said "Hello neighbour! Call me on 0803 555 1234". The moderator, standing nearby, saw the line without the number, and the speaker saw their own line.
+2. The moderator reported the line (reason and details) from the name menu, then blocked the speaker. The speaker's existing lines disappeared, and a new line from the speaker was not delivered to the moderator. After the moderator unblocked from Phone → Safety, the speaker's next line arrived again. (That blocks also work in the other direction is covered by room tests.)
+3. In the moderation console (`/moderation`), the report showed the **original** unmasked text alongside the reporter's details. The resident record listed the blocked-period line too.
+4. A 1-hour chat mute applied from that record reached the resident live (toast notice). The resident's next line was refused and never reached the moderator, and the report moved to "actioned" with the mute recorded on it.
+5. A 24-hour suspension (with reason) removed the resident from the room at once, showing the suspension screen with the reason. After reload the screen stayed, and the multiplayer token request returned 403.
+6. The audit tab listed the mute and suspension reasons.
+7. Justice:
+   - A careless-driving citation (₦2,500) was appealed from Phone → Justice; while under review it couldn't be paid.
+   - A separate, newly registered moderator overturned it with a note, and the resident's phone showed "Overturned on appeal" and the note.
+   - A second citation's Pay button was double-clicked. ₦2,500 was debited once, and the only citation was `paid`.
+
+The browser test issues citations through the dev-only `/api/dev/citation` route. The real trigger is covered by room unit tests: a client-reported impact plus the server's own speed measurement both have to be at least 13.9 m/s (50 km/h), with a 10-minute cooldown. Collisions are detected on the client, so a modified client could withhold impact reports and avoid citations. Citations are therefore a fictional-game nuisance, not an anti-cheat measure.
+
+Server tests (`safety-service.test.ts`, `justice-service.test.ts`, `LagosRoom.test.ts`, PostgreSQL):
+
+- **Chat:** delivered only within 40 m, and not to or from blocked players. Five lines per 10 s, with at least 700 ms between lines; the rest are refused. Lines that can't be stored are not broadcast. Muted players are refused. Filtering masks blocked words (including letter swaps and stretched spellings), URLs, emails and runs of 7 or more digits.
+- **Chat (filtering detail):** the shared filter tests check that ordinary Lagos chat (pidgin, place names) is left alone.
+- **Reports:** a reporter can have one open report per target, and the evidence line must have been written by the reported player.
+- **Moderation:**
+  - Warn, mute and suspend emit live events, resolve the linked report, and are all audited.
+  - Moderators can't act on themselves, on admins, or (unless admin) on other moderators.
+  - Only admins change roles, and never their own.
+  - Mutes require a duration.
+  - Audit rows can't be updated or deleted (database trigger).
+  - Retention: chat older than 30 days is purged, except a line an open report points at, which goes once the report is resolved.
+- **Justice:**
+  - Simultaneous crash reports produce one citation.
+  - Concurrent and repeated payments charge once.
+  - Other players can't pay or appeal someone else's fine.
+  - The driver can't decide their own appeal, and a decided appeal can't be decided again.
+  - An overturned fine is void; an upheld one is payable again with at least a day to pay.
+  - Appeals close after the due date.
+  - An overdue fine blocks buying a car.
+  - The justice log is append-only.
+- **Room:**
+  - A crash is cited only when the server also measured the car at speed: not for a hard crash the client claims and the server didn't see, and not for a gentle bump after fast driving.
+  - Snapshots carry only the nearest players (the viewer is always included) and omit default fields, which the shared schema fills back in.
+
+Screenshots: `m8-chat`, `m8-report-dialog`, `m8-moderation-reports`,
+`m8-suspended`, `m8-moderation-audit`, `m8-justice-appeal` and
+`m8-moderation-appeal` in `/opt/cursor/artifacts/screenshots/`.
+
+### Load test (milestone 8)
+
+`npm run load-test -w @lagos-living/server` (see [operations](OPERATIONS.md#load-testing)).
+Bots are real accounts that join the real room through a real token, start
+spread over 120 m of the danfo loop, jog it at 10 position updates per second,
+and chat every 20 s. Every figure is what the bots received:
+
+| Bots (hold) | Joined | Snapshot rate | Gap p99 / max | Snapshot size (JSON → msgpack) | Downstream per bot | Players visible | Corrections | Chat p95 | Server CPU mean / max | Server RSS |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 10 (60 s) | 10 | 20 Hz | 51 / 55 ms | 3.3 KB JSON | — | 10 | 0 | 4 ms | 2.1% / 20% | 149 MB |
+| 25 (60 s) | 25 | 20 Hz | 52 / 101 ms | 6.7 KB JSON | — | 25 | 0 | 4 ms | 3.5% / 38% | 160 MB |
+| 40 (30 s), before compaction | 40 | 20 Hz | 55 / 101 ms | 10.1 KB → 6.4 KB | 126 KB/s | 40 | 0 | 5 ms | 5.1% / 54% | 158 MB |
+| 40 (30 s), after compaction | 40 | 20 Hz | 52 / 58 ms | 6.3 KB → 4.0 KB | 78 KB/s | 40 | 0 | 4 ms | 4.1% / 51% | 161 MB |
+| **100 (60 s)**, one room | 100 | 20 Hz | 53 / 102 ms | 6.3 KB → 4.0 KB | 78 KB/s | 40 (nearest) | 0 | 5 ms | 10.3% / 69% | 180 MB |
+
+In the 100-bot run, joins took 88 ms at the median (154 ms max), and
+server-to-bot snapshot age was 3 ms at p99. Bots sent 67,393 position updates
+and none were corrected. Their 336 chat lines produced 26,907 deliveries.
+
+"Compaction" means omitting player fields left at their defaults and sending
+at most the 40 nearest players. A 60-bot run under the earlier 40-player room
+cap opened a second room: two separate cities. That is why one room now holds
+100.
+
+CPU is a percentage of one core, sampled from `/proc` once a second. The
+maxima are single samples during the join ramp.
+
+Caveats:
+
+- The bots ran on the same 4-core VM as the server and talked over localhost, so network latency and loss are absent.
+- One server process ran one room, against the development server (`tsx`, no Better Auth rate limit).
+- Bots don't render, so client frame rate under load is not measured.
+- The 100-bot run supports the claim that this VM handled 100 bots in one room at 20 Hz for 60 s. It does not show what real players on real networks would get, or what any particular host can carry.
+
+The bundled production server was also loaded with 8 bots, which all joined.
+Joins took up to 22 s because sign-ins were rate-limited per IP and every bot
+shares this machine's address. Snapshots ran at 20 Hz with gaps of 51 ms at
+p99, and RSS stayed at 116 MB.
+
+### Production build (milestone 8)
+
+- `npm run build`: the web build splits Babylon (2.04 MB, 472 KB gzipped), React (219 KB) and game code (356 KB) into separate hashed chunks. The entry chunk shrank from 447 KB to 230 KB, and lazily loaded shader chunks stay lazy (316 output files before, 317 after).
+- The bundled server ran with production-only dependencies. It refused to start with the development auth secret, returned 404 for `/api/dev/*`, and rate-limited the fourth bad sign-in from one forwarded IP while a second IP was unaffected.
+- `e2e-prod/smoke.spec.ts` passed twice:
+  - against the bundle plus nginx serving the production build (1.1 min);
+  - against `docker-compose.prod.yml` built from scratch (1.2 min; details in [operations](OPERATIONS.md#what-has-been-verified)).
+
 ## Bugs found and fixed during this pass
 
 - React StrictMode's double mount crashed the first engine mid-start, and a missing `StandardMaterial` side-effect import stopped the game loading.
@@ -130,6 +222,8 @@ district tests. The earlier miniature-scale
 
 - Frame rate on real GPUs and phones, and tile-streaming hitches on them.
 - Victoria Island has no danfo route yet; districts are linked by driving and walking only.
-- More than two concurrent players. No capacity is claimed; the room cap is 40.
+- More than two concurrent *browser* players. 100 bot clients were measured in one room on this VM (see the load test above), but not over real networks, on other hosts, or with rendering clients. The room cap is 100, and snapshots carry the nearest 40.
+- Any public deployment, TLS proxy or managed database. The production images and compose stack were only run on this VM.
+- Citation evasion: impacts are reported by the client, so a modified client can avoid citations.
 - Touch controls on a physical device (layout is implemented and responsive).
 - Audio subtitles beyond stop announcements.
