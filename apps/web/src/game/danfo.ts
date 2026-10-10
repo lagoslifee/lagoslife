@@ -5,10 +5,12 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
 import { routeLength, sampleRoute, TRANSIT, type BusState } from "@lagos-living/shared";
-import type { Avatar, AvatarFactory } from "./avatar";
+import { appearanceFor, type Avatar, type AvatarFactory } from "./avatar";
 import { MeshBuilderBatch } from "./geometry";
 import type { Materials } from "./materials";
 import { SignAtlas } from "./sign-atlas";
+
+const seedOf = (id: string) => [...id].reduce((hash, char) => (Math.imul(hash, 31) + char.charCodeAt(0)) | 0, 7);
 
 /** Model-space long axis is X; this rotation turns the bonnet toward +Z (route heading). */
 export const DANFO_MODEL_YAW = -Math.PI / 2;
@@ -76,10 +78,10 @@ export class DanfoFactory {
     let driver: Avatar | null = null;
     let conductor: Avatar | null = null;
     if (avatars) {
-      driver = avatars.create(`${id}-driver`, 2);
+      driver = avatars.create(`${id}-driver`, appearanceFor(seedOf(id)));
       driver.root.parent = root;
       driver.root.position.set(-0.45, 0.35, 1.05);
-      conductor = avatars.create(`${id}-conductor`, 4);
+      conductor = avatars.create(`${id}-conductor`, appearanceFor(seedOf(id) + 7));
       conductor.root.parent = root;
     }
     const meshes = root.getChildMeshes(false) as AbstractMesh[];

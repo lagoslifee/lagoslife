@@ -2,11 +2,21 @@ import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import type { AssetContainer } from "@babylonjs/core/assetContainer";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
-import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
-import { MOVEMENT, type MotionState } from "@lagos-living/shared";
+import {
+  accessories,
+  defaultAppearance,
+  hairstyles,
+  MOVEMENT,
+  outfits,
+  skinTones,
+  type CharacterAppearance,
+  type MotionState,
+} from "@lagos-living/shared";
+import { ResidentAppearancePlugin } from "./appearance";
+import { dressHead, headAnchor } from "./avatar-style";
 
 /**
  * Ground speed (m/s) at which each in-place clip's planted foot stays still,
@@ -26,7 +36,16 @@ const CLIPS = {
 
 type ClipKey = keyof typeof CLIPS;
 
-const TINTS = ["#ffffff", "#e9d7c8", "#c9d8e8", "#d9e6cf", "#f0d6d6", "#d8d2ea"];
+/** A stable, varied look for residents the game populates (walkers, danfo crews), from a small integer seed. */
+export function appearanceFor(seed: number): CharacterAppearance {
+  const pick = <T,>(options: readonly T[], salt: number) => options[Math.abs(Math.imul(seed + 1, 2654435761) ^ salt) % options.length]!;
+  return {
+    skinTone: pick(skinTones, 0x51),
+    hairstyle: pick(hairstyles, 0x2f1),
+    outfit: pick(outfits, 0x9a3),
+    accessory: seed % 3 === 0 ? pick(accessories, 0x4c7) : "none",
+  };
+}
 
 export class AvatarFactory {
   private constructor(private readonly container: AssetContainer, private readonly scene: Scene) {}
@@ -36,17 +55,24 @@ export class AvatarFactory {
     return new AvatarFactory(container, scene);
   }
 
-  create(name: string, tintIndex = 0) {
-    const entries = this.container.instantiateModelsToScene((source) => `${name}:${source}`, tintIndex > 0, { doNotInstantiate: true });
+  create(name: string, appearance: CharacterAppearance = defaultAppearance) {
+    const entries = this.container.instantiateModelsToScene((source) => `${name}:${source}`, true, { doNotInstantiate: true });
     const root = new TransformNode(`avatar ${name}`, this.scene);
     for (const node of entries.rootNodes) node.parent = root;
     const meshes = root.getChildMeshes(false) as AbstractMesh[];
-    if (tintIndex > 0) {
-      const tint = Color3.FromHexString(TINTS[tintIndex % TINTS.length]!);
-      for (const mesh of meshes) {
-        if (mesh.material instanceof PBRMaterial) mesh.material.albedoColor = tint;
-      }
+    const plugins: ResidentAppearancePlugin[] = [];
+    for (const mesh of meshes) {
+      if (mesh.material instanceof PBRMaterial) plugins.push(new ResidentAppearancePlugin(mesh.material, appearance));
     }
+    const joint = (suffix: string) => entries.skeletons[0]?.bones.find((bone) => bone.name === suffix || bone.name.endsWith(`:${suffix}`));
+    const head = joint("Head");
+    const top = joint("head_end");
+    const leftShoulder = joint("LeftShoulder");
+    const rightShoulder = joint("RightShoulder");
+    const skinned = meshes.find((mesh) => mesh.skeleton);
+    const anchor =
+      head && top && leftShoulder && rightShoulder && skinned ? headAnchor(this.scene, name, skinned, { head, top, leftShoulder, rightShoulder }) : null;
+    if (anchor) dressHead(this.scene, anchor, appearance);
     for (const mesh of meshes) {
       mesh.isPickable = false;
       mesh.alwaysSelectAsActiveMesh = false;
@@ -55,7 +81,7 @@ export class AvatarFactory {
     for (const [key, clip] of Object.entries(CLIPS) as Array<[ClipKey, string]>) {
       groups[key] = entries.animationGroups.find((group) => group.name.endsWith(clip));
     }
-    return new Avatar(root, meshes, groups, entries.animationGroups);
+    return new Avatar(root, meshes, groups, entries.animationGroups, plugins, anchor, appearance);
   }
 }
 
@@ -68,8 +94,22 @@ export class Avatar {
     readonly meshes: AbstractMesh[],
     private readonly groups: Record<ClipKey, AnimationGroup | undefined>,
     private readonly all: AnimationGroup[],
+    private readonly plugins: ResidentAppearancePlugin[],
+    private readonly anchor: TransformNode | null,
+    private current: CharacterAppearance,
   ) {
     for (const group of all) group.stop();
+  }
+
+  get appearance() {
+    return this.current;
+  }
+
+  setAppearance(appearance: CharacterAppearance) {
+    const headChanged = appearance.hairstyle !== this.current.hairstyle || appearance.accessory !== this.current.accessory;
+    this.current = appearance;
+    for (const plugin of this.plugins) plugin.set(appearance);
+    if (headChanged && this.anchor) dressHead(this.anchor.getScene(), this.anchor, appearance);
   }
 
   private start() {
@@ -117,10 +157,12 @@ export class Avatar {
 
   setVisible(visible: boolean) {
     for (const mesh of this.meshes) mesh.isVisible = visible;
+    for (const mesh of this.anchor?.getChildMeshes(true) ?? []) mesh.isVisible = visible;
   }
 
   dispose() {
     for (const group of this.all) group.dispose();
+    this.anchor?.dispose();
     this.root.dispose(false, true);
   }
 }

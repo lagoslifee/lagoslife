@@ -22,7 +22,11 @@ type LagosHooks = {
   enterVehicle(id: string): void;
   exitVehicle(): void;
   driveTo(x: number, z: number, timeoutMs?: number): Promise<boolean>;
+  appearance(): Appearance | null;
+  remoteAppearances(): Record<string, Appearance | null>;
+  meshesNamed(prefix: string): Array<{ name: string; enabled: boolean; visible: boolean; centre: number[]; size: number[] }>;
 };
+type Appearance = { skinTone: string; hairstyle: string; outfit: string; accessory: string };
 declare global {
   interface Window {
     __lagos: LagosHooks;

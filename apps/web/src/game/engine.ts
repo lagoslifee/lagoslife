@@ -27,6 +27,7 @@ import {
   VEHICLE_RULES,
   type WorldVehicle,
   blockedByWater,
+  defaultAppearance,
   districtAt,
   insideBuilding,
   INTERIOR_ORIGIN,
@@ -36,7 +37,9 @@ import {
   TRANSIT,
   withinWorld,
   type BusState,
+  type CharacterAppearance,
   type ChatMessage,
+  type Look,
   type MotionState,
   type NetworkPlayer,
   type Notice,
@@ -163,6 +166,8 @@ export class GameEngine {
   private tracker!: StreetTracker;
   navigator!: RoadNavigator;
   private remotes = new Map<string, Remote>();
+  private looks = new Map<string, CharacterAppearance>();
+  private appearance: CharacterAppearance = defaultAppearance;
   private buses = new Map<string, DanfoView>();
   private busTags = new Map<string, HTMLDivElement>();
   private interior: InteriorView | null = null;
@@ -269,6 +274,7 @@ export class GameEngine {
         this.callbacks.chat(message, own);
       },
       suspended: (info) => this.callbacks.suspended(info),
+      looks: (looks) => this.onLooks(looks),
     });
   }
 
@@ -361,7 +367,7 @@ export class GameEngine {
     }
     this.assertLive();
     if (this.avatars) {
-      this.player = this.avatars.create("player", 0);
+      this.player = this.avatars.create("player", this.appearance);
       this.addCaster(this.player.meshes);
     } else {
       this.playerFallback = MeshBuilder.CreateCapsule("player", { height: 1.76, radius: 0.3 }, scene);
@@ -1018,7 +1024,7 @@ export class GameEngine {
         tag.className = "world-tag";
         tag.textContent = player.name;
         this.overlay.appendChild(tag);
-        const avatar = this.avatars?.create(`remote-${player.sessionId}`, 1 + (this.remotes.size % 5)) ?? null;
+        const avatar = this.avatars?.create(`remote-${player.sessionId}`, this.looks.get(player.sessionId) ?? defaultAppearance) ?? null;
         if (avatar) this.addCaster(avatar.meshes);
         remote = { avatar, tag, samples: [], speed: 0, lastSeen: now };
         this.remotes.set(player.sessionId, remote);
@@ -1035,6 +1041,28 @@ export class GameEngine {
         this.remotes.delete(sessionId);
       }
     }
+  }
+
+  private onLooks(looks: Look[]) {
+    for (const { sessionId, appearance } of looks) {
+      if (sessionId === this.net.sessionId) {
+        this.setAppearance(appearance);
+        continue;
+      }
+      this.looks.set(sessionId, appearance);
+      this.remotes.get(sessionId)?.avatar?.setAppearance(appearance);
+    }
+    if (this.looks.size > 400) {
+      for (const sessionId of this.looks.keys()) {
+        if (this.looks.size <= 200) break;
+        if (!this.remotes.has(sessionId)) this.looks.delete(sessionId);
+      }
+    }
+  }
+
+  setAppearance(appearance: CharacterAppearance) {
+    this.appearance = appearance;
+    this.player?.setAppearance(appearance);
   }
 
   private updateRemotes(now: number, dt: number) {
@@ -1448,6 +1476,16 @@ export class GameEngine {
           this.carPilot = { path: path.length ? path : [[x, z]], index: 0, resolve, deadline: performance.now() + timeoutMs, stuckSince: null, recovery: null, recoveries: 0 };
         }),
       fps: () => this.engine.getFps(),
+      meshesNamed: (prefix: string) =>
+        this.scene.meshes
+          .filter((mesh) => mesh.name.startsWith(prefix))
+          .map((mesh) => {
+            const box = mesh.getBoundingInfo().boundingBox;
+            return { name: mesh.name, enabled: mesh.isEnabled(), visible: mesh.isVisible, centre: box.centerWorld.asArray(), size: box.extendSizeWorld.asArray() };
+          }),
+      appearance: () => this.player?.appearance ?? null,
+      remoteAppearances: () =>
+        Object.fromEntries([...this.remotes].map(([sessionId, remote]) => [remote.tag.textContent ?? sessionId, remote.avatar?.appearance ?? null])),
     };
     (window as unknown as { __lagos: typeof hooks }).__lagos = hooks;
   }

@@ -6,7 +6,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Scene } from "@babylonjs/core/scene";
 import { getPlace, TRANSIT, type Vec2 } from "@lagos-living/shared";
-import type { Avatar, AvatarFactory } from "./avatar";
+import { appearanceFor, type Avatar, type AvatarFactory } from "./avatar";
 import type { DanfoView } from "./danfo";
 import { densify, hash, pointAt, polylineLength } from "./geometry";
 import type { Materials, Quality } from "./materials";
@@ -110,7 +110,7 @@ export class AmbientLife {
       this.cars.push(car);
     }
     for (let index = 0; index < walkerCount; index += 1) {
-      const avatar = avatars!.create(`walker-${index}`, 1 + (index % 5));
+      const avatar = avatars!.create(`walker-${index}`, appearanceFor(index));
       const walker: Walker = { avatar, points: [], length: 0, s: 0, direction: 1, lateral: 0, speed: 1.3, x: 0, z: 0, yaw: 0 };
       this.spawnWalker(walker, index * 3.7, null);
       this.walkers.push(walker);
@@ -130,7 +130,7 @@ export class AmbientLife {
         const rz = -Math.sin(yaw);
         const x = place.door[0] + rx * spot.offset + Math.sin(yaw) * 0.6;
         const z = place.door[1] + rz * spot.offset + Math.cos(yaw) * 0.6;
-        const avatar = avatars.create(`static-${index}`, 2 + index);
+        const avatar = avatars.create(`static-${index}`, appearanceFor(100 + index));
         avatar.root.position.set(x, world.groundHeight(x, z), z);
         avatar.root.rotation.y = yaw;
         this.statics.push({ avatar, x, z, motion: spot.motion });
@@ -140,7 +140,7 @@ export class AmbientLife {
         const heading = (stop as unknown as { heading: number }).heading;
         const x = stop.alight[0] + Math.cos(heading) * 1.7 + Math.sin(heading) * 1.2;
         const z = stop.alight[1] - Math.sin(heading) * 1.7 + Math.cos(heading) * 1.2;
-        const avatar = avatars.create(`waiting-${index}`, 3 + index);
+        const avatar = avatars.create(`waiting-${index}`, appearanceFor(200 + index));
         avatar.root.position.set(x, world.groundHeight(x, z), z);
         avatar.root.rotation.y = heading + Math.PI / 2 + Math.PI;
         this.statics.push({ avatar, x, z, motion: "idle" });

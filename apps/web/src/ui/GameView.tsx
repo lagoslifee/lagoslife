@@ -1,4 +1,4 @@
-import { defaultSettings, districtAt, TRANSIT, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type SelfState, type Vec2 } from "@lagos-living/shared";
+import { defaultSettings, districtAt, TRANSIT, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type SelfState, type Vec2 } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PropertyListing } from "../api";
 import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
@@ -36,12 +36,14 @@ function ago(at: number | null, now: number) {
 
 export function GameView({
   playerName,
+  appearance,
   onCustomise,
   onSignOut,
   onSuspended,
   overlayOpen,
 }: {
   playerName: string;
+  appearance: CharacterAppearance;
   onCustomise: () => void;
   onSignOut: () => void;
   onSuspended: (info: { reason: string; until: string | null }) => void;
@@ -159,6 +161,10 @@ export function GameView({
       engineRef.current = null;
     };
   }, [quality, refresh, toast]);
+
+  useEffect(() => {
+    engine?.setAppearance(appearance);
+  }, [engine, appearance]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);

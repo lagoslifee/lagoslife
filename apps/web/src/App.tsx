@@ -281,6 +281,7 @@ function GameShell({
       <Suspense fallback={<div className="loading-screen">Preparing Lagos…</div>}>
         <GameView
           playerName={playerName}
+          appearance={appearance}
           onSuspended={(suspension) => setStanding({ checked: true, suspension })}
           overlayOpen={creatorOpen}
           onCustomise={() => setCreatorOpen(true)}

@@ -2,6 +2,9 @@ import { Client, type Room } from "@colyseus/sdk";
 import {
   chatMessageSchema,
   type ChatMessage,
+  lookSchema,
+  looksSchema,
+  type Look,
   noticeSchema,
   positionUpdateSchema,
   selfStateSchema,
@@ -28,6 +31,7 @@ export type MultiplayerHandlers = {
   vehicleStatus: (status: { vehicleId: string; condition: number; damage?: number }) => void;
   chat: (message: ChatMessage) => void;
   suspended: (info: { reason: string; until: string | null }) => void;
+  looks: (looks: Look[]) => void;
 };
 
 export class MultiplayerConnection {
@@ -79,6 +83,14 @@ export class MultiplayerConnection {
         const parsed = chatMessageSchema.safeParse(payload);
         if (parsed.success) this.handlers.chat(parsed.data);
       });
+      room.onMessage("look", (payload: unknown) => {
+        const parsed = lookSchema.safeParse(payload);
+        if (parsed.success) this.handlers.looks([parsed.data]);
+      });
+      room.onMessage("looks", (payload: unknown) => {
+        const parsed = looksSchema.safeParse(payload);
+        if (parsed.success) this.handlers.looks(parsed.data);
+      });
       room.onMessage("suspended", (payload: { reason?: unknown; until?: unknown }) => {
         this.closed = true;
         this.handlers.suspended({ reason: String(payload?.reason ?? ""), until: typeof payload?.until === "string" ? payload.until : null });
@@ -89,6 +101,7 @@ export class MultiplayerConnection {
         this.handlers.status({ state: "offline", reason: "Connection lost — reconnecting…" });
         this.retry = setTimeout(() => void this.connect(), 3000);
       });
+      room.send("requestLooks");
       this.handlers.status({ state: "connected", sessionId: room.sessionId });
     } catch (error) {
       if (this.closed) return;
