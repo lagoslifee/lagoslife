@@ -55,8 +55,8 @@ can be advertised as fully supported.
 
 Two isolated browser accounts were verified in one room: both observed two
 online residents and the second received changing server-authoritative
-coordinates when the first moved. The room is capped at 32 by design, but only
-two concurrent clients have been measured; no higher capacity is claimed.
+coordinates when the first moved. (The room cap was later raised to 100 and
+measured with 100 bot clients; see the milestone 8 note.)
 
 ### Milestone 4 verification note
 

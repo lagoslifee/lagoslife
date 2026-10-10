@@ -29,7 +29,7 @@ rasteriser.
 | `npm test -w @lagos-living/shared` | 18 / 18 passed |
 | `apps/web` `controller.test.ts`, `car-controller.test.ts` and `appearance.test.ts` | 17 / 17 passed |
 | Playwright `e2e/accounts.spec.ts` on its own, after the 3D character looks | 5 / 5 passed (2.2 min) |
-| **Full Playwright suite in one run** (accounts, districts, playable loop, safety, vehicles), after all milestone 8 changes | **12 / 12 passed (29.1 min)**: districts 12.9 min, playable loop 8.0 min, the rest under 5 min each |
+| **Full Playwright suite in one run** (accounts, districts, playable loop, safety, vehicles), after the 3D character looks | **12 / 12 passed (30.4 min)**: districts 13.2 min, playable loop 8.6 min, the rest under 5 min each. (After the milestone 8 changes: 12 / 12 in 29.1 min.) |
 | Playwright `e2e/safety.spec.ts` on its own | 2 / 2 passed (2.3 min) |
 | Playwright `e2e/districts.spec.ts` on its own | 2 / 2 passed (Link Bridge drive 7.0 min; venues 5.6 min). One earlier drive run failed when a 300 s leg deadline expired with the car still moving on the deck at 6 fps; each leg now has 540 s. |
 | Production smoke `e2e-prod/smoke.spec.ts` | 1 / 1 passed against nginx plus the bundled server (1.1 min), and against the compose stack (1.2 min) |
@@ -119,6 +119,18 @@ recovery through Mailpit.
   Profile-service tests cover save, reload, the live-room event and invalid
   stored data. Room tests cover a joiner's look reaching others, the
   rate-limited look list, and live changes.
+- Cost at the Lekki spawn (medium preset, camera behind the player), measured
+  against the same build with recolouring and head meshes switched off:
+  - draw calls went from 120–122 to 125–127;
+  - frames counted over 20 s, three interleaved runs each: 2.45–2.60 fps with
+    the looks and 2.50–2.60 fps without, so no difference this machine can
+    resolve;
+  - the JavaScript profile is unchanged, and the main thread was about 88% idle
+    in both.
+
+  The per-frame CPU timer swings between about 20 and 57 ms from run to run on
+  the software renderer, so it was not used. Cost on real GPUs has not been
+  measured.
 
 ### Chat, moderation and fictional justice (milestone 8)
 
