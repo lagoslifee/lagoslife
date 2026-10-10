@@ -62,6 +62,7 @@ import {
   unblockPlayer,
 } from "./safety-service.js";
 import { createMultiplayerToken } from "./multiplayer-token.js";
+import { loadCharacter, saveAppearance } from "./profile-service.js";
 import { getCommunityStatus, visitQuietPlace, volunteerShift } from "./community-service.js";
 import { z } from "zod";
 import {
@@ -255,38 +256,10 @@ export function configureRoutes(app: Express) {
     res.json({ token: createMultiplayerToken({ userId, name }) });
   });
 
-  app.get("/api/character", requirePlayer, async (req, res) => {
-    const { userId } = (req as AuthenticatedRequest).player;
-    const result = await pool.query(
-      `SELECT appearance, tutorial_complete AS "tutorialComplete"
-       FROM player_profile WHERE user_id = $1`,
-      [userId],
-    );
-    res.json(
-      result.rows[0] ?? {
-        appearance: defaultAppearance,
-        tutorialComplete: false,
-      },
-    );
-  });
+  app.get("/api/character", requirePlayer, guarded("Character unavailable", (_req, userId) => loadCharacter(userId)));
 
-  app.put("/api/character", requirePlayer, async (req, res) => {
-    const parsed = saveCharacterSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: "Invalid character options" });
-      return;
-    }
-    const { userId } = (req as AuthenticatedRequest).player;
-    const result = await pool.query(
-      `INSERT INTO player_profile (user_id, appearance)
-       VALUES ($1, $2)
-       ON CONFLICT (user_id) DO UPDATE
-       SET appearance = EXCLUDED.appearance, updated_at = NOW()
-       RETURNING appearance, tutorial_complete AS "tutorialComplete"`,
-      [userId, parsed.data.appearance],
-    );
-    res.json(result.rows[0]);
-  });
+  app.put("/api/character", requirePlayer, rateLimited, guarded("Character could not be saved", (req, userId) =>
+    saveAppearance(userId, saveCharacterSchema.parse(req.body).appearance)));
 
   app.get("/api/economy", requirePlayer, async (req, res) => {
     const { userId } = (req as AuthenticatedRequest).player;

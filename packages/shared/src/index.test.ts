@@ -8,7 +8,10 @@ import {
   getPlace,
   districtAt,
   insideBuilding,
+  lookSchema,
+  looksSchema,
   PLACES,
+  readAppearance,
   positionUpdateSchema,
   registerFootprints,
   registeredFootprintCount,
@@ -35,6 +38,20 @@ describe("character appearance contract", () => {
     expect(() =>
       characterAppearanceSchema.parse({ ...defaultAppearance, outfit: "admin-only" }),
     ).toThrow();
+  });
+
+  it("reads stored looks safely, filling gaps and rejecting bad values", () => {
+    expect(readAppearance({ hairstyle: "afro" })).toEqual({ ...defaultAppearance, hairstyle: "afro" });
+    expect(readAppearance({ ...defaultAppearance, skinTone: "green" })).toEqual(defaultAppearance);
+    expect(readAppearance(null)).toEqual(defaultAppearance);
+    expect(readAppearance("afro")).toEqual(defaultAppearance);
+  });
+
+  it("caps a looks message at the room size it can describe", () => {
+    const look = { sessionId: "abc", appearance: defaultAppearance };
+    expect(looksSchema.safeParse(Array.from({ length: 200 }, () => look)).success).toBe(true);
+    expect(looksSchema.safeParse(Array.from({ length: 201 }, () => look)).success).toBe(false);
+    expect(lookSchema.safeParse({ sessionId: "", appearance: defaultAppearance }).success).toBe(false);
   });
 });
 

@@ -25,6 +25,17 @@ export const saveCharacterSchema = z.object({
   appearance: characterAppearanceSchema,
 });
 
+/** Appearance travels in its own messages, once per join or change, so 20 Hz snapshots stay small. */
+export const lookSchema = z.object({ sessionId: z.string().min(1).max(64), appearance: characterAppearanceSchema });
+export type Look = z.infer<typeof lookSchema>;
+export const looksSchema = z.array(lookSchema).max(200);
+
+/** Saved appearances written before an option existed fall back to defaults instead of failing. */
+export function readAppearance(value: unknown): CharacterAppearance {
+  const parsed = characterAppearanceSchema.safeParse({ ...defaultAppearance, ...(typeof value === "object" && value ? value : {}) });
+  return parsed.success ? parsed.data : defaultAppearance;
+}
+
 export const healthResponseSchema = z.object({
   status: z.literal("ok"),
   service: z.literal("lagos-living-server"),

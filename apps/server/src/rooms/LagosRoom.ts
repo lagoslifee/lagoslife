@@ -2,6 +2,9 @@ import {
   boardRequestSchema,
   CHAT,
   chatSendSchema,
+  defaultAppearance,
+  type CharacterAppearance,
+  type Look,
   districtAt,
   effectiveTopSpeed,
   filterChat,
@@ -61,6 +64,7 @@ import {
   saveDrivingVehicle,
   type RoomVehicle,
 } from "../vehicle-service.js";
+import { loadAppearance, profileEvents } from "../profile-service.js";
 import "../world-footprints.js";
 
 export const LagosState = schema({
@@ -89,6 +93,8 @@ type Player = {
   sessionId: string;
   userId: string;
   name: string;
+  appearance: CharacterAppearance;
+  looksRequestedAt: number;
   x: number;
   z: number;
   yaw: number;
@@ -168,6 +174,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private onVehicleOwnerReset = (userId: string) => this.dropOwnerVehicles(userId);
   private onSanctioned = (userId: string, kind: string, reason: string, endsAt: number | null) => this.applySanction(userId, kind, reason, endsAt);
   private onBlocksChanged = (userIds: string[]) => void this.refreshHidden(userIds);
+  private onAppearance = (userId: string, appearance: CharacterAppearance) => this.updateAppearance(userId, appearance);
 
   onAuth(_client: LagosClient, options: { token?: unknown }, _context: AuthContext) {
     return verifyMultiplayerToken(options.token);
@@ -178,6 +185,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     vehicleEvents.on("ownerReset", this.onVehicleOwnerReset);
     safetyEvents.on("sanctioned", this.onSanctioned);
     safetyEvents.on("blocksChanged", this.onBlocksChanged);
+    profileEvents.on("appearance", this.onAppearance);
     try {
       await parkAbandonedVehicles();
       for (const vehicle of await loadStreetVehicles()) this.vehicles.set(vehicle.id, vehicle);
@@ -213,6 +221,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("exitVehicle", (client) => void this.handleExitVehicle(client));
     this.onMessage("vehicleImpact", (client, payload) => void this.handleVehicleImpact(client, payload));
     this.onMessage("chat", (client, payload) => void this.handleChat(client, payload));
+    this.onMessage("requestLooks", (client) => this.sendLooks(client));
     this.onMessage("emote", (client, payload) => {
       const player = this.players.get(client.sessionId);
       const parsed = emoteRequestSchema.safeParse(payload);
@@ -228,10 +237,11 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   }
 
   async onJoin(client: LagosClient) {
-    const [suspension, mute, hidden] = await Promise.all([
+    const [suspension, mute, hidden, appearance] = await Promise.all([
       activeSuspension(client.auth.userId).catch(() => null),
       activeMute(client.auth.userId).catch(() => null),
       hiddenPlayers(client.auth.userId).catch(() => new Set<string>()),
+      loadAppearance(client.auth.userId).catch(() => defaultAppearance),
     ]);
     if (suspension) throw new Error("This account is suspended.");
     clearProgressReset(client.auth.userId);
@@ -246,6 +256,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       sessionId: client.sessionId,
       userId: client.auth.userId,
       name: client.auth.name,
+      appearance,
+      looksRequestedAt: 0,
       x: spawn[0],
       z: spawn[1],
       yaw: 0,
@@ -288,7 +300,32 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     }
     this.players.set(client.sessionId, player);
     setPlayerPosition(player.userId, player.x, player.z, player.location);
+    this.sendLook(player, client.sessionId);
     this.sendSelf(client, player, saved ? "Welcome back — progress restored." : "Welcome to Lekki Phase 1.");
+  }
+
+  /** Everyone's current look, asked for by a client once its message handlers are registered. */
+  private sendLooks(client: Client) {
+    const player = this.players.get(client.sessionId);
+    if (!player) return;
+    const now = Date.now();
+    if (now - player.looksRequestedAt < 5_000) return;
+    player.looksRequestedAt = now;
+    const looks: Look[] = [...this.players.values()].map(({ sessionId, appearance }) => ({ sessionId, appearance }));
+    client.send("looks", looks);
+  }
+
+  private sendLook(player: Player, except?: string) {
+    const look: Look = { sessionId: player.sessionId, appearance: player.appearance };
+    for (const client of this.clients) if (client.sessionId !== except) client.send("look", look);
+  }
+
+  private updateAppearance(userId: string, appearance: CharacterAppearance) {
+    for (const player of this.players.values()) {
+      if (player.userId !== userId) continue;
+      player.appearance = appearance;
+      this.sendLook(player);
+    }
   }
 
   async onLeave(client: LagosClient) {
@@ -321,6 +358,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     vehicleEvents.off("ownerReset", this.onVehicleOwnerReset);
     safetyEvents.off("sanctioned", this.onSanctioned);
     safetyEvents.off("blocksChanged", this.onBlocksChanged);
+    profileEvents.off("appearance", this.onAppearance);
     await Promise.all(
       [...this.players.values()].map(async (player) => {
         await this.parkPlayerVehicle(player).catch(() => undefined);

@@ -44,7 +44,12 @@ const justice = vi.hoisted(() => ({
   issueCitation: vi.fn(async (..._args: unknown[]): Promise<{ fine: number } | null> => ({ fine: 2_500 })),
 }));
 vi.mock("../justice-service.js", () => justice);
+vi.mock("../profile-service.js", async () => {
+  const { EventEmitter } = await import("node:events");
+  return { loadAppearance: vi.fn(async () => ({ skinTone: "rich", hairstyle: "low-fade", outfit: "island-casual", accessory: "none" })), profileEvents: new EventEmitter() };
+});
 const { safetyEvents } = await import("../safety-service.js");
+const { profileEvents } = await import("../profile-service.js");
 
 const { BUS_CAPACITY, LagosRoom, MAX_VISIBLE_PLAYERS, REBOARD_COOLDOWN_MS } = await import("./LagosRoom.js");
 
@@ -60,6 +65,8 @@ type RoomInternals = {
   handleVehicleImpact(client: FakeClient, payload: unknown): Promise<void>;
   handlePosition(client: FakeClient, payload: unknown): void;
   handleChat(client: FakeClient, payload: unknown): Promise<void>;
+  sendLooks(client: FakeClient): void;
+  onCreate(): Promise<void>;
   applySanction(userId: string, kind: string, reason: string, endsAt: number | null): void;
   broadcastSnapshots(): void;
   vehicles: Map<string, Record<string, unknown>>;
@@ -96,6 +103,8 @@ function setup() {
       sessionId: client.sessionId,
       userId: client.auth.userId,
       name,
+      appearance: { skinTone: "rich", hairstyle: "low-fade", outfit: "island-casual", accessory: "none" },
+      looksRequestedAt: 0,
       x: door.x,
       z: door.z,
       yaw: 0,
@@ -545,5 +554,40 @@ describe("LagosRoom snapshots", () => {
     expect(included.has(crowd[0]!.sessionId)).toBe(true);
     expect(included.has(crowd.at(-1)!.sessionId)).toBe(false);
     expect(Object.keys(snapshot.players[1]!).sort()).toEqual(["motion", "name", "sessionId", "x", "yaw", "z"]);
+  });
+});
+
+describe("LagosRoom appearance", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const looks = (client: FakeClient, type: "look" | "looks") => client.send.mock.calls.filter(([kind]) => kind === type).map(([, value]) => value);
+
+  it("sends everyone's look on request, at most once every 5 seconds", () => {
+    const { room, join, player } = setup();
+    const ada = join("ada");
+    const tunde = join("tunde");
+    Object.assign(player(tunde), { appearance: { skinTone: "deep", hairstyle: "locs", outfit: "ankara-day", accessory: "cap" } });
+    room.sendLooks(ada);
+    room.sendLooks(ada);
+    const sent = looks(ada, "looks");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toEqual(
+      expect.arrayContaining([
+        { sessionId: "s-ada", appearance: expect.objectContaining({ skinTone: "rich" }) },
+        { sessionId: "s-tunde", appearance: { skinTone: "deep", hairstyle: "locs", outfit: "ankara-day", accessory: "cap" } },
+      ]),
+    );
+  });
+
+  it("shows a saved character change to everyone in the room at once", async () => {
+    const { room, join, player } = setup();
+    const ada = join("ada");
+    const tunde = join("tunde");
+    await room.onCreate().catch(() => undefined);
+    const next = { skinTone: "golden", hairstyle: "afro", outfit: "athleisure", accessory: "glasses" };
+    profileEvents.emit("appearance", "u-ada", next);
+    expect(player(ada).appearance).toEqual(next);
+    expect(looks(tunde, "look")).toEqual([{ sessionId: "s-ada", appearance: next }]);
+    expect(looks(ada, "look")).toEqual([{ sessionId: "s-ada", appearance: next }]);
+    profileEvents.removeAllListeners();
   });
 });
