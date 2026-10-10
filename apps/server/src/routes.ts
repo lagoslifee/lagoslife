@@ -14,6 +14,7 @@ import {
   saveCharacterSchema,
   garageVehicleSchema,
   purchaseVehicleSchema,
+  placeById,
   vehicleActionSchema,
 } from "@lagos-living/shared";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
@@ -37,6 +38,7 @@ import {
   purchaseItem,
   resetTestProgress,
   restAtHome,
+  savePlayerPlace,
   startDelivery,
 } from "./economy-service.js";
 import {
@@ -330,5 +332,16 @@ export function configureRoutes(app: Express) {
     markProgressReset(userId);
     await resetTestProgress(userId);
     return { reset: true };
+  }));
+
+  /** Local test harness: the next session starts at a place's kerb, so far districts can be tested without the drive. */
+  app.post("/api/dev/spawn-at", requirePlayer, guarded("Spawn failed", async (req, userId) => {
+    const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(req.hostname);
+    if (config.NODE_ENV !== "development" || !isLocalHost) throw new EconomyError("Not found", 404);
+    const place = placeById.get(communityVisitSchema.parse(req.body).placeId);
+    if (!place) throw new EconomyError("Unknown place", 404);
+    markProgressReset(userId);
+    await savePlayerPlace(userId, place.kerb[0], place.kerb[1], "street");
+    return { x: place.kerb[0], z: place.kerb[1] };
   }));
 }
