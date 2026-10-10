@@ -1,0 +1,1109 @@
+import "@babylonjs/loaders/glTF";
+import "@babylonjs/core/Helpers/sceneHelpers";
+import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
+import "@babylonjs/core/Culling/ray";
+import { TargetCamera } from "@babylonjs/core/Cameras/targetCamera";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { HDRCubeTexture } from "@babylonjs/core/Materials/Textures/hdrCubeTexture";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
+import {
+  defaultSettings,
+  getPlace,
+  INTERACTION_RANGE,
+  insideBuilding,
+  INTERIOR_ORIGIN,
+  MOVEMENT,
+  PLACES,
+  resolveBuildingCollision,
+  TRANSIT,
+  WORLD_BOUNDS,
+  type BusState,
+  type MotionState,
+  type NetworkPlayer,
+  type Notice,
+  type Place,
+  type PlayerSettings,
+  type SelfState,
+  type Vec2,
+} from "@lagos-living/shared";
+import { apiUrl } from "../auth-client";
+import { MultiplayerConnection, type MultiplayerStatus } from "../multiplayer";
+import { CityAudio } from "./audio";
+import { Avatar, AvatarFactory } from "./avatar";
+import { defaultBindings, InputState, LocomotionController, type Bindings, type MoveMode } from "./controller";
+import { DanfoFactory, type DanfoView } from "./danfo";
+import { MeshBuilderBatch } from "./geometry";
+import { buildInterior, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
+import { createMaterials, type Materials, type Quality } from "./materials";
+import { SignAtlas } from "./sign-atlas";
+import { RoadNavigator, StreetTracker, type WorldData } from "./street-index";
+import { AmbientLife } from "./traffic";
+import { buildWorld, type BuiltWorld } from "./world-builder";
+
+export type Prompt = { key: string; label: string; detail?: string | undefined; disabled?: boolean };
+
+export type HudState = {
+  network: MultiplayerStatus["state"];
+  networkReason?: string | undefined;
+  online: number;
+  street: string;
+  streetNamed: boolean;
+  district: string;
+  location: "street" | "interior" | "bus";
+  interiorTitle: string | null;
+  propertyId: string | null;
+  previewOnly: boolean;
+  prompt: Prompt | null;
+  secondaryPrompt: Prompt | null;
+  bus: { id: string; seat: number | null; nextStop: string; atStop: string | null; stopRequested: boolean; occupied: number; capacity: number } | null;
+  speed: number;
+  mode: MoveMode;
+  motion: MotionState;
+  fps: number;
+  frameMs: number;
+  x: number;
+  z: number;
+  yaw: number;
+  cameraYaw: number;
+  waypoint: { label: string; distance: number } | null;
+};
+
+export type Interaction =
+  | { kind: "place"; place: Place }
+  | { kind: "delivery" }
+  | { kind: "interior"; spot: InteriorSpot["id"] };
+
+export type EngineCallbacks = {
+  hud: (state: HudState) => void;
+  notice: (notice: Notice) => void;
+  subtitle: (text: string) => void;
+  interact: (interaction: Interaction) => void;
+  self: (self: SelfState) => void;
+  saved: (at: number) => void;
+  loading: (text: string, progress: number) => void;
+  ready: () => void;
+  toggle: (panel: "phone" | "map" | "help") => void;
+};
+
+type Remote = {
+  avatar: Avatar | null;
+  tag: HTMLDivElement;
+  samples: Array<{ t: number; x: number; z: number; yaw: number; motion: MotionState; busId: string | null }>;
+  speed: number;
+  lastSeen: number;
+};
+
+const PLACE_ACTIONS: Record<Place["kind"], string> = {
+  starter_home: "Enter",
+  rental: "View rental",
+  sale: "View house for sale",
+  job: "Delivery jobs",
+  food: "Buy food",
+  shop: "Shop",
+  furniture: "Furniture",
+  delivery: "Deliver parcel",
+};
+
+export class EngineDisposedError extends Error {
+  constructor() {
+    super("Engine disposed during start");
+  }
+}
+
+export class GameEngine {
+  private engine!: Engine;
+  private scene!: Scene;
+  private camera!: TargetCamera;
+  private sun!: DirectionalLight;
+  private shadows: ShadowGenerator | null = null;
+  private materials!: Materials;
+  private atlas!: SignAtlas;
+  data!: WorldData;
+  private world!: BuiltWorld;
+  private avatars: AvatarFactory | null = null;
+  private danfos: DanfoFactory | null = null;
+  private player: Avatar | null = null;
+  private playerFallback: Mesh | null = null;
+  private parcel: Mesh | null = null;
+  private life: AmbientLife | null = null;
+  private input!: InputState;
+  private controller: LocomotionController;
+  private net: MultiplayerConnection;
+  private audio: CityAudio;
+  private tracker!: StreetTracker;
+  navigator!: RoadNavigator;
+  private remotes = new Map<string, Remote>();
+  private buses = new Map<string, DanfoView>();
+  private busTags = new Map<string, HTMLDivElement>();
+  private interior: InteriorView | null = null;
+  private self: SelfState | null = null;
+  private status: MultiplayerStatus = { state: "connecting" };
+  private online = 1;
+  private cameraYaw = 0;
+  private cameraPitch = 0.32;
+  private cameraDistance = 4.6;
+  private cameraTarget = new Vector3();
+  private cameraPosition = new Vector3();
+  private groundY = 0;
+  private lastSend = 0;
+  private lastSent = { x: 0, z: 0, motion: "idle" as MotionState };
+  private lastHud = 0;
+  private lastInteract = 0;
+  private prompt: Prompt | null = null;
+  private secondary: Prompt | null = null;
+  private interaction: (() => void) | null = null;
+  private deliveryTarget: { point: Vec2; label: string } | null = null;
+  private waypoint: { point: Vec2; label: string } | null = null;
+  private beacon: Mesh | null = null;
+  private routeMesh: Mesh | null = null;
+  private routeMaterial: PBRMaterial | null = null;
+  private lastRoute = { at: 0, x: 0, z: 0 };
+  private routePoints: Vec2[] = [];
+  private emote: MotionState | null = null;
+  private settings: PlayerSettings;
+  private bindings: Bindings;
+  private disposed = false;
+  private frameDrawCalls = 0;
+  private justAlighted: { busId: string; at: number } | null = null;
+  private maxFrameDt = 0.25;
+  private frameMs = 0;
+  private updateMs = 0;
+  private readonly callbacks: EngineCallbacks;
+  private frameTimes: number[] = [];
+  private autopilot: { path: Vec2[]; index: number; sprint: boolean; resolve: (ok: boolean) => void; lastProgress: number; lastPoint: Vec2; deadline: number } | null = null;
+  private forcedInput: [number, number] | null = null;
+  private readyFired = false;
+
+  constructor(
+    private readonly canvas: HTMLCanvasElement,
+    private readonly overlay: HTMLDivElement,
+    callbacks: EngineCallbacks,
+    private readonly quality: Quality,
+    settings: PlayerSettings,
+    bindings: Bindings,
+  ) {
+    this.callbacks = Object.fromEntries(
+      Object.entries(callbacks).map(([key, fn]) => [key, (...args: unknown[]) => (this.disposed ? undefined : (fn as (...a: unknown[]) => unknown)(...args))]),
+    ) as unknown as EngineCallbacks;
+    this.settings = settings;
+    this.bindings = bindings;
+    this.controller = new LocomotionController((x, z) => this.collide(x, z));
+    this.audio = new CityAudio(settings);
+    this.net = new MultiplayerConnection({
+      snapshot: (snapshot, own) => this.onSnapshot(snapshot, own),
+      self: (self) => this.onSelf(self),
+      notice: (notice) => {
+        this.callbacks.notice(notice);
+        if (notice.announcement) {
+          if (this.settings.subtitles) this.callbacks.subtitle(notice.announcement);
+          this.audio.announce(notice.announcement);
+        }
+      },
+      correction: ({ x, z }) => this.controller.teleport(x, z),
+      saved: (at) => this.callbacks.saved(at),
+      status: (status) => {
+        this.status = status;
+      },
+    });
+  }
+
+  async start() {
+    const engine = new Engine(this.canvas, this.quality !== "low", { stencil: false, preserveDrawingBuffer: false, powerPreference: "high-performance" }, false);
+    this.engine = engine;
+    const dpr = window.devicePixelRatio || 1;
+    engine.setHardwareScalingLevel(this.quality === "low" ? 1.5 : this.quality === "medium" ? Math.max(1, dpr / 1.25) / dpr : 1 / Math.min(dpr, 1.5));
+    const scene = new Scene(engine);
+    this.scene = scene;
+    scene.skipPointerMovePicking = true;
+    scene.clearColor = new Color4(0.74, 0.84, 0.93, 1);
+    scene.imageProcessingConfiguration.toneMappingEnabled = true;
+    scene.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
+    scene.imageProcessingConfiguration.exposure = 1.05;
+    scene.imageProcessingConfiguration.contrast = 1.12;
+    scene.fogMode = Scene.FOGMODE_EXP2;
+    scene.fogDensity = 0.0024;
+    scene.fogColor = new Color3(0.78, 0.84, 0.88);
+
+    this.camera = new TargetCamera("camera", new Vector3(0, 3, -5), scene);
+    this.camera.fov = 0.95;
+    this.camera.minZ = 0.1;
+    this.camera.maxZ = 1600;
+
+    this.callbacks.loading("Lighting the island…", 0.1);
+    const hdr = new HDRCubeTexture("/assets/sky/daylight-1k.hdr", scene, 256, false, true, false, true);
+    scene.environmentTexture = hdr;
+    scene.environmentIntensity = 0.9;
+    this.createSky(scene);
+
+    this.sun = new DirectionalLight("sun", new Vector3(-0.45, -1, 0.32).normalize(), scene);
+    this.sun.intensity = 3.1;
+    this.sun.diffuse = Color3.FromHexString("#fff2dc");
+    const fill = new HemisphericLight("sky fill", new Vector3(0, 1, 0), scene);
+    fill.intensity = 0.32;
+    fill.groundColor = Color3.FromHexString("#b39a7c");
+    if (this.quality !== "low") {
+      this.shadows = new ShadowGenerator(this.quality === "high" ? 2048 : 1024, this.sun);
+      this.shadows.usePercentageCloserFiltering = true;
+      this.shadows.filteringQuality = ShadowGenerator.QUALITY_MEDIUM;
+      this.shadows.bias = 0.0008;
+      this.shadows.normalBias = 0.02;
+      this.sun.shadowFrustumSize = 90;
+      this.sun.shadowMinZ = 1;
+      this.sun.shadowMaxZ = 260;
+      this.sun.autoUpdateExtends = false;
+    }
+
+    this.materials = createMaterials(scene, this.quality);
+    this.atlas = new SignAtlas(scene);
+    this.callbacks.loading("Loading Lekki Phase 1 streets…", 0.25);
+    const response = await fetch("/assets/world/lekki-phase1.world.json");
+    if (!response.ok) throw new Error("World data could not be loaded");
+    this.data = (await response.json()) as WorldData;
+    this.assertLive();
+    this.callbacks.loading("Building houses, compounds and junctions…", 0.4);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    this.assertLive();
+    this.world = buildWorld(scene, this.data, this.materials, this.atlas, this.quality);
+    for (const mesh of this.world.casters()) mesh.receiveShadows = true;
+    if (this.shadows) {
+      const map = this.shadows.getShadowMap()!;
+      map.renderList = this.world.casters().filter((mesh) => /plaster|roof|walls|gate/.test(mesh.name));
+      map.refreshRate = 1;
+    }
+    this.tracker = new StreetTracker(this.data.roads);
+    this.navigator = new RoadNavigator(this.data.roads.filter((road) => road.kind !== "service" || road.name));
+
+    this.callbacks.loading("Loading residents…", 0.65);
+    try {
+      this.avatars = await AvatarFactory.load(scene);
+    } catch {
+      this.callbacks.notice({ tone: "error", text: "Character model failed to load — using a placeholder." });
+    }
+    this.assertLive();
+    this.callbacks.loading("Loading danfos…", 0.8);
+    try {
+      this.danfos = await DanfoFactory.load(scene);
+    } catch {
+      this.callbacks.notice({ tone: "error", text: "Danfo model failed to load — using a placeholder." });
+    }
+    this.assertLive();
+    if (this.avatars) {
+      this.player = this.avatars.create("player", 0);
+      this.addCaster(this.player.meshes);
+    } else {
+      this.playerFallback = MeshBuilder.CreateCapsule("player", { height: 1.76, radius: 0.3 }, scene);
+    }
+    this.parcel = MeshBuilder.CreateBox("parcel", { width: 0.42, height: 0.3, depth: 0.32 }, scene);
+    const cardboard = new PBRMaterial("cardboard", scene);
+    cardboard.albedoColor = Color3.FromHexString("#b0844f");
+    cardboard.roughness = 0.9;
+    this.parcel.material = cardboard;
+    this.parcel.setEnabled(false);
+
+    this.life = new AmbientLife(scene, this.world, this.data.roads, this.materials, this.avatars, this.quality);
+    this.life.onHonk = () => this.audio.horn(0.8);
+
+    this.input = new InputState(this.canvas, this.bindings);
+    const start = getPlace("starter-home");
+    this.controller.teleport(start.door[0], start.door[1]);
+    this.controller.yaw = start.facing;
+    this.cameraYaw = start.facing;
+    this.snapCamera();
+
+    this.callbacks.loading("Connecting to the city…", 0.92);
+    void this.net.connect();
+    scene.onBeforeRenderObservable.add(() => {
+      const t0 = performance.now();
+      this.update();
+      this.updateMs = this.updateMs * 0.9 + (performance.now() - t0) * 0.1;
+    });
+    engine.runRenderLoop(() => {
+      if (this.disposed) return;
+      const counter = (engine as unknown as { _drawCalls?: { current: number } })._drawCalls;
+      const before = counter?.current ?? 0;
+      const t0 = performance.now();
+      scene.render();
+      this.frameMs = this.frameMs * 0.9 + (performance.now() - t0) * 0.1;
+      this.frameDrawCalls = (counter?.current ?? 0) - before;
+    });
+    window.addEventListener("resize", this.resize);
+    if (import.meta.env.DEV) this.installTestHooks();
+  }
+
+  private resize = () => this.engine?.resize();
+
+  private addCaster(meshes: AbstractMesh[]) {
+    if (!this.shadows) return;
+    for (const mesh of meshes) this.shadows.addShadowCaster(mesh, false);
+  }
+
+  private collide(x: number, z: number): [number, number] {
+    if (this.interior) return this.interior.collide(x, z, MOVEMENT.radius);
+    let [px, pz] = resolveBuildingCollision(x, z, MOVEMENT.radius);
+    [px, pz] = this.world.obstacles.resolve(px, pz, MOVEMENT.radius);
+    for (const bus of this.buses.values()) [px, pz] = bus.pushOut(px, pz, MOVEMENT.radius);
+    px = Math.max(WORLD_BOUNDS.minX + 1, Math.min(WORLD_BOUNDS.maxX - 1, px));
+    pz = Math.max(WORLD_BOUNDS.minZ + 1, Math.min(WORLD_BOUNDS.maxZ - 1, pz));
+    return [px, pz];
+  }
+
+  private riding() {
+    return this.self?.busId ? this.buses.get(this.self.busId) ?? null : null;
+  }
+
+  private update() {
+    if (!this.world) return;
+    const now = performance.now();
+    const dt = Math.min(this.maxFrameDt, this.engine.getDeltaTime() / 1000);
+    this.frameTimes.push(this.engine.getDeltaTime());
+    if (this.frameTimes.length > 120) this.frameTimes.shift();
+
+    if (this.input.consume("phone")) this.callbacks.toggle("phone");
+    if (this.input.consume("map")) this.callbacks.toggle("map");
+    if (this.input.consume("help")) this.callbacks.toggle("help");
+
+    const sensitivity = 0.0026 * this.settings.mouseSensitivity;
+    this.cameraYaw += this.input.lookDX * sensitivity;
+    this.cameraPitch += this.input.lookDY * sensitivity * (this.settings.invertY ? -1 : 1);
+    this.cameraPitch = Math.max(-0.35, Math.min(1.15, this.cameraPitch));
+    this.input.lookDX = 0;
+    this.input.lookDY = 0;
+    if (this.input.zoom) {
+      this.cameraDistance = Math.max(2.2, Math.min(10, this.cameraDistance + this.input.zoom * 0.5));
+      this.input.zoom = 0;
+    }
+
+    for (const bus of this.buses.values()) bus.update(dt, now);
+    const bus = this.riding();
+    if (bus) {
+      this.controller.teleport(bus.root.position.x, bus.root.position.z);
+      this.controller.yaw = bus.yaw;
+      if (this.autopilot) {
+        this.autopilot.resolve(false);
+        this.autopilot = null;
+      }
+      if (this.input.consume("stop")) this.requestStop();
+      if (this.input.consume("interact")) this.alight();
+    } else {
+      let move: [number, number] = [0, 0];
+      if (this.input.held("forward")) move[1] += 1;
+      if (this.input.held("back")) move[1] -= 1;
+      if (this.input.held("right")) move[0] += 1;
+      if (this.input.held("left")) move[0] -= 1;
+      if (this.input.touchMove[0] || this.input.touchMove[1]) move = [...this.input.touchMove];
+      let mode: MoveMode = this.input.held("sprint") || this.input.touchSprint ? "sprint" : this.input.walkToggle ? "walk" : "jog";
+      this.runAutopilot(now);
+      if (this.forcedInput) {
+        move = this.forcedInput;
+        if (this.autopilot) mode = this.autopilot.sprint ? "sprint" : "jog";
+      }
+      if (move[0] || move[1]) this.emote = null;
+      const steps = Math.max(1, Math.ceil(dt / (1 / 120)));
+      for (let step = 0; step < steps; step += 1) this.controller.step(dt / steps, move, this.cameraYaw, mode);
+      if (this.input.consume("jump")) this.controller.jump();
+      if (this.input.consume("interact")) this.interaction?.();
+      this.input.consume("stop");
+    }
+
+    const { x, z } = this.controller;
+    const targetGround = this.interior ? 0.02 : this.world.groundHeight(x, z);
+    this.groundY += (targetGround - this.groundY) * Math.min(1, dt * 12);
+    const speed = this.controller.speed();
+    const motion: MotionState = this.emote && speed < 0.1 ? this.emote : bus ? "sit" : this.controller.motion();
+    if (this.player) {
+      this.player.root.position.set(x, this.groundY + this.controller.hop, z);
+      this.player.root.rotation.y = this.controller.yaw;
+      this.player.root.setEnabled(!bus);
+      this.player.update(speed, motion, dt);
+    } else if (this.playerFallback) {
+      this.playerFallback.position.set(x, this.groundY + 0.88, z);
+      this.playerFallback.setEnabled(!bus);
+    }
+    if (this.parcel?.isEnabled()) {
+      const yaw = this.controller.yaw;
+      this.parcel.position.set(x + Math.sin(yaw) * 0.32, this.groundY + 1.08, z + Math.cos(yaw) * 0.32);
+      this.parcel.rotation.y = yaw;
+    }
+
+    this.updateCamera(dt, bus);
+    if (!bus && now - this.lastSend > 66) {
+      const moved = Math.hypot(x - this.lastSent.x, z - this.lastSent.z) > 0.02 || motion !== this.lastSent.motion;
+      if (moved || now - this.lastSend > 1000) {
+        this.net.sendPosition(x, z, this.controller.yaw, motion);
+        this.lastSent = { x, z, motion };
+        this.lastSend = now;
+      }
+    }
+
+    this.updateRemotes(now, dt);
+    if (!this.interior) {
+      this.life?.update(dt, [x, z], [...this.buses.values()], now * 0.001);
+      this.world.updateDetail(this.camera.position.x, this.camera.position.z);
+    }
+    if (this.shadows) {
+      this.sun.position.copyFrom(new Vector3(x, 0, z).subtract(this.sun.direction.scale(120)));
+    }
+    if (now - this.lastInteract > 100) {
+      this.lastInteract = now;
+      this.updateInteractions(bus);
+    }
+    this.updateWaypoint(now);
+    this.updateTags();
+    const busy = this.interior ? 0 : Math.max(0, 1 - (this.world.roads.nearest(x, z, (road) => road.kind === "primary")?.distance ?? 200) / 90);
+    this.audio.update(now, busy);
+    if (now - this.lastHud > 160) {
+      this.lastHud = now;
+      this.emitHud(now, bus, motion);
+    }
+    if (!this.readyFired && this.self) {
+      this.readyFired = true;
+      this.callbacks.loading("Ready", 1);
+      this.callbacks.ready();
+    }
+  }
+
+  /** Vertex-coloured gradient dome: cheap, and independent of HDR prefiltering support on the GPU. */
+  private createSky(scene: Scene) {
+    const dome = MeshBuilder.CreateSphere("sky dome", { diameter: 1400, segments: 24, sideOrientation: Mesh.BACKSIDE }, scene);
+    const positions = dome.getVerticesData(VertexBuffer.PositionKind)!;
+    const colors: number[] = [];
+    const zenith = Color3.FromHexString("#4f8fcf");
+    const upper = Color3.FromHexString("#8dbbe3");
+    const horizon = Color3.FromHexString("#e3e8e4");
+    const ground = Color3.FromHexString("#c9c2b2");
+    for (let index = 0; index < positions.length; index += 3) {
+      const h = positions[index + 1]! / 700;
+      const color = h < 0 ? ground : h < 0.18 ? Color3.Lerp(horizon, upper, h / 0.18) : Color3.Lerp(upper, zenith, Math.min(1, (h - 0.18) / 0.6));
+      colors.push(color.r, color.g, color.b, 1);
+    }
+    dome.setVerticesData(VertexBuffer.ColorKind, colors);
+    const material = new StandardMaterial("sky", scene);
+    material.disableLighting = true;
+    material.emissiveColor = Color3.White();
+    material.diffuseColor = Color3.Black();
+    material.specularColor = Color3.Black();
+    material.fogEnabled = false;
+    dome.material = material;
+    dome.infiniteDistance = true;
+    dome.applyFog = false;
+    dome.isPickable = false;
+    dome.renderingGroupId = 0;
+  }
+
+  private snapCamera() {
+    this.cameraTarget.set(this.controller.x, 1.55, this.controller.z);
+    if (this.interior) return;
+    const free = (yaw: number) => {
+      for (let d = 0.5; d <= this.cameraDistance; d += 0.25) {
+        const px = this.controller.x - Math.sin(yaw) * d;
+        const pz = this.controller.z - Math.cos(yaw) * d;
+        if (insideBuilding(px, pz, 0.3)) return d;
+      }
+      return this.cameraDistance;
+    };
+    if (free(this.cameraYaw) >= this.cameraDistance) return;
+    let best = this.cameraYaw;
+    let bestFree = 0;
+    for (const offset of [0.5, -0.5, 1.0, -1.0, 1.57, -1.57, 2.1, -2.1, Math.PI]) {
+      const distance = free(this.cameraYaw + offset);
+      if (distance > bestFree + 0.01) {
+        best = this.cameraYaw + offset;
+        bestFree = distance;
+        if (distance >= this.cameraDistance) break;
+      }
+    }
+    this.cameraYaw = best;
+  }
+
+  private updateCamera(dt: number, bus: DanfoView | null) {
+    const target = bus
+      ? new Vector3(bus.root.position.x, 2.1, bus.root.position.z)
+      : new Vector3(this.controller.x, this.groundY + 1.55, this.controller.z);
+    const lag = 1 - Math.exp(-dt * 20);
+    this.cameraTarget.addInPlace(target.subtract(this.cameraTarget).scale(lag));
+    const distance = bus ? Math.max(this.cameraDistance, 8.5) : this.interior ? Math.min(this.cameraDistance, 3.6) : this.cameraDistance;
+    const cosPitch = Math.cos(this.cameraPitch);
+    const dir = new Vector3(Math.sin(this.cameraYaw) * cosPitch, Math.sin(this.cameraPitch), Math.cos(this.cameraYaw) * cosPitch);
+    let allowed = distance;
+    if (this.interior) {
+      const [ox, oz] = INTERIOR_ORIGIN;
+      for (let d = 0.4; d <= distance; d += 0.2) {
+        const px = this.cameraTarget.x - dir.x * d;
+        const pz = this.cameraTarget.z - dir.z * d;
+        if (Math.abs(px - ox) > 5.3 || Math.abs(pz - oz) > 4.5) {
+          allowed = Math.max(0.5, d - 0.2);
+          break;
+        }
+      }
+    } else if (!bus) {
+      for (let d = 0.4; d <= distance; d += 0.25) {
+        const px = this.cameraTarget.x - dir.x * d;
+        const pz = this.cameraTarget.z - dir.z * d;
+        const py = this.cameraTarget.y + dir.y * d;
+        const inBus = py < 3 && [...this.buses.values()].some((danfo) => {
+          const [bx, bz] = danfo.pushOut(px, pz, 0.25);
+          return bx !== px || bz !== pz;
+        });
+        if (inBus || (py < 9 && resolveBuildingCollision(px, pz, 0.25).some((value, index) => Math.abs(value - (index ? pz : px)) > 0.01))) {
+          allowed = Math.max(0.6, d - 0.3);
+          break;
+        }
+      }
+    }
+    const position = this.cameraTarget.subtract(dir.scale(allowed));
+    position.y = Math.max(position.y, (this.interior ? 0.3 : this.groundY + 0.35));
+    if (this.interior) position.y = Math.min(position.y, 2.45);
+    this.cameraPosition.copyFrom(position);
+    this.camera.position.copyFrom(position);
+    this.camera.setTarget(this.cameraTarget);
+  }
+
+  private updateInteractions(bus: DanfoView | null) {
+    this.interaction = null;
+    this.prompt = null;
+    this.secondary = null;
+    const { x, z } = this.controller;
+    const bind = (action: keyof Bindings) => this.bindings[action].replace("Key", "");
+    if (bus) {
+      const state = bus.state;
+      if (state?.doorOpen && state.stopId) {
+        this.prompt = { key: bind("interact"), label: "Step off", detail: TRANSIT.stops.find((stop) => stop.id === state.stopId)?.name };
+      } else {
+        this.prompt = { key: bind("interact"), label: "Request stop & step off at next stop" };
+      }
+      this.secondary = state?.stopRequested ? { key: "✓", label: "Stop requested" } : { key: bind("stop"), label: "Request stop (Owa o!)" };
+      return;
+    }
+    if (this.interior) {
+      for (const spot of this.interior.spots) {
+        if (Math.hypot(spot.point[0] - x, spot.point[1] - z) < 1.6) {
+          this.prompt = { key: bind("interact"), label: spot.label };
+          this.interaction = spot.id === "exit" ? () => this.exitProperty() : () => this.callbacks.interact({ kind: "interior", spot: spot.id });
+          return;
+        }
+      }
+      return;
+    }
+    let best: { distance: number; prompt: Prompt; run: () => void } | null = null;
+    const offer = (distance: number, prompt: Prompt, run: () => void) => {
+      if (!best || distance < best.distance) best = { distance, prompt, run };
+    };
+    for (const danfo of this.buses.values()) {
+      const [dx, dz] = danfo.doorPoint();
+      const distance = Math.hypot(dx - x, dz - z);
+      if (distance > 5.2) continue;
+      const state = danfo.state;
+      if (!state) continue;
+      const next = TRANSIT.stops.find((stop) => stop.id === state.nextStopId)?.name ?? "";
+      if (this.justAlighted?.busId === danfo.id && performance.now() - this.justAlighted.at < 6_000) {
+        offer(distance + 1, { key: "✓", label: "You just stepped off this danfo", disabled: true }, () => undefined);
+      } else if (state.doorOpen && state.stopId) {
+        const full = state.occupied >= state.capacity;
+        offer(distance, { key: bind("interact"), label: full ? "Danfo full — wait for the next one" : `Board danfo ${TRANSIT.routeNumber} · ₦${TRANSIT.fare}`, detail: `Next: ${next} · ${state.occupied}/${state.capacity} seats`, disabled: full }, () => !full && this.board(danfo.id));
+      } else {
+        offer(distance + 2, { key: "…", label: "Wait for the danfo to stop", disabled: true }, () => undefined);
+      }
+    }
+    for (const place of PLACES) {
+      const distance = Math.hypot(place.door[0] - x, place.door[1] - z);
+      if (distance > INTERACTION_RANGE + (place.kind === "rental" || place.kind === "sale" ? 2 : 0)) continue;
+      if (place.kind === "delivery") {
+        if (this.deliveryTarget && Math.hypot(this.deliveryTarget.point[0] - place.door[0], this.deliveryTarget.point[1] - place.door[1]) < 1) {
+          offer(distance, { key: bind("interact"), label: "Deliver parcel", detail: place.name }, () => this.callbacks.interact({ kind: "delivery" }));
+        }
+        continue;
+      }
+      offer(distance, { key: bind("interact"), label: `${PLACE_ACTIONS[place.kind]} · ${place.name}`, detail: place.street }, () =>
+        place.kind === "starter_home" ? this.enterProperty("starter-home", "enter") : this.callbacks.interact({ kind: "place", place }),
+      );
+    }
+    if (best) {
+      const chosen = best as { prompt: Prompt; run: () => void };
+      this.prompt = chosen.prompt;
+      this.interaction = chosen.run;
+    }
+  }
+
+  private emitHud(now: number, bus: DanfoView | null, motion: MotionState) {
+    const { x, z } = this.controller;
+    let street = "Lekki Phase 1";
+    let named = false;
+    if (this.interior) {
+      street = this.self?.propertyId ? getPlace(this.self.propertyId).name : "Indoors";
+    } else {
+      const road = this.tracker.update(x, z, now);
+      if (road) {
+        street = road.name ?? (road.kind === "service" ? "Unnamed service road" : "Unnamed road");
+        named = Boolean(road.name);
+      } else street = "Off-street · Lekki Phase 1";
+    }
+    const average = this.frameTimes.reduce((total, value) => total + value, 0) / Math.max(1, this.frameTimes.length);
+    const state = bus?.state;
+    this.callbacks.hud({
+      network: this.status.state,
+      networkReason: this.status.state === "offline" ? this.status.reason : undefined,
+      online: this.online,
+      street,
+      streetNamed: named,
+      district: "Lekki Phase 1 · Eti-Osa",
+      location: bus ? "bus" : this.interior ? "interior" : "street",
+      interiorTitle: this.interior && this.self?.propertyId ? getPlace(this.self.propertyId).name : null,
+      propertyId: this.self?.propertyId ?? null,
+      previewOnly: this.self?.previewOnly ?? false,
+      prompt: this.prompt,
+      secondaryPrompt: this.secondary,
+      bus: state
+        ? {
+            id: state.id,
+            seat: this.self?.seat ?? null,
+            nextStop: TRANSIT.stops.find((stop) => stop.id === state.nextStopId)?.name ?? "",
+            atStop: state.stopId ? TRANSIT.stops.find((stop) => stop.id === state.stopId)?.name ?? null : null,
+            stopRequested: state.stopRequested,
+            occupied: state.occupied,
+            capacity: state.capacity,
+          }
+        : null,
+      speed: this.controller.speed(),
+      mode: this.controller.mode,
+      motion,
+      fps: Math.round(this.engine.getFps()),
+      frameMs: Math.round(average * 10) / 10,
+      x,
+      z,
+      yaw: this.controller.yaw,
+      cameraYaw: this.cameraYaw,
+      waypoint: this.waypoint ? { label: this.waypoint.label, distance: Math.hypot(this.waypoint.point[0] - x, this.waypoint.point[1] - z) } : null,
+    });
+  }
+
+  private onSnapshot(snapshot: { players: NetworkPlayer[]; buses: BusState[]; online: number }, own: string) {
+    const now = performance.now();
+    this.online = snapshot.online;
+    for (const state of snapshot.buses) {
+      let view = this.buses.get(state.id);
+      if (!view && this.danfos) {
+        view = this.danfos.create(state.id, this.materials, this.atlas, this.avatars);
+        this.addCaster(view.meshes);
+        this.buses.set(state.id, view);
+        const tag = document.createElement("div");
+        tag.className = "world-tag bus-tag";
+        this.overlay.appendChild(tag);
+        this.busTags.set(state.id, tag);
+      }
+      view?.apply(state, now);
+      const tag = this.busTags.get(state.id);
+      if (tag) {
+        const next = TRANSIT.stops.find((stop) => stop.id === state.nextStopId)?.name.replace("Admiralty Way · ", "") ?? "";
+        tag.textContent = `${TRANSIT.routeNumber} danfo · ${state.occupied}/${state.capacity} · ${state.state === "dwelling" ? "Boarding now" : `Next: ${next}`}`;
+      }
+    }
+    const seen = new Set<string>();
+    for (const player of snapshot.players) {
+      if (player.sessionId === own) continue;
+      seen.add(player.sessionId);
+      let remote = this.remotes.get(player.sessionId);
+      if (!remote) {
+        const tag = document.createElement("div");
+        tag.className = "world-tag";
+        tag.textContent = player.name;
+        this.overlay.appendChild(tag);
+        const avatar = this.avatars?.create(`remote-${player.sessionId}`, 1 + (this.remotes.size % 5)) ?? null;
+        if (avatar) this.addCaster(avatar.meshes);
+        remote = { avatar, tag, samples: [], speed: 0, lastSeen: now };
+        this.remotes.set(player.sessionId, remote);
+      }
+      remote.lastSeen = now;
+      remote.samples.push({ t: now, x: player.x, z: player.z, yaw: player.yaw, motion: player.motion, busId: player.busId });
+      if (remote.samples.length > 12) remote.samples.shift();
+      remote.tag.classList.toggle("away", !player.connected);
+    }
+    for (const [sessionId, remote] of this.remotes) {
+      if (!seen.has(sessionId)) {
+        remote.avatar?.dispose();
+        remote.tag.remove();
+        this.remotes.delete(sessionId);
+      }
+    }
+  }
+
+  private updateRemotes(now: number, dt: number) {
+    const renderTime = now - 120;
+    for (const remote of this.remotes.values()) {
+      const samples = remote.samples;
+      if (!samples.length) continue;
+      let a = samples[0]!;
+      let b = samples[samples.length - 1]!;
+      for (let index = 1; index < samples.length; index += 1) {
+        if (samples[index]!.t >= renderTime) {
+          a = samples[index - 1]!;
+          b = samples[index]!;
+          break;
+        }
+      }
+      const span = Math.max(1, b.t - a.t);
+      const t = Math.max(0, Math.min(1, (renderTime - a.t) / span));
+      const x = a.x + (b.x - a.x) * t;
+      const z = a.z + (b.z - a.z) * t;
+      let dyaw = b.yaw - a.yaw;
+      while (dyaw > Math.PI) dyaw -= Math.PI * 2;
+      while (dyaw < -Math.PI) dyaw += Math.PI * 2;
+      const measured = Math.hypot(b.x - a.x, b.z - a.z) / (span / 1000);
+      remote.speed += ((b.busId ? 0 : Math.min(7, measured)) - remote.speed) * Math.min(1, dt * 8);
+      if (remote.avatar) {
+        remote.avatar.root.position.set(x, this.interior ? 0.02 : this.world.groundHeight(x, z), z);
+        remote.avatar.root.rotation.y = a.yaw + dyaw * t;
+        remote.avatar.root.setEnabled(!b.busId);
+        remote.avatar.update(remote.speed, b.motion, dt);
+      }
+    }
+  }
+
+  private project(x: number, y: number, z: number) {
+    const width = this.engine.getRenderWidth();
+    const height = this.engine.getRenderHeight();
+    const transform = this.scene.getTransformMatrix();
+    const point = Vector3.Project(new Vector3(x, y, z), Matrix.Identity(), transform, this.camera.viewport.toGlobal(width, height));
+    const scale = this.canvas.clientWidth / width;
+    return { x: point.x * scale, y: point.y * scale, visible: point.z > 0 && point.z < 1 };
+  }
+
+  private updateTags() {
+    const { x, z } = this.controller;
+    for (const remote of this.remotes.values()) {
+      const root = remote.avatar?.root;
+      const sample = remote.samples.at(-1);
+      if (!sample) continue;
+      const px = root?.position.x ?? sample.x;
+      const pz = root?.position.z ?? sample.z;
+      const distance = Math.hypot(px - x, pz - z);
+      const screen = this.project(px, (root?.position.y ?? 0) + 2.1, pz);
+      const show = screen.visible && distance < 45 && !sample.busId;
+      remote.tag.style.display = show ? "block" : "none";
+      if (show) remote.tag.style.transform = `translate(${screen.x}px, ${screen.y}px) translate(-50%, -100%)`;
+    }
+    for (const [id, tag] of this.busTags) {
+      const bus = this.buses.get(id);
+      if (!bus) continue;
+      const distance = Math.hypot(bus.root.position.x - x, bus.root.position.z - z);
+      const screen = this.project(bus.root.position.x, 3.4, bus.root.position.z);
+      const show = screen.visible && distance < 70 && !this.interior && this.self?.busId !== id;
+      tag.style.display = show ? "block" : "none";
+      if (show) tag.style.transform = `translate(${screen.x}px, ${screen.y}px) translate(-50%, -100%)`;
+    }
+  }
+
+  private onSelf(self: SelfState) {
+    const previous = this.self;
+    this.self = self;
+    if (self.reason === "alighted" && previous?.busId) this.justAlighted = { busId: previous.busId, at: performance.now() };
+    const enteringInterior = self.location !== "street" && (!previous || previous.location !== self.location);
+    const leavingInterior = self.location === "street" && this.interior;
+    if (leavingInterior) {
+      this.interior?.dispose();
+      this.interior = null;
+    }
+    if (enteringInterior) void this.loadInterior(self);
+    if (!self.busId) {
+      this.controller.teleport(self.x, self.z);
+      if (self.reason === "alighted" || self.reason === "exited" || self.reason === "recovered" || !previous) this.snapCamera();
+    }
+    if (self.reason === "entered" || self.reason === "preview") {
+      this.cameraYaw = 0;
+      this.cameraPitch = 0.16;
+      this.snapCamera();
+    }
+    this.callbacks.self(self);
+  }
+
+  private async loadInterior(self: SelfState) {
+    const kind: InteriorKind = self.location.startsWith("starter:") ? "starter" : self.previewOnly ? "preview" : "home";
+    const title = self.propertyId ? getPlace(self.propertyId).name : "Home";
+    let placements: Placement[] = [];
+    if (kind === "home" && self.propertyId) {
+      const response = await fetch(`${apiUrl}/api/properties/${self.propertyId}/interior`, { credentials: "include" }).catch(() => null);
+      if (response?.ok) placements = ((await response.json()) as { furniture: Placement[] }).furniture;
+      else this.callbacks.notice({ tone: "error", text: "Could not load your furniture — showing an empty room." });
+    }
+    if (this.self?.location !== self.location) return;
+    this.interior?.dispose();
+    this.interior = buildInterior(this.scene, this.materials, this.atlas, kind, title, placements);
+  }
+
+  async refreshInterior() {
+    if (this.self && this.self.location !== "street") {
+      this.interior?.dispose();
+      this.interior = null;
+      await this.loadInterior(this.self);
+    }
+  }
+
+  private updateWaypoint(now: number) {
+    const target = this.waypoint;
+    if (!target || this.interior || this.riding()) {
+      this.beacon?.setEnabled(false);
+      this.routeMesh?.setEnabled(false);
+      return;
+    }
+    if (!this.beacon) {
+      this.beacon = MeshBuilder.CreateCylinder("waypoint beacon", { height: 40, diameterTop: 0.7, diameterBottom: 1.1, tessellation: 16, cap: 0 }, this.scene);
+      const material = new PBRMaterial("beacon", this.scene);
+      material.unlit = true;
+      material.albedoColor = Color3.FromHexString("#ffcf3a");
+      material.alpha = 0.32;
+      material.backFaceCulling = false;
+      this.beacon.material = material;
+      this.beacon.isPickable = false;
+    }
+    this.beacon.setEnabled(true);
+    this.beacon.position.set(target.point[0], 20, target.point[1]);
+    const { x, z } = this.controller;
+    const moved = Math.hypot(x - this.lastRoute.x, z - this.lastRoute.z);
+    if (now - this.lastRoute.at > 2500 || moved > 12 || !this.routeMesh) {
+      this.lastRoute = { at: now, x, z };
+      this.routePoints = this.navigator.route([x, z], target.point);
+      this.routeMesh?.dispose();
+      const batch = new MeshBuilderBatch("route");
+      const points = this.routePoints.filter((point, index, all) => index === 0 || Math.hypot(point[0] - all[index - 1]![0], point[1] - all[index - 1]![1]) > 0.3);
+      if (points.length >= 2) batch.ribbon(points, -0.22, 0.22, 0.22, 1);
+      if (!this.routeMaterial) {
+        this.routeMaterial = new PBRMaterial("route glow", this.scene);
+        this.routeMaterial.unlit = true;
+        this.routeMaterial.albedoColor = Color3.FromHexString("#2fd3ff");
+        this.routeMaterial.alpha = 0.7;
+        this.routeMaterial.zOffset = -6;
+      }
+      this.routeMesh = batch.build(this.scene, this.routeMaterial);
+    }
+    this.routeMesh?.setEnabled(true);
+  }
+
+  // ---- Public API used by the React HUD -------------------------------------------------
+
+  routePreview() {
+    return this.routePoints;
+  }
+
+  pose() {
+    return { x: this.controller.x, z: this.controller.z, yaw: this.controller.yaw, cameraYaw: this.cameraYaw, indoors: Boolean(this.interior) };
+  }
+
+  busPositions() {
+    return [...this.buses.values()].map((bus) => ({ id: bus.id, x: bus.root.position.x, z: bus.root.position.z, yaw: bus.yaw, state: bus.state?.state ?? "driving" }));
+  }
+
+  setInputEnabled(enabled: boolean) {
+    this.input?.setEnabled(enabled);
+  }
+
+  setWaypoint(target: { point: Vec2; label: string } | null) {
+    const same = target && this.waypoint && target.point[0] === this.waypoint.point[0] && target.point[1] === this.waypoint.point[1];
+    this.waypoint = target;
+    if (!same) this.lastRoute.at = 0;
+  }
+
+  setDeliveryTarget(target: { point: Vec2; label: string } | null) {
+    this.deliveryTarget = target;
+    this.parcel?.setEnabled(Boolean(target));
+    this.net.send("carrying", Boolean(target));
+  }
+
+  setSettings(settings: PlayerSettings) {
+    this.settings = settings;
+    this.audio.apply(settings);
+  }
+
+  setBindings(bindings: Bindings) {
+    this.bindings = bindings;
+    if (this.input) this.input.bindings = bindings;
+  }
+
+  setTouchMove(x: number, z: number, sprint: boolean) {
+    if (!this.input) return;
+    this.input.touchMove = [x, z];
+    this.input.touchSprint = sprint;
+  }
+
+  touchLook(dx: number, dy: number) {
+    if (!this.input) return;
+    this.input.lookDX += dx;
+    this.input.lookDY += dy;
+  }
+
+  triggerInteract() {
+    const bus = this.riding();
+    if (bus) this.alight();
+    else this.interaction?.();
+  }
+
+  board(busId: string) {
+    this.net.send("board", { busId });
+  }
+
+  alight() {
+    this.net.send("alight");
+  }
+
+  requestStop() {
+    this.net.send("requestStop");
+  }
+
+  enterProperty(propertyId: string, mode: "enter" | "preview") {
+    this.net.send("enterProperty", { propertyId, mode });
+  }
+
+  exitProperty() {
+    this.net.send("exitProperty");
+  }
+
+  unstuck() {
+    this.net.send("unstuck");
+  }
+
+  playEmote(emote: "wave" | "dance" | "sit" | "none") {
+    this.emote = emote === "none" ? null : emote;
+    this.net.send("emote", { emote });
+  }
+
+  stats() {
+    return {
+      ...this.world.stats,
+      drawCalls: this.frameDrawCalls,
+      cpuFrameMs: Math.round(this.frameMs * 10) / 10,
+      updateMs: Math.round(this.updateMs * 10) / 10,
+      activeMeshes: this.scene.getActiveMeshes().length,
+      totalMeshes: this.scene.meshes.length,
+      fps: Math.round(this.engine.getFps()),
+    };
+  }
+
+  // ---- Development test harness ---------------------------------------------------------
+
+  private runAutopilot(now: number) {
+    const pilot = this.autopilot;
+    if (!pilot) {
+      this.forcedInput = null;
+      return;
+    }
+    const { x, z } = this.controller;
+    if (now > pilot.deadline) {
+      this.autopilot = null;
+      this.forcedInput = null;
+      pilot.resolve(false);
+      return;
+    }
+    let target = pilot.path[pilot.index]!;
+    while (Math.hypot(target[0] - x, target[1] - z) < (pilot.index === pilot.path.length - 1 ? 0.6 : 1.4)) {
+      pilot.index += 1;
+      if (pilot.index >= pilot.path.length) {
+        this.autopilot = null;
+        this.forcedInput = null;
+        pilot.resolve(true);
+        return;
+      }
+      target = pilot.path[pilot.index]!;
+    }
+    if (Math.hypot(x - pilot.lastPoint[0], z - pilot.lastPoint[1]) > 0.8) {
+      pilot.lastPoint = [x, z];
+      pilot.lastProgress = now;
+    } else if (now - pilot.lastProgress > 1500) {
+      const dx = target[0] - x;
+      const dz = target[1] - z;
+      const length = Math.hypot(dx, dz) || 1;
+      const side = Math.random() > 0.5 ? 1 : -1;
+      pilot.path.splice(pilot.index, 0, [x + (-dz / length) * 2.5 * side + (dx / length) * 1, z + (dx / length) * 2.5 * side + (dz / length) * 1]);
+      pilot.lastProgress = now;
+      target = pilot.path[pilot.index]!;
+    }
+    const dx = target[0] - x;
+    const dz = target[1] - z;
+    const length = Math.hypot(dx, dz) || 1;
+    const fx = Math.sin(this.cameraYaw);
+    const fz = Math.cos(this.cameraYaw);
+    const rx = Math.cos(this.cameraYaw);
+    const rz = -Math.sin(this.cameraYaw);
+    this.forcedInput = [(dx * rx + dz * rz) / length, (dx * fx + dz * fz) / length];
+    const desiredYaw = Math.atan2(dx, dz);
+    let delta = desiredYaw - this.cameraYaw;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    this.cameraYaw += delta * 0.05;
+  }
+
+  private installTestHooks() {
+    const hooks = {
+      state: () => ({
+        x: this.controller.x,
+        z: this.controller.z,
+        yaw: this.controller.yaw,
+        speed: this.controller.speed(),
+        mode: this.controller.mode,
+        location: this.self?.location ?? null,
+        busId: this.self?.busId ?? null,
+        seat: this.self?.seat ?? null,
+        indoors: Boolean(this.interior),
+        cameraYaw: this.cameraYaw,
+      }),
+      buses: () => [...this.buses.values()].map((bus) => ({ ...bus.state, cx: bus.root.position.x, cz: bus.root.position.z })),
+      setCamera: (yaw: number, pitch?: number, distance?: number) => {
+        this.cameraYaw = yaw;
+        if (pitch !== undefined) this.cameraPitch = pitch;
+        if (distance !== undefined) this.cameraDistance = distance;
+      },
+      key: (code: string, down: boolean) => this.input.simulate(code, down),
+      walkTo: (x: number, z: number, sprint = false, timeoutMs = 120_000) =>
+        new Promise<boolean>((resolve) => {
+          const path = this.navigator.route([this.controller.x, this.controller.z], [x, z]).slice(1);
+          this.autopilot = { path, index: 0, sprint, resolve, lastProgress: performance.now(), lastPoint: [this.controller.x, this.controller.z], deadline: performance.now() + timeoutMs };
+        }),
+      walkDirect: (x: number, z: number, timeoutMs = 30_000) =>
+        new Promise<boolean>((resolve) => {
+          this.autopilot = { path: [[x, z]], index: 0, sprint: false, resolve, lastProgress: performance.now(), lastPoint: [this.controller.x, this.controller.z], deadline: performance.now() + timeoutMs };
+        }),
+      interact: () => this.triggerInteract(),
+      prompt: () => this.prompt,
+      board: (id: string) => this.board(id),
+      requestStop: () => this.requestStop(),
+      junctions: () => this.world.junctionSigns,
+      stops: () => TRANSIT.stops,
+      places: () => PLACES.map((place) => ({ id: place.id, name: place.name, kind: place.kind, door: place.door })),
+      stats: () => this.stats(),
+      setMaxFrameDt: (seconds: number) => {
+        this.maxFrameDt = seconds;
+      },
+      fps: () => this.engine.getFps(),
+    };
+    (window as unknown as { __lagos: typeof hooks }).__lagos = hooks;
+  }
+
+  private assertLive() {
+    if (this.disposed) throw new EngineDisposedError();
+  }
+
+  async dispose() {
+    this.disposed = true;
+    window.removeEventListener("resize", this.resize);
+    await this.net.disconnect().catch(() => undefined);
+    this.input?.dispose();
+    this.audio.dispose();
+    this.life?.dispose();
+    for (const remote of this.remotes.values()) remote.tag.remove();
+    for (const tag of this.busTags.values()) tag.remove();
+    this.engine?.stopRenderLoop();
+    this.scene?.dispose();
+    this.engine?.dispose();
+  }
+}
+
+export { defaultBindings, defaultSettings };
