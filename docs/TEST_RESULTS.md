@@ -208,7 +208,20 @@ The browser test issues citations through the dev-only `/api/dev/citation` route
 - slow contact and a fast pass 4 m from a pedestrian, which are not cited;
 - one citation, not two, when the server and the client both see the same crash.
 
-With the server check disabled, the first two tests fail. Crashes into buildings and kerbs still rely on the client's report, so a modified client can avoid citations for those. Citations remain a fictional-game nuisance, not an anti-cheat system.
+With the server check disabled, the first two tests fail.
+
+Building crashes are detected from the server's own measurements too. The server cites when three things hold:
+
+- it measured the car at 50 km/h or more;
+- the next update moves at under 3 m/s;
+- a mapped building footprint lies within 3 m along the last direction of travel.
+
+The cars brake at most 11 m/s². A car ending below 3 m/s would then have averaged about 11 m/s over the 1.5 s speed window, so stopping hard in front of a wall cannot meet the 13.9 m/s threshold. The tests drive at the starter home's front wall:
+
+- 72 km/h into the wall is cited as `struck: "building"`, with no client report;
+- an 11 m/s² emergency stop from the same speed, ending under 2.5 m from the wall, is not cited.
+
+With the wall check disabled, the crash test fails. Server tests: 115 / 115. Kerbs are not modelled on the server, so kerb strikes still rely on the client's report. Citations remain a fictional-game nuisance, not an anti-cheat system.
 
 Server tests (`safety-service.test.ts`, `justice-service.test.ts`, `LagosRoom.test.ts`, PostgreSQL):
 

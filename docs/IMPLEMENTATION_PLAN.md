@@ -125,8 +125,8 @@ Deployment configuration:
 
 The images were built and the compose stack ran from scratch on this VM, where
 a page-driven production smoke test passed. Nothing was deployed publicly.
-Remaining gaps: the server detects contact with pedestrians, cars and danfos
-itself, but buildings and kerbs still rely on the client's impact report;
+Remaining gaps: the server detects contact with pedestrians, cars, danfos and
+buildings itself, but kerb strikes still rely on the client's impact report;
 horizontal scaling isn't configured; and no TLS proxy was
 exercised.
 
