@@ -6,6 +6,7 @@ import {
   characterAppearanceSchema,
   defaultAppearance,
   getPlace,
+  getRoute,
   districtAt,
   HOME_UNITS,
   insideBuilding,
@@ -84,7 +85,7 @@ describe("position contract", () => {
 
 describe("mapped Lekki world", () => {
   it("builds closed danfo loops with ordered stops", () => {
-    expect(ROUTES.map((route) => route.routeNumber)).toEqual(["L1", "I1", "V1"]);
+    expect(ROUTES.map((route) => route.routeNumber)).toEqual(["L1", "I1", "V1", "X1"]);
     for (const route of ROUTES) {
       expect(routeLength(route)).toBeGreaterThan(1500);
       const positions = route.stops.map((stop) => stop.s);
@@ -110,6 +111,24 @@ describe("mapped Lekki world", () => {
       expect(insideBuilding(stop.alight[0], stop.alight[1]), stop.id).toBe(false);
       const pose = sampleRoute(stop.route, stop.s);
       expect(Math.hypot(pose.x - stop.pole[0], pose.z - stop.pole[1]), stop.id).toBeLessThan(3.5);
+    }
+  });
+
+  it("links Lekki and Ikoyi with a danfo that crosses the Link Bridge deck both ways", () => {
+    const shuttle = getRoute("link-bridge-shuttle");
+    const districts = shuttle.stops.map((stop) => districtAt(stop.alight[0], stop.alight[1])?.id);
+    expect(districts).toEqual(["lekki-phase-1", "ikoyi", "ikoyi", "lekki-phase-1"]);
+    const [lekkiOut, ikoyiOut, ikoyiBack, lekkiBack] = shuttle.stops.map((stop) => stop.s) as [number, number, number, number];
+    for (const [from, to] of [[lekkiOut, ikoyiOut], [ikoyiBack, lekkiBack]] as const) {
+      let onDeck = 0;
+      for (let s = from; s < to; s += 10) {
+        const pose = sampleRoute(shuttle, s);
+        if (districtAt(pose.x, pose.z)?.id === "link-bridge") {
+          onDeck += 10;
+          expect(walkable(pose.x, pose.z), `s=${s}`).toBe(true);
+        }
+      }
+      expect(onDeck).toBeGreaterThan(1000);
     }
   });
 

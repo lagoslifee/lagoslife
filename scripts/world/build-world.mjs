@@ -294,6 +294,65 @@ function chain(ids) {
   }
   return out;
 }
+/** Main-road OSM graph (one-way and roundabout direction respected) for routes that use only part of a way. */
+const driveGraph = new Map();
+const DANFO_ROAD_KINDS = new Set(["primary", "primary_link", "tertiary"]);
+for (const element of ways.values()) {
+  if (!DANFO_ROAD_KINDS.has(ROAD_KINDS[element.tags.highway]?.kind)) continue;
+  const oneway = element.tags.oneway === "yes" || element.tags.junction === "roundabout";
+  const link = (a, b) => {
+    if (!nodes.has(a) || !nodes.has(b)) return;
+    if (!driveGraph.has(a)) driveGraph.set(a, []);
+    driveGraph.get(a).push(b);
+  };
+  for (let index = 1; index < element.nodes.length; index += 1) {
+    link(element.nodes[index - 1], element.nodes[index]);
+    if (!oneway) link(element.nodes[index], element.nodes[index - 1]);
+  }
+}
+function nodeOnWay(wayId, [x, z]) {
+  const way = ways.get(wayId);
+  if (!way) throw new Error(`Missing way ${wayId}`);
+  return way.nodes.reduce((best, id) => {
+    const point = nodes.get(id);
+    return Math.hypot(point[0] - x, point[1] - z) < Math.hypot(nodes.get(best)[0] - x, nodes.get(best)[1] - z) ? id : best;
+  }, way.nodes[0]);
+}
+/** Shortest legal drive between a point on one way and a point on another, as node positions. */
+function drivePath(from, to) {
+  const start = nodeOnWay(from.way, from.near);
+  const goal = nodeOnWay(to.way, to.near);
+  const distance = new Map([[start, 0]]);
+  const previous = new Map();
+  const open = new Set([start]);
+  while (open.size) {
+    let current = null;
+    for (const id of open) if (current === null || distance.get(id) < distance.get(current) || (distance.get(id) === distance.get(current) && id < current)) current = id;
+    open.delete(current);
+    if (current === goal) break;
+    const here = nodes.get(current);
+    for (const next of driveGraph.get(current) ?? []) {
+      const there = nodes.get(next);
+      const total = distance.get(current) + Math.hypot(there[0] - here[0], there[1] - here[1]);
+      if (total < (distance.get(next) ?? Infinity)) {
+        distance.set(next, total);
+        previous.set(next, current);
+        open.add(next);
+      }
+    }
+  }
+  if (!distance.has(goal)) throw new Error(`No drive from way ${from.way} to way ${to.way}`);
+  const path = [goal];
+  while (path[0] !== start) path.unshift(previous.get(path[0]));
+  const points = [nodes.get(start)];
+  for (const id of path.slice(1)) {
+    const a = points.at(-1);
+    const b = nodes.get(id);
+    const pieces = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 50);
+    for (let piece = 1; piece <= pieces; piece += 1) points.push([round2(a[0] + ((b[0] - a[0]) * piece) / pieces), round2(a[1] + ((b[1] - a[1]) * piece) / pieces)]);
+  }
+  return points;
+}
 function offsetRight(points, distance) {
   return points.map((point, index) => {
     const a = points[Math.max(0, index - 1)];
@@ -307,11 +366,13 @@ function offsetRight(points, distance) {
 /**
  * A danfo loop: the kerb lane of one mapped carriageway out and the opposite
  * carriageway back. Turnarounds at either end are a documented gameplay
- * simplification. A stop's `leg` limits it to its own carriageway.
+ * simplification. A stop's `leg` limits it to its own carriageway. Each leg is
+ * either a list of whole OSM way ids or a `drivePath` point list.
  */
 function buildRoute({ routeId, routeName, routeNumber, fare, outbound, inbound, within = () => true, stops: stopSeeds }) {
-  const out = offsetRight(chain(outbound).filter(within), 1.9);
-  const back = offsetRight(chain(inbound).filter(within), 1.9);
+  const leg = (ids) => (typeof ids[0] === "number" ? chain(ids) : ids);
+  const out = offsetRight(leg(outbound).filter(within), 1.9);
+  const back = offsetRight(leg(inbound).filter(within), 1.9);
   const loop = [...out, ...back];
   const cumulative = [0];
   for (let index = 1; index <= loop.length; index += 1) {
@@ -403,6 +464,22 @@ const routes = [
       { id: "ahmadu-bello-eb", name: "Adeola Odeku Street · Ahmadu Bello Way (Eastbound)", near: [-6600, -1560], leg: "in" },
       { id: "idowu-martins-eb", name: "Adeola Odeku Street · Idowu Martins (Eastbound)", near: [-5500, -1545], leg: "in" },
       { id: "akin-adesola-eb", name: "Adeola Odeku Street · Akin Adesola (Eastbound)", near: [-5060, -1642], leg: "in" },
+    ],
+  }),
+  // Lekki to Ikoyi over the Link Bridge: Admiralty Way, the Ikoyi Bridge and Alexander
+  // roundabouts, then Alexander Avenue. Turns west of Adebayo Doherty and at Bourdillon Road.
+  buildRoute({
+    routeId: "link-bridge-shuttle",
+    routeName: "Link Bridge Shuttle",
+    routeNumber: "X1",
+    fare: 300,
+    outbound: drivePath({ way: 294599755, near: [-520, 355] }, { way: 216689323, near: [-2133, 100] }),
+    inbound: drivePath({ way: 216689320, near: [-2124, 100] }, { way: 294599766, near: [-520, 340] }),
+    stops: [
+      { id: "bridge-roundabout-wb", name: "Admiralty Way · Ikoyi Bridge Roundabout (Westbound)", near: [-780, 332], leg: "out" },
+      { id: "alexander-bourdillon-sb", name: "Alexander Avenue · Bourdillon Road (Southbound)", near: [-2140, 170], leg: "out" },
+      { id: "alexander-bourdillon-nb", name: "Alexander Avenue · Bourdillon Road (Northbound)", near: [-2128, 170], leg: "in" },
+      { id: "bridge-roundabout-eb", name: "Admiralty Way · Ikoyi Bridge Roundabout (Eastbound)", near: [-780, 305], leg: "in" },
     ],
   }),
 ];

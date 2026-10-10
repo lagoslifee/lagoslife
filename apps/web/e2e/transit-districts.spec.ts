@@ -13,13 +13,13 @@ async function spawnAt(page: Page, placeId: string) {
   await waitForGame(page);
 }
 
-/** Walks to the nearest stop of a route, boards its danfo once it has stopped, and rides to the next stop. */
-async function ride(page: Page, routeId: string, routeLabel: string) {
+/** Walks to a stop of a route (the nearest unless given), boards its danfo once it has stopped, and rides to the next stop. */
+async function ride(page: Page, routeId: string, routeLabel: string, fromStopId?: string) {
   const economy = () => apiGet<Economy>(page, "/api/economy");
   const here = await state(page);
   const stops = await page.evaluate(() => window.__lagos.stops());
   const stop = stops
-    .filter((candidate) => candidate.routeId === routeId)
+    .filter((candidate) => candidate.routeId === routeId && (!fromStopId || candidate.id === fromStopId))
     .sort((a, b) => Math.hypot(a.alight[0] - here.x, a.alight[1] - here.z) - Math.hypot(b.alight[0] - here.x, b.alight[1] - here.z))[0]!;
   await walk(page, stop.alight, false);
   const before = (await economy()).balance;
@@ -39,7 +39,7 @@ async function ride(page: Page, routeId: string, routeLabel: string) {
   const next = await until(async () => {
     const b = (await page.evaluate(() => window.__lagos.buses())).find((x) => x.id === seated.busId);
     return b?.doorOpen && b.stopId && b.stopId !== stop.id ? b.stopId : null;
-  }, 300_000, "the next stop");
+  }, 480_000, "the next stop");
   expect(routeStops.has(next), `${next} belongs to ${routeId}`).toBe(true);
   await page.waitForTimeout(800);
   if ((await state(page)).busId) await page.evaluate(() => window.__lagos.interact());
@@ -74,5 +74,29 @@ test("rides the Ikoyi and Victoria Island danfo loops", async ({ page }) => {
   const island = await ride(page, "adeola-odeku-loop", "V1 · Adeola Odeku Loop");
   expect(island.name).toMatch(/^Adeola Odeku Street · /);
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/transit-victoria-island.png` });
+  expect(errors).toEqual([]);
+});
+
+test("rides the X1 danfo from Lekki over the Link Bridge into Ikoyi", async ({ page }) => {
+  test.setTimeout(20 * 60_000);
+  await useLowGraphics(page);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/");
+  await waitForGame(page);
+  await resetProgress(page);
+
+  await spawnAt(page, "swift-parcel-hub");
+  await expect(page.getByTestId("current-location")).toContainText("Lekki Phase 1");
+  await page.getByRole("button", { name: "Open phone" }).click();
+  await page.getByRole("button", { name: /Transport/ }).click();
+  await expect(page.getByTestId("route-X1")).toContainText("Link Bridge Shuttle");
+  await page.getByRole("button", { name: "Close phone" }).click();
+
+  const off = await ride(page, "link-bridge-shuttle", "X1 · Link Bridge Shuttle", "bridge-roundabout-wb");
+  expect(off.id).toBe("alexander-bourdillon-sb");
+  await expect(page.getByTestId("current-location")).toContainText("Ikoyi", { timeout: 10_000 });
+  await expect(page.getByTestId("current-location")).toContainText("Alexander Avenue");
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/transit-link-bridge.png` });
   expect(errors).toEqual([]);
 });

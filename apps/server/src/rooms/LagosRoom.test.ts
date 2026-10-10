@@ -669,8 +669,10 @@ describe("LagosRoom danfo routes", () => {
       const [, snapshot] = client.send.mock.calls.filter(([type]) => type === "snapshot").at(-1)! as [string, { buses: Array<{ id: string; routeId: string }> }];
       return snapshot.buses;
     };
-    expect(sent(viewer).length).toBeGreaterThan(0);
-    expect(new Set(sent(viewer).map(({ routeId }) => routeId))).toEqual(new Set(["admiralty-loop"]));
+    const viewerRoutes = new Set(sent(viewer).map(({ routeId }) => routeId));
+    expect(viewerRoutes).toContain("admiralty-loop");
+    expect(viewerRoutes).not.toContain("bourdillon-loop");
+    expect(viewerRoutes).not.toContain("adeola-odeku-loop");
     expect(sent(rider).map(({ id }) => id)).toContain(ikoyiBus.id);
   });
 
