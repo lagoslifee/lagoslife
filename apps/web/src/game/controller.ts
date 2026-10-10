@@ -265,13 +265,17 @@ export class LocomotionController {
     const nx = this.x + this.vx * dt;
     const nz = this.z + this.vz * dt;
     const [cx, cz] = this.collide(nx, nz);
-    // Remove velocity into whatever we hit so we slide along walls instead of sticking.
-    if (dt > 0) {
-      const actualX = (cx - this.x) / dt;
-      const actualZ = (cz - this.z) / dt;
-      if (Math.hypot(cx - nx, cz - nz) > 1e-4) {
-        this.vx = actualX;
-        this.vz = actualZ;
+    // Remove only the velocity into whatever we hit so we slide along walls instead of sticking.
+    // A push-out moves the resident but never becomes speed: 0.3 m in one 1/120 s substep would
+    // otherwise read as 36 m/s and run away when squeezed between a car and a wall.
+    const pushX = cx - nx;
+    const pushZ = cz - nz;
+    const push = Math.hypot(pushX, pushZ);
+    if (push > 1e-4) {
+      const into = (this.vx * pushX + this.vz * pushZ) / push;
+      if (into < 0) {
+        this.vx -= (pushX / push) * into;
+        this.vz -= (pushZ / push) * into;
       }
     }
     this.x = cx;

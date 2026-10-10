@@ -40,6 +40,22 @@ describe("LocomotionController", () => {
     expect(controller.speed()).toBeLessThan(0.01);
   });
 
+  it("is not flung when squeezed between obstacles that push it out every substep", () => {
+    // A parked car pushes the resident 0.34 m west, a wall pushes them back: the vehicles e2e hit this.
+    let flip = false;
+    const controller = new LocomotionController((x, z) => {
+      flip = !flip;
+      return [x + (flip ? -0.34 : 0.34), z];
+    });
+    let fastest = 0;
+    for (let index = 0; index < 600; index += 1) {
+      controller.step(1 / 120, [0, 1], 0, "sprint");
+      fastest = Math.max(fastest, controller.speed());
+    }
+    expect(fastest).toBeLessThanOrEqual(MOVEMENT.sprintSpeed + 1e-6);
+    expect(controller.z).toBeGreaterThan(20);
+  });
+
   it("slides along walls instead of sticking", () => {
     const controller = new LocomotionController((x, z) => [Math.min(x, 1), z]);
     for (let index = 0; index < 240; index += 1) controller.step(1 / 120, [1, 1], 0, "jog");
