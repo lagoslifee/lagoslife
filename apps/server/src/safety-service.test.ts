@@ -1,3 +1,4 @@
+import { CHAT } from "@lagos-living/shared";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { pool } from "./database.js";
@@ -10,6 +11,7 @@ import {
   hiddenPlayers,
   listAudit,
   listReports,
+  purgeExpiredChat,
   recordChat,
   reportPlayer,
   residentRecord,
@@ -28,7 +30,9 @@ const victim = make("victim");
 const mod = make("mod");
 const admin = make("admin");
 const otherMod = make("othermod");
-const everyone = [player, victim, mod, admin, otherMod];
+const elder = make("elder");
+const witness = make("witness");
+const everyone = [player, victim, mod, admin, otherMod, elder, witness];
 const actor = (user: { id: string; username: string }) => ({ userId: user.id, name: user.username });
 
 beforeAll(async () => {
@@ -83,6 +87,25 @@ describe("reports", () => {
     const messageId = randomUUID();
     await recordChat({ id: messageId, userId: victim.id, userName: victim.username, location: "street", x: 0, z: 0, body: "hi", shown: "hi", filtered: false, recipients: 0 });
     await expect(reportPlayer(mod.id, { userName: player.username, reason: "spam", details: "", chatMessageId: messageId })).rejects.toThrow("not sent by");
+  });
+});
+
+describe("chat retention", () => {
+  it("purges chat past the retention window but keeps lines an open report points at", async () => {
+    const [reported, stale, recent] = [randomUUID(), randomUUID(), randomUUID()];
+    for (const id of [reported, stale, recent]) {
+      await recordChat({ id, userId: elder.id, userName: elder.username, location: "street", x: 0, z: 0, body: "line", shown: "line", filtered: false, recipients: 1 });
+    }
+    await pool.query(`UPDATE chat_message SET created_at = NOW() - make_interval(days => $2) WHERE id = ANY($1)`, [[reported, stale], CHAT.retentionDays + 1]);
+    const { reportId } = await reportPlayer(witness.id, { userName: elder.username, reason: "harassment", details: "", chatMessageId: reported });
+    const remaining = async () =>
+      (await pool.query<{ id: string }>(`SELECT id FROM chat_message WHERE id = ANY($1)`, [[reported, stale, recent]])).rows.map(({ id }) => id).sort();
+
+    await purgeExpiredChat();
+    expect(await remaining()).toEqual([reported, recent].sort());
+    await resolveReport(actor(mod), reportId!, "dismissed", "Retention test");
+    await purgeExpiredChat();
+    expect(await remaining()).toEqual([recent]);
   });
 });
 
