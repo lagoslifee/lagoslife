@@ -59,8 +59,11 @@ export const state = (page: Page) => page.evaluate(() => window.__lagos.state())
 export const prompt = (page: Page) => page.evaluate(() => window.__lagos.prompt());
 
 export async function walk(page: Page, point: Vec2, sprint = true) {
+  const start = await state(page);
+  // Software rendering runs at 3–9 fps, so long walks need time in proportion to distance.
+  const timeout = Math.max(90_000, Math.hypot(point[0] - start.x, point[1] - start.z) * 400);
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const ok = await page.evaluate(([x, z, s]) => window.__lagos.walkTo(x, z, s, 90_000), [point[0], point[1], sprint] as const);
+    const ok = await page.evaluate(([x, z, s, t]) => window.__lagos.walkTo(x, z, s, t), [point[0], point[1], sprint, timeout] as const);
     const here = await state(page);
     if (ok || Math.hypot(here.x - point[0], here.z - point[1]) < 2.5) return;
   }
