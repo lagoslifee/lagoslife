@@ -55,14 +55,14 @@ horn are not captioned.
 
 | Suite | Result |
 |---|---|
-| `npm test -w @lagos-living/server` (PostgreSQL integration, room unit and config tests) | 115 / 115 passed after the bridge shuttles and server-side contact and wall-crash detection (source tests only; compiled copies in `dist/` are excluded) |
-| `npm test -w @lagos-living/shared` | 23 / 23 passed |
+| `npm test --prefix apps/server` (PostgreSQL integration, room unit and config tests) | 115 / 115 passed after the bridge shuttles and server-side contact and wall-crash detection (source tests only; compiled copies in `dist/` are excluded) |
+| `npm test --prefix packages/shared` | 23 / 23 passed |
 | Playwright `e2e/transit-districts.spec.ts` on its own | 1 / 1 passed (5.8 min) |
 | **Full Playwright suite in one run**, after the danfo loops and session fix | **12 / 13 passed (42.8 min)**. The venues journey in `districts.spec.ts` failed one 1.2 km walk from Ikoyi to the mosque (3 × 90 s attempts at about 3 fps); run on its own straight after, it passed (7.0 min). Frame rate at the mosque was 3.4 fps with and without danfos drawn, so the new routes did not cause it. The walk helper now scales its timeout with distance. |
 | **Full Playwright suite in one run**, after the walk-timeout change | **13 / 13 passed (42.2 min)** |
 | Production smoke `e2e-prod/smoke.spec.ts` against a fresh compose stack, after the danfo loops and session fix | 1 / 1 passed (1.7 min). Images rebuilt; all nine migrations applied to an empty volume; server and web healthy. |
 | Playwright `e2e/playable-loop.spec.ts` on its own, after multi-unit housing | 2 / 2 passed (8.1 min) |
-| `apps/web` unit tests (`npm test -w @lagos-living/web`), after the push-out fix | 29 / 29 passed |
+| `apps/web` unit tests (`npm test --prefix apps/web`), after the push-out fix | 29 / 29 passed |
 | `apps/web` `controller.test.ts`, `car-controller.test.ts` and `appearance.test.ts` | 17 / 17 passed |
 | Playwright `e2e/accounts.spec.ts` on its own, after the 3D character looks | 5 / 5 passed (2.2 min) |
 | **Full Playwright suite in one run** (accounts, districts, playable loop, safety, vehicles), after the 3D character looks | **12 / 12 passed (30.4 min)**: districts 13.2 min, playable loop 8.6 min, the rest under 5 min each. (After the milestone 8 changes: 12 / 12 in 29.1 min.) |
@@ -254,7 +254,7 @@ Screenshots: `m8-chat`, `m8-report-dialog`, `m8-moderation-reports`,
 
 ### Load test (milestone 8)
 
-`npm run load-test -w @lagos-living/server` (see [operations](OPERATIONS.md#load-testing)).
+`npm run load-test --prefix apps/server` (see [operations](OPERATIONS.md#load-testing)).
 Bots are real accounts that join the real room through a real token, start
 spread over 120 m of the danfo loop, jog it at 10 position updates per second,
 and chat every 20 s. Every figure is what the bots received:
@@ -333,7 +333,7 @@ district tests. The earlier miniature-scale
 
 Two server processes (ports 2571 and 2572) on this VM shared one local Redis
 (`redis:7-alpine` in Docker, bound to 127.0.0.1) and the development Postgres.
-`npm run cluster-check -w @lagos-living/server` passed all six checks:
+`npm run cluster-check --prefix apps/server` passed all six checks:
 
 - A player joining through each process landed in the same room.
 - Each player's snapshots included the other.

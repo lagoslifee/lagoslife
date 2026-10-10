@@ -21,7 +21,7 @@
     "@colyseus/redis-presence": "^0.18.5",
     "@colyseus/schema": "^5.0.36",
     "@colyseus/ws-transport": "^0.18.4",
-    "@lagos-living/shared": "*",
+    "@lagos-living/shared": "file:../../packages/shared",
     "better-auth": "^1.7.7",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",

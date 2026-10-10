@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-10
 
-The game is built as a TypeScript npm-workspace monorepo. React/Vite owns the
+The game is built as a TypeScript monorepo with a single root npm install. React/Vite owns the
 interface, Babylon.js owns rendering, Better Auth and PostgreSQL own account
 state, Colyseus owns authoritative realtime simulation, and `packages/shared`
 owns validated wire contracts.

@@ -116,9 +116,9 @@ npm run build        # production builds
 npm run typecheck    # all TypeScript packages
 npm test             # unit and PostgreSQL integration tests
 npm run db:migrate   # apply PostgreSQL migrations
-npm run test:e2e -w @lagos-living/web   # Playwright, needs the dev servers running
-npm run staff:role -w @lagos-living/server -- <username> <moderator|admin|none> "<reason>"
-npm run load-test -w @lagos-living/server -- --bots 40 --duration 60   # local only
+npm run test:e2e --prefix apps/web   # Playwright, needs the dev servers running
+npm run staff:role --prefix apps/server -- <username> <moderator|admin|none> "<reason>"
+npm run load-test --prefix apps/server -- --bots 40 --duration 60   # local only
 ```
 
 `docker-compose.prod.yml` builds production images for the server and web

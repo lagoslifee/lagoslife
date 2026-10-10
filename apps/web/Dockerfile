@@ -8,11 +8,11 @@ COPY package.json package-lock.json ./
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 COPY packages/shared/package.json packages/shared/
-RUN npm ci --workspace @lagos-living/web --include-workspace-root --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/web apps/web
-RUN VITE_API_URL="$VITE_API_URL" npm run build -w @lagos-living/web
+RUN VITE_API_URL="$VITE_API_URL" npm run build --prefix apps/web
 
 FROM nginx:1.27-alpine AS runtime
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf

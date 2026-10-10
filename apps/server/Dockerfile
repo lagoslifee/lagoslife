@@ -5,11 +5,11 @@ COPY package.json package-lock.json ./
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 COPY packages/shared/package.json packages/shared/
-RUN npm ci --workspace @lagos-living/server --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/server apps/server
-RUN npm run build -w @lagos-living/server
+RUN npm run build --prefix apps/server
 
 FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production \
@@ -21,7 +21,7 @@ COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 COPY packages/shared/package.json packages/shared/
 # Optional peers are recorded in the lockfile (vite, vitest, typescript); omitting them keeps test tooling out of the image.
-RUN npm ci --omit=dev --omit=optional --omit=peer --workspace @lagos-living/server --no-audit --no-fund \
+RUN npm ci --omit=dev --omit=optional --omit=peer --no-audit --no-fund \
     && npm cache clean --force
 COPY --from=build /app/apps/server/dist apps/server/dist
 COPY apps/server/migrations apps/server/migrations

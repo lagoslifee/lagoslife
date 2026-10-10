@@ -14,8 +14,8 @@ live only in the gitignored `apps/server/.env`.
 
 | Piece | How it is built | Output |
 |---|---|---|
-| Server | `npm run build -w @lagos-living/server` bundles `index`, `migrate` and `staff` with esbuild, inlining `@lagos-living/shared`. Runtime dependencies stay external. | `apps/server/dist/*.js` (index about 250 KB), run with `node` and production dependencies only |
-| Web | `VITE_API_URL=https://api.example.com npm run build -w @lagos-living/web` | Static files in `apps/web/dist` |
+| Server | `npm run build --prefix apps/server` bundles `index`, `migrate` and `staff` with esbuild, inlining `@lagos-living/shared`. Runtime dependencies stay external. | `apps/server/dist/*.js` (index about 250 KB), run with `node` and production dependencies only |
+| Web | `VITE_API_URL=https://api.example.com npm run build --prefix apps/web` | Static files in `apps/web/dist` |
 
 The web build puts Babylon (2.04 MB, 472 KB gzipped) and React (219 KB) in
 their own content-hashed chunks, separate from the game code (356 KB) and the
@@ -115,7 +115,7 @@ The test then reloads to check the session survives, checks every
 
 ```bash
 SMOKE_WEB_URL=http://localhost:8080 SMOKE_API_URL=http://localhost:2567 \
-  npm run test:e2e:prod -w @lagos-living/web
+  npm run test:e2e:prod --prefix apps/web
 ```
 
 ## Staff roles
@@ -125,7 +125,7 @@ roles in the console. The grant is recorded in the moderation audit log as a
 `server console` action:
 
 ```bash
-npm run staff:role -w @lagos-living/server -- <username> admin "Initial administrator"
+npm run staff:role --prefix apps/server -- <username> admin "Initial administrator"
 docker compose -f docker-compose.prod.yml --env-file .env.production \
   exec server node dist/staff.js <username> moderator "<reason>"
 ```
@@ -149,7 +149,7 @@ console's Staff tab (`/moderation`).
 
 ## Load testing
 
-`npm run load-test -w @lagos-living/server -- --bots 40 --duration 60 --ramp 10 --json /tmp/load.json`
+`npm run load-test --prefix apps/server -- --bots 40 --duration 60 --ramp 10 --json /tmp/load.json`
 
 Bots are real accounts (`LoadBotNN@lagosliving.local`). Each signs in, takes a
 multiplayer token, joins the room, jogs the danfo loop at 10 position updates
@@ -197,7 +197,7 @@ process, events stay local.
   under the `cluster` profile with no published port
   (`docker compose --profile cluster ...`); set
   `REDIS_URL=redis://redis:6379` for the server.
-- `npm run cluster-check -w @lagos-living/server -- --a http://localhost:2571 --b http://localhost:2572`
+- `npm run cluster-check --prefix apps/server -- --a http://localhost:2571 --b http://localhost:2572`
   checks two running processes: same room, players see each other, and an HTTP
   change and a position check through each process. Results are in
   [test results](TEST_RESULTS.md#several-server-processes).

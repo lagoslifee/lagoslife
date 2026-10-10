@@ -16,7 +16,7 @@
     "@babylonjs/core": "^9.30.0",
     "@babylonjs/loaders": "^9.30.0",
     "@colyseus/sdk": "^0.18.5",
-    "@lagos-living/shared": "*",
+    "@lagos-living/shared": "file:../../packages/shared",
     "better-auth": "^1.7.7",
     "earcut": "^3.2.4",
     "react": "^19.3.0",
