@@ -1,4 +1,4 @@
-import { sampleRoute, TRANSIT } from "@lagos-living/shared";
+import { blockedByWater, sampleRoute, TRANSIT } from "@lagos-living/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const economy = vi.hoisted(() => ({
@@ -315,5 +315,38 @@ describe("LagosRoom driving", () => {
     await room.onLeave(ada);
     expect(vehicles.saveDrivingVehicle).toHaveBeenCalledWith("car-1", expect.anything(), expect.any(Number), true);
     expect(room.vehicles.get("car-1")!.driverSessionId).toBeNull();
+  });
+});
+
+describe("LagosRoom water and bridges", () => {
+  const deck: [number, number] = [-1278.6, 648.4];
+
+  function onDeck() {
+    const context = setup();
+    const ada = context.join("ada");
+    Object.assign(context.player(ada), { x: deck[0], z: deck[1] });
+    const move = (sequence: number, x: number, z: number) => {
+      context.player(ada).lastAcceptedAt = Date.now() - 1_500;
+      context.room.handlePosition(ada, { sequence, x, z, yaw: 0, motion: "jog" });
+    };
+    return { ...context, ada, move };
+  }
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it("lets a resident cross the Link Bridge on foot", () => {
+    const { ada, player, move } = onDeck();
+    move(1, deck[0] - 6, deck[1] + 1.3);
+    expect(player(ada).x).toBeCloseTo(deck[0] - 6);
+    expect(ada.send.mock.calls.some(([type]) => type === "correction")).toBe(false);
+  });
+
+  it("corrects a step over the parapet onto the lagoon", () => {
+    const { ada, player, move } = onDeck();
+    let edge = 0;
+    while (!blockedByWater(deck[0], deck[1] + edge)) edge += 0.25;
+    move(1, deck[0], deck[1] + edge + 1);
+    expect(player(ada).z).toBeCloseTo(deck[1]);
+    expect(ada.send.mock.calls.some(([type]) => type === "correction")).toBe(true);
   });
 });

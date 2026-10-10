@@ -13,7 +13,7 @@ import {
   INTERIOR_HALF,
   INTERIOR_ORIGIN,
   INTERIOR_SPAWN,
-  insideBuilding,
+  walkable,
   MOVEMENT,
   nearestSafePoint,
   positionUpdateSchema,
@@ -21,7 +21,6 @@ import {
   routeLength,
   sampleRoute,
   TRANSIT,
-  withinWorld,
   type BusState,
   type MotionState,
   type Notice,
@@ -53,6 +52,7 @@ import {
   saveDrivingVehicle,
   type RoomVehicle,
 } from "../vehicle-service.js";
+import "../world-footprints.js";
 
 export const LagosState = schema({
   tick: t.uint32().default(0),
@@ -205,7 +205,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const home = getPlace("starter-home");
     const saved = await loadPlayerPlace(client.auth.userId).catch(() => null);
     let spawn: [number, number] = [...home.door];
-    if (saved && withinWorld(saved.x, saved.z) && !insideBuilding(saved.x, saved.z)) {
+    if (saved && walkable(saved.x, saved.z)) {
       spawn = [saved.x, saved.z];
     }
     const now = Date.now();
@@ -351,7 +351,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const valid = inInterior
       ? Math.abs(parsed.data.x - INTERIOR_ORIGIN[0]) <= INTERIOR_HALF[0] &&
         Math.abs(parsed.data.z - INTERIOR_ORIGIN[1]) <= INTERIOR_HALF[1]
-      : withinWorld(parsed.data.x, parsed.data.z) && !insideBuilding(parsed.data.x, parsed.data.z);
+      : walkable(parsed.data.x, parsed.data.z);
     if (distance > allowed || !valid) {
       client.send("correction", { x: player.x, z: player.z, yaw: player.yaw, sequence: parsed.data.sequence });
       player.lastAcceptedAt = now;
@@ -626,7 +626,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       [vehicle.x + forwardX * end, vehicle.z + forwardZ * end],
     ];
     return (
-      candidates.find(([x, z]) => withinWorld(x, z) && !insideBuilding(x, z, 0.1)) ??
+      candidates.find(([x, z]) => walkable(x, z, 0.1)) ??
       nearestSafePoint(vehicle.x, vehicle.z).point
     );
   }

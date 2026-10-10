@@ -1,14 +1,13 @@
 import {
   getPlace,
   getVehicleModel,
-  insideBuilding,
+  walkable,
   insurancePremium,
   kerbSlot,
   placeById,
   repairCost,
   VEHICLE_RULES,
   vehicleModelById,
-  withinWorld,
   type OwnedVehicle,
   type Place,
 } from "@lagos-living/shared";
@@ -18,6 +17,7 @@ import { pool } from "./database.js";
 import { debitWallet, EconomyError, ensureWallet, markProgress, withTransaction } from "./economy-service.js";
 import { getPlayerPosition } from "./player-presence.js";
 import { vehicleEvents } from "./vehicle-events.js";
+import "./world-footprints.js";
 
 export const MAX_VEHICLES = 3;
 export const GARAGE_CAPACITY = 2;
@@ -113,7 +113,7 @@ function slotIsClear(x: number, z: number, yaw: number) {
   const ax = Math.sin(yaw) * 2.4;
   const az = Math.cos(yaw) * 2.4;
   return [[0, 0], [ax, az], [-ax, -az]].every(
-    ([dx, dz]) => withinWorld(x + dx!, z + dz!) && !insideBuilding(x + dx!, z + dz!, 0),
+    ([dx, dz]) => walkable(x + dx!, z + dz!, 0),
   );
 }
 

@@ -14,6 +14,8 @@ const configSchema = z.object({
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
   SMTP_FROM: z.string().default("Lagos Living <no-reply@lagosliving.local>"),
   STARTING_NAIRA: z.coerce.number().int().nonnegative().default(250_000),
+  /** Directory holding the streamed world tiles (building footprints for collision). */
+  WORLD_TILE_DIR: z.string().optional(),
 });
 
 export const config = configSchema.parse(process.env);
