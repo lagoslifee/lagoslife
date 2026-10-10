@@ -1,0 +1,19 @@
+[
+  { "id": "starter-home", "kind": "starter_home", "name": "Kayode Court Hostel", "building": 1270576402, "street": "Kayode Animashaun Street" },
+  { "id": "lekki-adebayo-flat-2", "kind": "rental", "name": "Adebayo Court", "building": 1268315319, "street": "Adebayo Doherty Road" },
+  { "id": "lekki-chief-okoro-house", "kind": "sale", "name": "Okoro Terrace", "building": 1270055956, "street": "Chief Okoro Avenue" },
+  { "id": "swift-parcel-hub", "kind": "job", "name": "Swift Parcel Hub", "building": 1268315325, "street": "Admiralty Way" },
+  { "id": "mama-titi-buka", "kind": "food", "name": "Mama Titi's Buka", "building": 1268315326, "street": "Admiralty Way" },
+  { "id": "corner-kiosk", "kind": "shop", "name": "Kayode Corner Mart", "building": 775899028, "street": "Admiralty Way" },
+  { "id": "home-and-style", "kind": "furniture", "name": "Home & Style Furnishings", "building": 1270250897, "street": "Admiralty Way" },
+  { "id": "lekki-motors", "kind": "dealership", "name": "Lekki Motors", "building": 1270250907, "street": "Admiralty Way" },
+  { "id": "ade-auto-works", "kind": "mechanic", "name": "Ade Auto Works", "building": 1268314576, "street": "Admiralty Way" },
+  { "id": "drop-chief-okoro", "kind": "delivery", "name": "Residence on Chief Okoro Avenue", "building": 1270055968, "street": "Chief Okoro Avenue" },
+  { "id": "drop-grace-anjos", "kind": "delivery", "name": "Residence on Grace Anjos Drive", "building": 1268315312, "street": "Grace Anjos Drive" },
+  { "id": "drop-adebayo", "kind": "delivery", "name": "Residence on Adebayo Doherty Road", "building": 1270045946, "street": "Adebayo Doherty Road" },
+  { "id": "ikoyi-reading-room", "kind": "library", "name": "Ikoyi Reading Room", "building": 1167852729, "street": "Awolowo Road" },
+  { "id": "grace-assembly", "kind": "worship", "name": "Grace Assembly Chapel", "building": 529444310, "street": "Awolowo Road" },
+  { "id": "al-noor-mosque", "kind": "worship", "name": "Al-Noor Mosque", "building": 544005105, "street": "Akin Adesola Street" },
+  { "id": "island-community-hall", "kind": "community", "name": "Island Community Hall", "building": 1530941546, "street": "Adeola Odeku Street" },
+  { "id": "muri-okunola-park", "kind": "park", "name": "Muri Okunola Park", "area": 224073907, "street": "Akin Adesola Street" }
+]

@@ -1,4 +1,4 @@
-import lekki from "./generated/lekki-world.json" with { type: "json" };
+import lagos from "./generated/lagos-world.json" with { type: "json" };
 
 export type Vec2 = [number, number];
 
@@ -12,14 +12,21 @@ export type PlaceKind =
   | "furniture"
   | "delivery"
   | "dealership"
-  | "mechanic";
+  | "mechanic"
+  | "library"
+  | "worship"
+  | "community"
+  | "park";
 
 export type Place = {
   id: string;
   kind: PlaceKind;
   name: string;
   street: string;
-  buildingId: number;
+  district: DistrictId;
+  /** Mapped footprint the place occupies; null for open areas such as parks. */
+  buildingId: number | null;
+  areaId?: number;
   door: Vec2;
   facade: Vec2;
   facing: number;
@@ -37,8 +44,28 @@ export type TransitStop = {
   alight: Vec2;
 };
 
-export const WORLD_BOUNDS = lekki.bounds;
-export const TRANSIT = lekki.transit as unknown as {
+export type DistrictId = "lekki-phase-1" | "link-bridge" | "ikoyi" | "victoria-island";
+export type District = {
+  id: DistrictId;
+  name: string;
+  lga: string;
+  rect: { minX: number; maxX: number; minZ: number; maxZ: number };
+};
+
+export const WORLD_BOUNDS = lagos.bounds;
+export const DISTRICTS = lagos.districts as District[];
+/** Edge length of a streamed world tile in metres. */
+export const TILE_SIZE = lagos.tileSize;
+
+export function districtAt(x: number, z: number): District | null {
+  return DISTRICTS.find(({ rect }) => x >= rect.minX && x <= rect.maxX && z >= rect.minZ && z <= rect.maxZ) ?? null;
+}
+
+export function tileKeyAt(x: number, z: number) {
+  return `${Math.floor(x / TILE_SIZE)}_${Math.floor(z / TILE_SIZE)}`;
+}
+
+export const TRANSIT = lagos.transit as unknown as {
   routeId: string;
   routeName: string;
   routeNumber: string;
@@ -47,7 +74,7 @@ export const TRANSIT = lekki.transit as unknown as {
   points: Vec2[];
   stops: TransitStop[];
 };
-export const PLACES = lekki.places as unknown as Place[];
+export const PLACES = lagos.places as unknown as Place[];
 export const placeById = new Map(PLACES.map((place) => [place.id, place]));
 
 export function getPlace(id: string) {
@@ -105,25 +132,39 @@ export function routeDistanceAhead(from: number, to: number) {
 type Footprint = { id: number; points: Vec2[]; minX: number; maxX: number; minZ: number; maxZ: number };
 const CELL = 32;
 const footprintGrid = new Map<string, Footprint[]>();
-for (const building of lekki.buildings as unknown as Array<{ id: number; points: Vec2[] }>) {
-  const xs = building.points.map(([x]) => x);
-  const zs = building.points.map(([, z]) => z);
-  const footprint: Footprint = {
-    id: building.id,
-    points: building.points,
-    minX: Math.min(...xs),
-    maxX: Math.max(...xs),
-    minZ: Math.min(...zs),
-    maxZ: Math.max(...zs),
-  };
-  for (let cx = Math.floor(footprint.minX / CELL); cx <= Math.floor(footprint.maxX / CELL); cx += 1) {
-    for (let cz = Math.floor(footprint.minZ / CELL); cz <= Math.floor(footprint.maxZ / CELL); cz += 1) {
-      const key = `${cx}:${cz}`;
-      const list = footprintGrid.get(key) ?? [];
-      list.push(footprint);
-      footprintGrid.set(key, list);
+const registeredFootprints = new Set<number>();
+
+/**
+ * Adds building footprints to the collision grid. The server registers every
+ * tile at startup; the browser registers tiles as they stream in.
+ */
+export function registerFootprints(buildings: Array<{ id: number; points: Vec2[] }>) {
+  for (const building of buildings) {
+    if (registeredFootprints.has(building.id)) continue;
+    registeredFootprints.add(building.id);
+    const xs = building.points.map(([x]) => x);
+    const zs = building.points.map(([, z]) => z);
+    const footprint: Footprint = {
+      id: building.id,
+      points: building.points,
+      minX: Math.min(...xs),
+      maxX: Math.max(...xs),
+      minZ: Math.min(...zs),
+      maxZ: Math.max(...zs),
+    };
+    for (let cx = Math.floor(footprint.minX / CELL); cx <= Math.floor(footprint.maxX / CELL); cx += 1) {
+      for (let cz = Math.floor(footprint.minZ / CELL); cz <= Math.floor(footprint.maxZ / CELL); cz += 1) {
+        const key = `${cx}:${cz}`;
+        const list = footprintGrid.get(key) ?? [];
+        list.push(footprint);
+        footprintGrid.set(key, list);
+      }
     }
   }
+}
+
+export function registeredFootprintCount() {
+  return registeredFootprints.size;
 }
 
 export function nearbyFootprints(x: number, z: number) {
@@ -213,6 +254,11 @@ export const SAFE_POINTS: Array<{ id: string; label: string; point: Vec2 }> = [
   { id: "starter-home", label: "Kayode Court Hostel", point: getPlace("starter-home").door },
   ...TRANSIT.stops.map((stop) => ({ id: `stop:${stop.id}`, label: stop.name, point: stop.alight })),
   { id: "swift-parcel-hub", label: "Swift Parcel Hub", point: getPlace("swift-parcel-hub").door },
+  ...PLACES.filter((place) => place.district === "ikoyi" || place.district === "victoria-island").map((place) => ({
+    id: place.id,
+    label: place.name,
+    point: place.door,
+  })),
 ];
 
 export function nearestSafePoint(x: number, z: number) {
@@ -228,13 +274,69 @@ export function nearestSafePoint(x: number, z: number) {
   return best;
 }
 
+/** Inside one of the playable district rectangles. */
 export function withinWorld(x: number, z: number) {
-  return (
-    x >= WORLD_BOUNDS.minX &&
-    x <= WORLD_BOUNDS.maxX &&
-    z >= WORLD_BOUNDS.minZ &&
-    z <= WORLD_BOUNDS.maxZ
-  );
+  return districtAt(x, z) !== null;
+}
+
+type BitGrid = { originX: number; originZ: number; cell: number; cols: number; rows: number; bits: string };
+function decodeGrid(grid: BitGrid) {
+  const binary = atob(grid.bits);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  const stride = grid.cols + 1;
+  const sample = (col: number, row: number) => {
+    if (col < 0 || row < 0 || col > grid.cols || row > grid.rows) return 0;
+    const index = row * stride + col;
+    return (bytes[index >> 3]! >> (index & 7)) & 1;
+  };
+  /** Bilinear blend of the four surrounding samples, so edges match the rendered shoreline. */
+  return (x: number, z: number) => {
+    const u = (x - grid.originX) / grid.cell;
+    const v = (z - grid.originZ) / grid.cell;
+    const col = Math.floor(u);
+    const row = Math.floor(v);
+    const fu = u - col;
+    const fv = v - row;
+    const value =
+      sample(col, row) * (1 - fu) * (1 - fv) +
+      sample(col + 1, row) * fu * (1 - fv) +
+      sample(col, row + 1) * (1 - fu) * fv +
+      sample(col + 1, row + 1) * fu * fv;
+    return value > 0.5;
+  };
+}
+
+type Deck = { id: number; half: number; points: Vec2[]; minX: number; maxX: number; minZ: number; maxZ: number };
+const DECKS: Deck[] = (lagos.decks as Array<{ id: number; half: number; points: Vec2[] }>).map((deck) => ({
+  ...deck,
+  minX: Math.min(...deck.points.map((point) => point[0])) - deck.half,
+  maxX: Math.max(...deck.points.map((point) => point[0])) + deck.half,
+  minZ: Math.min(...deck.points.map((point) => point[1])) - deck.half,
+  maxZ: Math.max(...deck.points.map((point) => point[1])) + deck.half,
+}));
+
+/** On a bridge deck, inside its parapets. */
+export function onBridgeDeck(x: number, z: number) {
+  for (const deck of DECKS) {
+    if (x < deck.minX || x > deck.maxX || z < deck.minZ || z > deck.maxZ) continue;
+    for (let index = 1; index < deck.points.length; index += 1) {
+      const [ax, az] = deck.points[index - 1]!;
+      const [bx, bz] = deck.points[index]!;
+      const dx = bx - ax;
+      const dz = bz - az;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+      if (Math.hypot(ax + dx * t - x, az + dz * t - z) <= deck.half) return true;
+    }
+  }
+  return false;
+}
+
+const openWater = decodeGrid(lagos.blocked as BitGrid);
+
+/** Open water (lagoon, creek, channel) off any road or bridge deck: residents and cars can't go there. */
+export function blockedByWater(x: number, z: number) {
+  return openWater(x, z) && !onBridgeDeck(x, z);
 }
 
 /** Interiors live far outside the street map so they never overlap it. */
@@ -242,3 +344,8 @@ export const INTERIOR_ORIGIN: Vec2 = [5000, 5000];
 export const INTERIOR_SPAWN: Vec2 = [INTERIOR_ORIGIN[0] + 0, INTERIOR_ORIGIN[1] - 3.2];
 export const INTERIOR_EXIT: Vec2 = [INTERIOR_ORIGIN[0] + 0, INTERIOR_ORIGIN[1] - 4.4];
 export const INTERIOR_HALF: Vec2 = [5.6, 4.8];
+
+/** Somewhere a resident may stand: inside a district, not on open water, not inside a building. */
+export function walkable(x: number, z: number, buildingTolerance = 0.6) {
+  return withinWorld(x, z) && !blockedByWater(x, z) && !insideBuilding(x, z, buildingTolerance);
+}
