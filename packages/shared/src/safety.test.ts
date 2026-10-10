@@ -37,3 +37,13 @@ describe("moderation actions", () => {
     expect(moderationActionSchema.safeParse({ targetUserId: "u", action: "suspend", reason: "repeated hate" }).success).toBe(true);
   });
 });
+
+describe("snapshot wire format", () => {
+  it("fills omitted player fields with their defaults", async () => {
+    const { networkPlayerSchema } = await import("./index");
+    expect(networkPlayerSchema.parse({ sessionId: "s1", name: "Ada", x: 1, z: 2, yaw: 0, motion: "jog" })).toEqual({
+      sessionId: "s1", name: "Ada", x: 1, z: 2, yaw: 0, motion: "jog",
+      location: "street", busId: null, seat: null, carrying: false, connected: true, vehicleId: null,
+    });
+  });
+});

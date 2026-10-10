@@ -70,12 +70,13 @@ export const networkPlayerSchema = z.object({
   z: z.number().finite(),
   yaw: z.number().finite(),
   motion: z.enum(motionStates),
-  location: z.string(),
-  busId: z.string().nullable(),
-  seat: z.number().int().nullable(),
-  carrying: z.boolean(),
-  connected: z.boolean(),
-  vehicleId: z.string().nullable(),
+  /** The rest are omitted on the wire when they hold these common values, which roughly halves snapshot size. */
+  location: z.string().default("street"),
+  busId: z.string().nullable().default(null),
+  seat: z.number().int().nullable().default(null),
+  carrying: z.boolean().default(false),
+  connected: z.boolean().default(true),
+  vehicleId: z.string().nullable().default(null),
 });
 
 export const busStateSchema = z.object({
@@ -107,6 +108,9 @@ export const worldSnapshotSchema = z.object({
 export type NetworkPlayer = z.infer<typeof networkPlayerSchema>;
 export type BusState = z.infer<typeof busStateSchema>;
 export type WorldSnapshot = z.infer<typeof worldSnapshotSchema>;
+/** What the server sends: players may leave out fields that hold their default. */
+export type WorldSnapshotWire = z.input<typeof worldSnapshotSchema>;
+export type NetworkPlayerWire = z.input<typeof networkPlayerSchema>;
 
 export const selfStateSchema = z.object({
   x: z.number().finite(),

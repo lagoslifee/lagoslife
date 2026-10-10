@@ -31,7 +31,8 @@ import {
   type MotionState,
   type Notice,
   type SelfState,
-  type WorldSnapshot,
+  type NetworkPlayerWire,
+  type WorldSnapshotWire,
 } from "@lagos-living/shared";
 import { Client, Room, type AuthContext } from "@colyseus/core";
 import { schema, t, type SchemaType } from "@colyseus/schema";
@@ -78,6 +79,10 @@ const BUS_DWELL_EXTENDED_MS = 16_000;
 const BOARD_RANGE = 5.5;
 export const REBOARD_COOLDOWN_MS = 6_000;
 const INTEREST_RADIUS = 180;
+/** One room holds the whole city; past this Colyseus opens another room, which players in the first cannot see. */
+export const ROOM_CAPACITY = 100;
+/** Snapshots carry at most this many players (the nearest), so a crowd cannot blow up per-client bandwidth. */
+export const MAX_VISIBLE_PLAYERS = 40;
 const STUCK_RECOVERY_MS = 20_000;
 
 type Player = {
@@ -154,7 +159,7 @@ function nextStopIndex(s: number) {
 }
 
 export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> {
-  maxClients = 40;
+  maxClients = ROOM_CAPACITY;
   state = new LagosState();
   private players = new Map<string, Player>();
   private buses: Bus[] = [];
@@ -1016,6 +1021,17 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     });
   }
 
+  private wirePlayer(player: Player): NetworkPlayerWire {
+    const wire: NetworkPlayerWire = { sessionId: player.sessionId, name: player.name, x: player.x, z: player.z, yaw: player.yaw, motion: player.motion };
+    if (!player.busId && player.location !== "street") wire.location = player.location;
+    if (player.busId) wire.busId = player.busId;
+    if (player.seat !== null) wire.seat = player.seat;
+    if (player.carrying) wire.carrying = true;
+    if (!player.connected) wire.connected = false;
+    if (player.vehicleId) wire.vehicleId = player.vehicleId;
+    return wire;
+  }
+
   private broadcastSnapshots() {
     const buses = this.busStates();
     const all = [...this.players.values()];
@@ -1024,27 +1040,15 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       const viewer = this.players.get(client.sessionId);
       if (!viewer) continue;
       const viewerLocation = viewer.busId ? "street" : viewer.location;
-      const players = all
-        .filter((other) => {
-          const otherLocation = other.busId ? "street" : other.location;
-          if (otherLocation !== viewerLocation) return false;
-          return other === viewer || Math.hypot(other.x - viewer.x, other.z - viewer.z) <= INTEREST_RADIUS;
-        })
-        .map((other) => ({
-          sessionId: other.sessionId,
-          name: other.name,
-          x: other.x,
-          z: other.z,
-          yaw: other.yaw,
-          motion: other.motion,
-          location: other.busId ? "street" : other.location,
-          busId: other.busId,
-          seat: other.seat,
-          carrying: other.carrying,
-          connected: other.connected,
-          vehicleId: other.vehicleId,
-        }));
-      const snapshot: WorldSnapshot = {
+      const nearby: Array<{ player: Player; distance: number }> = [];
+      for (const other of all) {
+        if ((other.busId ? "street" : other.location) !== viewerLocation) continue;
+        const distance = other === viewer ? -1 : Math.hypot(other.x - viewer.x, other.z - viewer.z);
+        if (distance <= INTEREST_RADIUS) nearby.push({ player: other, distance });
+      }
+      if (nearby.length > MAX_VISIBLE_PLAYERS) nearby.sort((a, b) => a.distance - b.distance).length = MAX_VISIBLE_PLAYERS;
+      const players = nearby.map(({ player }) => this.wirePlayer(player));
+      const snapshot: WorldSnapshotWire = {
         tick: this.state.tick,
         serverTime: Date.now(),
         players,

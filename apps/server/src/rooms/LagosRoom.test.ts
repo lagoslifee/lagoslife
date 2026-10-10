@@ -46,7 +46,7 @@ const justice = vi.hoisted(() => ({
 vi.mock("../justice-service.js", () => justice);
 const { safetyEvents } = await import("../safety-service.js");
 
-const { BUS_CAPACITY, LagosRoom, REBOARD_COOLDOWN_MS } = await import("./LagosRoom.js");
+const { BUS_CAPACITY, LagosRoom, MAX_VISIBLE_PLAYERS, REBOARD_COOLDOWN_MS } = await import("./LagosRoom.js");
 
 type FakeClient = { sessionId: string; send: ReturnType<typeof vi.fn>; leave: ReturnType<typeof vi.fn>; auth: { userId: string; name: string } };
 type RoomInternals = {
@@ -61,6 +61,7 @@ type RoomInternals = {
   handlePosition(client: FakeClient, payload: unknown): void;
   handleChat(client: FakeClient, payload: unknown): Promise<void>;
   applySanction(userId: string, kind: string, reason: string, endsAt: number | null): void;
+  broadcastSnapshots(): void;
   vehicles: Map<string, Record<string, unknown>>;
   onLeave(client: FakeClient): Promise<void>;
   allowReconnection: () => Promise<unknown>;
@@ -523,5 +524,26 @@ describe("LagosRoom careless-driving citations", () => {
     step(2, 18);
     await room.handleVehicleImpact(ada, { speed: 6 });
     expect(justice.issueCitation).not.toHaveBeenCalled();
+  });
+});
+
+describe("LagosRoom snapshots", () => {
+  it("sends only the nearest players in a crowd, always including the viewer, and omits default fields", () => {
+    const { room, join, player } = setup();
+    const viewer = join("viewer");
+    const origin = player(viewer);
+    const crowd = Array.from({ length: MAX_VISIBLE_PLAYERS + 10 }, (_, index) => {
+      const client = join(`p${index}`);
+      Object.assign(player(client), { x: (origin.x as number) + 1 + index, z: origin.z });
+      return client;
+    });
+    room.broadcastSnapshots();
+    const [, snapshot] = viewer.send.mock.calls.find(([type]) => type === "snapshot")! as [string, { players: Array<Record<string, unknown>> }];
+    expect(snapshot.players).toHaveLength(MAX_VISIBLE_PLAYERS);
+    expect(snapshot.players[0]!.sessionId).toBe(viewer.sessionId);
+    const included = new Set(snapshot.players.map(({ sessionId }) => sessionId));
+    expect(included.has(crowd[0]!.sessionId)).toBe(true);
+    expect(included.has(crowd.at(-1)!.sessionId)).toBe(false);
+    expect(Object.keys(snapshot.players[1]!).sort()).toEqual(["motion", "name", "sessionId", "x", "yaw", "z"]);
   });
 });
