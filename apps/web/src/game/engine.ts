@@ -277,6 +277,8 @@ export class GameEngine {
     private readonly quality: Quality,
     settings: PlayerSettings,
     bindings: Bindings,
+    /** WebGL1 on the low-power GPU: a fallback for browsers whose WebGL2 context keeps failing. */
+    private readonly safeGraphics = false,
   ) {
     this.callbacks = Object.fromEntries(
       Object.entries(callbacks).map(([key, fn]) => [key, (...args: unknown[]) => (this.disposed ? undefined : (fn as (...a: unknown[]) => unknown)(...args))]),
@@ -327,7 +329,19 @@ export class GameEngine {
   }
 
   async start() {
-    const engine = new Engine(this.canvas, this.quality !== "low", { stencil: false, preserveDrawingBuffer: false, powerPreference: "high-performance" }, false);
+    const engine = new Engine(
+      this.canvas,
+      this.quality !== "low" && !this.safeGraphics,
+      this.safeGraphics
+        ? { stencil: false, preserveDrawingBuffer: false, powerPreference: "low-power", disableWebGL2Support: true }
+        : { stencil: false, preserveDrawingBuffer: false, powerPreference: "high-performance" },
+      false,
+    );
+    // A context that is already lost cannot create textures; fail fast so the UI can retry.
+    if ((engine as unknown as { _gl: WebGLRenderingContext })._gl.isContextLost()) {
+      engine.dispose();
+      throw new Error("WebGL context unavailable");
+    }
     this.engine = engine;
     const dpr = window.devicePixelRatio || 1;
     this.baseScaling = this.quality === "low" ? 1.5 : this.quality === "medium" ? Math.max(1, dpr / 1.25) / dpr : 1 / Math.min(dpr, 1.5);

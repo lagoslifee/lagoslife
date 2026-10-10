@@ -162,6 +162,7 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
   -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
 }
 .game-view input, .game-view textarea { -webkit-user-select: text; user-select: text; }
+.game-canvas-host { position: absolute; inset: 0; }
 .game-canvas { display: block; width: 100%; height: 100%; touch-action: none; outline: none; }
 .world-tags { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .world-tag {

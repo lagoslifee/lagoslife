@@ -60,7 +60,7 @@ export function GameView({
   onSuspended: (info: { reason: string; until: string | null }) => void;
   overlayOpen: boolean;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasHostRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<GameEngine | null>(null);
   const [loading, setLoading] = useState<{ text: string; progress: number } | null>({ text: "Preparing Lagos…", progress: 0 });
@@ -97,7 +97,9 @@ export function GameView({
     clearTimeout(lostTimer.current);
     setGraphicsPaused(false);
     if (restartsRef.current >= 3) {
-      setFatal(`${why} This device ran out of graphics memory several times. Close other tabs and apps, then try again.`);
+      setFatal(
+        `${why} Close any other tab with Lagos Living open, then press Try again. If it still fails, fully quit and reopen the browser: browsers switch 3D graphics off for a site after the graphics driver crashes, until they restart.`,
+      );
       return;
     }
     restartsRef.current += 1;
@@ -152,8 +154,38 @@ export function GameView({
 
   const handlers = useRef<{ interact: (interaction: Interaction) => void; self: (self: SelfState) => void }>({ interact: () => undefined, self: () => undefined });
 
+  // One playing tab per browser: two copies of the city exhaust a phone's graphics memory.
+  const [elsewhere, setElsewhere] = useState(false);
+  const tabId = useMemo(() => crypto.randomUUID(), []);
+  const channel = useMemo(() => ("BroadcastChannel" in window ? new BroadcastChannel("lagos-living-tab") : null), []);
+  const [claimed, setClaimed] = useState(!channel);
   useEffect(() => {
-    const canvas = canvasRef.current!;
+    if (!channel) return;
+    channel.onmessage = (event: MessageEvent<{ type: string; id: string }>) => {
+      if (event.data.type === "claim" && event.data.id !== tabId) {
+        setEngine(null);
+        setElsewhere(true);
+      }
+    };
+    channel.postMessage({ type: "claim", id: tabId });
+    // Give the other tab a moment to release its graphics before this one allocates.
+    const timer = setTimeout(() => setClaimed(true), 400);
+    return () => clearTimeout(timer);
+  }, [channel, tabId]);
+  const playHere = () => {
+    channel?.postMessage({ type: "claim", id: tabId });
+    setClaimed(false);
+    setElsewhere(false);
+    setTimeout(() => setClaimed(true), 400);
+  };
+
+  useEffect(() => {
+    if (elsewhere || !claimed) return;
+    // A fresh canvas per start: a canvas keeps its first (possibly lost) WebGL context for life.
+    const canvas = document.createElement("canvas");
+    canvas.className = "game-canvas";
+    canvas.dataset.testid = "game-canvas";
+    canvasHostRef.current!.appendChild(canvas);
     const overlay = overlayRef.current!;
     let live = true;
     const instance = new GameEngine(
@@ -203,6 +235,7 @@ export function GameView({
       quality,
       defaultSettings,
       loadBindings(),
+      restartsRef.current >= 2,
     );
     engineRef.current = instance;
     instance
@@ -230,10 +263,10 @@ export function GameView({
     }).catch(() => undefined);
     return () => {
       live = false;
-      void instance.dispose();
+      void instance.dispose().finally(() => canvas.remove());
       engineRef.current = null;
     };
-  }, [quality, restarts, refresh, refreshPlots, toast, restartGraphics]);
+  }, [quality, restarts, refresh, refreshPlots, toast, restartGraphics, elsewhere, claimed]);
 
   const finishingAt = plots.find((plot) => plot.status === "mine" && plot.construction && !plot.construction.completed && plot.construction.stagesPaid === 4)?.construction?.stageReadyAt;
   useEffect(() => {
@@ -410,7 +443,7 @@ export function GameView({
 
   return (
     <div className={`game-view ${touch ? "touch" : "pointer"}${HOST_BADGE ? " host-badge" : ""}`}>
-      <canvas ref={canvasRef} className="game-canvas" data-testid="game-canvas" />
+      <div ref={canvasHostRef} className="game-canvas-host" />
       <div ref={overlayRef} className="world-tags" />
       {touch && engine && !blocking && !chatOpen && <TouchLook engine={engine} />}
 
@@ -419,6 +452,13 @@ export function GameView({
           <div className="wordmark"><span>LL</span> LAGOS LIVING</div>
           <p>{loading.text}</p>
           <div className="progress"><i style={{ width: `${Math.round(loading.progress * 100)}%` }} /></div>
+        </div>
+      )}
+      {elsewhere && (
+        <div className="loading-overlay" role="alert" data-testid="open-elsewhere">
+          <div className="wordmark"><span>LL</span> LAGOS LIVING</div>
+          <p>Lagos Living is open in another tab, so this one paused to save your device's graphics memory.</p>
+          <button className="primary" onClick={playHere}>Play here instead</button>
         </div>
       )}
       {graphicsPaused && !fatal && (
