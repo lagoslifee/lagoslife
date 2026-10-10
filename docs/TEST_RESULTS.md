@@ -329,6 +329,31 @@ rental sheet, and home interior (medium preset), plus `m6-dealership-sheet`,
 district tests. The earlier miniature-scale
 "before" view is `/opt/cursor/artifacts/before-street-old-miniature.png`.
 
+### Several server processes
+
+Two server processes (ports 2571 and 2572) on this VM shared one local Redis
+(`redis:7-alpine` in Docker, bound to 127.0.0.1) and the development Postgres.
+`npm run cluster-check -w @lagos-living/server` passed all six checks:
+
+- A player joining through each process landed in the same room.
+- Each player's snapshots included the other.
+- A `PUT /api/character` through each process reached the room as a `look`
+  message.
+- Starting a delivery at Swift Parcel Hub through each process passed the
+  "near the door" check, so both processes knew where the player stood.
+
+Running through both processes makes at least one of each pair of checks
+cross the process boundary, wherever the room is hosted. With the relay
+switched off (incoming messages dropped), rooms were still shared but the look
+timed out and the delivery was refused with 409, so the checks depend on the
+relay. `cluster.test.ts` (2 tests, no Redis) covers each event being delivered
+exactly once, shared positions and progress resets, and a late removal from a
+process the player has left not erasing their newer position. That last test
+fails when the ownership guard is removed. The bundled server also started and
+answered `/api/health` with `REDIS_URL` set. Not tested: more than two
+processes, other hosts, a reverse proxy routing to each process's
+`PUBLIC_ADDRESS`, or Redis restarts.
+
 ## Not yet verified
 
 - Frame rate on real GPUs and phones, and tile-streaming hitches on them.
@@ -336,3 +361,4 @@ district tests. The earlier miniature-scale
 - Any public deployment, TLS proxy or managed database. The production images and compose stack were only run on this VM.
 - Citation evasion for kerb strikes, which the server does not model. Pedestrian, car, danfo and building contact is detected on the server.
 - Touch controls on a physical device (layout is implemented and responsive).
+- Several server processes beyond two on one VM, behind a reverse proxy, or across hosts. Rate limits are still per process.

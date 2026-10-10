@@ -127,8 +127,8 @@ The images were built and the compose stack ran from scratch on this VM, where
 a page-driven production smoke test passed. Nothing was deployed publicly.
 Remaining gaps: the server detects contact with pedestrians, cars, danfos and
 buildings itself, but kerb strikes still rely on the client's impact report;
-horizontal scaling isn't configured; and no TLS proxy was
-exercised.
+several server processes were only checked as two processes on this VM
+sharing a local Redis; and no TLS proxy was exercised.
 
 ### Milestone 6 verification note
 
@@ -180,4 +180,4 @@ Still deferred:
 
 - a fictional court beyond moderator-decided appeals;
 - real-device performance work;
-- multi-instance scaling.
+- shared rate-limit storage across server processes (each process enforces its own).

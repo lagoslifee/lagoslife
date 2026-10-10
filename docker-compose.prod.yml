@@ -44,6 +44,9 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:?set SMTP_FROM}
+      # Only for several server processes; see docs/OPERATIONS.md#several-server-processes.
+      REDIS_URL: ${REDIS_URL:-}
+      PUBLIC_ADDRESS: ${PUBLIC_ADDRESS:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,6 +61,12 @@ services:
         condition: service_completed_successfully
     ports:
       - "127.0.0.1:${SERVER_PORT:-2567}:2567"
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["cluster"]
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
 
   web:
     image: lagos-living-web:${RELEASE:-local}

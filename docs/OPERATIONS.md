@@ -169,9 +169,37 @@ Measured results and caveats are in
   player gets a second room instance, which is a separate city: players in
   different rooms don't see each other.
 - Each snapshot carries at most the 40 nearest players within 180 m.
-- The in-app rate limits, room presence and Better Auth's rate-limit store are
-  in memory. Running several server instances would need shared presence and
-  rate-limit storage, and sticky WebSocket routing. None of that is configured.
+- The in-app rate limits and Better Auth's rate-limit store are in memory per
+  process. With several processes, each enforces its own limits, so the
+  effective limit is that many times higher.
+
+## Several server processes
+
+Set `REDIS_URL` on every server process to share one Redis. Colyseus then
+matchmakes across processes (`RedisPresence`/`RedisDriver`), and the server
+relays its in-process events over Redis pub/sub. That covers vehicle changes,
+appearance changes, blocks and sanctions, player positions and progress
+resets. So an HTTP request handled by one process still reaches a room hosted
+by another, and proximity checks (shops, the parcel hub, sleeping at home) see
+players wherever their room runs. Without `REDIS_URL` nothing changes: one
+process, events stay local.
+
+- A room still lives in one process. Extra processes host extra rooms when one
+  fills (each a separate city) and share the HTTP load; they don't make one
+  room hold more than 100 players.
+- Each process needs its own `PUBLIC_ADDRESS` (`host[:port][/path]`) that
+  clients can reach directly, because a seat reservation sends the client to
+  the process hosting the room. Behind a reverse proxy that means one route per
+  process (for example `api.example.com/p1`). HTTP API requests can go to any
+  process; sessions live in Postgres.
+- Redis must not be public. `docker-compose.prod.yml` has a `redis` service
+  under the `cluster` profile with no published port
+  (`docker compose --profile cluster ...`); set
+  `REDIS_URL=redis://redis:6379` for the server.
+- `npm run cluster-check -w @lagos-living/server -- --a http://localhost:2571 --b http://localhost:2572`
+  checks two running processes: same room, players see each other, and an HTTP
+  change and a position check through each process. Results are in
+  [test results](TEST_RESULTS.md#several-server-processes).
 
 ## Backup and restore
 
