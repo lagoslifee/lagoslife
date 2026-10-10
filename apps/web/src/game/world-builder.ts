@@ -61,6 +61,7 @@ const SHOP_COLORS = ["#f6efe2", "#ffe7a3", "#d8ecf3", "#fbe0d6", "#e0f0dc"];
 
 export const FLOOR_HEIGHT = 3.2;
 const SIDEWALK_Y = 0.16;
+const TILE_ATTEMPTS = 3;
 const ROAD_Y: Record<string, number> = {
   primary: 0.04,
   primary_link: 0.038,
@@ -1316,6 +1317,8 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
   const loaded = new Map<string, LoadedTile>();
   const contents = new Map<string, WorldTile>();
   const fetching = new Set<string>();
+  /** Failed tile fetches are retried a few times before the tile is given up as empty, so a blip does not leave a district bare. */
+  const failures = new Map<string, { count: number; retryAt: number }>();
   let wanted: string[] = [];
   let nearKeys: string[] = [];
   let tileBuildMs = 0;
@@ -1378,13 +1381,21 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     nearKeys = keys.filter(({ distance }) => distance < 120).map(({ key }) => key);
     for (const key of wanted) {
       if (!contentTiles.has(key) || contents.has(key) || fetching.has(key)) continue;
+      if ((failures.get(key)?.retryAt ?? 0) > performance.now()) continue;
       fetching.add(key);
       void fetchTile(key)
         .then((tile) => {
+          if (tile?.key !== key || !Array.isArray(tile.buildings)) throw new Error(`Tile ${key} is malformed`);
           registerFootprints(tile.buildings);
           contents.set(key, tile);
+          failures.delete(key);
         })
-        .catch(() => contents.set(key, { key, buildings: [], areas: [] }))
+        .catch((error: Error) => {
+          const count = (failures.get(key)?.count ?? 0) + 1;
+          console.warn(`World tile ${key} failed to load (attempt ${count}): ${error.message}`);
+          if (count >= TILE_ATTEMPTS) contents.set(key, { key, buildings: [], areas: [] });
+          else failures.set(key, { count, retryAt: performance.now() + 2_000 * count });
+        })
         .finally(() => fetching.delete(key));
     }
     let released = false;

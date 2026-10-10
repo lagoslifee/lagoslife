@@ -630,8 +630,11 @@ const world = {
   pois,
 };
 
-await rm(tileDir, { recursive: true, force: true });
+// Rewrite tiles in place and remove only stale ones: deleting the directory while a Vite dev
+// server is running makes it serve index.html for every tile, and the world loads empty.
 await mkdir(tileDir, { recursive: true });
+const keep = new Set([...tiles.values()].map((tile) => `${tile.key}.json`));
+for (const file of await readdir(tileDir)) if (!keep.has(file)) await rm(path.join(tileDir, file), { force: true });
 for (const tile of tiles.values()) {
   await writeFile(path.join(tileDir, `${tile.key}.json`), JSON.stringify({ key: tile.key, buildings: tile.buildings, areas: tile.areas }));
 }
