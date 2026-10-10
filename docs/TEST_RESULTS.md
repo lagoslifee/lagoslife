@@ -28,7 +28,8 @@ rasteriser.
 | `npm test -w @lagos-living/server` (PostgreSQL integration, room unit and config tests) | 107 / 107 passed after the Ikoyi and Victoria Island danfo loops (source tests only; compiled copies in `dist/` are excluded) |
 | `npm test -w @lagos-living/shared` | 21 / 21 passed |
 | Playwright `e2e/transit-districts.spec.ts` on its own | 1 / 1 passed (5.8 min) |
-| **Full Playwright suite in one run**, after the danfo loops and session fix | **12 / 13 passed (42.8 min)**. The venues journey in `districts.spec.ts` failed one 1.2 km walk from Ikoyi to the mosque (3 × 90 s attempts at about 3 fps); run on its own straight after, it passed (7.0 min). Frame rate at the mosque was 3.4 fps with and without danfos drawn, so the new routes did not cause it. The walk helper now scales its timeout with distance; the full suite has not been re-run since that change. |
+| **Full Playwright suite in one run**, after the danfo loops and session fix | **12 / 13 passed (42.8 min)**. The venues journey in `districts.spec.ts` failed one 1.2 km walk from Ikoyi to the mosque (3 × 90 s attempts at about 3 fps); run on its own straight after, it passed (7.0 min). Frame rate at the mosque was 3.4 fps with and without danfos drawn, so the new routes did not cause it. The walk helper now scales its timeout with distance. |
+| **Full Playwright suite in one run**, after the walk-timeout change | **13 / 13 passed (42.2 min)** |
 | Playwright `e2e/playable-loop.spec.ts` on its own, after multi-unit housing | 2 / 2 passed (8.1 min) |
 | `apps/web` `controller.test.ts`, `car-controller.test.ts` and `appearance.test.ts` | 17 / 17 passed |
 | Playwright `e2e/accounts.spec.ts` on its own, after the 3D character looks | 5 / 5 passed (2.2 min) |
