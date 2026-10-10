@@ -5,14 +5,21 @@ All prices are fictional game naira.
 | Home | Kind | Terms |
 |---|---|---|
 | Kayode Court Hostel | Starter accommodation (free) | Always available to every player. Private room with bed. |
-| Adebayo Court | Affordable rental | ₦18,000 every 7 days plus a ₦12,000 refundable deposit, so ₦30,000 upfront. 3-day grace period. 16 storage slots. |
-| Okoro Terrace | Purchase | ₦235,000, owned outright with no rent. |
+| Adebayo Court (12 flats) | Affordable rental | ₦18,000 every 7 days plus a ₦12,000 refundable deposit, so ₦30,000 upfront. 3-day grace period. 16 storage slots. |
+| Okoro Terrace (6 houses) | Purchase | ₦235,000, owned outright with no rent. 30 storage slots. |
+
+Each building has one door and one For Rent / For Sale board. Its units are
+separate homes, each with its own tenancy, key, furniture, storage, guests and
+garage. Up to 12 residents can rent at Adebayo Court and 6 can own at Okoro
+Terrace at the same time. Unit ids are listed in `HOME_UNITS`
+(`packages/shared/src/homes.ts`) and seeded by migration `0009_more_homes.sql`.
 
 ## Renting flow
 
 1. A red **For Rent** board stands at the door. Pressing E opens the listing:
    rent, deposit, billing interval, total upfront, grace period, storage and
-   availability.
+   how many flats are free. It offers your own flat if you have one there, or
+   otherwise the first free flat.
 2. **Preview interior** enters a read-only copy (no furniture moves).
 3. **Rent this flat → Confirm** validates funds and deducts the upfront total
    once. The deduction is protected by an idempotency key and a locked listing
@@ -27,7 +34,8 @@ All prices are fictional game naira.
 
 The server enforces access on every request. Two residents cannot rent the same
 flat; the database lock resolves the race, and integration tests prove a single
-winner.
+winner. Two residents renting different flats in the same building at the same
+moment both succeed (integration test).
 
 ## Daily life
 
