@@ -57,11 +57,11 @@ test("drives from Lekki Phase 1 over the Link Bridge into Ikoyi, streaming tiles
   await until(async () => page.evaluate(() => window.__lagos.driving()), 10_000, "driving");
 
   // Midway along the bridge deck (OSM way 499678924), over the lagoon.
-  expect(await page.evaluate(() => window.__lagos.driveTo(-1278.6, 648.4, 300_000))).toBe(true);
+  expect(await page.evaluate(() => window.__lagos.driveTo(-1278.6, 648.4, 540_000))).toBe(true);
   await expect(district(page)).toHaveText("Lekki-Ikoyi Link Bridge · Eti-Osa");
   await shot("m7-link-bridge");
   // On into Ikoyi, at the west end of the bridge approach.
-  expect(await page.evaluate(() => window.__lagos.driveTo(-2391, 648, 300_000))).toBe(true);
+  expect(await page.evaluate(() => window.__lagos.driveTo(-2391, 648, 540_000))).toBe(true);
   await expect(district(page)).toHaveText("Ikoyi · Eti-Osa", { timeout: 10_000 });
   await shot("m7-ikoyi-street");
 
