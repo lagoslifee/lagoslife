@@ -10,6 +10,7 @@ import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 import { apiUrl, authClient } from "./auth-client";
 
 const GameView = lazy(() => import("./ui/GameView").then((module) => ({ default: module.GameView })));
+const CharacterPreview = lazy(() => import("./ui/CharacterPreview").then((module) => ({ default: module.CharacterPreview })));
 const ModerationConsole = lazy(() => import("./ui/ModerationConsole").then((module) => ({ default: module.ModerationConsole })));
 
 type Suspension = { reason: string; until: string | null };
@@ -202,12 +203,9 @@ function CharacterCreator({
     <div className="modal-backdrop">
       <section className="creator-card" role="dialog" aria-modal="true" aria-label="Character creator">
         <div className="character-preview">
-          <div className={`avatar tone-${appearance.skinTone}`}>
-            <div className={`avatar-hair hair-${appearance.hairstyle}`} />
-            <div className={`avatar-body outfit-${appearance.outfit}`} />
-          </div>
-          <p>Modular preview</p>
-          <small>Style choices are saved for the modular wardrobe</small>
+          <Suspense fallback={<p className="preview-status">Loading your resident…</p>}>
+            <CharacterPreview appearance={appearance} />
+          </Suspense>
         </div>
         <div className="creator-options">
           <p className="step-label">CHARACTER STUDIO</p>
