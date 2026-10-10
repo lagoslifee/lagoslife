@@ -105,9 +105,15 @@ collision and `walkable()` agree on both sides.
 - **Buildings.** OSM footprints are extruded with storey counts derived from
   building kind and footprint area (`building:levels` where present). The
   façade kit is procedural decoration, not a survey of the real buildings.
-- **Transit.** The danfo loop (route L1, about 1.86 km, 5 stops) follows mapped
-  roads in Lekki Phase 1. Stop names are composed from the real road names at
-  each location.
+- **Transit.** Three danfo loops, each built from the kerb lanes of a mapped
+  dual carriageway (out on one carriageway, back on the other):
+  L1 Admiralty Way Loop in Lekki Phase 1 (about 1.86 km, 5 stops),
+  I1 Bourdillon Road Loop in Ikoyi (about 5.39 km, 5 stops, from Falomo
+  Roundabout to Alexander Avenue by the Link Bridge landing) and
+  V1 Adeola Odeku Loop in Victoria Island (about 3.44 km, 5 stops, from Akin
+  Adesola Street to Ahmadu Bello Way). Stop names are composed from the real
+  road and cross-street names at each location; OSM maps no bus stops on these
+  roads, so stop positions and the U-turns at each end are game placements.
 
 The ODbL notice ships in `apps/web/public/assets/world/LICENSE.md`, and the game
 view shows "Map data © OpenStreetMap contributors (ODbL)" at all times.

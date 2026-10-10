@@ -25,8 +25,9 @@ rasteriser.
 
 | Suite | Result |
 |---|---|
-| `npm test -w @lagos-living/server` (PostgreSQL integration, room unit and config tests) | 97 / 97 passed after multi-unit housing (source tests only; compiled copies in `dist/` are excluded) |
-| `npm test -w @lagos-living/shared` | 20 / 20 passed |
+| `npm test -w @lagos-living/server` (PostgreSQL integration, room unit and config tests) | 107 / 107 passed after the Ikoyi and Victoria Island danfo loops (source tests only; compiled copies in `dist/` are excluded) |
+| `npm test -w @lagos-living/shared` | 21 / 21 passed |
+| Playwright `e2e/transit-districts.spec.ts` on its own | 1 / 1 passed (5.8 min) |
 | Playwright `e2e/playable-loop.spec.ts` on its own, after multi-unit housing | 2 / 2 passed (8.1 min) |
 | `apps/web` `controller.test.ts`, `car-controller.test.ts` and `appearance.test.ts` | 17 / 17 passed |
 | Playwright `e2e/accounts.spec.ts` on its own, after the 3D character looks | 5 / 5 passed (2.2 min) |
@@ -47,6 +48,19 @@ rasteriser.
 7. Opened the Adebayo Court sheet (rent ₦18,000 / 7 days, deposit ₦12,000, upfront ₦30,000, 3-day grace), which showed "N of 12 flats free to rent". Rented the offered flat and was charged exactly ₦30,000. The tenancy was assigned with its next due date.
 8. Entered with the digital key. Location `home:<that flat's listing id>`.
 9. Reloaded. Balance ₦225,400, tenancy, and all progress flags persisted.
+
+### Danfos in Ikoyi and Victoria Island (browser, real servers, LocalTester after a progress reset)
+
+1. Started at Grace Assembly in Ikoyi. Phone → Transport listed I1 Bourdillon Road Loop first and offered "Guide me to the nearest stop (I1)".
+2. Walked to the nearest I1 stop and waited for an I1 danfo to stop there (the snapshot carried `routeId: bourdillon-loop`). The board prompt named I1; boarding charged ₦300 once, and the bus panel read "I1 · Bourdillon Road Loop".
+3. Requested a stop and stepped off at the next stop, "Bourdillon Road · Lateef Jakande Avenue (Eastbound)", within 3 m of its alighting point. The balance stayed ₦300 lower.
+4. Started at Island Community Hall in Victoria Island and repeated the ride on V1 Adeola Odeku Loop, stepping off at "Adeola Odeku Street · Akin Adesola (Westbound)". No page errors.
+
+Screenshots: `transit-ikoyi.png` and `transit-victoria-island.png` in `/opt/cursor/artifacts/screenshots/`.
+
+Room tests cover each loop lapping every stop in order, a Victoria Island fare charged against its own route and stop, an Ikoyi rider stepping off at the next Bourdillon Road stop, and snapshots that carry only the danfos within 900 m of the viewer (plus the one they ride). Shared tests check that every stop's alighting point is walkable and outside buildings, and that each loop closes.
+
+The first two runs of this test exposed a session race. When one account joined twice at nearly the same time (a reload, or React's development double mount), the older join could finish last and remove the newer session, which then got no snapshots and showed no error. Now the newest join wins, the older tab is told it was replaced and stops reconnecting, and a dropped session no longer saves its stale position over the new one. Room tests cover all three cases, and the race test fails without the fix.
 
 ### Vehicles (browser, real servers, LocalTester after a progress reset)
 
@@ -255,7 +269,8 @@ district tests. The earlier miniature-scale
 ## Not yet verified
 
 - Frame rate on real GPUs and phones, and tile-streaming hitches on them.
-- Victoria Island has no danfo route yet; districts are linked by driving and walking only.
+- No danfo crosses between districts; each of L1, I1 and V1 stays inside its district, so districts are linked by driving and walking only.
+- The 100-bot load test was measured with 3 danfos; there are now 10 (snapshots carry only those within 900 m). It has not been re-run.
 - More than two concurrent *browser* players. 100 bot clients were measured in one room on this VM (see the load test above), but not over real networks, on other hosts, or with rendering clients. The room cap is 100, and snapshots carry the nearest 40.
 - Any public deployment, TLS proxy or managed database. The production images and compose stack were only run on this VM.
 - Citation evasion: impacts are reported by the client, so a modified client can avoid citations.

@@ -93,8 +93,9 @@ Browser automation (`apps/web/e2e/districts.spec.ts`) drives from Lekki over
 the Link Bridge into Ikoyi while tiles load and unload, and resumes there after
 a reload. A second run walks from Ikoyi over Falomo Bridge into Victoria Island
 and uses every kind of venue. Starting positions in far districts use a dev-only
-`spawn-at` route. Victoria Island and Ikoyi have no danfo route yet, and
-streaming hitches were only measured on the software renderer (about 100 ms per
+`spawn-at` route. Ikoyi (I1, Bourdillon Road) and Victoria Island (V1, Adeola
+Odeku Street) each have their own danfo loop; no danfo crosses between
+districts. Streaming hitches were only measured on the software renderer (about 100 ms per
 tile).
 
 ### Milestone 8 verification note
@@ -174,6 +175,6 @@ neutral. In-game law (citations and appeals) and account moderation
 Still deferred:
 
 - a fictional court beyond moderator-decided appeals;
-- danfo routes in Ikoyi and Victoria Island;
+- danfo routes that cross between districts (over the Link Bridge or Falomo Bridge);
 - real-device performance work;
 - multi-instance scaling.
