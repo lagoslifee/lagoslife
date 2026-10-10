@@ -35,7 +35,10 @@ import {
   PLACES,
   propertyTitle,
   resolveBuildingCollision,
-  TRANSIT,
+  getRoute,
+  STOPS,
+  stopById,
+  stopLabel,
   withinWorld,
   type BusState,
   type CharacterAppearance,
@@ -80,7 +83,7 @@ export type HudState = {
   previewOnly: boolean;
   prompt: Prompt | null;
   secondaryPrompt: Prompt | null;
-  bus: { id: string; seat: number | null; nextStop: string; atStop: string | null; stopRequested: boolean; occupied: number; capacity: number } | null;
+  bus: { id: string; routeNumber: string; routeName: string; seat: number | null; nextStop: string; atStop: string | null; stopRequested: boolean; occupied: number; capacity: number } | null;
   vehicle: { id: string; name: string; plate: string; kmh: number; topKmh: number; condition: number; limp: boolean; reversing: boolean } | null;
   speed: number;
   mode: MoveMode;
@@ -120,6 +123,9 @@ type Remote = {
   speed: number;
   lastSeen: number;
 };
+
+/** Danfos further than this are hidden; other districts' loops are kilometres away. */
+const DANFO_VISIBLE_RANGE = 700;
 
 const PLACE_ACTIONS: Record<Place["kind"], string> = {
   starter_home: "Enter",
@@ -639,7 +645,12 @@ export class GameEngine {
       this.input.zoom = 0;
     }
 
-    for (const bus of this.buses.values()) bus.update(dt, now);
+    const ridingId = this.self?.busId ?? null;
+    for (const danfo of this.buses.values()) {
+      const near = danfo.id === ridingId || Math.hypot(danfo.root.position.x - this.controller.x, danfo.root.position.z - this.controller.z) < DANFO_VISIBLE_RANGE;
+      danfo.root.setEnabled(near);
+      danfo.update(dt, now, near);
+    }
     const bus = this.riding();
     if (bus) {
       this.controller.teleport(bus.root.position.x, bus.root.position.z);
@@ -848,7 +859,7 @@ export class GameEngine {
     if (bus) {
       const state = bus.state;
       if (state?.doorOpen && state.stopId) {
-        this.prompt = { key: bind("interact"), label: "Step off", detail: TRANSIT.stops.find((stop) => stop.id === state.stopId)?.name };
+        this.prompt = { key: bind("interact"), label: "Step off", detail: stopById.get(state.stopId)?.name };
       } else {
         this.prompt = { key: bind("interact"), label: "Request stop & step off at next stop" };
       }
@@ -884,12 +895,13 @@ export class GameEngine {
       if (distance > 5.2) continue;
       const state = danfo.state;
       if (!state) continue;
-      const next = TRANSIT.stops.find((stop) => stop.id === state.nextStopId)?.name ?? "";
+      const next = stopById.get(state.nextStopId)?.name ?? "";
+      const route = danfo.route;
       if (this.justAlighted?.busId === danfo.id && performance.now() - this.justAlighted.at < 6_000) {
         offer(distance + 1, { key: "✓", label: "You just stepped off this danfo", disabled: true }, () => undefined);
       } else if (state.doorOpen && state.stopId) {
         const full = state.occupied >= state.capacity;
-        offer(distance, { key: bind("interact"), label: full ? "Danfo full — wait for the next one" : `Board danfo ${TRANSIT.routeNumber} · ₦${TRANSIT.fare}`, detail: `Next: ${next} · ${state.occupied}/${state.capacity} seats`, disabled: full }, () => !full && this.board(danfo.id));
+        offer(distance, { key: bind("interact"), label: full ? "Danfo full — wait for the next one" : `Board danfo ${route.routeNumber} · ₦${route.fare}`, detail: `Next: ${next} · ${state.occupied}/${state.capacity} seats`, disabled: full }, () => !full && this.board(danfo.id));
       } else {
         offer(distance + 2, { key: "…", label: "Wait for the danfo to stop", disabled: true }, () => undefined);
       }
@@ -957,9 +969,11 @@ export class GameEngine {
       bus: state
         ? {
             id: state.id,
+            routeNumber: bus.route.routeNumber,
+            routeName: bus.route.routeName,
             seat: this.self?.seat ?? null,
-            nextStop: TRANSIT.stops.find((stop) => stop.id === state.nextStopId)?.name ?? "",
-            atStop: state.stopId ? TRANSIT.stops.find((stop) => stop.id === state.stopId)?.name ?? null : null,
+            nextStop: stopById.get(state.nextStopId)?.name ?? "",
+            atStop: state.stopId ? stopById.get(state.stopId)?.name ?? null : null,
             stopRequested: state.stopRequested,
             occupied: state.occupied,
             capacity: state.capacity,
@@ -997,10 +1011,18 @@ export class GameEngine {
     const now = performance.now();
     this.online = snapshot.online;
     this.syncVehicles(snapshot.vehicles, now);
+    const sent = new Set(snapshot.buses.map(({ id }) => id));
+    for (const [id, view] of this.buses) {
+      if (sent.has(id) || id === this.self?.busId) continue;
+      view.dispose();
+      this.buses.delete(id);
+      this.busTags.get(id)?.remove();
+      this.busTags.delete(id);
+    }
     for (const state of snapshot.buses) {
       let view = this.buses.get(state.id);
       if (!view && this.danfos) {
-        view = this.danfos.create(state.id, this.materials, this.atlas, this.avatars);
+        view = this.danfos.create(state.id, getRoute(state.routeId), this.materials, this.atlas, this.avatars);
         this.addCaster(view.meshes);
         this.buses.set(state.id, view);
         const tag = document.createElement("div");
@@ -1011,8 +1033,9 @@ export class GameEngine {
       view?.apply(state, now);
       const tag = this.busTags.get(state.id);
       if (tag) {
-        const next = TRANSIT.stops.find((stop) => stop.id === state.nextStopId)?.name.replace("Admiralty Way · ", "") ?? "";
-        tag.textContent = `${TRANSIT.routeNumber} danfo · ${state.occupied}/${state.capacity} · ${state.state === "dwelling" ? "Boarding now" : `Next: ${next}`}`;
+        const nextStop = stopById.get(state.nextStopId);
+        const next = nextStop ? stopLabel(nextStop.name) : "";
+        tag.textContent = `${view?.route.routeNumber ?? ""} danfo · ${state.occupied}/${state.capacity} · ${state.state === "dwelling" ? "Boarding now" : `Next: ${next}`}`;
       }
     }
     const seen = new Set<string>();
@@ -1451,7 +1474,7 @@ export class GameEngine {
       board: (id: string) => this.board(id),
       requestStop: () => this.requestStop(),
       junctions: () => this.world.junctionSigns,
-      stops: () => TRANSIT.stops,
+      stops: () => STOPS.map(({ route, ...stop }) => ({ ...stop, routeId: route.routeId })),
       places: () => PLACES.map((place) => ({ id: place.id, name: place.name, kind: place.kind, door: place.door, kerb: place.kerb })),
       stats: () => this.stats(),
       loadedTiles: () => this.world.loadedTiles(),

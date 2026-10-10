@@ -1,4 +1,4 @@
-import { blockedByWater, getPlace, sampleRoute, TRANSIT } from "@lagos-living/shared";
+import { blockedByWater, getPlace, getRoute, ROUTES, sampleRoute, type TransitRoute } from "@lagos-living/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const economy = vi.hoisted(() => ({
@@ -69,27 +69,34 @@ type RoomInternals = {
   handleEnterProperty(client: FakeClient, payload: unknown): Promise<void>;
   sendLooks(client: FakeClient): void;
   onCreate(): Promise<void>;
+  onJoin(client: FakeClient): Promise<void>;
   applySanction(userId: string, kind: string, reason: string, endsAt: number | null): void;
   broadcastSnapshots(): void;
   vehicles: Map<string, Record<string, unknown>>;
   onLeave(client: FakeClient): Promise<void>;
   allowReconnection: () => Promise<unknown>;
   busDoor(bus: unknown): { x: number; z: number };
+  tickWorld(dt: number): void;
+  handleRequestStop(client: FakeClient): void;
+  busStates(): Array<{ id: string; routeId: string; s: number; stopId: string | null; nextStopId: string }>;
 };
 
-const stop = TRANSIT.stops[1]!;
+const lekki = ROUTES[0]!;
+const stop = lekki.stops[1]!;
 
-function setup() {
+function setup(route: TransitRoute = lekki, stopIndex = 1) {
   const room = new LagosRoom() as unknown as RoomInternals;
+  const at = route.stops[stopIndex]!;
   const bus: { id: string; state: string; currentStopId: string | null; seats: Array<string | null>; [key: string]: unknown } = {
     id: "danfo-1",
-    s: stop.s,
+    route,
+    s: at.s,
     speed: 0,
     state: "dwelling",
     dwellUntil: Date.now() + 9_000,
     dwellStartedAt: Date.now(),
-    stopIndex: 1,
-    currentStopId: stop.id,
+    stopIndex,
+    currentStopId: at.id,
     stopRequested: false,
     seats: Array.from({ length: BUS_CAPACITY }, () => null as string | null),
     lastMovedAt: Date.now(),
@@ -242,13 +249,13 @@ describe("LagosRoom danfo boarding", () => {
     await room.onLeave(ada);
     expect(player(ada).busId).toBe(bus.id);
     expect(bus.seats.filter((seat) => seat === "u-ada")).toHaveLength(1);
-    expect(sampleRoute(bus.s as number)).toBeTruthy();
+    expect(sampleRoute(lekki, bus.s as number)).toBeTruthy();
   });
 });
 
 describe("LagosRoom driving", () => {
   const start = stop.s + 60;
-  const parked = sampleRoute(start);
+  const parked = sampleRoute(lekki, start);
 
   function withCar(condition = 100) {
     const context = setup();
@@ -273,7 +280,7 @@ describe("LagosRoom driving", () => {
   function drive(room: RoomInternals, client: FakeClient, sequence: number, metres: number, secondsAgo: number) {
     const player = room.players.get(client.sessionId)!;
     player.lastAcceptedAt = Date.now() - secondsAgo * 1_000;
-    const pose = sampleRoute(start + metres);
+    const pose = sampleRoute(lekki, start + metres);
     room.handlePosition(client, { sequence, x: pose.x, z: pose.z, yaw: pose.yaw, motion: "drive" });
     return pose;
   }
@@ -487,7 +494,7 @@ describe("LagosRoom chat", () => {
 
 describe("LagosRoom careless-driving citations", () => {
   const start = stop.s + 60;
-  const parked = sampleRoute(start);
+  const parked = sampleRoute(lekki, start);
   beforeEach(() => vi.clearAllMocks());
 
   async function driving() {
@@ -501,7 +508,7 @@ describe("LagosRoom careless-driving citations", () => {
     await context.room.handleEnterVehicle(ada, { vehicleId: "car-1" });
     const step = (sequence: number, metres: number) => {
       context.player(ada).lastAcceptedAt = Date.now() - 500;
-      const pose = sampleRoute(start + metres);
+      const pose = sampleRoute(lekki, start + metres);
       context.room.handlePosition(ada, { sequence, x: pose.x, z: pose.z, yaw: pose.yaw, motion: "drive" });
     };
     return { ...context, ada, step };
@@ -614,5 +621,138 @@ describe("LagosRoom homes", () => {
     await room.handleEnterProperty(ada, { propertyId: "nowhere-flat-9", mode: "enter" });
     expect(player(ada).location).toBe("street");
     expect(notices(ada)).toEqual(["That home is not on the map."]);
+  });
+});
+
+describe("LagosRoom danfo routes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    economy.chargeFare.mockResolvedValue({ balance: 1_000 });
+  });
+
+  it("runs danfos on the Lekki, Ikoyi and Victoria Island loops, each on its own route", async () => {
+    const room = new LagosRoom() as unknown as RoomInternals;
+    Object.defineProperty(room, "clients", { value: [] });
+    await room.onCreate().catch(() => undefined);
+    const states = room.busStates();
+    expect(new Set(states.map(({ id }) => id)).size).toBe(states.length);
+    for (const route of ROUTES) {
+      const own = states.filter(({ routeId }) => routeId === route.routeId);
+      expect(own.length, route.routeId).toBeGreaterThanOrEqual(3);
+      for (const bus of own) expect(route.stops.map(({ id }) => id)).toContain(bus.nextStopId);
+    }
+  });
+
+  it("charges the Victoria Island fare against its own route and stop", async () => {
+    const island = getRoute("adeola-odeku-loop");
+    const { room, bus, join, notices, player } = setup(island, 0);
+    const ada = join("ada");
+    await room.handleBoard(ada, { busId: bus.id });
+    expect(player(ada).busId).toBe(bus.id);
+    expect(economy.chargeFare).toHaveBeenCalledWith(
+      expect.objectContaining({ routeId: "adeola-odeku-loop", stopId: island.stops[0]!.id, fare: island.fare }),
+    );
+    expect(notices(ada).at(-1)).toMatch(/^Fare paid/);
+  });
+
+  it("sends each resident only the danfos near them, plus the one they ride", async () => {
+    const { room, join, player } = setup();
+    await room.onCreate().catch(() => undefined);
+    const viewer = join("lekki");
+    const rider = join("rider");
+    const home = lekki.stops[0]!;
+    Object.assign(player(viewer), { x: home.alight[0], z: home.alight[1] });
+    const ikoyiBus = room.busStates().find(({ routeId }) => routeId === "bourdillon-loop")!;
+    Object.assign(player(rider), { x: home.alight[0], z: home.alight[1], busId: ikoyiBus.id });
+    room.broadcastSnapshots();
+    const sent = (client: FakeClient) => {
+      const [, snapshot] = client.send.mock.calls.filter(([type]) => type === "snapshot").at(-1)! as [string, { buses: Array<{ id: string; routeId: string }> }];
+      return snapshot.buses;
+    };
+    expect(sent(viewer).length).toBeGreaterThan(0);
+    expect(new Set(sent(viewer).map(({ routeId }) => routeId))).toEqual(new Set(["admiralty-loop"]));
+    expect(sent(rider).map(({ id }) => id)).toContain(ikoyiBus.id);
+  });
+
+  it.each(ROUTES.map((route) => [route.routeNumber, route] as const))("%s danfo laps its whole loop, dwelling at every stop in order", (_number, route) => {
+    const { room, bus } = setup(route, 0);
+    const seen: string[] = [];
+    for (let tick = 0; tick < 20_000 && seen.length < route.stops.length + 1; tick += 1) {
+      vi.setSystemTime(Date.now() + 50);
+      room.tickWorld(50);
+      if (bus.state === "dwelling" && bus.currentStopId && seen.at(-1) !== bus.currentStopId) seen.push(bus.currentStopId);
+    }
+    vi.useRealTimers();
+    expect(seen).toEqual([...route.stops, route.stops[0]!].map(({ id }) => id));
+  });
+
+  it("drives an Ikoyi danfo to its next Bourdillon Road stop and lets a rider step off there", async () => {
+    const ikoyi = getRoute("bourdillon-loop");
+    const { room, bus, join, player } = setup(ikoyi, 0);
+    const ada = join("ada");
+    await room.handleBoard(ada, { busId: bus.id });
+    const next = ikoyi.stops[1]!;
+    Object.assign(bus, { state: "driving", currentStopId: null, stopIndex: 1, s: next.s - 40, speed: 6, dwellUntil: 0 });
+    room.handleRequestStop(ada);
+    for (let tick = 0; tick < 400 && bus.state !== "dwelling"; tick += 1) room.tickWorld(50);
+    expect(bus.currentStopId).toBe(next.id);
+    expect(player(ada).busId).toBeNull();
+    const { x, z } = player(ada) as { x: number; z: number };
+    expect(Math.hypot(x - next.alight[0], z - next.alight[1])).toBeLessThan(0.01);
+  });
+});
+
+describe("LagosRoom sessions", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const fresh = () => {
+    const room = new LagosRoom() as unknown as RoomInternals;
+    const clients: FakeClient[] = [];
+    Object.defineProperty(room, "clients", { value: clients });
+    const connect = (sessionId: string) => {
+      const client: FakeClient = { sessionId, send: vi.fn(), leave: vi.fn(), auth: { userId: "u-ada", name: "ada" } };
+      clients.push(client);
+      return client;
+    };
+    return { room, connect };
+  };
+
+  it("keeps the newer session when an older join for the same account finishes last", async () => {
+    const { room, connect } = fresh();
+    let releaseOld: (value: null) => void = () => undefined;
+    economy.loadPlayerPlace.mockImplementationOnce(() => new Promise((resolve) => (releaseOld = resolve)));
+    const old = connect("s-old");
+    const newer = connect("s-new");
+    const oldJoin = room.onJoin(old);
+    await room.onJoin(newer);
+    releaseOld(null);
+    await expect(oldJoin).rejects.toThrow(/another window/);
+    expect([...room.players.keys()]).toEqual(["s-new"]);
+    room.broadcastSnapshots();
+    expect(newer.send.mock.calls.some(([type]) => type === "snapshot")).toBe(true);
+  });
+
+  it("closes a connected older session for the same account", async () => {
+    const { room, connect } = fresh();
+    const old = connect("s-old");
+    await room.onJoin(old);
+    const newer = connect("s-new");
+    await room.onJoin(newer);
+    expect(old.send).toHaveBeenCalledWith("replaced", {});
+    expect(old.leave).toHaveBeenCalledWith(4004);
+    expect([...room.players.keys()]).toEqual(["s-new"]);
+  });
+
+  it("does not save a dropped session's stale position after the account rejoined", async () => {
+    const { room, connect } = fresh();
+    const old = connect("s-old");
+    await room.onJoin(old);
+    let giveUp: (error: Error) => void = () => undefined;
+    room.allowReconnection = () => new Promise((_resolve, reject) => (giveUp = reject));
+    const leaving = room.onLeave(old);
+    await room.onJoin(connect("s-new"));
+    giveUp(new Error("timed out"));
+    await leaving;
+    expect(economy.savePlayerPlace).not.toHaveBeenCalled();
+    expect([...room.players.keys()]).toEqual(["s-new"]);
   });
 });

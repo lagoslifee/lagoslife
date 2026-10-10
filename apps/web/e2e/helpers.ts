@@ -5,8 +5,8 @@ export const API = "http://localhost:2567";
 type Vec2 = [number, number];
 type LagosHooks = {
   state(): { x: number; z: number; speed: number; location: string | null; busId: string | null; seat: number | null; indoors: boolean };
-  buses(): Array<{ id: string; stopId: string | null; doorOpen: boolean; cx: number; cz: number }>;
-  stops(): Array<{ id: string; name: string; alight: Vec2 }>;
+  buses(): Array<{ id: string; routeId: string; stopId: string | null; doorOpen: boolean; cx: number; cz: number }>;
+  stops(): Array<{ id: string; name: string; alight: Vec2; routeId: string }>;
   places(): Array<{ id: string; name: string; kind: string; door: Vec2 }>;
   prompt(): { label: string; disabled?: boolean } | null;
   walkTo(x: number, z: number, sprint: boolean, timeoutMs: number): Promise<boolean>;

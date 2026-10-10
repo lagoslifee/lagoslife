@@ -95,6 +95,11 @@ export class MultiplayerConnection {
         this.closed = true;
         this.handlers.suspended({ reason: String(payload?.reason ?? ""), until: typeof payload?.until === "string" ? payload.until : null });
       });
+      room.onMessage("replaced", () => {
+        this.closed = true;
+        this.room = undefined;
+        this.handlers.status({ state: "offline", reason: "You are playing in another tab or window. Reload this page to play here." });
+      });
       room.onLeave(() => {
         if (this.closed) return;
         this.room = undefined;

@@ -1,5 +1,5 @@
 import { Client, type Room } from "@colyseus/sdk";
-import { MOVEMENT, routeLength, sampleRoute, walkable, type WorldSnapshotWire } from "@lagos-living/shared";
+import { MOVEMENT, routeLength, ROUTES, sampleRoute, walkable, type WorldSnapshotWire } from "@lagos-living/shared";
 import { pack } from "msgpackr";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -94,8 +94,11 @@ async function authenticate(index: number) {
   return { name, userId: body.user.id, cookie };
 }
 
+/** Bots walk the kerb of the Lekki danfo loop, where residents start. */
+const WALK_ROUTE = ROUTES[0]!;
+
 function lanePoint(s: number) {
-  const pose = sampleRoute(s);
+  const pose = sampleRoute(WALK_ROUTE, s);
   const rightX = Math.cos(pose.yaw);
   const rightZ = -Math.sin(pose.yaw);
   for (const offset of [LANE_OFFSET, 2, 0]) {
@@ -113,7 +116,7 @@ async function runBot(index: number, startAt: number, endAt: number, stats: BotS
   try {
     const identity = await authenticate(index);
     stats.name = identity.name;
-    let s = (Math.min(SPREAD_M, routeLength()) / BOTS) * index;
+    let s = (Math.min(SPREAD_M, routeLength(WALK_ROUTE)) / BOTS) * index;
     const start = lanePoint(s);
     await savePlayerPlace(identity.userId, start.x, start.z, "street");
     const tokenResponse = await fetch(`${TARGET}/api/multiplayer-token`, { method: "POST", headers: { cookie: identity.cookie, origin: values.origin! } });

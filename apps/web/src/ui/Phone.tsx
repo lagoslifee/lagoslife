@@ -1,4 +1,4 @@
-import { TRANSIT, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
+import { nearestStop, ROUTES, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import { api, naira, type EconomyState, type InteriorState, type MyVehicle, type PropertyListing } from "../api";
 import { actionLabels, keyLabel, type Action, type Bindings } from "../game/controller";
@@ -138,36 +138,39 @@ export function Phone(props: Props) {
 }
 
 function TransportApp({ hud, onNavigate, onClose }: Props) {
-  const nearest = hud
-    ? [...TRANSIT.stops].sort((a, b) => Math.hypot(a.alight[0] - hud.x, a.alight[1] - hud.z) - Math.hypot(b.alight[0] - hud.x, b.alight[1] - hud.z))[0]
-    : null;
+  const nearest = hud ? nearestStop(hud.x, hud.z) : null;
+  const routes = nearest ? [nearest.route, ...ROUTES.filter((route) => route !== nearest.route)] : ROUTES;
   return (
     <div className="app-section">
-      <div className="route-card">
-        <span className="route-number">{TRANSIT.routeNumber}</span>
-        <div>
-          <strong>{TRANSIT.routeName}</strong>
-          <p className="muted">Flat fare {naira(TRANSIT.fare)} · pay once when you board · {Math.round(TRANSIT.length)} m loop</p>
-        </div>
-      </div>
       {hud?.bus && (
-        <p className="callout">Aboard · seat {hud.bus.seat !== null ? hud.bus.seat + 1 : "—"} · next stop {hud.bus.nextStop}{hud.bus.stopRequested ? " · stop requested" : ""}</p>
+        <p className="callout">Aboard {hud.bus.routeNumber} · seat {hud.bus.seat !== null ? hud.bus.seat + 1 : "—"} · next stop {hud.bus.nextStop}{hud.bus.stopRequested ? " · stop requested" : ""}</p>
       )}
-      <ol className="stop-list">
-        {TRANSIT.stops.map((stop) => (
-          <li key={stop.id}>
-            <span>{stop.name}</span>
-            <button className="link" onClick={() => { onNavigate({ point: stop.alight, label: stop.name }); onClose(); }}>Navigate</button>
-          </li>
-        ))}
-      </ol>
       {nearest && (
         <button className="primary" onClick={() => { onNavigate({ point: nearest.alight, label: nearest.name }); onClose(); }}>
-          Guide me to the nearest stop
+          Guide me to the nearest stop ({nearest.route.routeNumber})
         </button>
       )}
-      <p className="muted small">How to ride: wait at the yellow stop sign. When the danfo stops and the door opens, press E to board. Press Q to request your stop, then E to step off once it halts.</p>
-      <p className="muted small">Gameplay simplification: OpenStreetMap has no bus stops mapped here, so these stops and the loop's U-turns are game placements on real Admiralty Way geometry.</p>
+      {routes.map((route) => (
+        <section key={route.routeId} className="route" data-testid={`route-${route.routeNumber}`}>
+          <div className="route-card">
+            <span className="route-number">{route.routeNumber}</span>
+            <div>
+              <strong>{route.routeName}</strong>
+              <p className="muted">Flat fare {naira(route.fare)} · pay once when you board · {Math.round(route.length)} m loop</p>
+            </div>
+          </div>
+          <ol className="stop-list">
+            {route.stops.map((stop) => (
+              <li key={stop.id}>
+                <span>{stop.name}</span>
+                <button className="link" onClick={() => { onNavigate({ point: stop.alight, label: stop.name }); onClose(); }}>Navigate</button>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ))}
+      <p className="muted small">How to ride: wait at the yellow stop sign. When the danfo stops and the door opens, press E to board. Press Q to request your stop, then E to step off once it halts. Each loop stays in its district; cross between districts on foot or by car.</p>
+      <p className="muted small">Gameplay simplification: OpenStreetMap has no bus stops mapped on these roads, so the stops and each loop's U-turns are game placements on real Admiralty Way, Bourdillon Road and Adeola Odeku Street geometry.</p>
     </div>
   );
 }

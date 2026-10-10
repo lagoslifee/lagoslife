@@ -4,7 +4,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
-import { routeLength, sampleRoute, TRANSIT, type BusState } from "@lagos-living/shared";
+import { routeLength, sampleRoute, type BusState, type TransitRoute } from "@lagos-living/shared";
 import { appearanceFor, type Avatar, type AvatarFactory } from "./avatar";
 import { MeshBuilderBatch } from "./geometry";
 import type { Materials } from "./materials";
@@ -25,7 +25,7 @@ export class DanfoFactory {
     return new DanfoFactory(container, scene);
   }
 
-  create(id: string, materials: Materials, atlas: SignAtlas, avatars: AvatarFactory | null) {
+  create(id: string, route: TransitRoute, materials: Materials, atlas: SignAtlas, avatars: AvatarFactory | null) {
     const root = new TransformNode(`danfo ${id}`, this.scene);
     const body = new TransformNode(`danfo body ${id}`, this.scene);
     body.parent = root;
@@ -38,7 +38,7 @@ export class DanfoFactory {
     body.position.y = 0.54 * SCALE;
 
     const extras = new MeshBuilderBatch(`danfo ${id} board`);
-    const uv = atlas.get(`${TRANSIT.routeNumber} ${TRANSIT.routeName.toUpperCase()}`, "danfo", `₦${TRANSIT.fare} · Owa o!`);
+    const uv = atlas.get(`${route.routeNumber} ${route.routeName.toUpperCase()}`, "danfo", `₦${route.fare} · Owa o!`);
     const width = 2.6;
     const height = width / SignAtlas.aspect;
     for (const side of [1, -1]) {
@@ -86,7 +86,7 @@ export class DanfoFactory {
     }
     const meshes = root.getChildMeshes(false) as AbstractMesh[];
     for (const mesh of meshes) mesh.isPickable = false;
-    return new DanfoView(id, root, doorMesh, meshes, driver, conductor);
+    return new DanfoView(id, route, root, doorMesh, meshes, driver, conductor);
   }
 }
 
@@ -103,6 +103,7 @@ export class DanfoView {
 
   constructor(
     readonly id: string,
+    readonly route: TransitRoute,
     readonly root: TransformNode,
     private readonly door: Mesh,
     readonly meshes: AbstractMesh[],
@@ -123,9 +124,9 @@ export class DanfoView {
   }
 
   /** Advances along the route by speed, then eases toward the server's extrapolated distance. */
-  update(dt: number, now: number) {
+  update(dt: number, now: number, animate = true) {
     if (!this.state) return;
-    const length = routeLength();
+    const length = routeLength(this.route);
     const predicted = this.serverS + this.serverSpeed * Math.min(0.5, (now - this.receivedAt) / 1000);
     let error = predicted - this.s;
     if (error > length / 2) error -= length;
@@ -137,9 +138,9 @@ export class DanfoView {
     }
     this.s = ((this.s % length) + length) % length;
     this.speed = this.serverSpeed;
-    const ahead = sampleRoute(this.s + 2.2);
-    const behind = sampleRoute(this.s - 2.2);
-    const pose = sampleRoute(this.s);
+    const ahead = sampleRoute(this.route, this.s + 2.2);
+    const behind = sampleRoute(this.route, this.s - 2.2);
+    const pose = sampleRoute(this.route, this.s);
     const targetYaw = Math.atan2(ahead.x - behind.x, ahead.z - behind.z);
     let delta = targetYaw - this.smoothYaw;
     while (delta > Math.PI) delta -= Math.PI * 2;
@@ -148,6 +149,7 @@ export class DanfoView {
     this.yaw = this.smoothYaw;
     this.root.position.set(pose.x, 0.04, pose.z);
     this.root.rotation.y = this.smoothYaw;
+    if (!animate) return;
     const open = this.state.doorOpen;
     this.door.setEnabled(open);
     this.driver?.update(0, "sit", dt);

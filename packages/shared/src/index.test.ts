@@ -21,7 +21,8 @@ import {
   resolveBuildingCollision,
   routeLength,
   sampleRoute,
-  TRANSIT,
+  ROUTES,
+  STOPS,
   walkable,
 } from "./index";
 
@@ -82,13 +83,34 @@ describe("position contract", () => {
 });
 
 describe("mapped Lekki world", () => {
-  it("builds a closed danfo loop with ordered stops", () => {
-    expect(routeLength()).toBeGreaterThan(1500);
-    const positions = TRANSIT.stops.map((stop) => stop.s);
-    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
-    const start = sampleRoute(0);
-    const wrapped = sampleRoute(routeLength());
-    expect(Math.hypot(start.x - wrapped.x, start.z - wrapped.z)).toBeLessThan(0.01);
+  it("builds closed danfo loops with ordered stops", () => {
+    expect(ROUTES.map((route) => route.routeNumber)).toEqual(["L1", "I1", "V1"]);
+    for (const route of ROUTES) {
+      expect(routeLength(route)).toBeGreaterThan(1500);
+      const positions = route.stops.map((stop) => stop.s);
+      expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+      const start = sampleRoute(route, 0);
+      const wrapped = sampleRoute(route, routeLength(route));
+      expect(Math.hypot(start.x - wrapped.x, start.z - wrapped.z)).toBeLessThan(0.01);
+      route.points.forEach((a, index) => {
+        const b = route.points[(index + 1) % route.points.length]!;
+        expect(Math.hypot(a[0] - b[0], a[1] - b[1]), `${route.routeId} point ${index}`).toBeLessThan(400);
+      });
+      const [first, last] = [route.points[0]!, route.points.at(-1)!];
+      expect(Math.hypot(first[0] - last[0], first[1] - last[1]), `${route.routeId} turnaround`).toBeLessThan(40);
+    }
+  });
+
+  it("serves Ikoyi and Victoria Island with stops residents can stand at", () => {
+    expect(new Set(STOPS.map((stop) => stop.id)).size).toBe(STOPS.length);
+    const served = new Set(STOPS.map((stop) => districtAt(stop.alight[0], stop.alight[1])?.id));
+    expect([...served].sort()).toEqual(["ikoyi", "lekki-phase-1", "victoria-island"]);
+    for (const stop of STOPS) {
+      expect(walkable(stop.alight[0], stop.alight[1]), stop.id).toBe(true);
+      expect(insideBuilding(stop.alight[0], stop.alight[1]), stop.id).toBe(false);
+      const pose = sampleRoute(stop.route, stop.s);
+      expect(Math.hypot(pose.x - stop.pole[0], pose.z - stop.pole[1]), stop.id).toBeLessThan(3.5);
+    }
   });
 
   it("keeps doors outside footprints and pushes avatars out of walls", () => {

@@ -5,7 +5,7 @@ import { Matrix } from "@babylonjs/core/Maths/math.vector";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Scene } from "@babylonjs/core/scene";
-import { getPlace, TRANSIT, type Vec2 } from "@lagos-living/shared";
+import { getPlace, STOPS, type Vec2 } from "@lagos-living/shared";
 import { appearanceFor, type Avatar, type AvatarFactory } from "./avatar";
 import type { DanfoView } from "./danfo";
 import { densify, hash, pointAt, polylineLength } from "./geometry";
@@ -135,7 +135,7 @@ export class AmbientLife {
         avatar.root.rotation.y = yaw;
         this.statics.push({ avatar, x, z, motion: spot.motion });
       });
-      TRANSIT.stops.forEach((stop, index) => {
+      STOPS.forEach((stop, index) => {
         if (index % 2 === 1) return;
         const heading = (stop as unknown as { heading: number }).heading;
         const x = stop.alight[0] + Math.cos(heading) * 1.7 + Math.sin(heading) * 1.2;

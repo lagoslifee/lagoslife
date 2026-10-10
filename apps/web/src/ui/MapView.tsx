@@ -1,4 +1,4 @@
-import { DISTRICTS, PLACES, TRANSIT, type PlaceKind, type Vec2 } from "@lagos-living/shared";
+import { DISTRICTS, PLACES, ROUTES, STOPS, type PlaceKind, type Vec2 } from "@lagos-living/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GameEngine } from "../game/engine";
 import { densify, pointAt, polylineLength } from "../game/geometry";
@@ -178,14 +178,16 @@ export function drawMap(
   ctx.strokeStyle = "rgba(242, 194, 48, 0.55)";
   ctx.lineWidth = Math.max(2, 1.4 * view.scale);
   ctx.setLineDash([6, 4]);
-  ctx.beginPath();
-  TRANSIT.points.forEach(([x, z], index) => {
-    const [sx, sy] = toScreen(view, x, z);
-    if (index) ctx.lineTo(sx, sy);
-    else ctx.moveTo(sx, sy);
-  });
-  ctx.closePath();
-  ctx.stroke();
+  for (const transit of ROUTES) {
+    ctx.beginPath();
+    transit.points.forEach(([x, z], index) => {
+      const [sx, sy] = toScreen(view, x, z);
+      if (index) ctx.lineTo(sx, sy);
+      else ctx.moveTo(sx, sy);
+    });
+    ctx.closePath();
+    ctx.stroke();
+  }
   ctx.setLineDash([]);
 
   if (options.route.length > 1) {
@@ -251,7 +253,7 @@ export function drawMap(
   }
 
   // Bus stops and places.
-  for (const stop of TRANSIT.stops) {
+  for (const stop of STOPS) {
     const [sx, sy] = toScreen(view, stop.pole[0], stop.pole[1]);
     ctx.fillStyle = "#f2c230";
     ctx.strokeStyle = "#1a1a1a";
@@ -461,7 +463,7 @@ export function FullMap({
       results.push({ label: road.name, sub: "Street · OpenStreetMap", point: [mid.x, mid.z] });
     }
     for (const place of PLACES) results.push({ label: place.name, sub: `${place.kind.replace("_", " ")} · ${place.street}`, point: place.door });
-    for (const stop of TRANSIT.stops) results.push({ label: stop.name, sub: `Bus stop · ${TRANSIT.routeNumber} · ₦${TRANSIT.fare}`, point: stop.alight });
+    for (const stop of STOPS) results.push({ label: stop.name, sub: `Bus stop · ${stop.route.routeNumber} · ₦${stop.route.fare}`, point: stop.alight });
     return results;
   }, [data]);
   const results = query.trim().length >= 2 ? index.filter((result) => result.label.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 8) : [];
@@ -578,7 +580,7 @@ export function FullMap({
           <button className="secondary" onClick={() => onNavigate(null)}>Clear route</button>
         </div>
         <ul className="map-legend">
-          <li><i className="lg-b" /> Bus stop ({TRANSIT.routeNumber}, ₦{TRANSIT.fare})</li>
+          <li><i className="lg-b" /> Bus stop ({ROUTES.map((route) => route.routeNumber).join(", ")} · ₦{ROUTES[0]!.fare})</li>
           <li><i className="lg-route" /> Danfo route</li>
           <li><i className="lg-nav" /> Your navigation route</li>
         </ul>

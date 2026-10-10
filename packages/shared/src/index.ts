@@ -93,6 +93,7 @@ export const networkPlayerSchema = z.object({
 
 export const busStateSchema = z.object({
   id: z.string(),
+  routeId: z.string(),
   x: z.number().finite(),
   z: z.number().finite(),
   yaw: z.number().finite(),

@@ -9,7 +9,8 @@ import {
   PLACES,
   registerFootprints,
   sampleRoute,
-  TRANSIT,
+  STOPS,
+  stopLabel,
   type Place,
   type Vec2,
 } from "@lagos-living/shared";
@@ -1170,7 +1171,8 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
   }
 
   // Bus stops: shelter, bench, flag sign and painted bay on the carriageway.
-  for (const stop of TRANSIT.stops.filter((candidate) => inTile(candidate.alight[0], candidate.alight[1]))) {
+  for (const stop of STOPS.filter((candidate) => inTile(candidate.alight[0], candidate.alight[1]))) {
+    const { route } = stop;
     const heading = (stop as unknown as { heading: number }).heading;
     const hx = Math.sin(heading);
     const hz = Math.cos(heading);
@@ -1191,20 +1193,20 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     base.get(sx, sz, "roof").box(sx, 2.65, sz, 4.1, 0.08, 1.7, yaw, 2, [0.24, 0.36, 0.6]);
     base.get(sx, sz, "glass").box(sx + rx * 0.62, 1.45, sz + rz * 0.62, 3.4, 1.7, 0.04, yaw);
     base.get(sx, sz, "wood").box(sx + rx * 0.3, 0.48, sz + rz * 0.3, 3.0, 0.07, 0.42, yaw);
-    const routeUv = atlas.get(`${TRANSIT.routeNumber} · ${TRANSIT.routeName}`, "bus", `Fare ₦${TRANSIT.fare} · ${stop.name.replace("Admiralty Way · ", "")}`);
+    const routeUv = atlas.get(`${route.routeNumber} · ${route.routeName}`, "bus", `Fare ₦${route.fare} · ${stopLabel(stop.name)}`);
     textQuad(base.get(sx, sz, "signs"), sx - rx * 0.86, 2.35, sz - rz * 0.86, yaw, 3.2, 3.2 / SignAtlas.aspect, routeUv);
     base.get(sx, sz, "paintYellow").box(sx - rx * 0.86 + rx * 0.02, 2.35, sz - rz * 0.86 + rz * 0.02, 3.3, 3.3 / SignAtlas.aspect + 0.08, 0.03, yaw);
     const flagX = stop.pole[0];
     const flagZ = stop.pole[1];
     base.get(flagX, flagZ, "pole").box(flagX, 1.5, flagZ, 0.07, 3.0, 0.07);
     addObstacle([flagX, flagZ], [flagX, flagZ], 0.08);
-    const flagUv = atlas.get("BUS STOP", "bus", stop.name.replace("Admiralty Way · ", ""));
+    const flagUv = atlas.get(`BUS STOP · ${route.routeNumber}`, "bus", stopLabel(stop.name));
     const flagYaw = heading + Math.PI;
     textQuad(base.get(flagX, flagZ, "signs"), flagX + rx * 0.45 + hx * 0.03, 2.75, flagZ + rz * 0.45 + hz * 0.03, heading, 0.9, 0.9 / SignAtlas.aspect * 1.6, flagUv);
     textQuad(base.get(flagX, flagZ, "signs"), flagX + rx * 0.45 - hx * 0.03, 2.75, flagZ + rz * 0.45 - hz * 0.03, flagYaw, 0.9, 0.9 / SignAtlas.aspect * 1.6, flagUv);
     const bay: Vec2[] = [];
     for (let s = stop.s - 9; s <= stop.s + 9; s += 1.5) {
-      const pose = sampleRoute(s);
+      const pose = sampleRoute(route, s);
       bay.push([pose.x, pose.z]);
     }
     for (const edge of [-1.2, 1.2]) base.get(sx, sz, "paintYellow").worldRibbon(bay, edge - 0.08, edge + 0.08, 0.047, 1);

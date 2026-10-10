@@ -1,4 +1,7 @@
-import { getPlace, TRANSIT, type Vec2 } from "@lagos-living/shared";
+import { getPlace, ROUTES, stopLabel, type Vec2 } from "@lagos-living/shared";
+
+/** The first session happens in Lekki, on the Admiralty Way loop. */
+const FIRST_ROUTE = ROUTES[0]!;
 import { naira, type EconomyState, type PropertyListing } from "../api";
 import type { HudState } from "../game/engine";
 import { buildingUnits } from "./Sheets";
@@ -33,12 +36,12 @@ export function currentObjective(economy: EconomyState | null, properties: Prope
     };
   }
   if (!done("first_ride")) {
-    const nearest = [...TRANSIT.stops].sort((a, b) => Math.hypot(a.alight[0] - hud.x, a.alight[1] - hud.z) - Math.hypot(b.alight[0] - hud.x, b.alight[1] - hud.z))[0]!;
+    const nearest = [...FIRST_ROUTE.stops].sort((a, b) => Math.hypot(a.alight[0] - hud.x, a.alight[1] - hud.z) - Math.hypot(b.alight[0] - hud.x, b.alight[1] - hud.z))[0]!;
     return {
       step: 1,
       total: TOTAL,
       title: "Catch a danfo on Admiralty Way",
-      detail: `Walk to the yellow stop "${nearest.name.replace("Admiralty Way · ", "")}". Board when it stops — fare ${naira(TRANSIT.fare)}.`,
+      detail: `Walk to the yellow stop "${stopLabel(nearest.name)}". Board when it stops — fare ${naira(FIRST_ROUTE.fare)}.`,
       target: { point: nearest.alight, label: "Bus stop" },
     };
   }

@@ -1,4 +1,4 @@
-import { defaultSettings, districtAt, propertyPlace, TRANSIT, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type SelfState, type Vec2 } from "@lagos-living/shared";
+import { defaultSettings, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type SelfState, type Vec2 } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PropertyListing } from "../api";
 import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
@@ -319,7 +319,7 @@ export function GameView({
       {hud && engine && engine.data && (
         <>
           <section className="hud-location" aria-live="polite" data-testid="current-location">
-            <p className="eyebrow">{hud.location === "bus" ? `ABOARD ${TRANSIT.routeNumber} DANFO` : hud.location === "interior" ? "INDOORS" : hud.vehicle ? "DRIVING ON" : "YOU ARE ON"}</p>
+            <p className="eyebrow">{hud.location === "bus" ? `ABOARD ${hud.bus?.routeNumber ?? ""} DANFO` : hud.location === "interior" ? "INDOORS" : hud.vehicle ? "DRIVING ON" : "YOU ARE ON"}</p>
             <h2 className={hud.streetNamed || hud.location !== "street" ? "" : "unnamed"}>{hud.street}</h2>
             <p>{hud.district}</p>
           </section>
@@ -367,7 +367,7 @@ export function GameView({
 
           {hud.bus && (
             <section className="bus-panel" data-testid="bus-panel">
-              <p className="eyebrow">{TRANSIT.routeNumber} · {TRANSIT.routeName}</p>
+              <p className="eyebrow">{hud.bus.routeNumber} · {hud.bus.routeName}</p>
               <p>Seat <strong>{hud.bus.seat !== null ? hud.bus.seat + 1 : "—"}</strong> of {hud.bus.capacity} · fare paid</p>
               <p>{hud.bus.atStop ? <>Stopped: <strong>{hud.bus.atStop}</strong></> : <>Next stop: <strong>{hud.bus.nextStop}</strong></>}</p>
               <div className="row">

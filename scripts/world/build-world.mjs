@@ -304,57 +304,108 @@ function offsetRight(points, distance) {
     return [round2(point[0] + (dz / length) * distance), round2(point[1] - (dx / length) * distance)];
   });
 }
-// The loop turns at the Victoria Arobieke junction (x≈371) and the Adebayo
-// Doherty junction; these turnarounds are a documented gameplay simplification.
-const withinLoop = ([x]) => x <= 372 && x >= -545;
-const eastbound = offsetRight(chain([294599766, 294599773, 294599770]).filter(withinLoop), 1.9);
-const westbound = offsetRight(chain([294599763, 294599771, 294599755]).filter(withinLoop), 1.9);
-const loop = [...eastbound, ...westbound];
-const cumulative = [0];
-for (let index = 1; index <= loop.length; index += 1) {
-  const a = loop[index - 1];
-  const b = loop[index % loop.length];
-  cumulative.push(cumulative[index - 1] + Math.hypot(b[0] - a[0], b[1] - a[1]));
-}
-function nearestOnLoop([x, z]) {
-  let best = { distance: Infinity, s: 0, point: loop[0], right: [0, 0] };
-  for (let index = 0; index < loop.length; index += 1) {
-    const a = loop[index];
-    const b = loop[(index + 1) % loop.length];
-    const dx = b[0] - a[0];
-    const dz = b[1] - a[1];
-    const lengthSquared = dx * dx + dz * dz || 1;
-    const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / lengthSquared));
-    const point = [a[0] + dx * t, a[1] + dz * t];
-    const distance = Math.hypot(point[0] - x, point[1] - z);
-    if (distance < best.distance) {
-      const length = Math.sqrt(lengthSquared);
-      best = { distance, s: cumulative[index] + t * length, point, right: [dz / length, -dx / length] };
-    }
+/**
+ * A danfo loop: the kerb lane of one mapped carriageway out and the opposite
+ * carriageway back. Turnarounds at either end are a documented gameplay
+ * simplification. A stop's `leg` limits it to its own carriageway.
+ */
+function buildRoute({ routeId, routeName, routeNumber, fare, outbound, inbound, within = () => true, stops: stopSeeds }) {
+  const out = offsetRight(chain(outbound).filter(within), 1.9);
+  const back = offsetRight(chain(inbound).filter(within), 1.9);
+  const loop = [...out, ...back];
+  const cumulative = [0];
+  for (let index = 1; index <= loop.length; index += 1) {
+    const a = loop[index - 1];
+    const b = loop[index % loop.length];
+    cumulative.push(cumulative[index - 1] + Math.hypot(b[0] - a[0], b[1] - a[1]));
   }
-  return best;
+  function nearestOnLoop([x, z], leg) {
+    const [from, to] = leg === "out" ? [0, out.length - 1] : leg === "in" ? [out.length, loop.length - 1] : [0, loop.length];
+    let best = { distance: Infinity, s: 0, point: loop[0], right: [0, 0] };
+    for (let index = from; index < to; index += 1) {
+      const a = loop[index];
+      const b = loop[(index + 1) % loop.length];
+      const dx = b[0] - a[0];
+      const dz = b[1] - a[1];
+      const lengthSquared = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / lengthSquared));
+      const point = [a[0] + dx * t, a[1] + dz * t];
+      const distance = Math.hypot(point[0] - x, point[1] - z);
+      if (distance < best.distance) {
+        const length = Math.sqrt(lengthSquared);
+        best = { distance, s: cumulative[index] + t * length, point, right: [dz / length, -dx / length] };
+      }
+    }
+    return best;
+  }
+  const stops = stopSeeds
+    .map((seed) => {
+      const nearest = nearestOnLoop(seed.near, seed.leg);
+      const pole = [nearest.point[0] + nearest.right[0] * 3.1, nearest.point[1] + nearest.right[1] * 3.1];
+      return {
+        id: seed.id,
+        name: seed.name,
+        s: Math.round(nearest.s * 10) / 10,
+        pole: pole.map(round2),
+        alight: [round2(pole[0] + nearest.right[0] * 1.2), round2(pole[1] + nearest.right[1] * 1.2)],
+        heading: Math.round(Math.atan2(-nearest.right[1], nearest.right[0]) * 1000) / 1000,
+      };
+    })
+    .sort((a, b) => a.s - b.s);
+  return { routeId, routeName, routeNumber, fare, length: Math.round(cumulative.at(-1) * 10) / 10, points: loop, stops };
 }
-const stopSeeds = [
-  { id: "kayode-eb", name: "Admiralty Way · Kayode Animashaun (Eastbound)", near: [24, 418] },
-  { id: "victoria-arobieke-wb", name: "Admiralty Way · Victoria Arobieke (Westbound)", near: [340, 432] },
-  { id: "kayode-wb", name: "Admiralty Way · Kayode Animashaun (Westbound)", near: [40, 431] },
-  { id: "adebayo-wb", name: "Admiralty Way · Adebayo Doherty (Westbound)", near: [-492, 364] },
-  { id: "adebayo-eb", name: "Admiralty Way · Adebayo Doherty (Eastbound)", near: [-470, 353] },
+
+const routes = [
+  buildRoute({
+    routeId: "admiralty-loop",
+    routeName: "Admiralty Way Loop",
+    routeNumber: "L1",
+    fare: 300,
+    outbound: [294599766, 294599773, 294599770],
+    inbound: [294599763, 294599771, 294599755],
+    // Turns at the Victoria Arobieke junction (x≈371) and the Adebayo Doherty junction.
+    within: ([x]) => x <= 372 && x >= -545,
+    stops: [
+      { id: "kayode-eb", name: "Admiralty Way · Kayode Animashaun (Eastbound)", near: [24, 418] },
+      { id: "victoria-arobieke-wb", name: "Admiralty Way · Victoria Arobieke (Westbound)", near: [340, 432] },
+      { id: "kayode-wb", name: "Admiralty Way · Kayode Animashaun (Westbound)", near: [40, 431] },
+      { id: "adebayo-wb", name: "Admiralty Way · Adebayo Doherty (Westbound)", near: [-492, 364] },
+      { id: "adebayo-eb", name: "Admiralty Way · Adebayo Doherty (Eastbound)", near: [-470, 353] },
+    ],
+  }),
+  // Turns at Falomo Roundabout (by Awolowo Road) and at Alexander Avenue by the Link Bridge landing.
+  buildRoute({
+    routeId: "bourdillon-loop",
+    routeName: "Bourdillon Road Loop",
+    routeNumber: "I1",
+    fare: 300,
+    outbound: [1059928727, 1059928726, 106497223],
+    inbound: [294599764, 505413821, 1059928729, 1059928728],
+    stops: [
+      { id: "falomo-eb", name: "Bourdillon Road · Falomo Roundabout (Eastbound)", near: [-4520, 10], leg: "out" },
+      { id: "lateef-jakande-eb", name: "Bourdillon Road · Lateef Jakande Avenue (Eastbound)", near: [-3330, 280], leg: "out" },
+      { id: "alexander-wb", name: "Bourdillon Road · Alexander Avenue (Westbound)", near: [-2190, 115], leg: "in" },
+      { id: "lateef-jakande-wb", name: "Bourdillon Road · Lateef Jakande Avenue (Westbound)", near: [-3380, 300], leg: "in" },
+      { id: "falomo-wb", name: "Bourdillon Road · Falomo Roundabout (Westbound)", near: [-4510, 30], leg: "in" },
+    ],
+  }),
+  // Turns at Akin Adesola Street and at Ahmadu Bello Way.
+  buildRoute({
+    routeId: "adeola-odeku-loop",
+    routeName: "Adeola Odeku Loop",
+    routeNumber: "V1",
+    fare: 300,
+    outbound: [5150268],
+    inbound: [134684101],
+    stops: [
+      { id: "akin-adesola-wb", name: "Adeola Odeku Street · Akin Adesola (Westbound)", near: [-5040, -1628], leg: "out" },
+      { id: "idowu-martins-wb", name: "Adeola Odeku Street · Idowu Martins (Westbound)", near: [-5520, -1532], leg: "out" },
+      { id: "ahmadu-bello-eb", name: "Adeola Odeku Street · Ahmadu Bello Way (Eastbound)", near: [-6600, -1560], leg: "in" },
+      { id: "idowu-martins-eb", name: "Adeola Odeku Street · Idowu Martins (Eastbound)", near: [-5500, -1545], leg: "in" },
+      { id: "akin-adesola-eb", name: "Adeola Odeku Street · Akin Adesola (Eastbound)", near: [-5060, -1642], leg: "in" },
+    ],
+  }),
 ];
-const stops = stopSeeds
-  .map((seed) => {
-    const nearest = nearestOnLoop(seed.near);
-    const pole = [nearest.point[0] + nearest.right[0] * 3.1, nearest.point[1] + nearest.right[1] * 3.1];
-    return {
-      id: seed.id,
-      name: seed.name,
-      s: Math.round(nearest.s * 10) / 10,
-      pole: pole.map(round2),
-      alight: [round2(pole[0] + nearest.right[0] * 1.2), round2(pole[1] + nearest.right[1] * 1.2)],
-      heading: Math.round(Math.atan2(-nearest.right[1], nearest.right[0]) * 1000) / 1000,
-    };
-  })
-  .sort((a, b) => a.s - b.s);
 
 // ---- Named gameplay places on mapped footprints (fictional businesses and venues). ----
 const buildingById = new Map(buildings.map((building) => [building.id, building]));
@@ -471,16 +522,6 @@ const places = placeSeeds.map((seed) => {
   };
 });
 
-const transit = {
-  routeId: "admiralty-loop",
-  routeName: "Admiralty Way Loop",
-  routeNumber: "L1",
-  fare: 300,
-  length: Math.round(cumulative.at(-1) * 10) / 10,
-  points: loop,
-  stops,
-};
-
 const districts = DISTRICTS.map(({ id, name, lga, rect }) => ({ id, name, lga, rect }));
 const world = {
   name: "Lagos Living: Lekki Phase 1, Ikoyi and Victoria Island",
@@ -505,10 +546,10 @@ await mkdir(path.dirname(sharedTarget), { recursive: true });
 /** Walkable bridge strips: half-width stops just inside the parapet the client draws at `width / 2 + DECK_PAD`. */
 const DECK_PAD = 1;
 const decks = roads.filter((road) => road.bridge).map((road) => ({ id: road.id, half: Math.round((road.width / 2 + DECK_PAD - 0.35) * 100) / 100, points: road.points }));
-await writeFile(sharedTarget, JSON.stringify({ bounds: BOUNDS, districts, tileSize: TILE, blocked: waterGrid(blocked), decks, transit, places }));
+await writeFile(sharedTarget, JSON.stringify({ bounds: BOUNDS, districts, tileSize: TILE, blocked: waterGrid(blocked), decks, routes, places }));
 
 const files = await readdir(tileDir);
-console.log(`route ${transit.length} m, stops ${stops.map((stop) => `${stop.id}@${stop.s}`).join(", ")}`);
+for (const route of routes) console.log(`route ${route.routeNumber} ${route.length} m, stops ${route.stops.map((stop) => `${stop.id}@${stop.s}`).join(", ")}`);
 console.log(places.map((place) => `${place.id} (${place.district}) door ${place.door} kerb ${place.kerb}`).join("\n"));
 console.log(
   `roads ${roads.length} (named ${roads.filter((road) => road.name).length}, bridges ${roads.filter((road) => road.bridge).length}), ` +

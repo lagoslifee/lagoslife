@@ -65,7 +65,7 @@ export function tileKeyAt(x: number, z: number) {
   return `${Math.floor(x / TILE_SIZE)}_${Math.floor(z / TILE_SIZE)}`;
 }
 
-export const TRANSIT = lagos.transit as unknown as {
+export type TransitRoute = {
   routeId: string;
   routeName: string;
   routeNumber: string;
@@ -74,6 +74,30 @@ export const TRANSIT = lagos.transit as unknown as {
   points: Vec2[];
   stops: TransitStop[];
 };
+/** Danfo loops; the first is the Lekki route new residents start beside. */
+export const ROUTES = lagos.routes as unknown as TransitRoute[];
+export const routeById = new Map(ROUTES.map((route) => [route.routeId, route]));
+/** Every stop with the route that serves it; stop ids are unique across routes. */
+export const STOPS = ROUTES.flatMap((route) => route.stops.map((stop) => ({ ...stop, route })));
+export const stopById = new Map(STOPS.map((stop) => [stop.id, stop]));
+
+export function getRoute(id: string) {
+  const route = routeById.get(id);
+  if (!route) throw new Error(`Unknown route ${id}`);
+  return route;
+}
+
+export function nearestStop(x: number, z: number) {
+  return STOPS.reduce((best, stop) =>
+    Math.hypot(stop.alight[0] - x, stop.alight[1] - z) < Math.hypot(best.alight[0] - x, best.alight[1] - z) ? stop : best,
+  );
+}
+
+/** Short stop label without the street prefix, e.g. "Kayode Animashaun (Eastbound)". */
+export function stopLabel(name: string) {
+  return name.slice(name.indexOf(" · ") + 3);
+}
+
 export const PLACES = lagos.places as unknown as Place[];
 export const placeById = new Map(PLACES.map((place) => [place.id, place]));
 
@@ -96,27 +120,39 @@ export const MOVEMENT = {
 
 export const INTERACTION_RANGE = 3.2;
 
-const routeCumulative: number[] = [0];
-for (let index = 1; index <= TRANSIT.points.length; index += 1) {
-  const a = TRANSIT.points[index - 1]!;
-  const b = TRANSIT.points[index % TRANSIT.points.length]!;
-  routeCumulative.push(routeCumulative[index - 1]! + Math.hypot(b[0] - a[0], b[1] - a[1]));
+const cumulativeByRoute = new Map(
+  ROUTES.map((route) => {
+    const cumulative = [0];
+    for (let index = 1; index <= route.points.length; index += 1) {
+      const a = route.points[index - 1]!;
+      const b = route.points[index % route.points.length]!;
+      cumulative.push(cumulative[index - 1]! + Math.hypot(b[0] - a[0], b[1] - a[1]));
+    }
+    return [route, cumulative];
+  }),
+);
+
+function cumulativeOf(route: TransitRoute) {
+  const cumulative = cumulativeByRoute.get(route);
+  if (!cumulative) throw new Error(`Unknown route ${route.routeId}`);
+  return cumulative;
 }
 
-export function routeLength() {
-  return routeCumulative.at(-1)!;
+export function routeLength(route: TransitRoute) {
+  return cumulativeOf(route).at(-1)!;
 }
 
-/** Position and heading on the danfo loop at distance s (wraps). */
-export function sampleRoute(s: number) {
-  const length = routeLength();
+/** Position and heading on a danfo loop at distance s (wraps). */
+export function sampleRoute(route: TransitRoute, s: number) {
+  const cumulative = cumulativeOf(route);
+  const length = cumulative.at(-1)!;
   const wrapped = ((s % length) + length) % length;
   let index = 0;
-  while (index < TRANSIT.points.length - 1 && routeCumulative[index + 1]! < wrapped) index += 1;
-  const a = TRANSIT.points[index]!;
-  const b = TRANSIT.points[(index + 1) % TRANSIT.points.length]!;
-  const segment = routeCumulative[index + 1]! - routeCumulative[index]!;
-  const t = segment > 0 ? (wrapped - routeCumulative[index]!) / segment : 0;
+  while (index < route.points.length - 1 && cumulative[index + 1]! < wrapped) index += 1;
+  const a = route.points[index]!;
+  const b = route.points[(index + 1) % route.points.length]!;
+  const segment = cumulative[index + 1]! - cumulative[index]!;
+  const t = segment > 0 ? (wrapped - cumulative[index]!) / segment : 0;
   return {
     x: a[0] + (b[0] - a[0]) * t,
     z: a[1] + (b[1] - a[1]) * t,
@@ -124,8 +160,8 @@ export function sampleRoute(s: number) {
   };
 }
 
-export function routeDistanceAhead(from: number, to: number) {
-  const length = routeLength();
+export function routeDistanceAhead(route: TransitRoute, from: number, to: number) {
+  const length = routeLength(route);
   return (((to - from) % length) + length) % length;
 }
 
@@ -252,7 +288,7 @@ export function resolveBuildingCollision(x: number, z: number, radius = MOVEMENT
 
 export const SAFE_POINTS: Array<{ id: string; label: string; point: Vec2 }> = [
   { id: "starter-home", label: "Kayode Court Hostel", point: getPlace("starter-home").door },
-  ...TRANSIT.stops.map((stop) => ({ id: `stop:${stop.id}`, label: stop.name, point: stop.alight })),
+  ...STOPS.map((stop) => ({ id: `stop:${stop.id}`, label: stop.name, point: stop.alight })),
   { id: "swift-parcel-hub", label: "Swift Parcel Hub", point: getPlace("swift-parcel-hub").door },
   ...PLACES.filter((place) => place.district === "ikoyi" || place.district === "victoria-island").map((place) => ({
     id: place.id,

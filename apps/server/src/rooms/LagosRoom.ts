@@ -29,8 +29,9 @@ import {
   propertyPlace,
   routeDistanceAhead,
   routeLength,
+  ROUTES,
   sampleRoute,
-  TRANSIT,
+  type TransitRoute,
   type BusState,
   type MotionState,
   type Notice,
@@ -84,6 +85,8 @@ const BUS_DWELL_EXTENDED_MS = 16_000;
 const BOARD_RANGE = 5.5;
 export const REBOARD_COOLDOWN_MS = 6_000;
 const INTEREST_RADIUS = 180;
+/** Danfos are sent within this range; the client hides them beyond 700 m. */
+export const BUS_INTEREST_RADIUS = 900;
 /** One room holds the whole city; past this Colyseus opens another room, which players in the first cannot see. */
 export const ROOM_CAPACITY = 100;
 /** Snapshots carry at most this many players (the nearest), so a crowd cannot blow up per-client bandwidth. */
@@ -140,6 +143,7 @@ const IMPACT_COOLDOWN_MS = 800;
 
 type Bus = {
   id: string;
+  route: TransitRoute;
   s: number;
   speed: number;
   state: BusState["state"];
@@ -152,11 +156,11 @@ type Bus = {
   lastMovedAt: number;
 };
 
-function nextStopIndex(s: number) {
+function nextStopIndex(route: TransitRoute, s: number) {
   let bestIndex = 0;
   let bestAhead = Infinity;
-  TRANSIT.stops.forEach((stop: { s: number }, index: number) => {
-    const ahead = routeDistanceAhead(s, stop.s);
+  route.stops.forEach((stop, index) => {
+    const ahead = routeDistanceAhead(route, s, stop.s);
     if (ahead > 0.5 && ahead < bestAhead) {
       bestAhead = ahead;
       bestIndex = index;
@@ -170,6 +174,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   state = new LagosState();
   private players = new Map<string, Player>();
   private buses: Bus[] = [];
+  /** Latest join attempt per user; an older join that finishes later must not replace a newer session. */
+  private joinTickets = new Map<string, number>();
+  private joinCounter = 0;
   private vehicles = new Map<string, RoomVehicle>();
   private onVehicleChanged = (vehicleId: string) => void this.refreshVehicle(vehicleId);
   private onVehicleOwnerReset = (userId: string) => this.dropOwnerVehicles(userId);
@@ -193,17 +200,20 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     } catch (error) {
       console.error("Could not load street vehicles", error);
     }
-    const length = routeLength();
-    this.buses = [0, 1, 2].map((index) => {
-      const s = (length / 3) * index + 20;
+    this.buses = ROUTES.flatMap((route) => {
+      const length = routeLength(route);
+      const count = Math.max(3, Math.round(length / 1_400));
+      return Array.from({ length: count }, (_, index) => ({ route, s: (length / count) * index + 20 }));
+    }).map(({ route, s }, index) => {
       return {
         id: `danfo-${index + 1}`,
+        route,
         s,
         speed: 0,
         state: "driving",
         dwellUntil: 0,
         dwellStartedAt: 0,
-        stopIndex: nextStopIndex(s),
+        stopIndex: nextStopIndex(route, s),
         currentStopId: null,
         stopRequested: false,
         seats: Array.from({ length: BUS_CAPACITY }, () => null),
@@ -238,6 +248,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   }
 
   async onJoin(client: LagosClient) {
+    const ticket = ++this.joinCounter;
+    this.joinTickets.set(client.auth.userId, ticket);
     const [suspension, mute, hidden, appearance] = await Promise.all([
       activeSuspension(client.auth.userId).catch(() => null),
       activeMute(client.auth.userId).catch(() => null),
@@ -248,6 +260,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     clearProgressReset(client.auth.userId);
     const home = getPlace("starter-home");
     const saved = await loadPlayerPlace(client.auth.userId).catch(() => null);
+    if (this.joinTickets.get(client.auth.userId) !== ticket) throw new Error("This account joined again from another window.");
     let spawn: [number, number] = [...home.door];
     if (saved && walkable(saved.x, saved.z)) {
       spawn = [saved.x, saved.z];
@@ -294,6 +307,12 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     };
     for (const [sessionId, existing] of this.players) {
       if (existing.userId === player.userId) {
+        existing.kicked = true;
+        const previous = this.clientFor(existing);
+        if (previous) {
+          previous.send("replaced", {});
+          previous.leave(4004);
+        }
         this.releaseSeat(existing, "interrupted");
         await this.parkPlayerVehicle(existing).catch(() => undefined);
         this.players.delete(sessionId);
@@ -340,9 +359,10 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       player.lastAcceptedAt = Date.now();
       this.sendSelf(client, player, player.busId ? "Reconnected — you are still aboard." : "Reconnected.");
     } catch {
+      if (this.players.get(client.sessionId) !== player) return;
       if (player.busId) {
         const bus = this.buses.find(({ id }) => id === player.busId);
-        const stop = bus ? TRANSIT.stops[bus.stopIndex]! : TRANSIT.stops[0]!;
+        const stop = bus ? bus.route.stops[bus.stopIndex]! : ROUTES[0]!.stops[0]!;
         player.x = stop.alight[0];
         player.z = stop.alight[1];
         this.releaseSeat(player, "interrupted", stop.id);
@@ -463,7 +483,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   }
 
   private busDoor(bus: Bus) {
-    const pose = sampleRoute(bus.s);
+    const pose = sampleRoute(bus.route, bus.s);
     const rightX = Math.cos(pose.yaw);
     const rightZ = -Math.sin(pose.yaw);
     return { x: pose.x + rightX * 1.4, z: pose.z + rightZ * 1.4, pose, rightX, rightZ };
@@ -497,32 +517,33 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     player.boarding = true;
     bus.dwellUntil = Math.max(bus.dwellUntil, Date.now() + 2_500);
     const journeyId = randomUUID();
+    const route = bus.route;
     try {
       const fare = await chargeFare({
         userId: player.userId,
         journeyId,
-        routeId: TRANSIT.routeId,
+        routeId: route.routeId,
         busId: bus.id,
         stopId: bus.currentStopId,
-        fare: TRANSIT.fare,
+        fare: route.fare,
       });
       player.busId = bus.id;
       player.seat = seat;
       player.journeyId = journeyId;
       player.motion = "sit";
-      player.returnPoint = [...TRANSIT.stops[bus.stopIndex]!.alight];
+      player.returnPoint = [...route.stops[bus.stopIndex]!.alight];
       setPlayerPosition(player.userId, player.x, player.z, `bus:${bus.id}`);
       this.notify(client, {
         tone: "success",
-        text: `Fare paid · ₦${TRANSIT.fare}. Seat ${seat + 1}. Balance ₦${fare.balance.toLocaleString("en-NG")}.`,
-        announcement: `Welcome aboard the ${TRANSIT.routeName}. Next stop, ${TRANSIT.stops[bus.stopIndex]!.name}.`,
+        text: `Fare paid · ₦${route.fare}. Seat ${seat + 1}. Balance ₦${fare.balance.toLocaleString("en-NG")}.`,
+        announcement: `Welcome aboard the ${route.routeNumber} ${route.routeName}. Next stop, ${route.stops[bus.stopIndex]!.name}.`,
       });
       this.sendSelf(client, player, "boarded");
     } catch (error) {
       bus.seats[seat] = null;
       this.notify(client, {
         tone: "error",
-        text: error instanceof EconomyError ? `${error.message}. The fare is ₦${TRANSIT.fare}.` : "Fare payment failed. You were not charged.",
+        text: error instanceof EconomyError ? `${error.message}. The fare is ₦${route.fare}.` : "Fare payment failed. You were not charged.",
       });
     } finally {
       player.boarding = false;
@@ -541,7 +562,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   }
 
   private alightPlayer(player: Player, bus: Bus) {
-    const stop = TRANSIT.stops.find(({ id }) => id === bus.currentStopId)!;
+    const stop = bus.route.stops.find(({ id }) => id === bus.currentStopId)!;
     player.x = stop.alight[0];
     player.z = stop.alight[1];
     player.returnPoint = [...stop.alight];
@@ -576,7 +597,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (!bus) return;
     bus.stopRequested = true;
     player.alightAtNext = true;
-    const stop = TRANSIT.stops[bus.stopIndex]!;
+    const stop = bus.route.stops[bus.stopIndex]!;
     this.notify(client, {
       tone: "info",
       text: `Stop requested: ${stop.name}.`,
@@ -943,9 +964,10 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const seconds = dt / 1_000;
     const now = Date.now();
     this.state.tick = (this.state.tick + 1) >>> 0;
-    const length = routeLength();
     for (const bus of this.buses) {
-      const stop = TRANSIT.stops[bus.stopIndex]!;
+      const { route } = bus;
+      const length = routeLength(route);
+      const stop = route.stops[bus.stopIndex]!;
       if (bus.state === "dwelling") {
         const someoneWaiting = [...this.players.values()].some(
           (player) =>
@@ -959,18 +981,18 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         if (now >= bus.dwellUntil) {
           bus.state = "driving";
           bus.currentStopId = null;
-          bus.stopIndex = (bus.stopIndex + 1) % TRANSIT.stops.length;
+          bus.stopIndex = (bus.stopIndex + 1) % route.stops.length;
           bus.lastMovedAt = now;
         }
         continue;
       }
-      const toStop = routeDistanceAhead(bus.s, stop.s);
+      const toStop = routeDistanceAhead(route, bus.s, stop.s);
       const ahead = this.buses
-        .filter((other) => other !== bus)
-        .map((other) => routeDistanceAhead(bus.s, other.s))
+        .filter((other) => other !== bus && other.route === route)
+        .map((other) => routeDistanceAhead(route, bus.s, other.s))
         .filter((distance) => distance > 0)
         .reduce((min, distance) => Math.min(min, distance), Infinity);
-      const pose = sampleRoute(bus.s);
+      const pose = sampleRoute(route, bus.s);
       const blocked = [...this.players.values()].some((player) => {
         if (player.location !== "street" || player.busId) return false;
         const dx = player.x - pose.x;
@@ -1026,11 +1048,11 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       if (!player.busId) continue;
       const bus = this.buses.find(({ id }) => id === player.busId);
       if (!bus) continue;
-      const pose = sampleRoute(bus.s);
+      const pose = sampleRoute(bus.route, bus.s);
       player.x = pose.x;
       player.z = pose.z;
       player.yaw = pose.yaw;
-      player.returnPoint = [...TRANSIT.stops[bus.stopIndex]!.alight];
+      player.returnPoint = [...bus.route.stops[bus.stopIndex]!.alight];
       setPlayerPosition(player.userId, player.x, player.z, `bus:${bus.id}`);
     }
 
@@ -1039,9 +1061,10 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
 
   private busStates(): BusState[] {
     return this.buses.map((bus) => {
-      const pose = sampleRoute(bus.s);
+      const pose = sampleRoute(bus.route, bus.s);
       return {
         id: bus.id,
+        routeId: bus.route.routeId,
         x: pose.x,
         z: pose.z,
         yaw: pose.yaw,
@@ -1050,7 +1073,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         state: bus.state,
         doorOpen: bus.state === "dwelling",
         stopId: bus.currentStopId,
-        nextStopId: TRANSIT.stops[bus.stopIndex]!.id,
+        nextStopId: bus.route.stops[bus.stopIndex]!.id,
         stopRequested: bus.stopRequested,
         occupied: bus.seats.filter(Boolean).length,
         capacity: BUS_CAPACITY,
@@ -1092,7 +1115,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         tick: this.state.tick,
         serverTime: Date.now(),
         players,
-        buses,
+        buses: buses.filter((bus) => bus.id === viewer.busId || Math.hypot(bus.x - viewer.x, bus.z - viewer.z) <= BUS_INTEREST_RADIUS),
         vehicles: this.worldVehicles(viewer),
         online,
       };
