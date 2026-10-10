@@ -29,7 +29,8 @@ owns validated wire contracts.
   and purchase, phone UI, accessibility settings, save receipts, unstuck and
   test reset. See [test results](TEST_RESULTS.md).
 - [x] Milestone 6 — vehicle ownership, garage, driving, service, and insurance.
-- [ ] Milestone 7 — streamed Ikoyi, Victoria Island, and Lekki Phase 1.
+- [x] Milestone 7 — streamed Ikoyi, Victoria Island, and Lekki Phase 1, joined
+  by the Link Bridge and Falomo Bridge, with community venues.
 - [ ] Milestone 8 — community systems, administration, fictional justice,
   optimisation, load testing, and deployment configuration.
 
@@ -70,6 +71,26 @@ rental access, non-owner denial, explicit guest access, owner-only furniture
 placement, idempotent placement, and persisted sleep/cook/clean state. Browser
 automation acquires the Glover Court flat, places furniture, cleans the home,
 reloads, re-enters, and observes the saved interior.
+
+### Milestone 7 verification note
+
+The world is now four district rectangles (Lekki Phase 1, the Link Bridge,
+Ikoyi and Victoria Island). It holds 1615 OSM roads, 4950 footprints and the
+lagoon, creek and channel water, streamed in 320 m tiles (see
+[world data](WORLD_DATA.md)). The server registers every footprint and checks
+each position update against open water, exact bridge decks and district
+edges. Shared and room tests cover the bridge deck and corrections onto the
+lagoon. Community venues (a library, a park, a church and a mosque with
+identical, optional effects on one shared cooldown, plus a community hall
+with one paid volunteer shift per Lagos day) have PostgreSQL integration tests
+for location checks, neutrality, cooldowns, concurrency and idempotency.
+Browser automation (`apps/web/e2e/districts.spec.ts`) drives from Lekki over
+the Link Bridge into Ikoyi while tiles load and unload, and resumes there after
+a reload. A second run walks from Ikoyi over Falomo Bridge into Victoria Island
+and uses every kind of venue. Starting positions in far districts use a dev-only
+`spawn-at` route. Victoria Island and Ikoyi have no danfo route yet, and
+streaming hitches were only measured on the software renderer (about 100 ms per
+tile).
 
 ### Milestone 6 verification note
 

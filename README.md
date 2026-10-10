@@ -1,7 +1,8 @@
 # Lagos Living
 
 A browser-based multiplayer virtual-life game set in a 1:1 reconstruction of
-Lekki Phase 1, Lagos, built from OpenStreetMap data. It uses fictional game
+Lekki Phase 1, Ikoyi and Victoria Island (Eti-Osa, Lagos), joined by the
+Lekki-Ikoyi Link Bridge and built from OpenStreetMap data. It uses fictional game
 naira only, with no real money.
 
 ## Quick start
@@ -45,6 +46,17 @@ reverse, A/D steer, Space is the handbrake and Q sounds the horn. Slow below
 about 7 km/h and press E to step out; the car is parked where you leave it.
 Phone → Vehicles finds, insures, tows and garages your cars, and Ade Auto Works
 services and repairs them.
+
+**Across the city.** Drive (or walk) west from Admiralty Way over the
+Lekki-Ikoyi Link Bridge into Ikoyi, and on over Falomo Bridge to Victoria
+Island. The world streams in 320 m tiles as you move, the HUD shows which
+district you are in, and the full map (M) has buttons that jump to each district.
+
+**Community.** Ikoyi Reading Room, Muri Okunola Park, Grace Assembly and
+Al-Noor Mosque are quiet places. Spending time at any of them gives the same
++8 energy, on one shared 30-minute cooldown. Visiting is optional and no venue
+gives more than another. Island Community Hall offers one volunteer shift per
+Lagos day for ₦1,500. Phone → Community lists them all with directions.
 
 Keys can be rebound under Phone → Settings, alongside mouse sensitivity,
 invert Y, subtitles, volumes, text size and graphics quality. Touch devices get

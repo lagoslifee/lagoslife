@@ -25,12 +25,14 @@ rasteriser.
 
 | Suite | Result |
 |---|---|
-| `npm test -w @lagos-living/server` (PostgreSQL integration and room unit tests) | 44 / 44 passed (source tests only; compiled copies in `dist/` are excluded) |
-| `npm test -w @lagos-living/shared` | 6 / 6 passed |
+| `npm test -w @lagos-living/server` (PostgreSQL integration and room unit tests) | 57 / 57 passed (source tests only; compiled copies in `dist/` are excluded) |
+| `npm test -w @lagos-living/shared` | 10 / 10 passed |
 | `apps/web` `controller.test.ts` and `car-controller.test.ts` | 13 / 13 passed |
+| Playwright `e2e/districts.spec.ts` | 2 / 2 passed (Link Bridge drive 7.0 min; venues 5.6 min). Both were re-run individually after parapets were restricted to over-water spans. One earlier drive run failed when a 300 s leg deadline expired with the car still moving on the deck at 6 fps; each leg now has 540 s. |
 | Playwright `e2e/vehicles.spec.ts` | 1 / 1 passed (3.8 min, run twice) |
 | Playwright `e2e/playable-loop.spec.ts` | 2 / 2 passed (8.4 min) |
 | Playwright `e2e/accounts.spec.ts` | 5 / 5 passed |
+| Full Playwright suite in one run (accounts, districts, playable loop, vehicles) | 10 / 10 passed (26 min) |
 | `npm run build -w @lagos-living/web` and typechecks | passed |
 
 ### Playable loop (browser, real servers, LocalTester after a progress reset)
@@ -53,6 +55,32 @@ rasteriser.
 4. Phone → Vehicles → Insure 7 days charged ₦3,600 and showed the cover date.
 5. The mechanic quoted ₦2,500 service plus the ₦2,000 insured excess for the car's knocks (60% condition) and restored it to 100%.
 6. Reloaded: the car was within 0.5 m of where it was left, and no page errors were raised.
+
+### Districts and streaming (browser, real servers, LocalTester after a progress reset)
+
+1. Spawned in Lekki Phase 1 (HUD "Lekki Phase 1 · Eti-Osa"), bought an Eko Hatch and drove it with the test autopilot onto the Lekki-Ikoyi Link Bridge. The HUD read "Lekki-Ikoyi Link Bridge · Eti-Osa" midway over the lagoon, with parapets along both outer edges.
+2. Drove on to Ruxton Street in Ikoyi ("Ikoyi · Eti-Osa"). The tile around the car (`-8_2`) had streamed in, and none of the tiles loaded at the Lekki spawn were still resident. Recorded: 16 tiles resident, 2,248 ms of cumulative tile building over the whole drive, 9 fps.
+3. Parked, reloaded, and resumed in Ikoyi within 6 m of the car.
+4. Venues: started at Ikoyi Reading Room (via the dev-only `spawn-at` route). "Read for a while" gave +8 energy. Grace Assembly then offered the same quiet time, but on the shared cooldown energy was unchanged.
+5. Walked from Grace Assembly over Falomo Bridge into Victoria Island ("Victoria Island · Eti-Osa"), arrived at Al-Noor Mosque, and saw the same shared cooldown.
+6. Island Community Hall: volunteered once for +₦1,500. After a reload, Phone → Community showed "You volunteered today" and listed all five venues; the balance was unchanged. The full map jumped to Victoria Island.
+7. No page errors in either journey.
+
+Tile builds on this software renderer cost about 100 ms each (16 tiles in 1.7 s at the Lekki spawn), down from 9.3 s after base geometry was merged to one mesh per material per tile and near detail was built lazily. The streaming budget builds at most one tile a frame once play starts, so a hitch of about that size is possible when a new tile arrives.
+
+### Water and bridges
+
+- Shared tests: the lagoon 80 m either side of the Link Bridge is blocked; a north-south cut across the bridge is one continuous walkable band of 18–28 m (both carriageways and footways) with no gap between them.
+- Room tests: a resident jogging along the deck is accepted, and a step past the parapet onto the lagoon is corrected.
+- Browser: walking straight at either parapet stops at the deck edge (measured deck at x = -1689: z 659.0 to 681.0).
+
+### Community (`community-service.test.ts`, PostgreSQL)
+
+- Visits only count at the venue; non-community places and the hall are refused for quiet visits.
+- The library, a church, a mosque and a park each give exactly +8 from the same starting energy.
+- One cooldown is shared by all quiet places; visits during it are allowed and give nothing; after 30 minutes it gives again; three simultaneous visits give energy once; energy never exceeds 100.
+- Volunteering must happen at the hall, is refused below 15 energy, pays ₦1,500 once for three simultaneous requests (one `community_wage` transaction), replays return the first result, and a new Lagos day opens a new shift.
+- The Lagos day rolls over at 23:00 UTC.
 
 ### Danfo room tests (`LagosRoom.test.ts`)
 
@@ -84,18 +112,24 @@ recovery through Mailpit.
 - The HDR skybox rendered black or fully fogged on software GPUs; it was replaced by a gradient dome.
 - Reset-password links were hijacked by dev auto sign-in.
 - The spawn camera started inside buildings and buses.
+- Streaming: newly created tile files were served as `index.html` by an already-running Vite dev server until it was restarted.
+- Bridge ways each drew their own deck and parapets, putting a wall between the Link Bridge carriageways. The 10 m water grid also let residents and cars drift several metres past the deck edge onto the lagoon. Decks are now merged, with exact deck strips for movement.
+- Falomo Bridge is a flyover drawn at street level, and its parapets walled off Falomo Roundabout underneath. Parapets now only stand over water.
 
 ## Evidence
 
 Screenshots are in `/opt/cursor/artifacts/screenshots/`: junction sign,
 minimap, current-location display, street, danfo at a stop, For Rent board,
 rental sheet, and home interior (medium preset), plus `m6-dealership-sheet`,
-`m6-driving` and `m6-mechanic-sheet` from the vehicle test. The earlier miniature-scale
+`m6-driving` and `m6-mechanic-sheet` from the vehicle test, and `m7-link-bridge`,
+`m7-ikoyi-street`, `m7-library-sheet`, `m7-community-hall` and `m7-map` from the
+district tests. The earlier miniature-scale
 "before" view is `/opt/cursor/artifacts/before-street-old-miniature.png`.
 
 ## Not yet verified
 
-- Frame rate on real GPUs and phones.
+- Frame rate on real GPUs and phones, and tile-streaming hitches on them.
+- Victoria Island has no danfo route yet; districts are linked by driving and walking only.
 - More than two concurrent players. No capacity is claimed; the room cap is 40.
 - Touch controls on a physical device (layout is implemented and responsive).
 - Audio subtitles beyond stop announcements.
