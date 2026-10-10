@@ -30,6 +30,7 @@ rasteriser.
 | Playwright `e2e/transit-districts.spec.ts` on its own | 1 / 1 passed (5.8 min) |
 | **Full Playwright suite in one run**, after the danfo loops and session fix | **12 / 13 passed (42.8 min)**. The venues journey in `districts.spec.ts` failed one 1.2 km walk from Ikoyi to the mosque (3 × 90 s attempts at about 3 fps); run on its own straight after, it passed (7.0 min). Frame rate at the mosque was 3.4 fps with and without danfos drawn, so the new routes did not cause it. The walk helper now scales its timeout with distance. |
 | **Full Playwright suite in one run**, after the walk-timeout change | **13 / 13 passed (42.2 min)** |
+| Production smoke `e2e-prod/smoke.spec.ts` against a fresh compose stack, after the danfo loops and session fix | 1 / 1 passed (1.7 min). Images rebuilt; all nine migrations applied to an empty volume; server and web healthy. |
 | Playwright `e2e/playable-loop.spec.ts` on its own, after multi-unit housing | 2 / 2 passed (8.1 min) |
 | `apps/web` `controller.test.ts`, `car-controller.test.ts` and `appearance.test.ts` | 17 / 17 passed |
 | Playwright `e2e/accounts.spec.ts` on its own, after the 3D character looks | 5 / 5 passed (2.2 min) |
