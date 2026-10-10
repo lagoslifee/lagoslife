@@ -94,8 +94,10 @@ the Link Bridge into Ikoyi while tiles load and unload, and resumes there after
 a reload. A second run walks from Ikoyi over Falomo Bridge into Victoria Island
 and uses every kind of venue. Starting positions in far districts use a dev-only
 `spawn-at` route. Ikoyi (I1, Bourdillon Road) and Victoria Island (V1, Adeola
-Odeku Street) each have their own danfo loop; no danfo crosses between
-districts. Streaming hitches were only measured on the software renderer (about 100 ms per
+Odeku Street) each have their own danfo loop. X1 Link Bridge Shuttle links
+Lekki and Ikoyi over the bridge, and a browser test rides it from Admiralty Way
+to Alexander Avenue. No danfo crosses Falomo Bridge into Victoria Island yet.
+Streaming hitches were only measured on the software renderer (about 100 ms per
 tile).
 
 ### Milestone 8 verification note
@@ -175,6 +177,6 @@ neutral. In-game law (citations and appeals) and account moderation
 Still deferred:
 
 - a fictional court beyond moderator-decided appeals;
-- danfo routes that cross between districts (over the Link Bridge or Falomo Bridge);
+- a danfo route over Falomo Bridge into Victoria Island (the Link Bridge has X1);
 - real-device performance work;
 - multi-instance scaling.

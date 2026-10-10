@@ -58,8 +58,10 @@ Island. The world streams in 320 m tiles as you move, the HUD shows which
 district you are in, and the full map (M) has buttons that jump to each district.
 Each district has its own danfo loop at the same ₦300 fare: L1 on Admiralty
 Way, I1 on Bourdillon Road in Ikoyi and V1 on Adeola Odeku Street in Victoria
-Island. Phone → Transport lists every stop and guides you to the nearest one.
-Travel between districts is on foot or by car.
+Island. X1 Link Bridge Shuttle crosses the Lekki-Ikoyi Link Bridge between
+Admiralty Way and Alexander Avenue. Phone → Transport lists every route and
+guides you to the nearest stop. Victoria Island is reached from Ikoyi on foot
+or by car over Falomo Bridge.
 
 **Community.** Ikoyi Reading Room, Muri Okunola Park, Grace Assembly and
 Al-Noor Mosque are quiet places. Spending time at any of them gives the same

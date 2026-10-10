@@ -31,7 +31,8 @@ While "Lower detail automatically when slow" is on (Phone → Settings, default
 on), the game measures frame time over 2 s windows. After two windows averaging
 over 33 ms (under about 30 fps), it drops one step. The steps are: resolution
 ×1.35, then shadows off, then view distance 760 m with denser fog, then
-resolution ×1.35 again. After four windows under 20 ms it restores one step. It
+resolution ×1.35 again. Hardware scaling is capped at 2.25, because the low
+preset at step 4 (2.7) turned faces and signs into blocks. After four windows under 20 ms it restores one step. It
 waits 4 s after each change. One-off long frames are ignored, but a window made
 mostly of frames over 0.5 s counts as slow.
 
@@ -43,8 +44,8 @@ mostly of frames over 0.5 s counts as slow.
 
 | Suite | Result |
 |---|---|
-| `npm test -w @lagos-living/server` (PostgreSQL integration, room unit and config tests) | 107 / 107 passed after the Ikoyi and Victoria Island danfo loops (source tests only; compiled copies in `dist/` are excluded) |
-| `npm test -w @lagos-living/shared` | 21 / 21 passed |
+| `npm test -w @lagos-living/server` (PostgreSQL integration, room unit and config tests) | 108 / 108 passed after the X1 Link Bridge Shuttle (source tests only; compiled copies in `dist/` are excluded) |
+| `npm test -w @lagos-living/shared` | 22 / 22 passed |
 | Playwright `e2e/transit-districts.spec.ts` on its own | 1 / 1 passed (5.8 min) |
 | **Full Playwright suite in one run**, after the danfo loops and session fix | **12 / 13 passed (42.8 min)**. The venues journey in `districts.spec.ts` failed one 1.2 km walk from Ikoyi to the mosque (3 × 90 s attempts at about 3 fps); run on its own straight after, it passed (7.0 min). Frame rate at the mosque was 3.4 fps with and without danfos drawn, so the new routes did not cause it. The walk helper now scales its timeout with distance. |
 | **Full Playwright suite in one run**, after the walk-timeout change | **13 / 13 passed (42.2 min)** |
@@ -78,9 +79,13 @@ mostly of frames over 0.5 s counts as slow.
 3. Requested a stop and stepped off at the next stop, "Bourdillon Road · Lateef Jakande Avenue (Eastbound)", within 3 m of its alighting point. The balance stayed ₦300 lower.
 4. Started at Island Community Hall in Victoria Island and repeated the ride on V1 Adeola Odeku Loop, stepping off at "Adeola Odeku Street · Akin Adesola (Westbound)". No page errors.
 
-Screenshots: `transit-ikoyi.png` and `transit-victoria-island.png` in `/opt/cursor/artifacts/screenshots/`.
+5. X1 over the Link Bridge, run on its own (1 / 1 passed, 5.9 min). Started at Swift Parcel Hub in Lekki. Phone → Transport listed "X1 Link Bridge Shuttle". Walked to "Admiralty Way · Ikoyi Bridge Roundabout (Westbound)", boarded once an X1 danfo stopped (₦300 charged once), and rode over the bridge. Stepped off at "Alexander Avenue · Bourdillon Road (Southbound)"; the HUD then read "Alexander Avenue · Ikoyi". No page errors.
 
-Room tests cover each loop lapping every stop in order, a Victoria Island fare charged against its own route and stop, an Ikoyi rider stepping off at the next Bourdillon Road stop, and snapshots that carry only the danfos within 900 m of the viewer (plus the one they ride). Shared tests check that every stop's alighting point is walkable and outside buildings, and that each loop closes.
+Screenshots: `transit-ikoyi.png`, `transit-victoria-island.png` and `transit-link-bridge.png` in `/opt/cursor/artifacts/screenshots/`.
+
+The world build now has 13 danfos: three each on L1, V1 and X1, and four on I1. The load-test figures below were measured with the earlier ten.
+
+Room tests cover each loop lapping every stop in order, a Victoria Island fare charged against its own route and stop, an Ikoyi rider stepping off at the next Bourdillon Road stop, and snapshots that carry only the danfos within 900 m of the viewer (plus the one they ride). Shared tests check that every stop's alighting point is walkable and outside buildings, and that each loop closes. They also check that X1's stops run Lekki, Ikoyi, Ikoyi, Lekki, and that each direction spends over 1 km on walkable bridge deck.
 
 The first two runs of this test exposed a session race. When one account joined twice at nearly the same time (a reload, or React's development double mount), the older join could finish last and remove the newer session, which then got no snapshots and showed no error. Now the newest join wins, the older tab is told it was replaced and stops reconnecting, and a dropped session no longer saves its stale position over the new one. Room tests cover all three cases, and the race test fails without the fix.
 
@@ -292,7 +297,7 @@ district tests. The earlier miniature-scale
 ## Not yet verified
 
 - Frame rate on real GPUs and phones, and tile-streaming hitches on them.
-- No danfo crosses between districts; each of L1, I1 and V1 stays inside its district, so districts are linked by driving and walking only.
+- No danfo reaches Victoria Island from another district. X1 links Lekki and Ikoyi over the Link Bridge, but Falomo Bridge is crossed only on foot or by car.
 - More than two concurrent *browser* players. 100 bot clients were measured in one room on this VM (see the load test above), but not over real networks, on other hosts, or with rendering clients. The room cap is 100, and snapshots carry the nearest 40.
 - Any public deployment, TLS proxy or managed database. The production images and compose stack were only run on this VM.
 - Citation evasion: impacts are reported by the client, so a modified client can avoid citations.
