@@ -25,7 +25,7 @@ rasteriser.
 
 | Suite | Result |
 |---|---|
-| `npm test -w @lagos-living/server` (PostgreSQL integration and room unit tests) | 50 / 50 passed |
+| `npm test -w @lagos-living/server` (PostgreSQL integration and room unit tests) | 44 / 44 passed (source tests only; compiled copies in `dist/` are excluded) |
 | `npm test -w @lagos-living/shared` | 6 / 6 passed |
 | `apps/web` `controller.test.ts` and `car-controller.test.ts` | 13 / 13 passed |
 | Playwright `e2e/vehicles.spec.ts` | 1 / 1 passed (3.8 min, run twice) |

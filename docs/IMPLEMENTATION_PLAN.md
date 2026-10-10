@@ -74,12 +74,11 @@ reloads, re-enters, and observes the saved interior.
 ### Milestone 6 verification note
 
 PostgreSQL integration tests cover idempotent and concurrent car purchases,
-unaffordable purchases, the atomic key claim (one session drives at a time and
+unaffordable purchases, the three-car limit, the atomic key claim (one session drives at a time and
 non-owners are refused), service and repair pricing, insurance stacking, towing
 with and without cover, and garaging at a held home. Room tests cover the
 vehicle speed envelope, limp mode, impact damage cooldowns, and parking when
-the driver steps out or disconnects. The three-car limit is enforced in the
-purchase service but has no dedicated test yet. Browser
+the driver steps out or disconnects. Browser
 automation (`apps/web/e2e/vehicles.spec.ts`) buys an Eko Hatch, drives it about
 0.5 km along Admiralty Way to Ade Auto Works above sprint speed, parks, insures
 it from the phone, pays for a service, and finds it in the same spot after

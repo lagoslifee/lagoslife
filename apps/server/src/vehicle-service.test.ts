@@ -16,6 +16,7 @@ import {
   garageVehicle,
   insureVehicle,
   listVehicles,
+  MAX_VEHICLES,
   MECHANIC_ID,
   purchaseVehicle,
   retrieveVehicle,
@@ -24,11 +25,11 @@ import {
   towVehicle,
 } from "./vehicle-service.js";
 
-const users = [0, 1].map(() => ({
+const users = [0, 1, 2].map(() => ({
   id: `vehicle-user-${randomUUID()}`,
   username: `car${randomUUID().replaceAll("-", "").slice(0, 12)}`,
 }));
-const [driver, rival] = users as [(typeof users)[0], (typeof users)[0]];
+const [driver, rival, collector] = users as [(typeof users)[0], (typeof users)[0], (typeof users)[0]];
 const homeId = `vehicle-home-${randomUUID()}`;
 const dealer = getPlace(DEALERSHIP_ID);
 const mechanic = getPlace(MECHANIC_ID);
@@ -114,6 +115,19 @@ describe("vehicle ownership", () => {
     ]);
     expect(attempts.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
     expect(await balance(rival.id)).toBe(250_000 - saloon.price);
+  });
+
+  it(`stops a resident at ${MAX_VEHICLES} cars without charging for the next`, async () => {
+    const hatch = getVehicleModel("eko-hatch");
+    setPlayerPosition(collector.id, ...dealer.door);
+    await purchaseVehicle(collector.id, hatch.id, hatch.colours[0]!, randomUUID());
+    await pool.query(`UPDATE wallet SET balance = 1000000 WHERE user_id = $1`, [collector.id]);
+    for (let i = 1; i < MAX_VEHICLES; i += 1) await purchaseVehicle(collector.id, hatch.id, hatch.colours[0]!, randomUUID());
+    await expect(purchaseVehicle(collector.id, hatch.id, hatch.colours[0]!, randomUUID())).rejects.toThrow(
+      `up to ${MAX_VEHICLES} vehicles`,
+    );
+    expect(await balance(collector.id)).toBe(1_000_000 - (MAX_VEHICLES - 1) * hatch.price);
+    expect(await listVehicles(collector.id)).toHaveLength(MAX_VEHICLES);
   });
 
   it("hands the keys to one session at a time and records distance when parked", async () => {
