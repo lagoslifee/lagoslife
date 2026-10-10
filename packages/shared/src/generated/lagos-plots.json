@@ -1,0 +1,292 @@
+[
+ {
+  "id": "lekki-plot-1",
+  "name": "Plot 1",
+  "site": "Building site off Kayode Animashaun Street",
+  "street": "Kayode Animashaun Street",
+  "areaId": 793732379,
+  "center": [
+   28.51,
+   308.76
+  ],
+  "along": [
+   0.0027,
+   1
+  ],
+  "inward": [
+   1,
+   -0.0027
+  ],
+  "width": 18,
+  "depth": 22,
+  "gate": [
+   16.51,
+   308.79
+  ],
+  "kerb": [
+   7.81,
+   308.81
+  ]
+ },
+ {
+  "id": "lekki-plot-2",
+  "name": "Plot 2",
+  "site": "Building site off Kayode Animashaun Street",
+  "street": "Kayode Animashaun Street",
+  "areaId": 793732379,
+  "center": [
+   52.56,
+   328.69
+  ],
+  "along": [
+   0.0027,
+   1
+  ],
+  "inward": [
+   1,
+   -0.0027
+  ],
+  "width": 18,
+  "depth": 22,
+  "gate": [
+   40.56,
+   328.72
+  ],
+  "kerb": [
+   7.86,
+   328.81
+  ]
+ },
+ {
+  "id": "lekki-plot-3",
+  "name": "Plot 3",
+  "site": "Building site off Kayode Animashaun Street",
+  "street": "Kayode Animashaun Street",
+  "areaId": 793732362,
+  "center": [
+   31.75,
+   195.63
+  ],
+  "along": [
+   0.0129,
+   0.9999
+  ],
+  "inward": [
+   0.9999,
+   -0.0129
+  ],
+  "width": 18,
+  "depth": 22,
+  "gate": [
+   19.76,
+   195.79
+  ],
+  "kerb": [
+   7.06,
+   195.95
+  ]
+ },
+ {
+  "id": "lekki-plot-4",
+  "name": "Plot 4",
+  "site": "Building site off Kayode Animashaun Street",
+  "street": "Kayode Animashaun Street",
+  "areaId": 793732362,
+  "center": [
+   44.01,
+   215.48
+  ],
+  "along": [
+   0.0129,
+   0.9999
+  ],
+  "inward": [
+   0.9999,
+   -0.0129
+  ],
+  "width": 18,
+  "depth": 22,
+  "gate": [
+   32.01,
+   215.63
+  ],
+  "kerb": [
+   7.32,
+   215.95
+  ]
+ },
+ {
+  "id": "lekki-plot-5",
+  "name": "Plot 5",
+  "site": "Building site off Kayode Animashaun Street",
+  "street": "Kayode Animashaun Street",
+  "areaId": 793732362,
+  "center": [
+   28.27,
+   235.68
+  ],
+  "along": [
+   0.0129,
+   0.9999
+  ],
+  "inward": [
+   0.9999,
+   -0.0129
+  ],
+  "width": 18,
+  "depth": 22,
+  "gate": [
+   16.27,
+   235.84
+  ],
+  "kerb": [
+   7.57,
+   235.95
+  ]
+ },
+ {
+  "id": "lekki-plot-6",
+  "name": "Plot 6",
+  "site": "Building site off CBC Towers Street",
+  "street": "CBC Towers Street",
+  "areaId": 793732437,
+  "center": [
+   99.76,
+   131.63
+  ],
+  "along": [
+   -1,
+   -0.0031
+  ],
+  "inward": [
+   0.0031,
+   -1
+  ],
+  "width": 18,
+  "depth": 22,
+  "gate": [
+   99.73,
+   143.63
+  ],
+  "kerb": [
+   99.63,
+   174.33
+  ]
+ },
+ {
+  "id": "lekki-plot-7",
+  "name": "Plot 7",
+  "site": "Building site off CBC Towers Street",
+  "street": "CBC Towers Street",
+  "areaId": 793732439,
+  "center": [
+   127.58,
+   155.71
+  ],
+  "along": [
+   -1,
+   -0.0031
+  ],
+  "inward": [
+   0.0031,
+   -1
+  ],
+  "width": 18,
+  "depth": 22,
+  "gate": [
+   127.54,
+   167.71
+  ],
+  "kerb": [
+   127.52,
+   174.41
+  ]
+ },
+ {
+  "id": "lekki-plot-8",
+  "name": "Plot 8",
+  "site": "Building site off CBC Towers Street",
+  "street": "CBC Towers Street",
+  "areaId": 793732420,
+  "center": [
+   252.37,
+   401.17
+  ],
+  "along": [
+   0.0014,
+   -1
+  ],
+  "inward": [
+   1,
+   0.0014
+  ],
+  "width": 18,
+  "depth": 22,
+  "gate": [
+   240.37,
+   401.16
+  ],
+  "kerb": [
+   227.67,
+   401.14
+  ]
+ },
+ {
+  "id": "lekki-plot-9",
+  "name": "Plot 9",
+  "site": "Building site off CBC Towers Street",
+  "street": "CBC Towers Street",
+  "areaId": 793732440,
+  "center": [
+   182.21,
+   157.89
+  ],
+  "along": [
+   -1,
+   -0.0031
+  ],
+  "inward": [
+   0.0031,
+   -1
+  ],
+  "width": 18,
+  "depth": 22,
+  "gate": [
+   182.17,
+   169.89
+  ],
+  "kerb": [
+   182.15,
+   174.59
+  ]
+ },
+ {
+  "id": "lekki-plot-10",
+  "name": "Plot 10",
+  "site": "Building site off CBC Towers Street",
+  "street": "CBC Towers Street",
+  "areaId": 793732440,
+  "center": [
+   162.24,
+   145.82
+  ],
+  "along": [
+   -1,
+   -0.0031
+  ],
+  "inward": [
+   0.0031,
+   -1
+  ],
+  "width": 18,
+  "depth": 22,
+  "gate": [
+   162.21,
+   157.82
+  ],
+  "kerb": [
+   162.15,
+   174.52
+  ]
+ }
+]
