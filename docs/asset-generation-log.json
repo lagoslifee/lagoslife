@@ -1,0 +1,58 @@
+{
+  "tasks": [
+    {
+      "label": "resident-avatar preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a1239f-c68b-753e-996a-6e2c882ddffe",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a1239f-c68b-753e-996a-6e2c882ddffe/output/preview.png",
+      "recordedAt": "2026-10-10T02:24:35.179Z"
+    },
+    {
+      "label": "danfo-shell preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a1239f-d251-75da-b9a8-e1cf6dd761df",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a1239f-d251-75da-b9a8-e1cf6dd761df/output/preview.png",
+      "recordedAt": "2026-10-10T02:24:54.157Z"
+    },
+    {
+      "label": "resident-avatar refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a123a0-5f9d-70db-8028-13152c0d2a33",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a123a0-5f9d-70db-8028-13152c0d2a33/output/preview.png",
+      "recordedAt": "2026-10-10T02:25:10.138Z"
+    },
+    {
+      "label": "resident-avatar rig",
+      "endpoint": "/v1/rigging",
+      "id": "01a123a0-ea4f-7735-97b8-5ddf23fe51aa",
+      "status": "SUCCEEDED",
+      "consumedCredits": 5,
+      "thumbnail": null,
+      "recordedAt": "2026-10-10T02:25:29.826Z"
+    },
+    {
+      "label": "danfo-shell refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a123a0-a9c1-7237-80f0-c254fea5fc2b",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a123a0-a9c1-7237-80f0-c254fea5fc2b/output/preview.png",
+      "recordedAt": "2026-10-10T02:25:33.382Z"
+    },
+    {
+      "label": "resident-avatar animations",
+      "endpoint": "/v1/animations",
+      "id": "01a123a1-3689-7451-a032-57473cc12ed9",
+      "status": "SUCCEEDED",
+      "consumedCredits": 30,
+      "thumbnail": null,
+      "recordedAt": "2026-10-10T02:27:15.670Z"
+    }
+  ]
+}
