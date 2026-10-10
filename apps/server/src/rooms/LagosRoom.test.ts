@@ -590,6 +590,47 @@ describe("LagosRoom careless-driving citations", () => {
     expect(justice.issueCitation).not.toHaveBeenCalled();
   });
 
+  /** Drives straight at the starter home's front wall, one update per `dt` seconds, at the given speeds. */
+  async function towardsWall(speeds: number[], dt: number) {
+    const context = await driving();
+    const { door, facade } = getPlace("starter-home");
+    const length = Math.hypot(facade[0] - door[0], facade[1] - door[1]);
+    const unit: [number, number] = [(facade[0] - door[0]) / length, (facade[1] - door[1]) / length];
+    const distance = speeds.reduce((total, speed) => total + speed * dt, 0);
+    // End with the nose at the wall: the front of a 4.4 m car sits about 2.2 m ahead of its centre.
+    let along = length - 2.2 - distance;
+    const at = (metres: number) => [door[0] + unit[0] * metres, door[1] + unit[1] * metres] as const;
+    const [sx, sz] = at(along);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    Object.assign(context.player(context.ada), { x: sx, z: sz, heading: null, travel: [], lastAcceptedAt: Date.now() });
+    speeds.forEach((speed, index) => {
+      vi.setSystemTime(Date.now() + dt * 1_000);
+      along += speed * dt;
+      const [x, z] = at(along);
+      context.room.handlePosition(context.ada, { sequence: 10 + index, x, z, yaw: Math.atan2(unit[0], unit[1]), motion: "drive" });
+    });
+    vi.useRealTimers();
+    return context;
+  }
+
+  it("cites a fast driver who runs into a building without reporting the impact", async () => {
+    // 72 km/h for 1.5 s, then the wall stops the car dead.
+    await towardsWall([...Array(15).fill(20), 0.5], 0.1);
+    expect(justice.issueCitation).toHaveBeenCalledTimes(1);
+    expect(serverEvidence()[0]).toMatchObject({ detectedBy: "server", struck: "building" });
+    expect((justice.issueCitation.mock.calls[0]![2] as { speed: number }).speed).toBeGreaterThan(19);
+  });
+
+  it("does not cite an emergency stop in front of a wall at full braking", async () => {
+    // From 72 km/h at 11 m/s², harder than any car brakes, to a stop beside the same wall.
+    const speeds = Array.from({ length: 19 }, (_, index) => Math.max(0.2, 20 - 11 * 0.1 * (index + 1)));
+    const context = await towardsWall([...Array(10).fill(20), ...speeds], 0.1);
+    const { facade } = getPlace("starter-home");
+    const stopped = context.player(context.ada) as { x: number; z: number };
+    expect(Math.hypot(stopped.x - facade[0], stopped.z - facade[1])).toBeLessThan(2.5);
+    expect(justice.issueCitation).not.toHaveBeenCalled();
+  });
+
   it("issues one citation when the server and the client both see the same crash", async () => {
     const context = await driving();
     pedestrianAt(context, 16);

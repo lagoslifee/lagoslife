@@ -23,6 +23,7 @@ import {
   INTERIOR_ORIGIN,
   INTERIOR_SPAWN,
   walkable,
+  insideBuilding,
   MOVEMENT,
   nearestSafePoint,
   positionUpdateSchema,
@@ -127,6 +128,8 @@ type Player = {
   lastVehicleSaveAt: number;
   lastImpactAt: number;
   lastCitationCheckAt: number;
+  /** Unit direction of the last accepted move. */
+  heading: [number, number] | null;
   entering: boolean;
   chatTimes: number[];
   mutedUntil: number | null;
@@ -145,6 +148,9 @@ const IMPACT_COOLDOWN_MS = 800;
 const CITATION_CHECK_MS = 3_000;
 /** Centre distances that mean a car body (about 1.8 × 4.4 m) touched something. */
 const CONTACT_RADIUS = { pedestrian: 1.3, vehicle: 2.0, danfo: 2.3 };
+/** A car measured at speed that then moves slower than this, with a wall within WALL_REACH ahead, hit the wall. */
+const WALL_STOP_SPEED = 3;
+const WALL_REACH = 3;
 
 function distanceToSegment([px, pz]: [number, number], [ax, az]: [number, number], [bx, bz]: [number, number]) {
   const dx = bx - ax;
@@ -312,6 +318,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       lastVehicleSaveAt: now,
       lastImpactAt: 0,
       lastCitationCheckAt: 0,
+      heading: null,
       entering: false,
       chatTimes: [],
       mutedUntil: mute ? (mute.endsAt?.getTime() ?? Infinity) : null,
@@ -472,6 +479,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       return;
     }
     const from: [number, number] = [player.x, player.z];
+    const speedBefore = vehicle ? this.measuredSpeed(player) : 0;
     player.x = parsed.data.x;
     player.z = parsed.data.z;
     player.yaw = parsed.data.yaw;
@@ -485,6 +493,10 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       vehicle.yaw = player.yaw;
       const struck = this.contactAlong(player, vehicle.id, from, [player.x, player.z]);
       if (struck) this.considerCitation(client, player, null, struck);
+      else if (speedBefore >= JUSTICE.carelessDrivingSpeed && distance / elapsed < WALL_STOP_SPEED && player.heading && this.wallAhead(player, player.heading)) {
+        this.considerCitation(client, player, null, "building", speedBefore);
+      }
+      if (distance > 0.05) player.heading = [(player.x - from[0]) / distance, (player.z - from[1]) / distance];
       player.driveMetres += distance;
       if (now - player.lastVehicleSaveAt > VEHICLE_SAVE_MS) {
         const metres = player.driveMetres;
@@ -888,12 +900,27 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     return null;
   }
 
+  /** Whether a building wall lies within a car's nose length along its last direction of travel. */
+  private wallAhead(player: Player, [dx, dz]: [number, number]) {
+    for (let reach = 0.5; reach <= WALL_REACH; reach += 0.5) {
+      if (insideBuilding(player.x + dx * reach, player.z + dz * reach, 0)) return true;
+    }
+    return false;
+  }
+
   /**
    * A hard crash at speed earns one careless-driving citation. The server's measured speed must
-   * agree with either the client's reported impact or a contact the server saw itself.
+   * agree with either the client's reported impact or a contact the server saw itself. A crash
+   * into a wall passes the speed measured just before the car stopped.
    */
-  private considerCitation(client: Client, player: Player, reportedSpeed: number | null, struck: "pedestrian" | "vehicle" | "danfo" | null = null) {
-    const measured = this.measuredSpeed(player);
+  private considerCitation(
+    client: Client,
+    player: Player,
+    reportedSpeed: number | null,
+    struck: "pedestrian" | "vehicle" | "danfo" | "building" | null = null,
+    speedAtContact?: number,
+  ) {
+    const measured = speedAtContact ?? this.measuredSpeed(player);
     if (measured < JUSTICE.carelessDrivingSpeed) return;
     if (reportedSpeed !== null && reportedSpeed < JUSTICE.carelessDrivingSpeed) return;
     const now = Date.now();

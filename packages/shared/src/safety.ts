@@ -160,7 +160,7 @@ export type Citation = {
     district: string | null;
     /** "server" when the room saw the contact itself; older citations have neither field. */
     detectedBy?: "server" | "client";
-    struck?: "pedestrian" | "vehicle" | "danfo" | null;
+    struck?: "pedestrian" | "vehicle" | "danfo" | "building" | null;
   };
   appeal: { statement: string; filedAt: string; outcome: "upheld" | "overturned" | null; note: string | null } | null;
   paidAt: string | null;
