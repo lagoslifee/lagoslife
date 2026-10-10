@@ -26,6 +26,7 @@ import {
   MOVEMENT,
   nearestSafePoint,
   positionUpdateSchema,
+  propertyPlace,
   routeDistanceAhead,
   routeLength,
   sampleRoute,
@@ -590,7 +591,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (player.location !== "street" || player.busId) return;
     if (player.vehicleId) return this.notify(client, { tone: "info", text: "Park and step out of your car first." });
     const { propertyId, mode } = parsed.data;
-    const place = getPlace(propertyId === "starter-home" ? "starter-home" : propertyId);
+    const place = propertyId === "starter-home" ? getPlace("starter-home") : propertyPlace(propertyId);
+    if (!place) return this.notify(client, { tone: "error", text: "That home is not on the map." });
     if (Math.hypot(player.x - place.door[0], player.z - place.door[1]) > 4.5) {
       return this.notify(client, { tone: "error", text: `Walk up to the door of ${place.name}.` });
     }

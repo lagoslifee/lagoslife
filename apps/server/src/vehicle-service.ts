@@ -4,7 +4,7 @@ import {
   walkable,
   insurancePremium,
   kerbSlot,
-  placeById,
+  propertyPlace,
   repairCost,
   VEHICLE_RULES,
   vehicleModelById,
@@ -92,7 +92,7 @@ type Spot = Pick<Place, "name" | "door" | "kerb" | "kerbYaw">;
 
 /** Mapped places carry a kerb; listings without one fall back to their door coordinates. */
 async function propertySpot(client: PoolClient, propertyId: string): Promise<Spot> {
-  const place = placeById.get(propertyId);
+  const place = propertyPlace(propertyId);
   if (place) return place;
   const listing = await client.query(`SELECT name, world_x, world_z FROM property_listing WHERE id = $1`, [propertyId]);
   if (!listing.rowCount) throw new EconomyError("Unknown property", 404);

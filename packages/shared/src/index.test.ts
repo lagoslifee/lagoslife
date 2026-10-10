@@ -7,10 +7,13 @@ import {
   defaultAppearance,
   getPlace,
   districtAt,
+  HOME_UNITS,
   insideBuilding,
   lookSchema,
   looksSchema,
   PLACES,
+  propertyPlace,
+  propertyTitle,
   readAppearance,
   positionUpdateSchema,
   registerFootprints,
@@ -139,5 +142,22 @@ describe("streamed districts", () => {
     const width = dry[dry.length - 1]! - dry[0]!;
     expect(width).toBeGreaterThan(18);
     expect(width).toBeLessThan(28);
+  });
+});
+
+describe("home units", () => {
+  it("are unique and each belongs to a mapped rental or sale building", () => {
+    expect(new Set(HOME_UNITS.map(({ id }) => id)).size).toBe(HOME_UNITS.length);
+    for (const unit of HOME_UNITS) {
+      const place = getPlace(unit.placeId);
+      expect(["rental", "sale"]).toContain(place.kind);
+      expect(propertyPlace(unit.id)).toBe(place);
+    }
+  });
+
+  it("name units by building and leave unmapped listings without a place", () => {
+    expect(propertyTitle("lekki-adebayo-flat-7")).toBe("Adebayo Court · Flat 7");
+    expect(propertyTitle("starter-home")).toBe("Kayode Court Hostel");
+    expect(propertyPlace("rental-test-123")).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { placeById } from "@lagos-living/shared";
+import { propertyPlace } from "@lagos-living/shared";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "./database.js";
@@ -18,7 +18,7 @@ export const BLOCKED_EXIT_CELLS = new Set(["3:0", "4:0"]);
 const LISTING_RANGE = 7;
 
 export function listingDoor(listing: { id: string; world_x: number; world_z: number }): [number, number] {
-  return placeById.get(listing.id)?.door ?? [Number(listing.world_x), Number(listing.world_z)];
+  return propertyPlace(listing.id)?.door ?? [Number(listing.world_x), Number(listing.world_z)];
 }
 
 /** A player may sign at the listing's door or while previewing its interior. */
@@ -117,6 +117,7 @@ export async function listProperties(userId: string) {
       depositPaid: Number(row.depositPaid ?? 0),
       upfrontRent: Number(row.rent) + Number(row.deposit),
       door: listingDoor({ id: row.id, world_x, world_z }),
+      placeId: propertyPlace(row.id)?.id ?? null,
       isHome: homeId === row.id,
       overdue: Boolean(row.isMine && nextPaymentAt && nextPaymentAt.getTime() < Date.now()),
     };

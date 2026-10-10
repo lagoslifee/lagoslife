@@ -1,4 +1,4 @@
-import { blockedByWater, sampleRoute, TRANSIT } from "@lagos-living/shared";
+import { blockedByWater, getPlace, sampleRoute, TRANSIT } from "@lagos-living/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const economy = vi.hoisted(() => ({
@@ -50,6 +50,7 @@ vi.mock("../profile-service.js", async () => {
 });
 const { safetyEvents } = await import("../safety-service.js");
 const { profileEvents } = await import("../profile-service.js");
+const property = await import("../property-service.js");
 
 const { BUS_CAPACITY, LagosRoom, MAX_VISIBLE_PLAYERS, REBOARD_COOLDOWN_MS } = await import("./LagosRoom.js");
 
@@ -65,6 +66,7 @@ type RoomInternals = {
   handleVehicleImpact(client: FakeClient, payload: unknown): Promise<void>;
   handlePosition(client: FakeClient, payload: unknown): void;
   handleChat(client: FakeClient, payload: unknown): Promise<void>;
+  handleEnterProperty(client: FakeClient, payload: unknown): Promise<void>;
   sendLooks(client: FakeClient): void;
   onCreate(): Promise<void>;
   applySanction(userId: string, kind: string, reason: string, endsAt: number | null): void;
@@ -589,5 +591,28 @@ describe("LagosRoom appearance", () => {
     expect(looks(tunde, "look")).toEqual([{ sessionId: "s-ada", appearance: next }]);
     expect(looks(ada, "look")).toEqual([{ sessionId: "s-ada", appearance: next }]);
     profileEvents.removeAllListeners();
+  });
+});
+
+describe("LagosRoom homes", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("lets a tenant enter their own flat through the building's shared door", async () => {
+    const { room, join, player } = setup();
+    const ada = join("ada");
+    const court = getPlace("lekki-adebayo-flat-2");
+    Object.assign(player(ada), { x: court.door[0], z: court.door[1] });
+    vi.mocked(property.requirePropertyAccess).mockResolvedValue({ owner: true, guest: false });
+    await room.handleEnterProperty(ada, { propertyId: "lekki-adebayo-flat-7", mode: "enter" });
+    expect(property.requirePropertyAccess).toHaveBeenCalledWith("u-ada", "lekki-adebayo-flat-7");
+    expect(player(ada)).toMatchObject({ location: "home:lekki-adebayo-flat-7", propertyId: "lekki-adebayo-flat-7", returnPoint: court.door });
+  });
+
+  it("refuses a home that is not on the map without throwing", async () => {
+    const { room, join, player, notices } = setup();
+    const ada = join("ada");
+    await room.handleEnterProperty(ada, { propertyId: "nowhere-flat-9", mode: "enter" });
+    expect(player(ada).location).toBe("street");
+    expect(notices(ada)).toEqual(["That home is not on the map."]);
   });
 });

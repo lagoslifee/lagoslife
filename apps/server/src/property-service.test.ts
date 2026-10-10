@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { pool } from "./database.js";
-import { getPlace } from "@lagos-living/shared";
+import { getPlace, HOME_UNITS, propertyPlace } from "@lagos-living/shared";
 import { purchaseItem } from "./economy-service.js";
 import { setPlayerPosition } from "./player-presence.js";
 import {
@@ -234,5 +234,40 @@ describe("rental agreements", () => {
       [users[1]!.id],
     );
     expect(Number(returned.rows[0].quantity)).toBe(2);
+  });
+
+  it("seeds every mapped home unit, each sharing its building's door", async () => {
+    const listings = await listProperties(users[0]!.id);
+    for (const unit of HOME_UNITS) {
+      const listing = listings.find(({ id }) => id === unit.id);
+      expect(listing, unit.id).toBeDefined();
+      expect(listing!.placeId).toBe(unit.placeId);
+      expect(listing!.door).toEqual(getPlace(unit.placeId).door);
+    }
+    expect(HOME_UNITS.filter(({ placeId }) => placeId === "lekki-adebayo-flat-2")).toHaveLength(12);
+    expect(HOME_UNITS.filter(({ placeId }) => placeId === "lekki-chief-okoro-house")).toHaveLength(6);
+  });
+
+  it("lets several residents rent flats in the same building at once", async () => {
+    const court = getPlace("lekki-adebayo-flat-2");
+    const free = (await listProperties(users[0]!.id)).filter((listing) => listing.placeId === court.id && listing.available);
+    expect(free.length).toBeGreaterThanOrEqual(2);
+    const tenants = [users[0]!, users[2]!];
+    await pool.query(`UPDATE wallet SET balance = 250000 WHERE user_id = ANY($1)`, [tenants.map(({ id }) => id)]);
+    for (const tenant of tenants) setPlayerPosition(tenant.id, court.door[0], court.door[1]);
+    const rented: Array<{ userId: string; propertyId: string }> = [];
+    try {
+      const results = await Promise.allSettled(
+        tenants.map((tenant, index) => acquireProperty(tenant.id, free[index]!.id, "rented", randomUUID())),
+      );
+      expect(results.map(({ status }) => status)).toEqual(["fulfilled", "fulfilled"]);
+      tenants.forEach((tenant, index) => rented.push({ userId: tenant.id, propertyId: free[index]!.id }));
+      const seen = await listProperties(users[0]!.id);
+      expect(seen.find(({ id }) => id === free[0]!.id)).toMatchObject({ isMine: true, available: false });
+      expect(seen.find(({ id }) => id === free[1]!.id)).toMatchObject({ isMine: false, available: false });
+      expect(propertyPlace(free[1]!.id)?.id).toBe(court.id);
+    } finally {
+      for (const { userId, propertyId } of rented) await cancelTenancy(userId, propertyId, randomUUID());
+    }
   });
 });
