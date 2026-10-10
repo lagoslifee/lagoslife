@@ -19,6 +19,7 @@ import type { Express, NextFunction, Request, Response } from "express";
 import { auth } from "./auth.js";
 import { config } from "./config.js";
 import { pool } from "./database.js";
+import { markProgressReset } from "./player-presence.js";
 import { createMultiplayerToken } from "./multiplayer-token.js";
 import { z } from "zod";
 import {
@@ -280,6 +281,7 @@ export function configureRoutes(app: Express) {
   app.post("/api/dev/reset-progress", requirePlayer, guarded("Reset failed", async (req, userId) => {
     const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(req.hostname);
     if (config.NODE_ENV !== "development" || !isLocalHost) throw new EconomyError("Not found", 404);
+    markProgressReset(userId);
     await resetTestProgress(userId);
     return { reset: true };
   }));

@@ -24,3 +24,18 @@ export function isNear(userId: string, point: readonly [number, number], radius:
       Math.hypot(position.x - point[0], position.z - point[1]) <= radius,
   );
 }
+
+const resetUsers = new Set<string>();
+
+/** Live sessions must not write their stale in-memory position back over a progress reset. */
+export function markProgressReset(userId: string) {
+  resetUsers.add(userId);
+}
+
+export function wasProgressReset(userId: string) {
+  return resetUsers.has(userId);
+}
+
+export function clearProgressReset(userId: string) {
+  resetUsers.delete(userId);
+}

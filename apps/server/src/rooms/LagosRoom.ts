@@ -32,7 +32,7 @@ import {
   savePlayerPlace,
 } from "../economy-service.js";
 import { verifyMultiplayerToken, type MultiplayerIdentity } from "../multiplayer-token.js";
-import { removePlayerPosition, setPlayerPosition } from "../player-presence.js";
+import { clearProgressReset, removePlayerPosition, setPlayerPosition, wasProgressReset } from "../player-presence.js";
 import { isPropertyAvailable, requirePropertyAccess } from "../property-service.js";
 
 export const LagosState = schema({
@@ -49,6 +49,7 @@ const BUS_BRAKE = 2.4;
 const BUS_DWELL_MS = 9_000;
 const BUS_DWELL_EXTENDED_MS = 16_000;
 const BOARD_RANGE = 5.5;
+export const REBOARD_COOLDOWN_MS = 6_000;
 const INTEREST_RADIUS = 180;
 const STUCK_RECOVERY_MS = 20_000;
 
@@ -77,6 +78,7 @@ type Player = {
   actionRate: { since: number; count: number };
   boarding: boolean;
   alightAtNext: boolean;
+  alighted: { busId: string; at: number } | null;
 };
 
 type Bus = {
@@ -153,10 +155,11 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       if (player) player.carrying = payload === true;
     });
 
-    this.setFixedTimestep(({ dt }) => this.tickWorld(dt), 50);
+    this.setFixedTimestep(({ dtMs }) => this.tickWorld(dtMs), 20);
   }
 
   async onJoin(client: LagosClient) {
+    clearProgressReset(client.auth.userId);
     const home = getPlace("starter-home");
     const saved = await loadPlayerPlace(client.auth.userId).catch(() => null);
     let spawn: [number, number] = [...home.door];
@@ -189,6 +192,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       actionRate: { since: now, count: 0 },
       boarding: false,
       alightAtNext: false,
+      alighted: null,
     };
     for (const [sessionId, existing] of this.players) {
       if (existing.userId === player.userId) {
@@ -229,10 +233,13 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   }
 
   private persist(player: Player) {
+    if (wasProgressReset(player.userId)) return Promise.resolve();
     const onStreet = player.location === "street" && !player.busId;
     const [x, z] = onStreet ? [player.x, player.z] : player.returnPoint;
     player.lastSavedAt = Date.now();
-    return savePlayerPlace(player.userId, x, z, onStreet ? "street" : player.location);
+    return savePlayerPlace(player.userId, x, z, onStreet ? "street" : player.location).then(() => {
+      this.clientFor(player)?.send("saved", { at: Date.now() });
+    });
   }
 
   private limited(rate: { since: number; count: number }, max: number) {
@@ -316,6 +323,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (bus.state !== "dwelling" || !bus.currentStopId) {
       return this.notify(client, { tone: "error", text: "Wait for the danfo to stop before boarding." });
     }
+    if (player.alighted?.busId === bus.id && Date.now() - player.alighted.at < REBOARD_COOLDOWN_MS) {
+      return this.notify(client, { tone: "info", text: "You just stepped off this danfo. Wait for it to pull away or catch the next one." });
+    }
     const door = this.busDoor(bus);
     if (Math.hypot(player.x - door.x, player.z - door.z) > BOARD_RANGE) {
       return this.notify(client, { tone: "error", text: "Move closer to the sliding door to board." });
@@ -377,6 +387,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     player.z = stop.alight[1];
     player.returnPoint = [...stop.alight];
     this.releaseSeat(player, "completed", stop.id);
+    player.alighted = { busId: bus.id, at: Date.now() };
     player.lastAcceptedAt = Date.now();
     setPlayerPosition(player.userId, player.x, player.z, "street");
     void this.persist(player).catch(() => undefined);
@@ -585,7 +596,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       setPlayerPosition(player.userId, player.x, player.z, `bus:${bus.id}`);
     }
 
-    if (this.state.tick % 2 === 0) this.broadcastSnapshots();
+    this.broadcastSnapshots();
   }
 
   private busStates(): BusState[] {
