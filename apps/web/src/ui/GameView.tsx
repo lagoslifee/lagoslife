@@ -279,7 +279,7 @@ export function GameView({ playerName, onCustomise, onSignOut, overlayOpen }: { 
                 <i style={{ width: `${economy.needs.energy}%` }} className="energy" />
               </div>
             )}
-            <div className={`net ${hud.network}`}>
+            <div className={`net ${hud.network}`} data-testid="network">
               <i /> {hud.network === "connected" ? `${hud.online} online` : hud.network === "connecting" ? "Connecting…" : hud.networkReason}
             </div>
             <div className="save-state" data-testid="save-state">✓ {ago(savedAt, now)}</div>

@@ -269,7 +269,8 @@ function GameShell({
 export function App() {
   const session = authClient.useSession();
   const [autoSignInPending, setAutoSignInPending] = useState(false);
-  const manual = new URLSearchParams(location.search).has("manual");
+  const query = new URLSearchParams(location.search);
+  const manual = query.has("manual") || query.has("reset") || query.has("token");
 
   useEffect(() => {
     if (
