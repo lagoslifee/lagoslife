@@ -197,6 +197,8 @@ function devOnly(req: Request, res: Response, next: NextFunction) {
 }
 
 export function configureRoutes(app: Express) {
+  // Behind a reverse proxy or tunnel, per-address limits must see the visitor, not the proxy.
+  if (config.TRUSTED_PROXIES.length) app.set("trust proxy", config.TRUSTED_PROXIES);
   app.use(
     cors({
       origin: config.WEB_ORIGIN,
