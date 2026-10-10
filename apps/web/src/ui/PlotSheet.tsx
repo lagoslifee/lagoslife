@@ -1,7 +1,7 @@
 import { constructionStages, designTotal, HOUSE_DESIGNS, houseDesign, plotById, PLOT_TERMS, STAGE_LABELS, type Notice } from "@lagos-living/shared";
 import { useState, type ReactNode } from "react";
 import { api, naira, type EconomyState, type PlotState } from "../api";
-import { buildProgress } from "../game/plots";
+import { buildProgress } from "../game/build-progress";
 
 type Props = {
   plotId: string;

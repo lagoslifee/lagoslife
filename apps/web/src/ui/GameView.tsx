@@ -5,7 +5,8 @@ import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
 import { EngineDisposedError, GameEngine, type HudState, type Interaction } from "../game/engine";
 import type { Quality } from "../game/materials";
 import { FullMap, Minimap } from "./MapView";
-import { currentObjective } from "./objectives";
+import { currentObjective, housingPath, type HousingPath } from "./objectives";
+import { Welcome } from "./Welcome";
 import { Phone, type PhoneApp } from "./Phone";
 import { COMMUNITY_KINDS, CommunitySheet } from "./CommunitySheets";
 import { PlaceSheet } from "./Sheets";
@@ -27,6 +28,11 @@ function loadQuality(): Quality {
   const stored = localStorage.getItem("lagos-quality");
   if (stored === "low" || stored === "medium" || stored === "high") return stored;
   return matchMedia("(pointer: coarse)").matches ? "low" : "medium";
+}
+
+function loadHousing(): HousingPath | "later" | null {
+  const stored = localStorage.getItem("lagos-housing");
+  return stored === "rent" || stored === "buy" || stored === "build" || stored === "later" ? stored : null;
 }
 
 function ago(at: number | null, now: number) {
@@ -69,6 +75,10 @@ export function GameView({
   const [mapOpen, setMapOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(() => !localStorage.getItem("lagos-help-seen"));
   const [guideHidden, setGuideHidden] = useState(() => localStorage.getItem("lagos-guide-hidden") === "1");
+  const [guideOpen, setGuideOpen] = useState(true);
+  const [housing, setHousing] = useState(loadHousing);
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [plotsLoaded, setPlotsLoaded] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const [settings, setSettings] = useState<PlayerSettings>(defaultSettings);
@@ -98,6 +108,7 @@ export function GameView({
     try {
       const next = await api.plots();
       setPlots(next);
+      setPlotsLoaded(true);
       engineRef.current?.setPlots(next);
     } catch {
       // Plots are refreshed again on the next change broadcast.
@@ -199,7 +210,27 @@ export function GameView({
     document.documentElement.style.setProperty("--text-scale", String(settings.textScale));
   }, [settings.textScale]);
 
-  const objective = useMemo(() => currentObjective(economy, properties, hud, visitedHome), [economy, properties, hud, visitedHome]);
+  const chosenPath = housing === "later" ? null : housing;
+  const settledPath = housingPath(properties, plots, null);
+  const objective = useMemo(() => currentObjective(economy, properties, plots, hud, visitedHome, chosenPath), [economy, properties, plots, hud, visitedHome, chosenPath]);
+  const objectiveKey = objective ? `${objective.step}:${objective.title}` : "";
+  useEffect(() => {
+    if (objectiveKey) setGuideOpen(true);
+  }, [objectiveKey]);
+  useEffect(() => {
+    if (economy && plotsLoaded && !loading && !settledPath && housing === null) setWelcomeOpen(true);
+  }, [Boolean(economy), plotsLoaded, loading, settledPath, housing]);
+  const chooseHousing = (path: HousingPath | null) => {
+    const value = path ?? "later";
+    localStorage.setItem("lagos-housing", value);
+    localStorage.setItem("lagos-help-seen", "1");
+    setHousing(value);
+    setWelcomeOpen(false);
+    setHelpOpen(false);
+    setGuideHidden(false);
+    localStorage.removeItem("lagos-guide-hidden");
+    setManualTarget(null);
+  };
   const target = manualTarget ?? objective?.target ?? null;
 
   useEffect(() => {
@@ -219,7 +250,7 @@ export function GameView({
   }, [hud?.x, hud?.z]);
 
   const warnings = safety?.warnings ?? [];
-  const blocking = Boolean(sheet || plotSheet || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length);
+  const blocking = Boolean(welcomeOpen || sheet || plotSheet || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -327,9 +358,10 @@ export function GameView({
   const markers = target ? [{ point: target.point, label: target.label, kind: manualTarget ? ("waypoint" as const) : ("objective" as const) }] : [];
 
   return (
-    <div className="game-view">
+    <div className={`game-view ${touch ? "touch" : "pointer"}`}>
       <canvas ref={canvasRef} className="game-canvas" data-testid="game-canvas" />
       <div ref={overlayRef} className="world-tags" />
+      {touch && engine && !blocking && !chatOpen && <TouchLook engine={engine} />}
 
       {loading && (
         <div className="loading-overlay" role="status">
@@ -372,18 +404,21 @@ export function GameView({
           </section>
 
           {objective && !guideHidden && (
-            <section className="objective" data-testid="objective">
-              <div className="row spread">
-                <p className="eyebrow">STEP {objective.step} OF {objective.total}</p>
-                <button className="link small" onClick={() => { setGuideHidden(true); localStorage.setItem("lagos-guide-hidden", "1"); }}>Hide guide</button>
+            <section className={`objective ${guideOpen ? "open" : "collapsed"}`} data-testid="objective">
+              <div className="objective-head">
+                <button className="objective-toggle" onClick={() => setGuideOpen((open) => !open)} aria-expanded={guideOpen} aria-label={guideOpen ? "Collapse guide" : "Expand guide"}>
+                  <span className="eyebrow">STEP {objective.step} OF {objective.total}</span>
+                  <h3>{objective.title}</h3>
+                </button>
+                <button className="icon-button small-x" onClick={() => { setGuideHidden(true); localStorage.setItem("lagos-guide-hidden", "1"); }} aria-label="Hide guide">✕</button>
               </div>
-              <h3>{objective.title}</h3>
-              <p>{objective.detail}</p>
+              {guideOpen && <p>{objective.detail.replace(/press E\b/g, touch ? "tap ✋" : `press ${keyLabel(bindings.interact)}`)}</p>}
+              {guideOpen && objective.choose && <button className="primary small-button" onClick={() => setWelcomeOpen(true)}>Choose where to live</button>}
               {target && hud.waypoint && <p className="distance">◆ {target.label} · {Math.round(hud.waypoint.distance)} m</p>}
             </section>
           )}
           {guideHidden && (
-            <button className="guide-tab" onClick={() => { setGuideHidden(false); localStorage.removeItem("lagos-guide-hidden"); }}>Show guide</button>
+            <button className="guide-tab" onClick={() => { setGuideHidden(false); setGuideOpen(true); localStorage.removeItem("lagos-guide-hidden"); }}>Guide</button>
           )}
 
           {economy?.activeJob && (
@@ -437,13 +472,13 @@ export function GameView({
           )}
 
           {hud.prompt && !blocking && (
-            <div className={`prompt ${hud.prompt.disabled ? "disabled" : ""}`} data-testid="prompt">
-              <kbd>{hud.prompt.key}</kbd>
+            <button type="button" className={`prompt ${hud.prompt.disabled ? "disabled" : ""}`} data-testid="prompt" disabled={hud.prompt.disabled} onClick={() => engine.triggerInteract()}>
+              <kbd>{touch && !hud.prompt.disabled ? "✋" : hud.prompt.key}</kbd>
               <div>
                 <strong>{hud.prompt.label}</strong>
                 {hud.prompt.detail && <span>{hud.prompt.detail}</span>}
               </div>
-            </div>
+            </button>
           )}
           {hud.secondaryPrompt && !blocking && (
             <div className="prompt secondary-prompt">
@@ -461,9 +496,10 @@ export function GameView({
           <Minimap engine={engine} data={engine.data} markers={markers} onOpen={() => setMapOpen(true)} />
 
           <div className="hud-buttons">
-            <button onClick={() => setPhone("home")} aria-label="Open phone">📱 Phone <kbd>{keyLabel(bindings.phone)}</kbd></button>
-            <button onClick={() => setMapOpen(true)}>🗺 Map <kbd>{keyLabel(bindings.map)}</kbd></button>
-            <button onClick={() => setHelpOpen((open) => !open)}>⌨ Controls <kbd>{keyLabel(bindings.help)}</kbd></button>
+            <button onClick={() => setPhone("home")} aria-label="Open phone">📱<span> Phone</span> <kbd>{keyLabel(bindings.phone)}</kbd></button>
+            <button onClick={() => setMapOpen(true)} aria-label="Open map">🗺<span> Map</span> <kbd>{keyLabel(bindings.map)}</kbd></button>
+            {touch && <button onClick={() => setChatOpen(true)} aria-label="Open chat">💬<span> Chat</span></button>}
+            {!touch && <button onClick={() => setHelpOpen((open) => !open)} aria-label="Controls">⌨<span> Controls</span> <kbd>{keyLabel(bindings.help)}</kbd></button>}
           </div>
           <div className="perf" data-testid="perf">{hud.fps} fps · {hud.frameMs} ms · {hud.qualityStep ? `auto detail −${hud.qualityStep} · ` : ""}{hud.speed.toFixed(1)} m/s {hud.mode}</div>
           <div className="osm-credit">Map data © OpenStreetMap contributors (ODbL)</div>
@@ -499,7 +535,7 @@ export function GameView({
         ))}
       </div>
 
-      {helpOpen && !loading && (
+      {helpOpen && !loading && !touch && !welcomeOpen && (
         <aside className="controls-card">
           <div className="row spread">
             <h3>Controls</h3>
@@ -607,6 +643,7 @@ export function GameView({
               await api.resetProgress();
               localStorage.removeItem("lagos-visited-home");
               localStorage.removeItem("lagos-guide-hidden");
+              localStorage.removeItem("lagos-housing");
               toast({ tone: "success", text: "Test progress reset. Reloading…" });
               setTimeout(() => location.reload(), 900);
             } catch (error) {
@@ -634,7 +671,11 @@ export function GameView({
         <FullMap engine={engine} data={engine.data} markers={markers} onNavigate={(next) => setManualTarget(next)} onClose={() => setMapOpen(false)} />
       )}
 
-      {touch && engine && !blocking && <TouchControls engine={engine} />}
+      {touch && engine && !blocking && !chatOpen && <TouchControls engine={engine} />}
+
+      {welcomeOpen && !loading && (
+        <Welcome playerName={playerName} economy={economy} properties={properties} touch={touch} bindings={bindings} onChoose={chooseHousing} />
+      )}
     </div>
   );
 }
@@ -658,55 +699,80 @@ function placeFromListing(listing: PropertyListing): Place {
   };
 }
 
+/** Drag anywhere on the open view to look around; sits under the HUD so buttons stay tappable. */
+function TouchLook({ engine }: { engine: GameEngine }) {
+  const look = useRef<{ id: number; x: number; y: number } | null>(null);
+  const end = (event: React.PointerEvent) => {
+    if (look.current?.id === event.pointerId) look.current = null;
+  };
+  return (
+    <div
+      className="touch-look"
+      onPointerDown={(event) => {
+        if (look.current) return;
+        look.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+        (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        if (look.current?.id !== event.pointerId) return;
+        engine.touchLook((event.clientX - look.current.x) * 1.6, (event.clientY - look.current.y) * 1.6);
+        look.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      }}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onLostPointerCapture={end}
+    />
+  );
+}
+
 function TouchControls({ engine }: { engine: GameEngine }) {
   const base = useRef<{ id: number; x: number; y: number } | null>(null);
-  const look = useRef<{ id: number; x: number; y: number } | null>(null);
   const [knob, setKnob] = useState<[number, number]>([0, 0]);
   const [sprint, setSprint] = useState(false);
+  const [used, setUsed] = useState(() => localStorage.getItem("lagos-stick-used") === "1");
+  const release = (event: React.PointerEvent) => {
+    if (base.current?.id !== event.pointerId) return;
+    base.current = null;
+    setKnob([0, 0]);
+    engine.setTouchMove(0, 0, false);
+  };
+  useEffect(() => () => engine.setTouchMove(0, 0, false), [engine]);
   return (
     <>
       <div
         className="touch-stick"
         onPointerDown={(event) => {
-          base.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
-          (event.target as HTMLElement).setPointerCapture(event.pointerId);
+          if (base.current) return;
+          const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+          base.current = { id: event.pointerId, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+          (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+          if (!used) {
+            setUsed(true);
+            localStorage.setItem("lagos-stick-used", "1");
+          }
         }}
         onPointerMove={(event) => {
-          if (!base.current || base.current.id !== event.pointerId) return;
-          const dx = (event.clientX - base.current.x) / 50;
-          const dy = (event.clientY - base.current.y) / 50;
+          if (base.current?.id !== event.pointerId) return;
+          const radius = (event.currentTarget as HTMLElement).clientWidth / 2;
+          const dx = (event.clientX - base.current.x) / radius;
+          const dy = (event.clientY - base.current.y) / radius;
           const length = Math.min(1, Math.hypot(dx, dy));
           const angle = Math.atan2(dy, dx);
           const x = Math.cos(angle) * length;
           const y = Math.sin(angle) * length;
-          setKnob([x * 40, y * 40]);
+          setKnob([x * radius * 0.6, y * radius * 0.6]);
           engine.setTouchMove(x, -y, sprint || length > 0.98);
         }}
-        onPointerUp={() => {
-          base.current = null;
-          setKnob([0, 0]);
-          engine.setTouchMove(0, 0, false);
-        }}
+        onPointerUp={release}
+        onPointerCancel={release}
+        onLostPointerCapture={release}
       >
-        <i style={{ transform: `translate(${knob[0]}px, ${knob[1]}px)` }} />
+        <i style={{ transform: `translate(calc(-50% + ${knob[0]}px), calc(-50% + ${knob[1]}px))` }} />
+        {!used && <span className="touch-hint">Drag to walk</span>}
       </div>
-      <div
-        className="touch-look"
-        onPointerDown={(event) => {
-          look.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
-        }}
-        onPointerMove={(event) => {
-          if (!look.current || look.current.id !== event.pointerId) return;
-          engine.touchLook((event.clientX - look.current.x) * 1.6, (event.clientY - look.current.y) * 1.6);
-          look.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
-        }}
-        onPointerUp={() => {
-          look.current = null;
-        }}
-      />
       <div className="touch-buttons">
-        <button onClick={() => engine.triggerInteract()}>E</button>
-        <button className={sprint ? "active" : ""} onClick={() => setSprint((value) => !value)}>Run</button>
+        <button className={sprint ? "run active" : "run"} onClick={() => setSprint((value) => !value)} aria-pressed={sprint}>Run</button>
+        <button className="use" onClick={() => engine.triggerInteract()} aria-label="Use">✋</button>
       </div>
     </>
   );

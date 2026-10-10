@@ -7,18 +7,10 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
-import { constructionStages, houseDesign, houseFootprint, PLOTS, type HouseDesign, type Plot } from "@lagos-living/shared";
+import { houseDesign, houseFootprint, PLOTS, type HouseDesign, type Plot } from "@lagos-living/shared";
 import type { PlotState } from "../api";
+import { buildProgress } from "./build-progress";
 import type { Materials } from "./materials";
-
-/** How far along a plot's build is, for drawing. Stage index 0..3 plus the fraction of that stage done. */
-export function buildProgress(construction: NonNullable<PlotState["construction"]>, now: number) {
-  const stage = construction.stagesPaid - 1;
-  const started = Date.parse(construction.stageStartedAt);
-  const ready = Date.parse(construction.stageReadyAt);
-  const fraction = construction.completed ? 1 : Math.max(0, Math.min(1, (now - started) / Math.max(1, ready - started)));
-  return { stage, fraction, waitingForPayment: !construction.completed && fraction >= 1 && stage < constructionStages.length - 1 };
-}
 
 type PlotView = { root: TransformNode; house: TransformNode; key: string; sign: { texture: DynamicTexture; text: string } };
 

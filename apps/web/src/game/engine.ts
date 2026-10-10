@@ -60,7 +60,8 @@ import {
 } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "../auth-client";
 import type { PlotState } from "../api";
-import { buildProgress, PlotsView } from "./plots";
+import { buildProgress } from "./build-progress";
+import { PlotsView } from "./plots";
 import { MultiplayerConnection, type MultiplayerStatus } from "../multiplayer";
 import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, MAX_AUTO_SCALING, qualityStep } from "./adaptive-quality";
 import { CityAudio } from "./audio";
