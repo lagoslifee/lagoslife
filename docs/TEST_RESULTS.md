@@ -32,7 +32,7 @@ rasteriser.
 | Playwright `e2e/vehicles.spec.ts` | 1 / 1 passed (3.8 min, run twice) |
 | Playwright `e2e/playable-loop.spec.ts` | 2 / 2 passed (8.4 min) |
 | Playwright `e2e/accounts.spec.ts` | 5 / 5 passed |
-| Full Playwright suite in one run (accounts, districts, playable loop, vehicles) | 10 / 10 passed (26 min) |
+| Full Playwright suite in one run (accounts, districts, playable loop, vehicles) | 10 / 10 passed (26 min), recorded before the over-water parapet change; the district tests were re-run individually afterwards |
 | `npm run build -w @lagos-living/web` and typechecks | passed |
 
 ### Playable loop (browser, real servers, LocalTester after a progress reset)
