@@ -369,11 +369,44 @@ Rate limits are shared through Postgres:
   and the next refusal, 40 concurrent requests from two connection pools
   allowing exactly 25, a new window once the old one passes, and purging.
 
+
+### Land, building and the first session (web client)
+
+- **Unit tests:** `objectives.test.ts` (5 tests) covers the housing choice coming
+  first, sending builders to the nearest free plot and then to choosing a design,
+  sending them to deliveries while builders work or when they can't afford the next
+  stage, following what the player actually holds, and the guide ending.
+- **Browser, `land-and-build.spec.ts` (passed, 1.1 min):** the welcome offers rent,
+  buy or build. Choosing build points the guide at a free plot. The test then
+  leases it (₦15,000), starts a self-contain cottage (₦20,000) and pays the three
+  later stages through the plot sheet (₦25,000, ₦20,000, ₦15,000). The dev-only
+  `/api/dev/finish-stage` skips each timer. The finished house becomes the owned
+  home `built-<plot>`, and the player enters it. After a reload the plot is still
+  theirs, completed, and `first_built_home` is recorded.
+- **Browser, `responsive.spec.ts` (5 passed, 3.4 min):** emulated iPhone SE,
+  Pixel 7, iPhone 13 landscape, iPad and a 1366×768 desktop. On each one the test
+  checks that the welcome works and the guide uses the right wording ("tap ✋" on
+  touch, "press E" otherwise). The keyboard controls card is absent and the touch
+  stick appears only on touch screens. The test fails if any two visible HUD
+  elements overlap, any element is off-screen or the page scrolls. It checks this
+  with the guide open and again at a plot prompt. Tapping the prompt opens the plot
+  sheet, which stays inside the viewport.
+- **Manual screenshot run:** a duplex was built stage by stage on the medium
+  preset, covering trenches and slab, blockwork, roof slab with parapet, and
+  finishing with door, windows and balcony. Entering it from its door worked. On
+  the Netlify site under Pixel 7 emulation, a guest got the welcome, chose build,
+  saw the guide and was shown "2 online".
+- **Bug found:** behind the tunnel every guest sign-up was counted as `::1`, so
+  twenty visitors an hour would have locked everyone out. Express now trusts
+  `TRUSTED_PROXIES`, and limits are keyed by the visitor's address (checked:
+  `guest:3.214.111.192`).
+
 ## Not yet verified
 
 - Frame rate on real GPUs and phones, and tile-streaming hitches on them.
 - More than two concurrent *browser* players. 100 bot clients were measured in one room on this VM (see the load test above), but not over real networks, on other hosts, or with rendering clients. The room cap is 100, and snapshots carry the nearest 40.
 - A public game server, TLS proxy or managed database. The production images and compose stack were only run on this VM. The web client alone is on Netlify (https://silver-elf-acde6c.netlify.app, deployed by the owner). After `netlify.toml` was added, a browser check found the home page and a deep link both return 200. With no `VITE_API_URL` set, the site shows the "game server not configured" screen, so sign-in and multiplayer can't be tested there yet.
 - Citation evasion for kerb strikes, which the server does not model. Pedestrian, car, danfo and building contact is detected on the server.
-- Touch controls on a physical device (layout is implemented and responsive).
+- Touch controls on a physical device. Layouts were checked only under browser device emulation (see above).
+- Abandoned guest accounts keep their plots; there are 10 plots, so heavy public testing can use them all up until an admin releases them or the leases lapse.
 - Several server processes beyond two on one VM, behind a reverse proxy, or across hosts.
