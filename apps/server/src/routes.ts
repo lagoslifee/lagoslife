@@ -35,6 +35,7 @@ import { auth } from "./auth.js";
 import { config } from "./config.js";
 import { pool } from "./database.js";
 import { getPlayerPosition, markProgressReset } from "./player-presence.js";
+import { withinRate } from "./request-rate.js";
 import {
   appealCitation,
   citationHistory,
@@ -121,20 +122,17 @@ function guarded(fallback: string, handler: Handler) {
   };
 }
 
-const sensitiveRates = new Map<string, { since: number; count: number }>();
-/** Per-player limit for money-moving routes; generous for play, hostile to scripts. */
-function rateLimited(req: Request, res: Response, next: NextFunction) {
+/** Per-player limit for money-moving routes; generous for play, hostile to scripts. Shared by every server process. */
+async function rateLimited(req: Request, res: Response, next: NextFunction) {
   const userId = (req as AuthenticatedRequest).player.userId;
-  const now = Date.now();
-  const rate = sensitiveRates.get(userId) ?? { since: now, count: 0 };
-  if (now - rate.since > 10_000) {
-    rate.since = now;
-    rate.count = 0;
-  }
-  rate.count += 1;
-  sensitiveRates.set(userId, rate);
-  if (rate.count > 25) {
-    res.status(429).json({ error: "Too many requests — slow down a little." });
+  try {
+    if (!(await withinRate(`player:${userId}`, 25, 10_000))) {
+      res.status(429).json({ error: "Too many requests — slow down a little." });
+      return;
+    }
+  } catch (error) {
+    console.error("Rate limit check failed", error);
+    res.status(503).json({ error: "Try again in a moment." });
     return;
   }
   next();

@@ -18,6 +18,8 @@ export const auth = betterAuth({
   secret: config.BETTER_AUTH_SECRET,
   database: pool,
   trustedOrigins: [config.WEB_ORIGIN],
+  // Counters in Postgres keep limits shared across server processes. Enabled only in production (the default).
+  rateLimit: { storage: "database" },
   advanced: config.TRUSTED_PROXIES.length > 0 ? { ipAddress: { trustedProxies: config.TRUSTED_PROXIES } } : undefined,
   emailAndPassword: {
     enabled: true,

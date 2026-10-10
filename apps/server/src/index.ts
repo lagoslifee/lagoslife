@@ -7,6 +7,7 @@ import { config } from "./config.js";
 import { profileEvents } from "./profile-service.js";
 import { LagosRoom } from "./rooms/LagosRoom.js";
 import { configureRoutes } from "./routes.js";
+import { purgeExpiredRates } from "./request-rate.js";
 import { purgeExpiredChat, safetyEvents } from "./safety-service.js";
 import { vehicleEvents } from "./vehicle-events.js";
 
@@ -39,6 +40,7 @@ const purgeChat = () =>
     .catch((error) => console.error("Chat retention purge failed", error));
 purgeChat();
 setInterval(purgeChat, 6 * 3_600_000).unref();
+setInterval(() => void purgeExpiredRates().catch((error) => console.error("Rate-limit purge failed", error)), 3_600_000).unref();
 
 await gameServer.listen(config.PORT);
 console.log(`Lagos Living server listening on ${config.BETTER_AUTH_URL}`);
