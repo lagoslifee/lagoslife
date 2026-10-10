@@ -23,6 +23,11 @@ owns validated wire contracts.
   shop, inventory, and server-verified neighbourhood delivery job.
 - [x] Milestone 5 — transactional purchase/rental, protected interior access,
   saved furniture placement, guest invitations, and optional daily-life actions.
+- [x] Playable vertical slice (Lekki Phase 1, 1:1 scale) — responsive
+  locomotion, OSM street names on signs, maps and HUD, building/street kit,
+  danfo route with seats and fares, delivery job, food, starter home, rental
+  and purchase, phone UI, accessibility settings, save receipts, unstuck and
+  test reset. See [test results](TEST_RESULTS.md).
 - [ ] Milestone 6 — vehicle ownership, garage, driving, service, and insurance.
 - [ ] Milestone 7 — streamed Ikoyi, Victoria Island, and Lekki Phase 1.
 - [ ] Milestone 8 — community systems, administration, fictional justice,
@@ -66,6 +71,14 @@ placement, idempotent placement, and persisted sleep/cook/clean state. Browser
 automation acquires the Glover Court flat, places furniture, cleans the home,
 reloads, re-enters, and observes the saved interior.
 
+### Vertical slice verification note
+
+The full journey (ride → wage → food → rent → enter → reload) is automated in
+`apps/web/e2e/playable-loop.spec.ts` and passed in a real browser. Movement
+timings, danfo race tests and the remaining checks are in
+[TEST_RESULTS.md](TEST_RESULTS.md). The cloud VM has no GPU (SwiftShader), so
+frame rates measured here (1–10 fps) say nothing about player hardware.
+
 ## Architecture decisions
 
 - Colyseus 0.18 was selected because its current API provides authoritative
@@ -73,8 +86,13 @@ reloads, re-enters, and observes the saved interior.
 - Better Auth uses PostgreSQL and scrypt-backed email/password authentication.
   Mailpit provides a complete local password-reset path without a paid service.
 - Babylon.js ES modules are imported directly so Vite can tree-shake builds.
-- Geography will come from attributed OpenStreetMap extracts. Map footprints
-  are layout input, not claims that generated buildings are exact replicas.
+- Geography comes from attributed OpenStreetMap extracts at 1:1 scale. Map
+  footprints are layout input, not claims that generated buildings are exact
+  replicas.
+- Movement is client-simulated (120 Hz substeps, frame-rate independent) and
+  server-validated (speed envelope, bounds, building footprints) with
+  corrections. Danfos are server-driven along route distance and predicted on
+  the client between 20 Hz snapshots.
 
 ## Deferred expanded scope
 
