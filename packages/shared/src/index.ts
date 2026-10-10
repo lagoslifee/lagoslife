@@ -71,3 +71,25 @@ export const purchaseRequestSchema = z.object({
 export const completeJobRequestSchema = z.object({
   jobId: z.uuid(),
 });
+
+export const acquirePropertySchema = z.object({
+  propertyId: z.string().min(1).max(100),
+  tenure: z.enum(["owned", "rented"]),
+  idempotencyKey: z.uuid(),
+});
+
+export const placeFurnitureSchema = z.object({
+  itemId: z.string().min(1).max(80),
+  gridX: z.number().int().min(0).max(7),
+  gridZ: z.number().int().min(0).max(5),
+  rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
+  idempotencyKey: z.uuid(),
+});
+
+export const homeActionSchema = z.object({
+  action: z.enum(["sleep", "cook", "clean"]),
+});
+
+export const inviteGuestSchema = z.object({
+  username: z.string().min(3).max(20),
+});

@@ -1,6 +1,10 @@
 import {
+  acquirePropertySchema,
   completeJobRequestSchema,
   defaultAppearance,
+  homeActionSchema,
+  inviteGuestSchema,
+  placeFurnitureSchema,
   purchaseRequestSchema,
   saveCharacterSchema,
 } from "@lagos-living/shared";
@@ -19,6 +23,14 @@ import {
   purchaseItem,
   startDelivery,
 } from "./economy-service.js";
+import {
+  acquireProperty,
+  getInterior,
+  invitePropertyGuest,
+  listProperties,
+  performHomeAction,
+  placeFurniture,
+} from "./property-service.js";
 
 type AuthenticatedRequest = Request & {
   player: { userId: string; name: string };
@@ -183,6 +195,102 @@ export function configureRoutes(app: Express) {
       const status = error instanceof EconomyError ? error.status : 500;
       res.status(status).json({
         error: error instanceof EconomyError ? error.message : "Job could not be completed",
+      });
+    }
+  });
+
+  app.get("/api/properties", requirePlayer, async (req, res) => {
+    const { userId } = (req as AuthenticatedRequest).player;
+    res.json(await listProperties(userId));
+  });
+
+  app.post("/api/properties/acquire", requirePlayer, async (req, res) => {
+    const parsed = acquirePropertySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid property request" });
+      return;
+    }
+    try {
+      const { userId } = (req as AuthenticatedRequest).player;
+      res.json(
+        await acquireProperty(
+          userId,
+          parsed.data.propertyId,
+          parsed.data.tenure,
+          parsed.data.idempotencyKey,
+        ),
+      );
+    } catch (error) {
+      const status = error instanceof EconomyError ? error.status : 500;
+      res.status(status).json({
+        error: error instanceof EconomyError ? error.message : "Property could not be acquired",
+      });
+    }
+  });
+
+  app.get("/api/properties/:propertyId/interior", requirePlayer, async (req, res) => {
+    try {
+      const { userId } = (req as AuthenticatedRequest).player;
+      res.json(await getInterior(userId, String(req.params.propertyId)));
+    } catch (error) {
+      const status = error instanceof EconomyError ? error.status : 500;
+      res.status(status).json({
+        error: error instanceof EconomyError ? error.message : "Home could not be entered",
+      });
+    }
+  });
+
+  app.post("/api/properties/:propertyId/furniture", requirePlayer, async (req, res) => {
+    const parsed = placeFurnitureSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid furniture placement" });
+      return;
+    }
+    try {
+      const { userId } = (req as AuthenticatedRequest).player;
+      res.json(await placeFurniture(userId, String(req.params.propertyId), parsed.data));
+    } catch (error) {
+      const status = error instanceof EconomyError ? error.status : 500;
+      res.status(status).json({
+        error: error instanceof EconomyError ? error.message : "Furniture could not be placed",
+      });
+    }
+  });
+
+  app.post("/api/properties/:propertyId/action", requirePlayer, async (req, res) => {
+    const parsed = homeActionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid home action" });
+      return;
+    }
+    try {
+      const { userId } = (req as AuthenticatedRequest).player;
+      res.json(
+        await performHomeAction(userId, String(req.params.propertyId), parsed.data.action),
+      );
+    } catch (error) {
+      const status = error instanceof EconomyError ? error.status : 500;
+      res.status(status).json({
+        error: error instanceof EconomyError ? error.message : "Home action failed",
+      });
+    }
+  });
+
+  app.post("/api/properties/:propertyId/guests", requirePlayer, async (req, res) => {
+    const parsed = inviteGuestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid guest invitation" });
+      return;
+    }
+    try {
+      const { userId } = (req as AuthenticatedRequest).player;
+      res.json(
+        await invitePropertyGuest(userId, String(req.params.propertyId), parsed.data.username),
+      );
+    } catch (error) {
+      const status = error instanceof EconomyError ? error.status : 500;
+      res.status(status).json({
+        error: error instanceof EconomyError ? error.message : "Guest could not be invited",
       });
     }
   });

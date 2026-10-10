@@ -46,6 +46,9 @@ export function EconomyPanel() {
 
   useEffect(() => {
     void load();
+    const refresh = () => void load();
+    window.addEventListener("lagos-economy-refresh", refresh);
+    return () => window.removeEventListener("lagos-economy-refresh", refresh);
   }, [load]);
 
   async function action(path: string, body?: object) {

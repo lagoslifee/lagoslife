@@ -9,6 +9,7 @@ import {
 import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 import { apiUrl, authClient } from "./auth-client";
 import { EconomyPanel } from "./EconomyPanel";
+import { PropertyPanel } from "./PropertyPanel";
 
 const PlayableScene = lazy(() => import("./PlayableScene"));
 
@@ -262,6 +263,7 @@ function GameShell({
         </div>
       </header>
       <EconomyPanel />
+      <PropertyPanel />
       <aside className="location-card">
         <p className="eyebrow">CURRENT DISTRICT</p>
         <h2>Ikoyi Preview</h2>

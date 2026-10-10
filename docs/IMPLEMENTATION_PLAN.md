@@ -21,7 +21,8 @@ owns validated wire contracts.
   two-account browser verification.
 - [x] Milestone 4 — durable transactional wallet, transaction history, Falomo
   shop, inventory, and server-verified neighbourhood delivery job.
-- [ ] Milestone 5 — property access, interiors, furniture, and daily life.
+- [x] Milestone 5 — transactional purchase/rental, protected interior access,
+  saved furniture placement, guest invitations, and optional daily-life actions.
 - [ ] Milestone 6 — vehicle ownership, garage, driving, service, and insurance.
 - [ ] Milestone 7 — streamed Ikoyi, Victoria Island, and Lekki Phase 1.
 - [ ] Milestone 8 — community systems, administration, fictional justice,
@@ -56,6 +57,14 @@ and prove one deduction and one inventory increment. Delivery tests prove that
 remote completion is rejected, successful arrival pays once, and a repeated
 claim does not pay again. Browser automation purchases an item, observes it in
 inventory, and starts a persistent delivery through the real interface.
+
+### Milestone 5 verification note
+
+Integration tests prove one winner under concurrent purchase, time-limited
+rental access, non-owner denial, explicit guest access, owner-only furniture
+placement, idempotent placement, and persisted sleep/cook/clean state. Browser
+automation acquires the Glover Court flat, places furniture, cleans the home,
+reloads, re-enters, and observes the saved interior.
 
 ## Architecture decisions
 

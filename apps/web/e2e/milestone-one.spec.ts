@@ -103,6 +103,41 @@ test("localhost enters the development account automatically", async ({ page }) 
   await expect(page.locator(".profile-menu strong")).toHaveText("LocalTester");
 });
 
+test("owns, enters, decorates, and maintains a persistent home", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("Ikoyi Preview")).toBeVisible();
+  await page.getByRole("button", { name: /game naira/i }).click();
+  const inventorySection = page.locator(".economy-columns .economy-section").first();
+  if (!(await inventorySection.getByText("Lagoon Sofa").isVisible())) {
+    const sofa = page.locator(".catalogue-grid article").filter({ hasText: "Lagoon Sofa" });
+    await sofa.getByRole("button", { name: /Buy/ }).click();
+    await expect(inventorySection.getByText("Lagoon Sofa")).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Close wallet" }).click();
+
+  await page.getByRole("button", { name: /homes/i }).click();
+  const buy = page.getByRole("button", { name: /Buy ·/ });
+  if (await buy.isVisible()) await buy.click();
+  else await page.getByRole("button", { name: "Enter home" }).click();
+  await expect(page.getByRole("heading", { name: "Glover Court Garden Flat" })).toBeVisible();
+  if (!(await page.locator(".placed-furniture", { hasText: "Lagoon Sofa" }).isVisible())) {
+    await page.getByLabel("Floor 2, 3").click();
+  }
+  await expect(page.locator(".placed-furniture", { hasText: "Lagoon Sofa" })).toBeVisible();
+  await page.getByRole("button", { name: "Clean" }).click();
+  await expect(page.locator(".needs-row > div").filter({ hasText: "cleanliness" })).toContainText("100");
+  await page.screenshot({
+    path: "/opt/cursor/artifacts/lagos-living-home-interior.png",
+    fullPage: true,
+  });
+
+  await page.reload();
+  await expect(page.getByText("Ikoyi Preview")).toBeVisible();
+  await page.getByRole("button", { name: /homes/i }).click();
+  await page.getByRole("button", { name: "Enter home" }).click();
+  await expect(page.locator(".placed-furniture", { hasText: "Lagoon Sofa" })).toBeVisible();
+});
+
 test("two authenticated residents share authoritative movement", async ({ browser }) => {
   test.setTimeout(120_000);
   const firstContext = await browser.newContext({ viewport: { width: 1000, height: 700 } });

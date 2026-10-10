@@ -13,7 +13,7 @@ export class EconomyError extends Error {
   }
 }
 
-async function ensureWallet(client: PoolClient, userId: string) {
+export async function ensureWallet(client: PoolClient, userId: string) {
   const inserted = await client.query(
     `INSERT INTO wallet (user_id, balance)
      VALUES ($1, $2)
