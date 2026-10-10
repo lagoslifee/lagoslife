@@ -15,7 +15,9 @@ owns validated wire contracts.
   and browser-rendered scene.
 - [x] Milestone 2 — temporary licensed humanoid, animation blending,
   accelerated movement, collision, third-person camera, graphics presets, and
-  tested touch controls. Final modular character replacement remains tracked.
+  tested touch controls. Character looks (skin tone, outfit, hair, accessory)
+  are shown on the 3D resident in the creator, on the player and on other
+  players; final art for the hair and accessory meshes remains tracked.
 - [x] Milestone 3 — licensed OSM Ikoyi starter section, visible attribution,
   authenticated authoritative movement, remote avatars, interpolation, and
   two-account browser verification.

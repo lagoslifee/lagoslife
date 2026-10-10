@@ -25,9 +25,10 @@ rasteriser.
 
 | Suite | Result |
 |---|---|
-| `npm test -w @lagos-living/server` (PostgreSQL integration, room unit and config tests) | 88 / 88 passed (source tests only; compiled copies in `dist/` are excluded) |
-| `npm test -w @lagos-living/shared` | 16 / 16 passed |
-| `apps/web` `controller.test.ts` and `car-controller.test.ts` | 13 / 13 passed |
+| `npm test -w @lagos-living/server` (PostgreSQL integration, room unit and config tests) | 93 / 93 passed (source tests only; compiled copies in `dist/` are excluded) |
+| `npm test -w @lagos-living/shared` | 18 / 18 passed |
+| `apps/web` `controller.test.ts`, `car-controller.test.ts` and `appearance.test.ts` | 17 / 17 passed |
+| Playwright `e2e/accounts.spec.ts` on its own, after the 3D character looks | 5 / 5 passed (2.2 min) |
 | **Full Playwright suite in one run** (accounts, districts, playable loop, safety, vehicles), after all milestone 8 changes | **12 / 12 passed (29.1 min)**: districts 12.9 min, playable loop 8.0 min, the rest under 5 min each |
 | Playwright `e2e/safety.spec.ts` on its own | 2 / 2 passed (2.3 min) |
 | Playwright `e2e/districts.spec.ts` on its own | 2 / 2 passed (Link Bridge drive 7.0 min; venues 5.6 min). One earlier drive run failed when a 300 s leg deadline expired with the car still moving on the deck at 6 fps; each leg now has 540 s. |
@@ -98,6 +99,26 @@ Localhost auto sign-in (LocalTester), registration with appearance persisting
 across sign-out and sign-in, two newly registered residents both seeing
 "2 online" (and one moving), unauthenticated room joins rejected, and password
 recovery through Mailpit.
+
+### Character looks in 3D
+
+- Browser (`e2e/accounts.spec.ts`): the character studio's 3D preview loaded and
+  relabelled the outfit as options changed. After saving deep skin, braids,
+  ankara and glasses, the player's model wore that look, with braid and glasses
+  meshes attached to its head, and wore it again after signing out and back in.
+  When a second resident saved light skin, an afro, athleisure and a cap, the
+  first resident's view of them changed to that look within 15 s, without a
+  reload.
+- Screenshots from the street (medium preset), checked by eye: all five skin
+  tones, the four outfits, the five hairstyles and the three accessories sit on
+  the head and follow the animation. The shirt recolours keep the fabric
+  shading. Small leftovers of the original print remain at a few cuff and
+  collar seams.
+- Unit tests: recolour inputs for every outfit and tone, populated residents
+  get valid, stable and varied looks, and stored looks are read safely.
+  Profile-service tests cover save, reload, the live-room event and invalid
+  stored data. Room tests cover a joiner's look reaching others, the
+  rate-limited look list, and live changes.
 
 ### Chat, moderation and fictional justice (milestone 8)
 

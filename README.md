@@ -40,8 +40,13 @@ sign-in is disabled when `NODE_ENV` is not `development`.
 | Phone / Map / Controls card | P / M / H |
 | Hop | Space |
 
+**Your look.** Phone → Settings → Customise character opens the character
+studio, with a 3D preview you can drag to turn. Skin tone, outfit, hairstyle and
+accessory are saved to your account. Other residents see the change straight
+away, without reloading.
+
 **Driving.** Buy a car at Lekki Motors on Admiralty Way; it is parked outside
-when you sign. Walk up to it and press E to drive. W/S accelerate, brake and
+once the sale goes through. Walk up to it and press E to drive. W/S accelerate, brake and
 reverse, A/D steer, Space is the handbrake and Q sounds the horn. Slow below
 about 7 km/h and press E to step out; the car is parked where you leave it.
 Phone → Vehicles finds, insures, tows and garages your cars, and Ade Auto Works
