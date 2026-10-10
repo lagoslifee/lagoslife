@@ -20,8 +20,12 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import {
   defaultSettings,
+  effectiveTopSpeed,
   getPlace,
+  getVehicleModel,
   INTERACTION_RANGE,
+  VEHICLE_RULES,
+  type WorldVehicle,
   insideBuilding,
   INTERIOR_ORIGIN,
   MOVEMENT,
@@ -42,6 +46,8 @@ import { apiUrl } from "../auth-client";
 import { MultiplayerConnection, type MultiplayerStatus } from "../multiplayer";
 import { CityAudio } from "./audio";
 import { Avatar, AvatarFactory } from "./avatar";
+import { CarController } from "./car-controller";
+import { VehicleFactory, type VehicleView } from "./vehicles";
 import { defaultBindings, InputState, LocomotionController, type Bindings, type MoveMode } from "./controller";
 import { DanfoFactory, type DanfoView } from "./danfo";
 import { MeshBuilderBatch } from "./geometry";
@@ -68,6 +74,7 @@ export type HudState = {
   prompt: Prompt | null;
   secondaryPrompt: Prompt | null;
   bus: { id: string; seat: number | null; nextStop: string; atStop: string | null; stopRequested: boolean; occupied: number; capacity: number } | null;
+  vehicle: { id: string; name: string; plate: string; kmh: number; topKmh: number; condition: number; limp: boolean; reversing: boolean } | null;
   speed: number;
   mode: MoveMode;
   motion: MotionState;
@@ -100,7 +107,7 @@ export type EngineCallbacks = {
 type Remote = {
   avatar: Avatar | null;
   tag: HTMLDivElement;
-  samples: Array<{ t: number; x: number; z: number; yaw: number; motion: MotionState; busId: string | null }>;
+  samples: Array<{ t: number; x: number; z: number; yaw: number; motion: MotionState; busId: string | null; vehicleId: string | null }>;
   speed: number;
   lastSeen: number;
 };
@@ -187,6 +194,23 @@ export class GameEngine {
   private autopilot: { path: Vec2[]; index: number; sprint: boolean; resolve: (ok: boolean) => void; lastProgress: number; lastPoint: Vec2; deadline: number } | null = null;
   private forcedInput: [number, number] | null = null;
   private readyFired = false;
+  private vehicleFactory: VehicleFactory | null = null;
+  private vehicles = new Map<string, { view: VehicleView; state: WorldVehicle; tag: HTMLDivElement }>();
+  private car: CarController | null = null;
+  private driving: { vehicleId: string; condition: number } | null = null;
+  private pendingDrive: string | null = null;
+  private lastContactAt = 0;
+  private lastImpactSentAt = 0;
+  private lastLookAt = 0;
+  private carPilot: {
+    path: Vec2[];
+    index: number;
+    resolve: (ok: boolean) => void;
+    deadline: number;
+    stuckSince: number | null;
+    recovery: { until: number; swerveUntil: number; side: number } | null;
+    recoveries: number;
+  } | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -213,8 +237,20 @@ export class GameEngine {
           this.audio.announce(notice.announcement);
         }
       },
-      correction: ({ x, z }) => this.controller.teleport(x, z),
+      correction: ({ x, z }) => {
+        this.controller.teleport(x, z);
+        if (this.car) {
+          this.car.x = x;
+          this.car.z = z;
+          this.car.speed = 0;
+        }
+      },
       saved: (at) => this.callbacks.saved(at),
+      vehicleStatus: ({ vehicleId, condition, damage }) => {
+        if (this.driving?.vehicleId !== vehicleId) return;
+        this.driving.condition = condition;
+        if (damage && damage >= 4 && condition > 0) this.callbacks.notice({ tone: "info", text: `Bump! −${damage}% condition (${condition}% left).` });
+      },
       status: (status) => {
         this.status = status;
       },
@@ -316,6 +352,7 @@ export class GameEngine {
 
     this.life = new AmbientLife(scene, this.world, this.data.roads, this.materials, this.avatars, this.quality);
     this.life.onHonk = () => this.audio.horn(0.8);
+    this.vehicleFactory = new VehicleFactory(scene, this.materials);
 
     this.input = new InputState(this.canvas, this.bindings);
     const start = getPlace("starter-home");
@@ -356,9 +393,172 @@ export class GameEngine {
     let [px, pz] = resolveBuildingCollision(x, z, MOVEMENT.radius);
     [px, pz] = this.world.obstacles.resolve(px, pz, MOVEMENT.radius);
     for (const bus of this.buses.values()) [px, pz] = bus.pushOut(px, pz, MOVEMENT.radius);
+    for (const { view } of this.vehicles.values()) [px, pz] = view.pushOut(px, pz, MOVEMENT.radius);
     px = Math.max(WORLD_BOUNDS.minX + 1, Math.min(WORLD_BOUNDS.maxX - 1, px));
     pz = Math.max(WORLD_BOUNDS.minZ + 1, Math.min(WORLD_BOUNDS.maxZ - 1, pz));
     return [px, pz];
+  }
+
+  /** Circle resolver for the driven car: buildings, street furniture, danfos and other vehicles. */
+  private collideCar = (x: number, z: number, radius: number): [number, number] => {
+    let [px, pz] = resolveBuildingCollision(x, z, radius);
+    [px, pz] = this.world.obstacles.resolve(px, pz, radius);
+    for (const bus of this.buses.values()) [px, pz] = bus.pushOut(px, pz, radius);
+    for (const [id, { view }] of this.vehicles) {
+      if (id !== this.driving?.vehicleId) [px, pz] = view.pushOut(px, pz, radius);
+    }
+    px = Math.max(WORLD_BOUNDS.minX + 2, Math.min(WORLD_BOUNDS.maxX - 2, px));
+    pz = Math.max(WORLD_BOUNDS.minZ + 2, Math.min(WORLD_BOUNDS.maxZ - 2, pz));
+    return [px, pz];
+  };
+
+  private updateDriving(dt: number, now: number) {
+    const car = this.car!;
+    const driving = this.driving!;
+    let throttle = 0;
+    let steer = 0;
+    if (this.input.held("forward")) throttle += 1;
+    if (this.input.held("back")) throttle -= 1;
+    if (this.input.held("right")) steer += 1;
+    if (this.input.held("left")) steer -= 1;
+    if (this.input.touchMove[0] || this.input.touchMove[1]) [steer, throttle] = this.input.touchMove;
+    const pilot = this.runCarPilot(now);
+    if (pilot) [throttle, steer] = pilot;
+    const handbrake = this.input.held("jump") || this.input.touchSprint;
+    const topSpeed = effectiveTopSpeed(car.model, driving.condition);
+    const steps = Math.max(1, Math.ceil(dt / (1 / 120)));
+    let impact = 0;
+    for (let step = 0; step < steps; step += 1) {
+      impact = Math.max(impact, car.step(dt / steps, { throttle, steer, handbrake }, topSpeed, this.collideCar));
+    }
+    if (impact >= VEHICLE_RULES.impactMinSpeed && now - this.lastContactAt > 600 && now - this.lastImpactSentAt > 900) {
+      this.lastImpactSentAt = now;
+      this.net.send("vehicleImpact", { speed: impact });
+      this.audio.horn(0.15);
+    }
+    if (impact > 0.5) this.lastContactAt = now;
+    car.yaw = Math.atan2(Math.sin(car.yaw), Math.cos(car.yaw));
+    this.controller.teleport(car.x, car.z);
+    this.controller.yaw = car.yaw;
+    if (this.input.consume("stop")) this.audio.horn(1);
+    if (this.input.consume("interact")) {
+      if (Math.abs(car.speed) < 2) this.exitVehicle();
+      else this.callbacks.notice({ tone: "info", text: "Slow down to step out." });
+    }
+    this.input.consume("jump");
+  }
+
+  private startDriving(vehicleId: string) {
+    const entry = this.vehicles.get(vehicleId);
+    if (!entry) {
+      this.pendingDrive = vehicleId;
+      return;
+    }
+    this.pendingDrive = null;
+    this.car = new CarController(getVehicleModel(entry.state.modelId));
+    this.car.place(this.self?.x ?? entry.state.x, this.self?.z ?? entry.state.z, entry.state.yaw);
+    this.driving = { vehicleId, condition: this.driving?.vehicleId === vehicleId ? this.driving.condition : 100 };
+    this.cameraYaw = entry.state.yaw;
+    this.cameraPitch = 0.26;
+    this.emote = null;
+    if (this.autopilot) {
+      this.autopilot.resolve(false);
+      this.autopilot = null;
+    }
+  }
+
+  private stopDriving() {
+    this.car = null;
+    this.driving = null;
+    this.pendingDrive = null;
+    if (this.carPilot) {
+      this.carPilot.resolve(false);
+      this.carPilot = null;
+    }
+  }
+
+  private syncVehicles(list: WorldVehicle[], now: number) {
+    if (!this.vehicleFactory) return;
+    const seen = new Set<string>();
+    for (const state of list) {
+      seen.add(state.id);
+      let entry = this.vehicles.get(state.id);
+      if (!entry || entry.state.modelId !== state.modelId || entry.state.colour !== state.colour) {
+        entry?.view.dispose();
+        entry?.tag.remove();
+        const view = this.vehicleFactory.create(state.id, state.modelId, state.colour);
+        this.addCaster(view.meshes);
+        const tag = document.createElement("div");
+        tag.className = "world-tag vehicle-tag";
+        this.overlay.appendChild(tag);
+        entry = { view, state, tag };
+        this.vehicles.set(state.id, entry);
+        view.setPose(state.x, this.world.groundHeight(state.x, state.z), state.z, state.yaw);
+      }
+      entry.state = state;
+      entry.tag.textContent = `${state.plate} · ${state.mine ? "Your car" : state.ownerName}`;
+      if (state.driverSessionId) entry.view.push(now, state.x, state.z, state.yaw);
+    }
+    for (const [id, entry] of this.vehicles) {
+      if (seen.has(id) || id === this.driving?.vehicleId) continue;
+      entry.view.dispose();
+      entry.tag.remove();
+      this.vehicles.delete(id);
+    }
+    if (this.pendingDrive && this.vehicles.has(this.pendingDrive)) this.startDriving(this.pendingDrive);
+  }
+
+  private updateVehicles(now: number) {
+    for (const [id, { view, state }] of this.vehicles) {
+      let pose: { x: number; z: number; yaw: number } | null;
+      if (id === this.driving?.vehicleId && this.car) pose = this.car;
+      else if (state.driverSessionId) pose = view.sample(now);
+      else pose = state;
+      if (pose) view.setPose(pose.x, this.interior ? -50 : this.world.groundHeight(pose.x, pose.z), pose.z, pose.yaw);
+      view.root.setEnabled(!this.interior);
+    }
+  }
+
+  /** Dev-only pure-pursuit driver along a road route, for automated tests. */
+  private runCarPilot(now: number): [number, number] | null {
+    const pilot = this.carPilot;
+    const car = this.car;
+    if (!pilot || !car) return null;
+    if (now > pilot.deadline) {
+      this.carPilot = null;
+      pilot.resolve(false);
+      return null;
+    }
+    let target = pilot.path[pilot.index]!;
+    while (Math.hypot(target[0] - car.x, target[1] - car.z) < (pilot.index === pilot.path.length - 1 ? 3 : 6)) {
+      pilot.index += 1;
+      if (pilot.index >= pilot.path.length) {
+        this.carPilot = null;
+        pilot.resolve(true);
+        return [car.speed > 0.5 ? -1 : 0, 0];
+      }
+      target = pilot.path[pilot.index]!;
+    }
+    const last = pilot.index === pilot.path.length - 1;
+    let delta = Math.atan2(target[0] - car.x, target[1] - car.z) - car.yaw;
+    delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+    const recovery = pilot.recovery;
+    if (recovery && now < recovery.until) return [-0.7, recovery.side];
+    if (recovery && now < recovery.swerveUntil) return [car.speed < 3 ? 0.7 : 0, -recovery.side];
+    pilot.recovery = null;
+    if (Math.abs(car.speed) > 0.6) pilot.stuckSince = null;
+    else if (pilot.stuckSince === null) pilot.stuckSince = now;
+    else if (now - pilot.stuckSince > 1200) {
+      // Three-point turn: reverse on one lock, then pull away on the other, alternating sides.
+      const side = (pilot.recoveries % 2 === 0 ? 1 : -1) * (delta >= 0 ? -1 : 1);
+      pilot.recoveries += 1;
+      pilot.stuckSince = null;
+      pilot.recovery = { until: now + 1800, swerveUntil: now + 3000, side };
+    }
+    const remaining = Math.hypot(target[0] - car.x, target[1] - car.z);
+    const cruise = Math.abs(delta) > 0.6 ? 4 : last ? Math.min(8, 1.5 + remaining * 0.5) : 9;
+    const throttle = car.speed < cruise ? 0.8 : car.speed > cruise + 1.5 ? -0.6 : 0;
+    return [throttle, Math.max(-1, Math.min(1, delta * 2.2))];
   }
 
   private riding() {
@@ -377,6 +577,7 @@ export class GameEngine {
     if (this.input.consume("help")) this.callbacks.toggle("help");
 
     const sensitivity = 0.0026 * this.settings.mouseSensitivity;
+    if (this.input.lookDX || this.input.lookDY) this.lastLookAt = now;
     this.cameraYaw += this.input.lookDX * sensitivity;
     this.cameraPitch += this.input.lookDY * sensitivity * (this.settings.invertY ? -1 : 1);
     this.cameraPitch = Math.max(-0.35, Math.min(1.15, this.cameraPitch));
@@ -398,6 +599,8 @@ export class GameEngine {
       }
       if (this.input.consume("stop")) this.requestStop();
       if (this.input.consume("interact")) this.alight();
+    } else if (this.car && this.driving) {
+      this.updateDriving(dt, now);
     } else {
       let move: [number, number] = [0, 0];
       if (this.input.held("forward")) move[1] += 1;
@@ -422,16 +625,17 @@ export class GameEngine {
     const { x, z } = this.controller;
     const targetGround = this.interior ? 0.02 : this.world.groundHeight(x, z);
     this.groundY += (targetGround - this.groundY) * Math.min(1, dt * 12);
-    const speed = this.controller.speed();
-    const motion: MotionState = this.emote && speed < 0.1 ? this.emote : bus ? "sit" : this.controller.motion();
+    const inCar = Boolean(this.car && this.driving);
+    const speed = inCar ? Math.abs(this.car!.speed) : this.controller.speed();
+    const motion: MotionState = inCar ? "drive" : this.emote && speed < 0.1 ? this.emote : bus ? "sit" : this.controller.motion();
     if (this.player) {
       this.player.root.position.set(x, this.groundY + this.controller.hop, z);
       this.player.root.rotation.y = this.controller.yaw;
-      this.player.root.setEnabled(!bus);
-      this.player.update(speed, motion, dt);
+      this.player.root.setEnabled(!bus && !inCar);
+      if (!inCar) this.player.update(speed, motion, dt);
     } else if (this.playerFallback) {
       this.playerFallback.position.set(x, this.groundY + 0.88, z);
-      this.playerFallback.setEnabled(!bus);
+      this.playerFallback.setEnabled(!bus && !inCar);
     }
     if (this.parcel?.isEnabled()) {
       const yaw = this.controller.yaw;
@@ -450,6 +654,7 @@ export class GameEngine {
     }
 
     this.updateRemotes(now, dt);
+    this.updateVehicles(now);
     if (!this.interior) {
       this.life?.update(dt, [x, z], [...this.buses.values()], now * 0.001);
       this.world.updateDetail(this.camera.position.x, this.camera.position.z);
@@ -530,12 +735,21 @@ export class GameEngine {
   }
 
   private updateCamera(dt: number, bus: DanfoView | null) {
+    const car = this.driving ? this.car : null;
     const target = bus
       ? new Vector3(bus.root.position.x, 2.1, bus.root.position.z)
-      : new Vector3(this.controller.x, this.groundY + 1.55, this.controller.z);
-    const lag = 1 - Math.exp(-dt * 20);
+      : car
+        ? new Vector3(car.x, this.groundY + 1.45, car.z)
+        : new Vector3(this.controller.x, this.groundY + 1.55, this.controller.z);
+    if (car && performance.now() - this.lastLookAt > 1200 && car.speed > 1) {
+      let delta = car.yaw - this.cameraYaw;
+      delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+      this.cameraYaw += delta * Math.min(1, dt * 2.5);
+      this.cameraPitch += (0.26 - this.cameraPitch) * Math.min(1, dt * 1.5);
+    }
+    const lag = 1 - Math.exp(-dt * (car ? 12 : 20));
     this.cameraTarget.addInPlace(target.subtract(this.cameraTarget).scale(lag));
-    const distance = bus ? Math.max(this.cameraDistance, 8.5) : this.interior ? Math.min(this.cameraDistance, 3.6) : this.cameraDistance;
+    const distance = bus || car ? Math.max(this.cameraDistance, car ? 7.5 : 8.5) : this.interior ? Math.min(this.cameraDistance, 3.6) : this.cameraDistance;
     const cosPitch = Math.cos(this.cameraPitch);
     const dir = new Vector3(Math.sin(this.cameraYaw) * cosPitch, Math.sin(this.cameraPitch), Math.cos(this.cameraYaw) * cosPitch);
     let allowed = distance;
@@ -588,6 +802,15 @@ export class GameEngine {
       this.secondary = state?.stopRequested ? { key: "✓", label: "Stop requested" } : { key: bind("stop"), label: "Request stop (Owa o!)" };
       return;
     }
+    if (this.car && this.driving) {
+      const plate = this.vehicles.get(this.driving.vehicleId)?.state.plate;
+      this.prompt = Math.abs(this.car.speed) < 2
+        ? { key: bind("interact"), label: "Step out & park here", detail: plate }
+        : { key: "…", label: "Slow down to step out", disabled: true };
+      this.interaction = () => this.exitVehicle();
+      this.secondary = { key: bind("stop"), label: "Horn" };
+      return;
+    }
     if (this.interior) {
       for (const spot of this.interior.spots) {
         if (Math.hypot(spot.point[0] - x, spot.point[1] - z) < 1.6) {
@@ -616,6 +839,16 @@ export class GameEngine {
         offer(distance, { key: bind("interact"), label: full ? "Danfo full — wait for the next one" : `Board danfo ${TRANSIT.routeNumber} · ₦${TRANSIT.fare}`, detail: `Next: ${next} · ${state.occupied}/${state.capacity} seats`, disabled: full }, () => !full && this.board(danfo.id));
       } else {
         offer(distance + 2, { key: "…", label: "Wait for the danfo to stop", disabled: true }, () => undefined);
+      }
+    }
+    for (const { view, state } of this.vehicles.values()) {
+      if (state.driverSessionId) continue;
+      const distance = Math.hypot(view.x - x, view.z - z);
+      if (distance > VEHICLE_RULES.enterRange) continue;
+      if (state.mine) {
+        offer(distance - 0.5, { key: bind("interact"), label: `Drive ${view.model.name}`, detail: state.plate }, () => this.enterVehicle(state.id));
+      } else {
+        offer(distance + 1, { key: "🔒", label: `${state.ownerName}'s ${view.model.name}`, detail: "Locked", disabled: true }, () => undefined);
       }
     }
     for (const place of PLACES) {
@@ -677,7 +910,8 @@ export class GameEngine {
             capacity: state.capacity,
           }
         : null,
-      speed: this.controller.speed(),
+      vehicle: this.car && this.driving ? this.vehicleHud(this.car, this.driving) : null,
+      speed: this.car && this.driving ? Math.abs(this.car.speed) : this.controller.speed(),
       mode: this.controller.mode,
       motion,
       fps: Math.round(this.engine.getFps()),
@@ -690,9 +924,24 @@ export class GameEngine {
     });
   }
 
-  private onSnapshot(snapshot: { players: NetworkPlayer[]; buses: BusState[]; online: number }, own: string) {
+  private vehicleHud(car: CarController, driving: { vehicleId: string; condition: number }) {
+    const top = effectiveTopSpeed(car.model, driving.condition);
+    return {
+      id: driving.vehicleId,
+      name: car.model.name,
+      plate: this.vehicles.get(driving.vehicleId)?.state.plate ?? "",
+      kmh: Math.round(Math.abs(car.speed) * 3.6),
+      topKmh: Math.round(top * 3.6),
+      condition: driving.condition,
+      limp: driving.condition < VEHICLE_RULES.limpCondition,
+      reversing: car.speed < -0.3,
+    };
+  }
+
+  private onSnapshot(snapshot: { players: NetworkPlayer[]; buses: BusState[]; vehicles: WorldVehicle[]; online: number }, own: string) {
     const now = performance.now();
     this.online = snapshot.online;
+    this.syncVehicles(snapshot.vehicles, now);
     for (const state of snapshot.buses) {
       let view = this.buses.get(state.id);
       if (!view && this.danfos) {
@@ -727,7 +976,7 @@ export class GameEngine {
         this.remotes.set(player.sessionId, remote);
       }
       remote.lastSeen = now;
-      remote.samples.push({ t: now, x: player.x, z: player.z, yaw: player.yaw, motion: player.motion, busId: player.busId });
+      remote.samples.push({ t: now, x: player.x, z: player.z, yaw: player.yaw, motion: player.motion, busId: player.busId, vehicleId: player.vehicleId });
       if (remote.samples.length > 12) remote.samples.shift();
       remote.tag.classList.toggle("away", !player.connected);
     }
@@ -766,7 +1015,7 @@ export class GameEngine {
       if (remote.avatar) {
         remote.avatar.root.position.set(x, this.interior ? 0.02 : this.world.groundHeight(x, z), z);
         remote.avatar.root.rotation.y = a.yaw + dyaw * t;
-        remote.avatar.root.setEnabled(!b.busId);
+        remote.avatar.root.setEnabled(!b.busId && !b.vehicleId);
         remote.avatar.update(remote.speed, b.motion, dt);
       }
     }
@@ -791,9 +1040,16 @@ export class GameEngine {
       const pz = root?.position.z ?? sample.z;
       const distance = Math.hypot(px - x, pz - z);
       const screen = this.project(px, (root?.position.y ?? 0) + 2.1, pz);
-      const show = screen.visible && distance < 45 && !sample.busId;
+      const show = screen.visible && distance < 45 && !sample.busId && !sample.vehicleId;
       remote.tag.style.display = show ? "block" : "none";
       if (show) remote.tag.style.transform = `translate(${screen.x}px, ${screen.y}px) translate(-50%, -100%)`;
+    }
+    for (const [id, { view, tag }] of this.vehicles) {
+      const distance = Math.hypot(view.x - x, view.z - z);
+      const screen = this.project(view.x, view.root.position.y + view.model.height + 0.5, view.z);
+      const show = screen.visible && distance < 22 && !this.interior && id !== this.driving?.vehicleId;
+      tag.style.display = show ? "block" : "none";
+      if (show) tag.style.transform = `translate(${screen.x}px, ${screen.y}px) translate(-50%, -100%)`;
     }
     for (const [id, tag] of this.busTags) {
       const bus = this.buses.get(id);
@@ -817,9 +1073,11 @@ export class GameEngine {
       this.interior = null;
     }
     if (enteringInterior) void this.loadInterior(self);
+    if (self.vehicleId && self.vehicleId !== this.driving?.vehicleId) this.startDriving(self.vehicleId);
+    if (!self.vehicleId && (this.driving || this.pendingDrive)) this.stopDriving();
     if (!self.busId) {
       this.controller.teleport(self.x, self.z);
-      if (self.reason === "alighted" || self.reason === "exited" || self.reason === "recovered" || !previous) this.snapCamera();
+      if (self.reason === "alighted" || self.reason === "exited" || self.reason === "recovered" || self.reason === "parked" || !previous) this.snapCamera();
     }
     if (self.reason === "entered" || self.reason === "preview") {
       this.cameraYaw = 0;
@@ -969,6 +1227,24 @@ export class GameEngine {
     this.net.send("exitProperty");
   }
 
+  enterVehicle(vehicleId: string) {
+    this.net.send("enterVehicle", { vehicleId });
+  }
+
+  exitVehicle() {
+    if (this.car && Math.abs(this.car.speed) >= 2) return;
+    this.net.send("exitVehicle");
+  }
+
+  /** Where each of the player's street vehicles is, for the phone and the map. */
+  myVehicles() {
+    return [...this.vehicles.values()].filter(({ state }) => state.mine).map(({ state, view }) => ({ id: state.id, x: view.x, z: view.z, plate: state.plate }));
+  }
+
+  drivingVehicleId() {
+    return this.driving?.vehicleId ?? null;
+  }
+
   unstuck() {
     this.net.send("unstuck");
   }
@@ -1079,11 +1355,21 @@ export class GameEngine {
       requestStop: () => this.requestStop(),
       junctions: () => this.world.junctionSigns,
       stops: () => TRANSIT.stops,
-      places: () => PLACES.map((place) => ({ id: place.id, name: place.name, kind: place.kind, door: place.door })),
+      places: () => PLACES.map((place) => ({ id: place.id, name: place.name, kind: place.kind, door: place.door, kerb: place.kerb })),
       stats: () => this.stats(),
       setMaxFrameDt: (seconds: number) => {
         this.maxFrameDt = seconds;
       },
+      vehicles: () => [...this.vehicles.values()].map(({ state, view }) => ({ ...state, cx: view.x, cz: view.z })),
+      driving: () => (this.car && this.driving ? { ...this.driving, x: this.car.x, z: this.car.z, yaw: this.car.yaw, speed: this.car.speed } : null),
+      enterVehicle: (id: string) => this.enterVehicle(id),
+      exitVehicle: () => this.exitVehicle(),
+      driveTo: (x: number, z: number, timeoutMs = 120_000) =>
+        new Promise<boolean>((resolve) => {
+          if (!this.car) return resolve(false);
+          const path = this.navigator.route([this.car.x, this.car.z], [x, z]).slice(1);
+          this.carPilot = { path: path.length ? path : [[x, z]], index: 0, resolve, deadline: performance.now() + timeoutMs, stuckSince: null, recovery: null, recoveries: 0 };
+        }),
       fps: () => this.engine.getFps(),
     };
     (window as unknown as { __lagos: typeof hooks }).__lagos = hooks;
@@ -1102,6 +1388,7 @@ export class GameEngine {
     this.life?.dispose();
     for (const remote of this.remotes.values()) remote.tag.remove();
     for (const tag of this.busTags.values()) tag.remove();
+    for (const { tag } of this.vehicles.values()) tag.remove();
     this.engine?.stopRenderLoop();
     this.scene?.dispose();
     this.engine?.dispose();

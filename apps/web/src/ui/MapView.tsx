@@ -1,4 +1,4 @@
-import { PLACES, TRANSIT, type Vec2 } from "@lagos-living/shared";
+import { PLACES, TRANSIT, type PlaceKind, type Vec2 } from "@lagos-living/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GameEngine } from "../game/engine";
 import { densify, pointAt, polylineLength } from "../game/geometry";
@@ -7,7 +7,7 @@ import type { WorldData, WorldRoad } from "../game/street-index";
 type View = { cx: number; cz: number; scale: number; width: number; height: number };
 type Marker = { point: Vec2; label: string; kind: "objective" | "waypoint" };
 
-const PLACE_GLYPH: Record<string, { glyph: string; color: string }> = {
+const PLACE_GLYPH: Record<PlaceKind, { glyph: string; color: string }> = {
   starter_home: { glyph: "H", color: "#2f7d5b" },
   rental: { glyph: "R", color: "#d9332b" },
   sale: { glyph: "S", color: "#1b4fa0" },
@@ -16,6 +16,8 @@ const PLACE_GLYPH: Record<string, { glyph: string; color: string }> = {
   shop: { glyph: "₦", color: "#6b4fa0" },
   furniture: { glyph: "C", color: "#7a5a2f" },
   delivery: { glyph: "D", color: "#8a8a8a" },
+  dealership: { glyph: "V", color: "#0f6a8a" },
+  mechanic: { glyph: "M", color: "#4a5560" },
 };
 
 const ROAD_STYLE: Record<string, { color: string; casing: string; rank: number }> = {
@@ -55,6 +57,7 @@ export function drawMap(
     route: Vec2[];
     markers: Marker[];
     buses: Array<{ x: number; z: number; yaw: number; state: string }>;
+    vehicles?: Array<{ x: number; z: number }>;
     showPlaces: boolean;
     compact: boolean;
   },
@@ -258,6 +261,22 @@ export function drawMap(
     ctx.restore();
   }
 
+  for (const car of options.vehicles ?? []) {
+    const [sx, sy] = toScreen(view, car.x, car.z);
+    ctx.fillStyle = "#0f6a8a";
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 8px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("C", sx, sy + 0.5);
+  }
+
   for (const marker of options.markers) {
     const [sx, sy] = toScreen(view, marker.point[0], marker.point[1]);
     const clampedX = Math.max(10, Math.min(width - 10, sx));
@@ -336,6 +355,7 @@ export function Minimap({ engine, data, markers, onOpen }: { engine: GameEngine;
         route: engine.routePreview(),
         markers: markersRef.current,
         buses: engine.busPositions(),
+        vehicles: engine.myVehicles().filter((car) => car.id !== engine.drivingVehicleId()),
         showPlaces: true,
         compact: true,
       });
@@ -413,6 +433,7 @@ export function FullMap({
         route: engine.routePreview(),
         markers: markersRef.current,
         buses: engine.busPositions(),
+        vehicles: engine.myVehicles().filter((car) => car.id !== engine.drivingVehicleId()),
         showPlaces: true,
         compact: false,
       });

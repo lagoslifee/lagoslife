@@ -23,6 +23,7 @@ export type MultiplayerHandlers = {
   correction: (point: { x: number; z: number }) => void;
   saved: (at: number) => void;
   status: (status: MultiplayerStatus) => void;
+  vehicleStatus: (status: { vehicleId: string; condition: number; damage?: number }) => void;
 };
 
 export class MultiplayerConnection {
@@ -67,6 +68,9 @@ export class MultiplayerConnection {
         if (Number.isFinite(payload?.x) && Number.isFinite(payload?.z)) this.handlers.correction(payload);
       });
       room.onMessage("saved", (payload: { at: number }) => this.handlers.saved(payload?.at ?? Date.now()));
+      room.onMessage("vehicleStatus", (payload: { vehicleId: string; condition: number; damage?: number }) => {
+        if (typeof payload?.vehicleId === "string" && Number.isFinite(payload.condition)) this.handlers.vehicleStatus(payload);
+      });
       room.onLeave(() => {
         if (this.closed) return;
         this.room = undefined;
@@ -87,7 +91,21 @@ export class MultiplayerConnection {
     this.room.send("position", payload);
   }
 
-  send(type: "board" | "alight" | "requestStop" | "enterProperty" | "exitProperty" | "unstuck" | "emote" | "carrying", payload?: unknown) {
+  send(
+    type:
+      | "board"
+      | "alight"
+      | "requestStop"
+      | "enterProperty"
+      | "exitProperty"
+      | "unstuck"
+      | "emote"
+      | "carrying"
+      | "enterVehicle"
+      | "exitVehicle"
+      | "vehicleImpact",
+    payload?: unknown,
+  ) {
     this.room?.send(type, payload);
   }
 
