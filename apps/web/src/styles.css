@@ -578,6 +578,9 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .game-view.touch .bus-panel .row { flex-wrap: wrap; }
 .game-view.touch .bus-panel button { padding: 8px 10px; }
 
+/* Keep the thumb buttons clear of the host's corner badge: side by side, above it. */
+.game-view.touch.host-badge .touch-buttons { bottom: calc(70px + var(--sb)); grid-auto-flow: column; align-items: end; }
+
 /* Wide touch screens (tablets): the guide sits centred like on desktop. */
 @media (min-width: 900px) {
   .game-view.touch .objective { left: 50%; right: auto; transform: translateX(-50%); width: min(460px, 50vw); top: calc(12px + var(--st)); }
@@ -599,6 +602,7 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
   .game-view.touch .minimap { display: none; }
   .game-view.touch .touch-stick { width: 104px; height: 104px; bottom: calc(14px + var(--sb)); }
   .game-view.touch .touch-buttons { bottom: calc(14px + var(--sb)); grid-auto-flow: column; align-items: end; }
+  .game-view.touch.host-badge .touch-buttons { bottom: calc(66px + var(--sb)); }
   .game-view.touch .touch-buttons .use { width: 66px; height: 66px; }
   .game-view.touch .touch-buttons .run { width: 48px; height: 48px; }
   .game-view.touch .prompt, .game-view.touch:has(.bus-panel) .prompt, .game-view.touch:has(.speedometer) .prompt { bottom: calc(14px + var(--sb)); max-width: calc(100% - 320px - var(--sl) - var(--sr)); }

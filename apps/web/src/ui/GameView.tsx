@@ -30,6 +30,9 @@ function loadQuality(): Quality {
   return matchMedia("(pointer: coarse)").matches ? "low" : "medium";
 }
 
+/** Netlify adds its own badge in the bottom-right corner of netlify.app sites. */
+const HOST_BADGE = location.hostname.endsWith(".netlify.app");
+
 function loadHousing(): HousingPath | "later" | null {
   const stored = localStorage.getItem("lagos-housing");
   return stored === "rent" || stored === "buy" || stored === "build" || stored === "later" ? stored : null;
@@ -358,7 +361,7 @@ export function GameView({
   const markers = target ? [{ point: target.point, label: target.label, kind: manualTarget ? ("waypoint" as const) : ("objective" as const) }] : [];
 
   return (
-    <div className={`game-view ${touch ? "touch" : "pointer"}`}>
+    <div className={`game-view ${touch ? "touch" : "pointer"}${HOST_BADGE ? " host-badge" : ""}`}>
       <canvas ref={canvasRef} className="game-canvas" data-testid="game-canvas" />
       <div ref={overlayRef} className="world-tags" />
       {touch && engine && !blocking && !chatOpen && <TouchLook engine={engine} />}
