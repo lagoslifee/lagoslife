@@ -373,7 +373,7 @@ Rate limits are shared through Postgres:
 
 - Frame rate on real GPUs and phones, and tile-streaming hitches on them.
 - More than two concurrent *browser* players. 100 bot clients were measured in one room on this VM (see the load test above), but not over real networks, on other hosts, or with rendering clients. The room cap is 100, and snapshots carry the nearest 40.
-- Any public deployment, TLS proxy or managed database. The production images and compose stack were only run on this VM.
+- A public game server, TLS proxy or managed database. The production images and compose stack were only run on this VM. The web client alone is on Netlify (https://silver-elf-acde6c.netlify.app, deployed by the owner). After `netlify.toml` was added, a browser check found the home page and a deep link both return 200. With no `VITE_API_URL` set, the site shows the "game server not configured" screen, so sign-in and multiplayer can't be tested there yet.
 - Citation evasion for kerb strikes, which the server does not model. Pedestrian, car, danfo and building contact is detected on the server.
 - Touch controls on a physical device (layout is implemented and responsive).
 - Several server processes beyond two on one VM, behind a reverse proxy, or across hosts.
