@@ -52,7 +52,7 @@ import {
   type SelfState,
   type Vec2,
 } from "@lagos-living/shared";
-import { apiUrl } from "../auth-client";
+import { apiUrl, authHeaders } from "../auth-client";
 import { MultiplayerConnection, type MultiplayerStatus } from "../multiplayer";
 import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, MAX_AUTO_SCALING, qualityStep } from "./adaptive-quality";
 import { CityAudio } from "./audio";
@@ -1223,7 +1223,7 @@ export class GameEngine {
     const title = self.propertyId ? propertyTitle(self.propertyId) : "Home";
     let placements: Placement[] = [];
     if (kind === "home" && self.propertyId) {
-      const response = await fetch(`${apiUrl}/api/properties/${self.propertyId}/interior`, { credentials: "include" }).catch(() => null);
+      const response = await fetch(`${apiUrl}/api/properties/${self.propertyId}/interior`, { credentials: "include", headers: authHeaders() }).catch(() => null);
       if (response?.ok) placements = ((await response.json()) as { furniture: Placement[] }).furniture;
       else this.callbacks.notice({ tone: "error", text: "Could not load your furniture — showing an empty room." });
     }

@@ -1,5 +1,5 @@
 import type { Citation, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
-import { apiUrl } from "./auth-client";
+import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
 export type InventoryItem = { itemId: string; name: string; category: string; quantity: number };
@@ -89,7 +89,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     response = await fetch(`${apiUrl}${path}`, {
       credentials: "include",
       ...init,
-      headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+      headers: { "content-type": "application/json", ...authHeaders(), ...(init?.headers ?? {}) },
     });
   } catch {
     throw new ApiError("The server could not be reached. Check your connection and try again.", 0);

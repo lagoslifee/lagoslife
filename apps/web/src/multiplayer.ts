@@ -14,7 +14,7 @@ import {
   type SelfState,
   type WorldSnapshot,
 } from "@lagos-living/shared";
-import { apiUrl } from "./auth-client";
+import { apiUrl, authHeaders } from "./auth-client";
 
 export type MultiplayerStatus =
   | { state: "connecting" }
@@ -49,7 +49,7 @@ export class MultiplayerConnection {
   async connect() {
     this.handlers.status({ state: "connecting" });
     try {
-      const response = await fetch(`${apiUrl}/api/multiplayer-token`, { method: "POST", credentials: "include" });
+      const response = await fetch(`${apiUrl}/api/multiplayer-token`, { method: "POST", credentials: "include", headers: authHeaders() });
       if (!response.ok) throw new Error("Could not authenticate multiplayer");
       const { token } = (await response.json()) as { token: string };
       if (this.closed) return;

@@ -7,7 +7,7 @@ import {
   type CharacterAppearance,
 } from "@lagos-living/shared";
 import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
-import { apiConfigured, apiUrl, authClient } from "./auth-client";
+import { apiConfigured, apiUrl, authClient, authHeaders, guestMode, signOut, startGuestSession } from "./auth-client";
 
 const GameView = lazy(() => import("./ui/GameView").then((module) => ({ default: module.GameView })));
 const CharacterPreview = lazy(() => import("./ui/CharacterPreview").then((module) => ({ default: module.CharacterPreview })));
@@ -24,7 +24,7 @@ function SuspendedScreen({ suspension }: { suspension: Suspension }) {
         <p>Reason given by a moderator: <strong>{suspension.reason}</strong></p>
         <p>{suspension.until ? `The suspension ends ${new Date(suspension.until).toLocaleString("en-NG")}.` : "This suspension has no end date."}</p>
         <p className="muted small">Your homes, cars and game naira are kept. If you think this is a mistake, contact the moderation team.</p>
-        <button className="secondary" onClick={async () => { await authClient.signOut(); location.assign("/?manual=1"); }}>Sign out</button>
+        <button className="secondary" onClick={async () => { await signOut(); location.assign("/?manual=1"); }}>Sign out</button>
       </div>
     </main>
   );
@@ -185,7 +185,7 @@ function CharacterCreator({
     const response = await fetch(`${apiUrl}/api/character`, {
       method: "PUT",
       credentials: "include",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...authHeaders() },
       body: JSON.stringify({ appearance }),
     });
     setSaving(false);
@@ -251,14 +251,14 @@ function GameShell({
   const [standing, setStanding] = useState<{ checked: boolean; suspension: Suspension | null }>({ checked: false, suspension: null });
 
   useEffect(() => {
-    fetch(`${apiUrl}/api/account/standing`, { credentials: "include" })
+    fetch(`${apiUrl}/api/account/standing`, { credentials: "include", headers: authHeaders() })
       .then((response) => response.json())
       .then((data: { suspension?: Suspension | null }) => setStanding({ checked: true, suspension: data.suspension ?? null }))
       .catch(() => setStanding({ checked: true, suspension: null }));
   }, []);
 
   useEffect(() => {
-    fetch(`${apiUrl}/api/character`, { credentials: "include" })
+    fetch(`${apiUrl}/api/character`, { credentials: "include", headers: authHeaders() })
       .then((response) => response.json())
       .then((data) => setAppearance(data.appearance ?? defaultAppearance))
       .catch(() => undefined);
@@ -284,8 +284,8 @@ function GameShell({
           overlayOpen={creatorOpen}
           onCustomise={() => setCreatorOpen(true)}
           onSignOut={async () => {
-            await authClient.signOut();
-            location.assign("/?manual=1");
+            await signOut();
+            location.assign(guestMode ? "/" : "/?manual=1");
           }}
         />
       </Suspense>
@@ -321,35 +321,50 @@ export function App() {
 
 function Main() {
   const session = authClient.useSession();
-  const [autoSignInPending, setAutoSignInPending] = useState(false);
+  const [autoSignIn, setAutoSignIn] = useState<"idle" | "pending" | "failed">("idle");
+  const [guestError, setGuestError] = useState("");
   const query = new URLSearchParams(location.search);
   const manual = query.has("manual") || query.has("reset") || query.has("token");
+  const local = ["localhost", "127.0.0.1"].includes(location.hostname);
 
   useEffect(() => {
-    if (
-      session.isPending ||
-      session.data ||
-      manual ||
-      !["localhost", "127.0.0.1"].includes(location.hostname) ||
-      sessionStorage.getItem("lagos-dev-sign-in-attempted")
-    ) {
+    if (session.isPending || session.data || manual || autoSignIn !== "idle") return;
+    const devAttempted = sessionStorage.getItem("lagos-dev-sign-in-attempted");
+    if (local && !devAttempted) {
+      sessionStorage.setItem("lagos-dev-sign-in-attempted", "1");
+      setAutoSignIn("pending");
+      fetch(`${apiUrl}/api/dev/sign-in`, { method: "POST", credentials: "include" })
+        .then((response) => {
+          if (!response.ok) throw new Error("Development sign-in unavailable");
+          location.reload();
+        })
+        .catch(() => setAutoSignIn("idle"));
       return;
     }
-    sessionStorage.setItem("lagos-dev-sign-in-attempted", "1");
-    setAutoSignInPending(true);
-    fetch(`${apiUrl}/api/dev/sign-in`, {
-      method: "POST",
-      credentials: "include",
-    })
-      .then((response) => {
-        if (!response.ok) throw new Error("Development sign-in unavailable");
-        location.reload();
-      })
-      .catch(() => setAutoSignInPending(false));
-  }, [manual, session.data, session.isPending]);
+    if (!guestMode) return;
+    setAutoSignIn("pending");
+    startGuestSession()
+      .then(() => location.reload())
+      .catch((error: Error) => {
+        setGuestError(error.message);
+        setAutoSignIn("failed");
+      });
+  }, [manual, local, autoSignIn, session.data, session.isPending]);
 
-  if (session.isPending || autoSignInPending) {
-    return <div className="loading-screen">Entering local test session…</div>;
+  if (autoSignIn === "failed") {
+    return (
+      <main className="loading-screen" role="alert" data-testid="guest-failed">
+        <div className="auth-card">
+          <p className="step-label">COULD NOT ENTER LAGOS</p>
+          <h2>The game server didn't start a guest session</h2>
+          <p className="muted small">{guestError}</p>
+          <button onClick={() => setAutoSignIn("idle")}>Try again</button>
+        </div>
+      </main>
+    );
+  }
+  if (session.isPending || autoSignIn === "pending" || (!session.data && !manual && guestMode)) {
+    return <div className="loading-screen">{local ? "Entering local test session…" : "Entering Lagos as a guest…"}</div>;
   }
   return session.data ? <GameShell user={session.data.user} /> : <AuthScreen />;
 }
