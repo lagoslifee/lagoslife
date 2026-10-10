@@ -752,6 +752,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         yaw: vehicle.yaw,
         driverSessionId: vehicle.driverSessionId,
         ownerName: vehicle.ownerName,
+        mine: vehicle.ownerUserId === viewer.userId,
       });
     }
     return list;

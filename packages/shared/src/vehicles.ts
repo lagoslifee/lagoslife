@@ -178,6 +178,8 @@ export const worldVehicleSchema = z.object({
   yaw: z.number().finite(),
   driverSessionId: z.string().nullable(),
   ownerName: z.string(),
+  /** Per viewer: true when the receiving player owns this vehicle. */
+  mine: z.boolean(),
 });
 export type WorldVehicle = z.infer<typeof worldVehicleSchema>;
 
