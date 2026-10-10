@@ -8,6 +8,7 @@ type LagosHooks = {
   buses(): Array<{ id: string; routeId: string; stopId: string | null; doorOpen: boolean; cx: number; cz: number }>;
   stops(): Array<{ id: string; name: string; alight: Vec2; routeId: string }>;
   places(): Array<{ id: string; name: string; kind: string; door: Vec2 }>;
+  plots(): Array<{ id: string; gate: Vec2; door: Vec2; state: { status: string; construction: { stagesPaid: number; completed: boolean; homeId: string | null } | null } | null }>;
   prompt(): { label: string; disabled?: boolean } | null;
   walkTo(x: number, z: number, sprint: boolean, timeoutMs: number): Promise<boolean>;
   walkDirect(x: number, z: number, timeoutMs: number): Promise<boolean>;
@@ -41,6 +42,8 @@ export async function useLowGraphics(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem("lagos-quality", "low");
     localStorage.setItem("lagos-help-seen", "1");
+    // Tests that are not about the first-session welcome start past it.
+    if (!sessionStorage.getItem("lagos-test-welcome")) localStorage.setItem("lagos-housing", "later");
   });
 }
 
@@ -51,6 +54,13 @@ export async function waitForGame(page: Page) {
 
 export async function apiGet<T>(page: Page, path: string) {
   return page.evaluate(async ([api, p]) => (await fetch(`${api}${p}`, { credentials: "include" })).json(), [API, path] as const) as Promise<T>;
+}
+
+export async function apiPost<T>(page: Page, path: string, body: unknown = {}) {
+  return page.evaluate(async ([api, p, b]) => {
+    const response = await fetch(`${api}${p}`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
+    return { status: response.status, body: await response.json() };
+  }, [API, path, body] as const) as Promise<{ status: number; body: T }>;
 }
 
 export async function resetProgress(page: Page) {

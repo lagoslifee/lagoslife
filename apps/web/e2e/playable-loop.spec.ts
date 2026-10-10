@@ -23,7 +23,7 @@ test("rides a danfo, earns a wage, eats, rents a flat, moves in and keeps progre
   const start = await economy();
   expect(start.balance).toBe(250_000);
   await expect(page.getByTestId("current-location")).toContainText(/Street|Road|Way|Avenue|Unnamed/);
-  await expect(page.getByTestId("objective")).toContainText("Catch a danfo");
+  await expect(page.getByTestId("objective")).toContainText("Find a place to live");
 
   // Danfo: walk to the nearest stop, board only once it has stopped, pay once, request a stop, step off.
   const here = await state(page);

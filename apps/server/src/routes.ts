@@ -32,7 +32,7 @@ import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
 import { auth } from "./auth.js";
-import { acquirePlot, listPlots, payNextStage, releasePlotsOf, renewPlotLease, startConstruction } from "./building-service.js";
+import { acquirePlot, buildingEvents, listPlots, payNextStage, releasePlotsOf, renewPlotLease, startConstruction } from "./building-service.js";
 import { config } from "./config.js";
 import { pool } from "./database.js";
 import { getPlayerPosition, markProgressReset } from "./player-presence.js";
@@ -501,6 +501,18 @@ export function configureRoutes(app: Express) {
     await releasePlotsOf(userId);
     await resetTestProgress(userId);
     return { reset: true };
+  }));
+
+  /** Local test harness: the builders finish the current stage now instead of after minutes. */
+  app.post("/api/dev/finish-stage", devOnly, requirePlayer, guarded("Finish stage failed", async (req, userId) => {
+    const result = await pool.query(
+      `UPDATE construction SET stage_ready_at = NOW() - interval '1 second', stage_started_at = LEAST(stage_started_at, NOW() - interval '2 seconds')
+       WHERE owner_user_id = $1 AND completed_at IS NULL RETURNING plot_id`,
+      [userId],
+    );
+    if (!result.rowCount) throw new EconomyError("Nothing is being built", 404);
+    buildingEvents.emit("changed");
+    return { plotId: result.rows[0].plot_id };
   }));
 
   /** Local test harness: the next session starts at a place's kerb, so far districts can be tested without the drive. */
