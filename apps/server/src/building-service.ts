@@ -90,6 +90,23 @@ export async function releasePlotsOf(userId: string) {
   );
 }
 
+/** Guest testers come and go; land they abandon goes back on the market so the few plots stay available. */
+export const GUEST_PLOT_IDLE_HOURS = 24;
+
+export async function releaseIdleGuestPlots() {
+  const idle = await pool.query(
+    `SELECT t.plot_id FROM plot_tenure t
+     JOIN "user" u ON u.id = t.owner_user_id
+     LEFT JOIN player_profile p ON p.user_id = t.owner_user_id
+     WHERE u.email LIKE '%@guest.lagosliving.local'
+       AND COALESCE(p.updated_at, u."createdAt") < NOW() - make_interval(hours => $1)`,
+    [GUEST_PLOT_IDLE_HOURS],
+  );
+  for (const { plot_id: plotId } of idle.rows) await withTransaction((client) => releasePlot(client, plotId));
+  if (idle.rowCount) buildingEvents.emit("changed");
+  return idle.rowCount ?? 0;
+}
+
 export async function settleExpiredPlotLeases() {
   const expired = await pool.query(`SELECT plot_id FROM plot_tenure WHERE expires_at IS NOT NULL AND expires_at <= NOW()`);
   for (const { plot_id: plotId } of expired.rows) {

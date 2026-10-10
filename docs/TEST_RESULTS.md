@@ -408,5 +408,5 @@ Rate limits are shared through Postgres:
 - A public game server, TLS proxy or managed database. The production images and compose stack were only run on this VM. The web client alone is on Netlify (https://silver-elf-acde6c.netlify.app, deployed by the owner). After `netlify.toml` was added, a browser check found the home page and a deep link both return 200. It now talks to a game server on this VM through a temporary Cloudflare tunnel, so it only works while this VM and tunnel are running.
 - Citation evasion for kerb strikes, which the server does not model. Pedestrian, car, danfo and building contact is detected on the server.
 - Touch controls on a physical device. Layouts were checked only under browser device emulation (see above).
-- Abandoned guest accounts keep their plots; there are 10 plots, so heavy public testing can use them all up until an admin releases them or the leases lapse.
+- Guest plots go back on the market after the guest has been away for 24 hours (checked hourly; covered by `building-service.test.ts`). Ten plots can still run out under heavy simultaneous testing.
 - Several server processes beyond two on one VM, behind a reverse proxy, or across hosts.

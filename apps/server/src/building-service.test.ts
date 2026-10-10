@@ -1,13 +1,14 @@
 import { builtHomeId, designTotal, houseDesign, houseFootprint, insideBuilding, plotById, PLOT_TERMS, PLOTS } from "@lagos-living/shared";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { acquirePlot, listPlots, payNextStage, refreshPlotFootprints, renewPlotLease, settleExpiredPlotLeases, startConstruction } from "./building-service.js";
+import { acquirePlot, listPlots, payNextStage, refreshPlotFootprints, releaseIdleGuestPlots, renewPlotLease, settleExpiredPlotLeases, startConstruction } from "./building-service.js";
 import { pool } from "./database.js";
 import { getEconomyState } from "./economy-service.js";
 import { setPlayerPosition } from "./player-presence.js";
 import { acquireProperty, listProperties } from "./property-service.js";
 
 const users = [0, 1].map(() => ({ id: `build-user-${randomUUID()}`, username: `bld${randomUUID().replaceAll("-", "").slice(0, 12)}` }));
+const guest = { id: `build-guest-${randomUUID()}`, username: `Guest_${randomUUID().slice(0, 6)}` };
 let plotA = "";
 let plotB = "";
 const key = () => `test-${randomUUID()}`;
@@ -27,6 +28,11 @@ beforeAll(async () => {
       [user.id, `${user.username}@example.test`, user.username],
     );
   }
+  await pool.query(
+    `INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt", username, "displayUsername")
+     VALUES ($1, $2, $3, FALSE, NOW(), NOW(), $4, $2)`,
+    [guest.id, guest.username, `guest-${randomUUID()}@guest.lagosliving.local`, guest.username.toLowerCase()],
+  );
   const held = await pool.query(`SELECT plot_id FROM plot_tenure`);
   const taken = new Set(held.rows.map((row) => row.plot_id));
   const free = PLOTS.filter((plot) => !taken.has(plot.id)).reverse();
@@ -42,7 +48,7 @@ afterAll(async () => {
   await pool.query(`DELETE FROM home_state WHERE property_id = ANY($1)`, [homes]);
   await pool.query(`DELETE FROM property_listing WHERE id = ANY($1)`, [homes]);
   await pool.query(`DELETE FROM plot_tenure WHERE plot_id = ANY($1)`, [[plotA, plotB]]);
-  await pool.query(`DELETE FROM "user" WHERE id = ANY($1)`, [users.map((user) => user.id)]);
+  await pool.query(`DELETE FROM "user" WHERE id = ANY($1)`, [[...users.map((user) => user.id), guest.id]]);
   await refreshPlotFootprints();
 });
 
@@ -133,5 +139,18 @@ describe("land and building", () => {
     expect(tenure.rowCount).toBe(0);
     expect((await getEconomyState(builder!.id)).homePropertyId).toBeNull();
     expect((await listProperties(builder!.id)).some((listing) => listing.id === builtHomeId(plotA))).toBe(false);
+  });
+
+  it("hands back land held by a guest who has been away for a day, but not a regular resident's", async () => {
+    const [, buyer] = users;
+    atGate(guest.id, plotA);
+    await acquirePlot(guest.id, plotA, "leased", key());
+    await releaseIdleGuestPlots();
+    expect((await listPlots(guest.id)).find((entry) => entry.id === plotA)?.status).toBe("mine");
+
+    await pool.query(`UPDATE player_profile SET updated_at = NOW() - INTERVAL '25 hours' WHERE user_id = ANY($1)`, [[guest.id, buyer!.id]]);
+    expect(await releaseIdleGuestPlots()).toBeGreaterThanOrEqual(1);
+    expect((await listPlots(guest.id)).find((entry) => entry.id === plotA)?.status).toBe("available");
+    expect((await listPlots(buyer!.id)).find((entry) => entry.id === plotB)?.status).toBe("mine");
   });
 });

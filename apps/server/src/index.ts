@@ -2,7 +2,7 @@ import { defineRoom, defineServer } from "@colyseus/core";
 import { RedisDriver } from "@colyseus/redis-driver";
 import { RedisPresence } from "@colyseus/redis-presence";
 import express from "express";
-import { buildingEvents, refreshPlotFootprints } from "./building-service.js";
+import { buildingEvents, refreshPlotFootprints, releaseIdleGuestPlots } from "./building-service.js";
 import { bridgeEmitter, joinCluster } from "./cluster.js";
 import { config } from "./config.js";
 import { profileEvents } from "./profile-service.js";
@@ -45,6 +45,7 @@ const purgeChat = () =>
 purgeChat();
 setInterval(purgeChat, 6 * 3_600_000).unref();
 setInterval(() => void purgeExpiredRates().catch((error) => console.error("Rate-limit purge failed", error)), 3_600_000).unref();
+setInterval(() => void releaseIdleGuestPlots().catch((error) => console.error("Idle guest plot release failed", error)), 3_600_000).unref();
 
 await gameServer.listen(config.PORT);
 console.log(`Lagos Living server listening on ${config.BETTER_AUTH_URL}`);
