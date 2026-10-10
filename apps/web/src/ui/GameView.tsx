@@ -457,7 +457,7 @@ export function GameView({
                   Condition {hud.vehicle.condition}%{hud.vehicle.limp ? ` · LIMP MODE (max ${hud.vehicle.topKmh} km/h)` : ""}
                 </p>
                 <p className="muted small">
-                  <kbd>{keyLabel(bindings.forward)}</kbd>/<kbd>{keyLabel(bindings.back)}</kbd> drive · <kbd>{keyLabel(bindings.left)}</kbd>/<kbd>{keyLabel(bindings.right)}</kbd> steer · <kbd>{keyLabel(bindings.jump)}</kbd> handbrake · <kbd>{keyLabel(bindings.stop)}</kbd> horn
+                  <kbd>{keyLabel(bindings.forward)}</kbd>/<kbd>{keyLabel(bindings.back)}</kbd> drive · <kbd>{keyLabel(bindings.left)}</kbd>/<kbd>{keyLabel(bindings.right)}</kbd> steer · <kbd>{keyLabel(bindings.jump)}</kbd> handbrake · <kbd>{keyLabel(bindings.stop)}</kbd> horn · <kbd>{keyLabel(bindings.lights)}</kbd> lights
                 </p>
               </div>
             </section>
@@ -549,7 +549,7 @@ export function GameView({
             <li><kbd>{keyLabel(bindings.sprint)}</kbd> Sprint (6 m/s) · <kbd>{keyLabel(bindings.walk)}</kbd> Walk (1.5 m/s)</li>
             <li><kbd>Mouse</kbd> Look — click to lock, <kbd>Esc</kbd> to release</li>
             <li><kbd>{keyLabel(bindings.interact)}</kbd> Interact · <kbd>{keyLabel(bindings.stop)}</kbd> Request danfo stop</li>
-            <li>In your car: <kbd>{keyLabel(bindings.forward)}</kbd>/<kbd>{keyLabel(bindings.back)}</kbd> accelerate/brake, <kbd>{keyLabel(bindings.jump)}</kbd> handbrake, <kbd>{keyLabel(bindings.interact)}</kbd> step out</li>
+            <li>In your car: <kbd>{keyLabel(bindings.forward)}</kbd>/<kbd>{keyLabel(bindings.back)}</kbd> accelerate/brake, <kbd>{keyLabel(bindings.jump)}</kbd> handbrake, <kbd>{keyLabel(bindings.stop)}</kbd> horn, <kbd>{keyLabel(bindings.lights)}</kbd> lights, <kbd>{keyLabel(bindings.interact)}</kbd> step out</li>
             <li><kbd>{keyLabel(bindings.phone)}</kbd> Phone · <kbd>{keyLabel(bindings.map)}</kbd> Map · <kbd>{keyLabel(bindings.help)}</kbd> This card</li>
           </ul>
           <p className="muted small">Signed in as {playerName}. Stuck? Phone → Help → “Get me unstuck”.</p>
@@ -674,7 +674,9 @@ export function GameView({
         <FullMap engine={engine} data={engine.data} markers={markers} onNavigate={(next) => setManualTarget(next)} onClose={() => setMapOpen(false)} />
       )}
 
-      {touch && engine && !blocking && !chatOpen && <TouchControls engine={engine} />}
+      {touch && engine && !blocking && !chatOpen && (hud?.vehicle
+        ? <DriveControls engine={engine} lights={hud.vehicle.lights} canExit={hud.vehicle.kmh < 7} bicycle={hud.vehicle.bicycle} />
+        : <TouchControls engine={engine} />)}
 
       {welcomeOpen && !loading && (
         <Welcome playerName={playerName} economy={economy} properties={properties} touch={touch} bindings={bindings} onChoose={chooseHousing} />
@@ -725,6 +727,94 @@ function TouchLook({ engine }: { engine: GameEngine }) {
       onPointerCancel={end}
       onLostPointerCapture={end}
     />
+  );
+}
+
+type Pedals = { throttle: number; brake: number; steer: number };
+
+/** Steering pad, pedals and buttons. Each control owns one finger, so steering and pedals work together. */
+function DriveControls({ engine, lights, canExit, bicycle }: { engine: GameEngine; lights: boolean; canExit: boolean; bicycle: boolean }) {
+  const pedals = useRef<Pedals>({ throttle: 0, brake: 0, steer: 0 });
+  const fingers = useRef<{ steer: number | null; gas: number | null; brake: number | null }>({ steer: null, gas: null, brake: null });
+  const [shown, setShown] = useState<Pedals>({ throttle: 0, brake: 0, steer: 0 });
+  const update = (next: Partial<Pedals>) => {
+    pedals.current = { ...pedals.current, ...next };
+    setShown(pedals.current);
+    engine.setTouchDrive(pedals.current);
+  };
+  useEffect(() => {
+    const reset = () => {
+      fingers.current = { steer: null, gas: null, brake: null };
+      pedals.current = { throttle: 0, brake: 0, steer: 0 };
+      setShown(pedals.current);
+      engine.setTouchDrive(null);
+    };
+    const hidden = () => document.hidden && reset();
+    window.addEventListener("blur", reset);
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      window.removeEventListener("blur", reset);
+      document.removeEventListener("visibilitychange", hidden);
+      engine.setTouchDrive(null);
+    };
+  }, [engine]);
+  const steerTo = (event: React.PointerEvent) => {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const offset = (event.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
+    update({ steer: Math.max(-1, Math.min(1, offset * 1.25)) });
+  };
+  const pedal = (key: "gas" | "brake") => ({
+    onPointerDown: (event: React.PointerEvent) => {
+      if (fingers.current[key] !== null) return;
+      fingers.current[key] = event.pointerId;
+      (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+      update(key === "gas" ? { throttle: 1 } : { brake: 1 });
+    },
+    onPointerUp: (event: React.PointerEvent) => lift(key, event),
+    onPointerCancel: (event: React.PointerEvent) => lift(key, event),
+    onLostPointerCapture: (event: React.PointerEvent) => lift(key, event),
+    onContextMenu: (event: React.MouseEvent) => event.preventDefault(),
+  });
+  const lift = (key: "gas" | "brake" | "steer", event: React.PointerEvent) => {
+    if (fingers.current[key] !== event.pointerId) return;
+    fingers.current[key] = null;
+    update(key === "gas" ? { throttle: 0 } : key === "brake" ? { brake: 0 } : { steer: 0 });
+  };
+  return (
+    <div className="drive-controls" data-testid="drive-controls">
+      <div
+        className="steer-pad"
+        aria-label="Steering: drag left or right"
+        onPointerDown={(event) => {
+          if (fingers.current.steer !== null) return;
+          fingers.current.steer = event.pointerId;
+          (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+          steerTo(event);
+        }}
+        onPointerMove={(event) => fingers.current.steer === event.pointerId && steerTo(event)}
+        onPointerUp={(event) => lift("steer", event)}
+        onPointerCancel={(event) => lift("steer", event)}
+        onLostPointerCapture={(event) => lift("steer", event)}
+        onContextMenu={(event) => event.preventDefault()}
+      >
+        <span className="steer-arrow left">◀</span>
+        <i style={{ transform: `translate(calc(-50% + ${shown.steer * 42}%), -50%) rotate(${shown.steer * 70}deg)` }} />
+        <span className="steer-arrow right">▶</span>
+      </div>
+      <div className="drive-buttons">
+        <button onClick={() => engine.honk()} aria-label={bicycle ? "Bell" : "Horn"}>{bicycle ? "Bell" : "Horn"}</button>
+        {!bicycle && <button className={lights ? "active" : ""} aria-pressed={lights} onClick={() => engine.toggleLights()}>Lights</button>}
+        <button disabled={!canExit} onClick={() => engine.triggerInteract()}>{canExit ? (bicycle ? "Get off" : "Exit") : "Slow down"}</button>
+      </div>
+      <div className="pedals">
+        <button className={`pedal brake ${shown.brake ? "active" : ""}`} aria-label="Brake, hold to reverse" {...pedal("brake")}>
+          Brake<small>hold to reverse</small>
+        </button>
+        <button className={`pedal gas ${shown.throttle ? "active" : ""}`} aria-label={bicycle ? "Pedal" : "Accelerate"} {...pedal("gas")}>
+          {bicycle ? "Pedal" : "Go"}
+        </button>
+      </div>
+    </div>
   );
 }
 

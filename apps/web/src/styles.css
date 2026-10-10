@@ -613,3 +613,37 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
   .game-view.touch .rent-reminder { bottom: auto; top: calc(76px + var(--st)); }
   .game-view.touch .toasts { left: 50%; right: auto; transform: translateX(-50%); width: min(460px, 70vw); }
 }
+
+/* Driving on touch screens: steering pad bottom-left, pedals bottom-right, buttons above the pedals. */
+.drive-controls { position: absolute; inset: auto 0 0 0; pointer-events: none; }
+.drive-controls > * { pointer-events: auto; }
+.steer-pad { position: absolute; left: calc(14px + var(--sl)); bottom: calc(20px + var(--sb)); width: 168px; height: 92px; border-radius: 46px; background: rgba(255,255,255,.12); border: 2px solid rgba(255,255,255,.35); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.steer-pad i { position: absolute; left: 50%; top: 50%; width: 62px; height: 62px; border-radius: 50%; border: 7px solid rgba(255,255,255,.85); box-sizing: border-box; background: radial-gradient(circle, rgba(255,255,255,.85) 0 18%, transparent 19%); pointer-events: none; }
+.steer-arrow { position: absolute; top: 50%; transform: translateY(-50%); color: rgba(255,255,255,.6); font-size: 18px; pointer-events: none; }
+.steer-arrow.left { left: 12px; }
+.steer-arrow.right { right: 12px; }
+.pedals { position: absolute; right: calc(12px + var(--sr)); bottom: calc(20px + var(--sb)); display: flex; gap: 10px; align-items: end; }
+.pedal { border: 2px solid rgba(255,255,255,.5); border-radius: 16px; background: rgba(10,20,18,.72); color: white; font-weight: 900; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; display: grid; place-content: center; gap: 2px; }
+.pedal small { font-size: 9px; font-weight: 700; opacity: .75; }
+.pedal.brake { width: 74px; height: 84px; font-size: 14px; }
+.pedal.gas { width: 78px; height: 116px; font-size: 18px; }
+.pedal.brake.active { background: #a3352a; }
+.pedal.gas.active { background: #116c60; }
+.drive-buttons { position: absolute; right: calc(12px + var(--sr)); bottom: calc(146px + var(--sb)); display: flex; gap: 8px; }
+.drive-buttons button { min-width: 54px; height: 42px; padding: 0 10px; border-radius: 21px; border: 2px solid rgba(255,255,255,.5); background: rgba(10,20,18,.72); color: white; font-weight: 800; font-size: 12px; touch-action: manipulation; }
+.drive-buttons button.active { background: #b88a1c; }
+.drive-buttons button:disabled { opacity: .55; }
+.game-view.touch:has(.drive-controls) .prompt { display: none; }
+.game-view.touch:has(.drive-controls) .speedometer { bottom: calc(200px + var(--sb)); }
+.game-view.touch.host-badge .pedals { bottom: calc(70px + var(--sb)); }
+.game-view.touch.host-badge .drive-buttons { bottom: calc(196px + var(--sb)); }
+.game-view.touch.host-badge:has(.drive-controls) .speedometer { bottom: calc(250px + var(--sb)); }
+@media (max-height: 520px) {
+  .steer-pad { bottom: calc(14px + var(--sb)); width: 190px; height: 84px; }
+  .pedals { bottom: calc(14px + var(--sb)); }
+  .pedal.gas { height: 100px; }
+  .drive-buttons { right: auto; left: 50%; transform: translateX(-50%); bottom: calc(14px + var(--sb)); }
+  .game-view.touch.host-badge .pedals { bottom: calc(14px + var(--sb)); right: calc(150px + var(--sr)); }
+  .game-view.touch.host-badge .drive-buttons { bottom: calc(14px + var(--sb)); }
+  .game-view.touch:has(.drive-controls) .speedometer, .game-view.touch.host-badge:has(.drive-controls) .speedometer { top: calc(76px + var(--st)); bottom: auto; }
+}
