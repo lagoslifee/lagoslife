@@ -482,6 +482,23 @@ const routes = [
       { id: "bridge-roundabout-eb", name: "Admiralty Way · Ikoyi Bridge Roundabout (Eastbound)", near: [-780, 305], leg: "in" },
     ],
   }),
+  // Ikoyi to Victoria Island over Falomo Bridge: Bourdillon Road, Falomo Roundabout, the
+  // Alfred Rewane carriageway south and the Falomo Bridge carriageway north, Akin Adesola Street.
+  // Turns on Bourdillon Road east of the roundabout and at Adeola Odeku Street.
+  buildRoute({
+    routeId: "falomo-bridge-shuttle",
+    routeName: "Falomo Bridge Shuttle",
+    routeNumber: "X2",
+    fare: 300,
+    outbound: drivePath({ way: 1059928728, near: [-4431, -2] }, { way: 215492880, near: [-4980, -1631] }),
+    inbound: drivePath({ way: 525026796, near: [-4970, -1631] }, { way: 1059928727, near: [-4434, -10] }),
+    stops: [
+      { id: "falomo-east-wb", name: "Bourdillon Road · east of Falomo Roundabout (Westbound)", near: [-4470, 12], leg: "out" },
+      { id: "akin-adesola-adeola-sb", name: "Akin Adesola Street · Adeola Odeku Street (Southbound)", near: [-4983, -1585], leg: "out" },
+      { id: "akin-adesola-adeola-nb", name: "Akin Adesola Street · Adeola Odeku Street (Northbound)", near: [-4968, -1585], leg: "in" },
+      { id: "falomo-east-eb", name: "Bourdillon Road · east of Falomo Roundabout (Eastbound)", near: [-4470, -6], leg: "in" },
+    ],
+  }),
 ];
 
 // ---- Named gameplay places on mapped footprints (fictional businesses and venues). ----

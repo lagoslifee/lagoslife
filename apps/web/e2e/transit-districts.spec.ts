@@ -100,3 +100,27 @@ test("rides the X1 danfo from Lekki over the Link Bridge into Ikoyi", async ({ p
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/transit-link-bridge.png` });
   expect(errors).toEqual([]);
 });
+
+test("rides the X2 danfo from Ikoyi over Falomo Bridge into Victoria Island", async ({ page }) => {
+  test.setTimeout(20 * 60_000);
+  await useLowGraphics(page);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/");
+  await waitForGame(page);
+  await resetProgress(page);
+
+  await spawnAt(page, "grace-assembly");
+  await expect(page.getByTestId("current-location")).toContainText("Ikoyi");
+  await page.getByRole("button", { name: "Open phone" }).click();
+  await page.getByRole("button", { name: /Transport/ }).click();
+  await expect(page.getByTestId("route-X2")).toContainText("Falomo Bridge Shuttle");
+  await page.getByRole("button", { name: "Close phone" }).click();
+
+  const off = await ride(page, "falomo-bridge-shuttle", "X2 · Falomo Bridge Shuttle", "falomo-east-wb");
+  expect(off.id).toBe("akin-adesola-adeola-sb");
+  await expect(page.getByTestId("current-location")).toContainText("Victoria Island", { timeout: 10_000 });
+  await expect(page.getByTestId("current-location")).toContainText("Akin Adesola Street");
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/transit-falomo-bridge.png` });
+  expect(errors).toEqual([]);
+});
