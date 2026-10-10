@@ -1,4 +1,4 @@
-import type { Notice, Place } from "@lagos-living/shared";
+import { HOME_UNITS, type Notice, type Place } from "@lagos-living/shared";
 import { useState } from "react";
 import { api, naira, type EconomyState, type PropertyListing } from "../api";
 
@@ -11,9 +11,26 @@ type Props = {
   onToast: (notice: Notice) => void;
   onEnter: (propertyId: string, mode: "enter" | "preview") => void;
   onJobStarted: () => void;
+  /** Show this unit rather than the building's best match (used from a unit's preview). */
+  focusListingId?: string | null;
 };
 
-export function PlaceSheet({ place, economy, properties, onClose, onRefresh, onToast, onEnter, onJobStarted }: Props) {
+const unitOrder = new Map(HOME_UNITS.map((unit, index) => [unit.id, index]));
+
+/** The units behind a building's door, in unit order, and the one to offer: yours, the one in focus, or the first free. */
+export function buildingUnits(properties: PropertyListing[], placeId: string, focusListingId?: string | null) {
+  const units = properties
+    .filter((listing) => (listing.placeId ?? listing.id) === placeId)
+    .sort((a, b) => (unitOrder.get(a.id) ?? 0) - (unitOrder.get(b.id) ?? 0));
+  const offered =
+    units.find((listing) => listing.id === focusListingId) ??
+    units.find((listing) => listing.isMine) ??
+    units.find((listing) => listing.available) ??
+    units[0];
+  return { units, offered, free: units.filter((listing) => listing.available).length };
+}
+
+export function PlaceSheet({ place, economy, properties, onClose, onRefresh, onToast, onEnter, onJobStarted, focusListingId }: Props) {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<null | "rent" | "buy">(null);
   const run = async (work: () => Promise<string>) => {
@@ -30,7 +47,8 @@ export function PlaceSheet({ place, economy, properties, onClose, onRefresh, onT
   };
 
   const vendorItems = economy?.catalog.filter((item) => item.vendorId === place.id) ?? [];
-  const listing = properties.find((candidate) => candidate.id === place.id);
+  const { units, offered: listing, free } = buildingUnits(properties, place.id, focusListingId);
+  const noun = place.kind === "rental" ? "flat" : "house";
   const balance = economy?.balance ?? 0;
 
   return (
@@ -110,6 +128,11 @@ export function PlaceSheet({ place, economy, properties, onClose, onRefresh, onT
 
         {(place.kind === "rental" || place.kind === "sale") && listing && (
           <div className="listing">
+            {units.length > 1 && (
+              <p className="unit-line" data-testid="unit-availability">
+                <strong>{listing.name}</strong> · {free} of {units.length} {noun}s {place.kind === "rental" ? "free to rent" : "for sale"}
+              </p>
+            )}
             <p className="muted">{listing.description}</p>
             <dl className="terms">
               {place.kind === "rental" ? (
@@ -125,29 +148,29 @@ export function PlaceSheet({ place, economy, properties, onClose, onRefresh, onT
                 </>
               )}
               <dt>Storage</dt><dd>{listing.storageSlots} item slots</dd>
-              <dt>Status</dt><dd>{listing.isMine ? (listing.tenureType === "owned" ? "You own this" : "You rent this") : listing.available ? "Available" : "Taken by another resident"}</dd>
+              <dt>Status</dt><dd>{listing.isMine ? (listing.tenureType === "owned" ? "You own this" : "You rent this") : listing.available ? "Available" : `All ${units.length} ${noun}s are taken`}</dd>
             </dl>
             <p className="muted small">Your balance: {naira(balance)}</p>
             <div className="row wrap">
               {listing.isMine ? (
                 <>
-                  <button className="primary" onClick={() => { onEnter(place.id, "enter"); onClose(); }}>Enter home</button>
-                  {!listing.isHome && <button className="secondary" disabled={busy} onClick={() => void run(async () => { await api.setHome(place.id); return `${place.name} set as your home.`; })}>Set as home</button>}
+                  <button className="primary" onClick={() => { onEnter(listing.id, "enter"); onClose(); }}>Enter home</button>
+                  {!listing.isHome && <button className="secondary" disabled={busy} onClick={() => void run(async () => { await api.setHome(listing.id); return `${listing.name} set as your home.`; })}>Set as home</button>}
                 </>
               ) : listing.available ? (
                 <>
-                  <button className="secondary" onClick={() => { onEnter(place.id, "preview"); onClose(); }}>Preview interior</button>
+                  <button className="secondary" onClick={() => { onEnter(listing.id, "preview"); onClose(); }}>Preview interior</button>
                   {confirming ? (
                     <>
                       <button
                         className="primary"
                         disabled={busy}
                         onClick={() => void run(async () => {
-                          const result = await api.acquire(place.id, place.kind === "rental" ? "rented" : "owned");
+                          const result = await api.acquire(listing.id, place.kind === "rental" ? "rented" : "owned");
                           setConfirming(null);
                           return place.kind === "rental"
-                            ? `Tenancy signed. ${naira(listing.upfrontRent)} paid. Digital key added to My Home. Balance ${naira(result.balance)}.`
-                            : `${place.name} is yours. Balance ${naira(result.balance)}.`;
+                            ? `Tenancy signed for ${listing.name}. ${naira(listing.upfrontRent)} paid. Digital key added to My Home. Balance ${naira(result.balance)}.`
+                            : `${listing.name} is yours. Balance ${naira(result.balance)}.`;
                         })}
                       >Confirm {naira(place.kind === "rental" ? listing.upfrontRent : listing.purchasePrice)}</button>
                       <button className="secondary" onClick={() => setConfirming(null)}>Not yet</button>
@@ -165,7 +188,7 @@ export function PlaceSheet({ place, economy, properties, onClose, onRefresh, onT
                   )}
                 </>
               ) : (
-                <p className="warning">Another resident lives here.</p>
+                <p className="warning">Every {noun} here is taken right now. Check back later or try another listing on the map.</p>
               )}
             </div>
           </div>

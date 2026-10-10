@@ -33,6 +33,7 @@ import {
   INTERIOR_ORIGIN,
   MOVEMENT,
   PLACES,
+  propertyTitle,
   resolveBuildingCollision,
   TRANSIT,
   withinWorld,
@@ -930,7 +931,7 @@ export class GameEngine {
     let street = area;
     let named = false;
     if (this.interior) {
-      street = this.self?.propertyId ? getPlace(this.self.propertyId).name : "Indoors";
+      street = this.self?.propertyId ? propertyTitle(this.self.propertyId) : "Indoors";
     } else {
       const road = this.tracker.update(x, z, now);
       if (road) {
@@ -948,7 +949,7 @@ export class GameEngine {
       streetNamed: named,
       district: district ? `${district.name} · ${district.lga}` : "Lagos",
       location: bus ? "bus" : this.interior ? "interior" : "street",
-      interiorTitle: this.interior && this.self?.propertyId ? getPlace(this.self.propertyId).name : null,
+      interiorTitle: this.interior && this.self?.propertyId ? propertyTitle(this.self.propertyId) : null,
       propertyId: this.self?.propertyId ?? null,
       previewOnly: this.self?.previewOnly ?? false,
       prompt: this.prompt,
@@ -1180,7 +1181,7 @@ export class GameEngine {
 
   private async loadInterior(self: SelfState) {
     const kind: InteriorKind = self.location.startsWith("starter:") ? "starter" : self.previewOnly ? "preview" : "home";
-    const title = self.propertyId ? getPlace(self.propertyId).name : "Home";
+    const title = self.propertyId ? propertyTitle(self.propertyId) : "Home";
     let placements: Placement[] = [];
     if (kind === "home" && self.propertyId) {
       const response = await fetch(`${apiUrl}/api/properties/${self.propertyId}/interior`, { credentials: "include" }).catch(() => null);

@@ -1,4 +1,4 @@
-import { defaultSettings, districtAt, TRANSIT, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type SelfState, type Vec2 } from "@lagos-living/shared";
+import { defaultSettings, districtAt, propertyPlace, TRANSIT, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type SelfState, type Vec2 } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PropertyListing } from "../api";
 import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
@@ -516,6 +516,7 @@ export function GameView({
           onToast={toast}
           onEnter={(propertyId, mode) => engine?.enterProperty(propertyId, mode)}
           onJobStarted={() => setManualTarget(null)}
+          focusListingId={hud?.previewOnly ? hud.propertyId : null}
         />
       )}
 
@@ -589,6 +590,8 @@ export function GameView({
 }
 
 function placeFromListing(listing: PropertyListing): Place {
+  const mapped = propertyPlace(listing.id);
+  if (mapped) return mapped;
   return {
     id: listing.id,
     kind: listing.listingType === "sale" ? "sale" : "rental",

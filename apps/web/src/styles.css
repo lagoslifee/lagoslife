@@ -290,6 +290,7 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .menu li span { color: #6a7773; font-size: calc(12px * var(--text-scale)); }
 .menu li em { color: #116c60; font-size: 12px; font-style: normal; font-weight: 700; }
 .menu-actions { display: grid; gap: 6px; min-width: 130px; }
+.unit-line { margin: 0 0 6px; padding: 8px 10px; border-radius: 8px; background: rgba(27, 167, 214, .12); }
 .terms { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 12px 0; }
 .terms dt { color: #6a7773; }
 .terms dd { margin: 0; font-weight: 600; }

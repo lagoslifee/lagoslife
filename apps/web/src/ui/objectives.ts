@@ -1,6 +1,7 @@
 import { getPlace, TRANSIT, type Vec2 } from "@lagos-living/shared";
 import { naira, type EconomyState, type PropertyListing } from "../api";
 import type { HudState } from "../game/engine";
+import { buildingUnits } from "./Sheets";
 
 export type Objective = { step: number; total: number; title: string; detail: string; target: { point: Vec2; label: string } | null };
 
@@ -59,12 +60,13 @@ export function currentObjective(economy: EconomyState | null, properties: Prope
   const rental = getPlace("lekki-adebayo-flat-2");
   const home = properties.find((listing) => listing.isMine);
   if (!home) {
-    const listing = properties.find((candidate) => candidate.id === rental.id);
+    const { offered: listing, free } = buildingUnits(properties, rental.id);
+    const terms = listing ? ` ${naira(listing.rent)}/${listing.intervalDays} days + ${naira(listing.deposit)} deposit = ${naira(listing.upfrontRent)} upfront.` : "";
     return {
       step: 5,
       total: TOTAL,
-      title: `Rent ${rental.name}`,
-      detail: listing ? `Find the red For Rent sign. ${naira(listing.rent)}/${listing.intervalDays} days + ${naira(listing.deposit)} deposit = ${naira(listing.upfrontRent)} upfront.` : "Find the red For Rent sign.",
+      title: `Rent a flat at ${rental.name}`,
+      detail: listing && !free ? `Every flat is let right now; check back soon.${terms}` : `Find the red For Rent sign.${terms}`,
       target: { point: rental.door, label: rental.name },
     };
   }
@@ -75,7 +77,7 @@ export function currentObjective(economy: EconomyState | null, properties: Prope
     step: TOTAL,
     total: TOTAL,
     title: "You're settled in Lekki",
-    detail: "Free roam: do more deliveries, furnish your flat, keep up with rent — or save up for Okoro Terrace.",
+    detail: "Free roam: do more deliveries, furnish your flat, keep up with rent — or save up for a house at Okoro Terrace.",
     target: null,
   };
 }

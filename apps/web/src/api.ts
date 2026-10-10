@@ -50,6 +50,8 @@ export type PropertyListing = {
   accessEndsAt: string | null;
   hasGuestAccess: boolean;
   door: [number, number];
+  /** The mapped building whose door and board this unit shares. */
+  placeId: string | null;
   isHome: boolean;
   overdue: boolean;
 };

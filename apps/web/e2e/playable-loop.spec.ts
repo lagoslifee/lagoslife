@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { apiGet, prompt, resetProgress, state, until, useLowGraphics, waitForGame, walk } from "./helpers";
 
 type Economy = { balance: number; progress: Record<string, string>; activeJob: { destinationX: number; destinationZ: number; reward: number; destinationLabel: string } | null };
-type Listing = { id: string; isMine: boolean; tenureType: string | null; upfrontRent: number };
+type Listing = { id: string; placeId: string | null; isMine: boolean; tenureType: string | null; upfrontRent: number };
 
 /**
  * The finish-line journey: danfo ride → delivery wage → food → rent → enter home → reload.
@@ -84,18 +84,19 @@ test("rides a danfo, earns a wage, eats, rents a flat, moves in and keeps progre
   await until(async () => (await prompt(page))?.label.includes(flat.name), 8_000, "rental prompt");
   await page.evaluate(() => window.__lagos.interact());
   await expect(page.getByText("Total upfront")).toBeVisible();
+  await expect(page.getByTestId("unit-availability")).toContainText(/\d+ of 12 flats free to rent/);
   const beforeRent = (await economy()).balance;
   await page.getByRole("button", { name: "Rent this flat" }).click();
   await page.getByRole("button", { name: /^Confirm ₦/ }).click();
   await expect(page.getByRole("button", { name: "Enter home" })).toBeVisible();
-  const listing = (await apiGet<Listing[]>(page, "/api/properties")).find((p) => p.id === flat.id)!;
+  const listing = (await apiGet<Listing[]>(page, "/api/properties")).find((p) => p.placeId === flat.id && p.isMine)!;
   expect(listing.isMine).toBe(true);
   expect(listing.tenureType).toBe("rented");
   const afterRent = (await economy()).balance;
   expect(beforeRent - afterRent).toBe(listing.upfrontRent);
   await page.getByRole("button", { name: "Enter home" }).click();
   await until(async () => (await state(page)).indoors, 20_000, "being indoors");
-  expect((await state(page)).location).toBe(`home:${flat.id}`);
+  expect((await state(page)).location).toBe(`home:${listing.id}`);
   await expect(page.getByTestId("current-location")).toContainText(flat.name);
 
   // Reload: money, tenancy and progress survive.
@@ -104,7 +105,7 @@ test("rides a danfo, earns a wage, eats, rents a flat, moves in and keeps progre
   const reloaded = await economy();
   expect(reloaded.balance).toBe(afterRent);
   for (const key of ["first_ride", "first_wage", "first_meal", "first_rental"]) expect(reloaded.progress[key]).toBeTruthy();
-  expect((await apiGet<Listing[]>(page, "/api/properties")).find((p) => p.id === flat.id)?.isMine).toBe(true);
+  expect((await apiGet<Listing[]>(page, "/api/properties")).find((p) => p.id === listing.id)?.isMine).toBe(true);
   expect(errors).toEqual([]);
 });
 
