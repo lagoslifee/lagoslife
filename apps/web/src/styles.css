@@ -647,3 +647,14 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
   .game-view.touch.host-badge .drive-buttons { bottom: calc(14px + var(--sb)); }
   .game-view.touch:has(.drive-controls) .speedometer, .game-view.touch.host-badge:has(.drive-controls) .speedometer { top: calc(76px + var(--st)); bottom: auto; }
 }
+
+/* Dealership turntable. */
+.vehicle-preview { position: relative; height: 220px; margin: 4px 0 2px; border-radius: 14px; overflow: hidden; background: radial-gradient(circle at 50% 35%, #f6f1e6, #cfc6b4); }
+.vehicle-preview canvas { width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
+.vehicle-preview small { position: absolute; left: 10px; bottom: 6px; color: #4b463d; font-size: 11px; }
+.vehicle-preview .preview-status { position: absolute; inset: 0; display: grid; place-content: center; color: #4b463d; }
+.preview-name { margin: 0 0 6px; }
+.vehicle-menu li { cursor: pointer; }
+.vehicle-menu li.selected { outline: 2px solid #e6bd62; outline-offset: -2px; }
+@media (max-height: 520px) { .vehicle-preview { height: 150px; } }
+.sheet .vehicle-preview { position: sticky; top: 0; z-index: 1; }

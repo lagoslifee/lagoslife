@@ -145,7 +145,8 @@ export class MultiplayerConnection {
       | "enterVehicle"
       | "exitVehicle"
       | "vehicleImpact"
-      | "vehicleSignal",
+      | "vehicleSignal"
+      | "testDrive",
     payload?: unknown,
   ) {
     this.room?.send(type, payload);

@@ -460,6 +460,11 @@ export class VehicleView {
     this.animate(dt, { speed, steer: this.steerAngle, braking: accel < -2 && Math.abs(speed) > 0.5, accel, yawRate });
   }
 
+  /** Estimated forward speed for vehicles animated from poses (0 until tracked). */
+  get speed() {
+    return this.last?.speed ?? 0;
+  }
+
   /** World-space seat position and heading, for drawing the driver and passengers. */
   seat(index: number) {
     const seats = vehicleSeats(this.model);
@@ -538,7 +543,7 @@ export class VehicleFactory {
 
   constructor(
     private readonly scene: Scene,
-    private readonly materials: Materials,
+    materials: Pick<Materials, "glass" | "chrome">,
   ) {
     const pbr = (name: string, hex: string, options: { roughness?: number; metallic?: number; emissive?: string; unlit?: boolean } = {}) => {
       const material = new PBRMaterial(name, scene);

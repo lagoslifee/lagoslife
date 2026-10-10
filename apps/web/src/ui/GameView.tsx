@@ -445,6 +445,15 @@ export function GameView({
             </section>
           )}
 
+          {hud.passenger && (
+            <section className="speedometer passenger-badge" aria-label="Riding as a passenger">
+              <div className="speed-meta">
+                <p><b>Passenger</b> · {hud.passenger.owner}'s {hud.passenger.model}</p>
+                <p className="muted small">{touch ? "Tap ✋ to step out when it stops" : `Press ${keyLabel(bindings.interact)} to step out when it stops`}</p>
+              </div>
+            </section>
+          )}
+
           {hud.vehicle && (
             <section className={`speedometer ${hud.vehicle.limp ? "limp" : ""}`} data-testid="speedometer" aria-label="Speedometer">
               <div className="speed-readout">
@@ -454,7 +463,9 @@ export function GameView({
               <div className="speed-meta">
                 <p><b>{hud.vehicle.name}</b> · <span className="plate">{hud.vehicle.plate}</span></p>
                 <p className="condition-line">
-                  Condition {hud.vehicle.condition}%{hud.vehicle.limp ? ` · LIMP MODE (max ${hud.vehicle.topKmh} km/h)` : ""}
+                  {hud.vehicle.testDriveLeft !== null
+                    ? `Test drive · ${Math.floor(hud.vehicle.testDriveLeft / 60)}:${String(hud.vehicle.testDriveLeft % 60).padStart(2, "0")} left · stay near Lekki Motors`
+                    : `Condition ${hud.vehicle.condition}%${hud.vehicle.limp ? ` · LIMP MODE (max ${hud.vehicle.topKmh} km/h)` : ""}`}
                 </p>
                 <p className="muted small">
                   <kbd>{keyLabel(bindings.forward)}</kbd>/<kbd>{keyLabel(bindings.back)}</kbd> drive · <kbd>{keyLabel(bindings.left)}</kbd>/<kbd>{keyLabel(bindings.right)}</kbd> steer · <kbd>{keyLabel(bindings.jump)}</kbd> handbrake · <kbd>{keyLabel(bindings.stop)}</kbd> horn · <kbd>{keyLabel(bindings.lights)}</kbd> lights
@@ -568,6 +579,7 @@ export function GameView({
             setSheet(null);
             if (vehicle.x !== null && vehicle.z !== null) setManualTarget({ point: [vehicle.x, vehicle.z], label: `Your ${vehicle.modelName}` });
           }}
+          onTestDrive={(modelId, colour) => { setSheet(null); engine?.testDrive(modelId, colour); }}
         />
       )}
       {sheet?.kind === "mechanic" && (

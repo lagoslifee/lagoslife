@@ -11,6 +11,7 @@ import {
 } from "@lagos-living/shared";
 import { useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PropertyListing } from "../api";
+import { VehiclePreview } from "./VehiclePreview";
 
 const kmh = (metresPerSecond: number) => Math.round(metresPerSecond * 3.6);
 const km = (metres: number) => `${(metres / 1000).toFixed(1)} km`;
@@ -50,7 +51,8 @@ type SheetProps = {
   onToast: (notice: Notice) => void;
 };
 
-export function DealershipSheet({ place, economy, vehicles, onClose, onRefresh, onToast, onBought }: SheetProps & { onBought: (vehicle: MyVehicle) => void }) {
+export function DealershipSheet({ place, economy, vehicles, onClose, onRefresh, onToast, onBought, onTestDrive }: SheetProps & { onBought: (vehicle: MyVehicle) => void; onTestDrive: (modelId: string, colour: string) => void }) {
+  const [selected, setSelected] = useState(VEHICLE_MODELS[0]!.id);
   const { busy, run } = useRunner(onToast, onRefresh);
   const [colours, setColours] = useState<Record<string, string>>(() => Object.fromEntries(VEHICLE_MODELS.map((model) => [model.id, model.colours[0]!])));
   const [confirming, setConfirming] = useState<{ modelId: string; key: string } | null>(null);
@@ -69,6 +71,8 @@ export function DealershipSheet({ place, economy, vehicles, onClose, onRefresh, 
           <button className="icon-button" onClick={onClose} aria-label="Close">✕</button>
         </header>
         <p className="muted">Fictional models, paid in game naira. Your car is parked outside on Admiralty Way the moment you sign. Up to 3 motor vehicles and 2 bicycles each.</p>
+        <VehiclePreview modelId={selected} colour={colours[selected]!} />
+        <p className="muted small preview-name">{vehicleModelById.get(selected)!.name} · the exact model and colour you will get</p>
         <ul className="menu vehicle-menu">
           {VEHICLE_MODELS.map((model) => {
             const colour = colours[model.id]!;
@@ -76,7 +80,7 @@ export function DealershipSheet({ place, economy, vehicles, onClose, onRefresh, 
             const pending = confirming?.modelId === model.id;
             const full = isFull(model);
             return (
-              <li key={model.id} data-testid={`model-${model.id}`}>
+              <li key={model.id} data-testid={`model-${model.id}`} className={selected === model.id ? "selected" : ""} onClick={() => setSelected(model.id)}>
                 <div>
                   <strong>{model.name}</strong>
                   <span>{model.description}</span>
@@ -93,12 +97,16 @@ export function DealershipSheet({ place, economy, vehicles, onClose, onRefresh, 
                         aria-label={`Colour ${hex}`}
                         className={hex === colour ? "swatch selected" : "swatch"}
                         style={{ background: hex }}
-                        onClick={() => setColours((current) => ({ ...current, [model.id]: hex }))}
+                        onClick={() => {
+                          setColours((current) => ({ ...current, [model.id]: hex }));
+                          setSelected(model.id);
+                        }}
                       />
                     ))}
                   </div>
                 </div>
                 <div className="menu-actions">
+                  <button className="secondary" onClick={() => onTestDrive(model.id, colour)}>Test drive</button>
                   {pending ? (
                     <>
                       <button
@@ -258,6 +266,12 @@ export function VehiclesApp({ vehicles, properties, position, drivingId, onNavig
                 {vehicle.status === "parked" && vehicle.x !== null && vehicle.z !== null && !driving && (
                   <button className="secondary" onClick={() => { onNavigate({ point: [vehicle.x!, vehicle.z!], label: `Your ${vehicle.modelName}` }); onClose(); }}>Find my car</button>
                 )}
+                {model && model.seats > 1 && (
+                  <button className="secondary" aria-pressed={!vehicle.locked} disabled={busy} onClick={() => void run(async () => {
+                    await api.lockVehicle(vehicle.id, !vehicle.locked);
+                    return vehicle.locked ? `${vehicle.plate} unlocked: other players can ride as passengers. Only you can drive.` : `${vehicle.plate} locked: nobody else can get in.`;
+                  })}>{vehicle.locked ? "🔒 Locked · let passengers in" : "🔓 Open to passengers · lock"}</button>
+                )}
                 {!vehicle.insured && (
                   <button className="secondary" disabled={busy} onClick={() => void run(async () => {
                     await api.insureVehicle(vehicle.id);
@@ -287,7 +301,7 @@ export function VehiclesApp({ vehicles, properties, position, drivingId, onNavig
           );
         })}
       </ul>
-      <p className="muted small">Drive: W/S accelerate and brake, A/D steer, Space handbrake, E to step out, Q horn. Collisions reduce condition.</p>
+      <p className="muted small">Drive: W/S accelerate and brake, A/D steer, Space handbrake, E to step out, Q horn, L lights. On a phone, use the steering pad and pedals. Collisions reduce condition. Unlocked vehicles let other players ride along, but only you can drive.</p>
     </div>
   );
 }

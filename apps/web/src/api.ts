@@ -152,6 +152,7 @@ export const api = {
   towVehicle: (id: string) => post<VehicleResult>(`/api/vehicles/${id}/tow`, { idempotencyKey: crypto.randomUUID() }),
   garageVehicle: (id: string, propertyId: string) =>
     post<VehicleResult>(`/api/vehicles/${id}/garage`, { propertyId, idempotencyKey: crypto.randomUUID() }),
+  lockVehicle: (id: string, locked: boolean) => post<VehicleResult>(`/api/vehicles/${id}/lock`, { locked }),
   retrieveVehicle: (id: string) => post<VehicleResult>(`/api/vehicles/${id}/retrieve`),
   community: () => request<CommunityStatus>("/api/community"),
   visitQuietPlace: (placeId: string) => post<QuietVisitResult>("/api/community/visit", { placeId }),
