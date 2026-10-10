@@ -153,7 +153,15 @@ export type Citation = {
   issuedAt: string;
   dueAt: string;
   /** Speed is the server's own measurement from accepted position updates, in m/s. */
-  evidence: { x: number; z: number; speed: number; district: string | null };
+  evidence: {
+    x: number;
+    z: number;
+    speed: number;
+    district: string | null;
+    /** "server" when the room saw the contact itself; older citations have neither field. */
+    detectedBy?: "server" | "client";
+    struck?: "pedestrian" | "vehicle" | "danfo" | null;
+  };
   appeal: { statement: string; filedAt: string; outcome: "upheld" | "overturned" | null; note: string | null } | null;
   paidAt: string | null;
 };

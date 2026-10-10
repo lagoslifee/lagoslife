@@ -543,6 +543,61 @@ describe("LagosRoom careless-driving citations", () => {
     await room.handleVehicleImpact(ada, { speed: 6 });
     expect(justice.issueCitation).not.toHaveBeenCalled();
   });
+
+  const pedestrianAt = (context: Awaited<ReturnType<typeof driving>>, metres: number, sideways = 0) => {
+    const pose = sampleRoute(lekki, start + metres);
+    const bola = context.join("bola");
+    Object.assign(context.player(bola), { x: pose.x + Math.cos(pose.yaw) * sideways, z: pose.z - Math.sin(pose.yaw) * sideways, location: "street" });
+    return bola;
+  };
+  const serverEvidence = () => justice.issueCitation.mock.calls.map(([, , evidence]) => evidence as { detectedBy?: string; struck?: string });
+
+  it("cites a fast driver who hits a pedestrian even when the client never reports the impact", async () => {
+    const context = await driving();
+    pedestrianAt(context, 16);
+    context.step(1, 9);
+    context.step(2, 18);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(justice.issueCitation).toHaveBeenCalledTimes(1);
+    expect(serverEvidence()[0]).toMatchObject({ detectedBy: "server", struck: "pedestrian" });
+    expect(context.notices(context.ada).at(-1)).toMatch(/careless driving/);
+  });
+
+  it("sees a parked car the driver swept through between two updates", async () => {
+    const context = await driving();
+    const through = sampleRoute(lekki, start + 13);
+    context.room.vehicles.set("car-2", {
+      id: "car-2", ownerUserId: "u-cy", ownerName: "cy", modelId: "eko-hatch", colour: "#2b4c7e",
+      plate: "LND 456 CD", condition: 100, x: through.x, z: through.z, yaw: through.yaw, driverSessionId: null,
+    });
+    context.step(1, 9);
+    context.step(2, 18);
+    expect(justice.issueCitation).toHaveBeenCalledTimes(1);
+    expect(serverEvidence()[0]).toMatchObject({ detectedBy: "server", struck: "vehicle" });
+  });
+
+  it("does not cite slow contact or a fast pass beside someone on the pavement", async () => {
+    const slow = await driving();
+    pedestrianAt(slow, 4);
+    slow.step(1, 2);
+    slow.step(2, 4);
+    expect(justice.issueCitation).not.toHaveBeenCalled();
+
+    const passing = await driving();
+    pedestrianAt(passing, 16, 4);
+    passing.step(1, 9);
+    passing.step(2, 18);
+    expect(justice.issueCitation).not.toHaveBeenCalled();
+  });
+
+  it("issues one citation when the server and the client both see the same crash", async () => {
+    const context = await driving();
+    pedestrianAt(context, 16);
+    context.step(1, 9);
+    context.step(2, 18);
+    await context.room.handleVehicleImpact(context.ada, { speed: 18 });
+    expect(justice.issueCitation).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("LagosRoom snapshots", () => {

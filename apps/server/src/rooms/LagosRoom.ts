@@ -126,6 +126,7 @@ type Player = {
   driveMetres: number;
   lastVehicleSaveAt: number;
   lastImpactAt: number;
+  lastCitationCheckAt: number;
   entering: boolean;
   chatTimes: number[];
   mutedUntil: number | null;
@@ -140,6 +141,18 @@ const SPEED_WINDOW_MS = 1_500;
 
 const VEHICLE_SAVE_MS = 10_000;
 const IMPACT_COOLDOWN_MS = 800;
+/** One citation attempt per crash: the justice service's own cooldown is the authority, this saves database calls. */
+const CITATION_CHECK_MS = 3_000;
+/** Centre distances that mean a car body (about 1.8 × 4.4 m) touched something. */
+const CONTACT_RADIUS = { pedestrian: 1.3, vehicle: 2.0, danfo: 2.3 };
+
+function distanceToSegment([px, pz]: [number, number], [ax, az]: [number, number], [bx, bz]: [number, number]) {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const lengthSquared = dx * dx + dz * dz;
+  const t = lengthSquared ? Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / lengthSquared)) : 0;
+  return Math.hypot(px - (ax + dx * t), pz - (az + dz * t));
+}
 
 type Bus = {
   id: string;
@@ -298,6 +311,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       driveMetres: 0,
       lastVehicleSaveAt: now,
       lastImpactAt: 0,
+      lastCitationCheckAt: 0,
       entering: false,
       chatTimes: [],
       mutedUntil: mute ? (mute.endsAt?.getTime() ?? Infinity) : null,
@@ -457,6 +471,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       player.lastAcceptedAt = now;
       return;
     }
+    const from: [number, number] = [player.x, player.z];
     player.x = parsed.data.x;
     player.z = parsed.data.z;
     player.yaw = parsed.data.yaw;
@@ -468,6 +483,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       vehicle.x = player.x;
       vehicle.z = player.z;
       vehicle.yaw = player.yaw;
+      const struck = this.contactAlong(player, vehicle.id, from, [player.x, player.z]);
+      if (struck) this.considerCitation(client, player, null, struck);
       player.driveMetres += distance;
       if (now - player.lastVehicleSaveAt > VEHICLE_SAVE_MS) {
         const metres = player.driveMetres;
@@ -850,11 +867,46 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     return seconds > 0 ? recent.reduce((sum, { metres }) => sum + metres, 0) / seconds : 0;
   }
 
-  /** A hard crash at speed earns one careless-driving citation; both the reported impact and the measured speed must agree. */
-  private considerCitation(client: Client, player: Player, reportedSpeed: number) {
+  /**
+   * What a driven car swept into between two accepted positions: a pedestrian on the street, another
+   * car (parked or driven) or a danfo. The room sees this itself, so withholding impact reports
+   * does not avoid it. Buildings and kerbs are left to the client's impact report.
+   */
+  private contactAlong(driver: Player, vehicleId: string, from: [number, number], to: [number, number]): "pedestrian" | "vehicle" | "danfo" | null {
+    const near = (x: number, z: number, radius: number) => distanceToSegment([x, z], from, to) < radius;
+    for (const other of this.players.values()) {
+      if (other === driver || !other.connected || other.busId || other.vehicleId || other.location !== "street") continue;
+      if (near(other.x, other.z, CONTACT_RADIUS.pedestrian)) return "pedestrian";
+    }
+    for (const car of this.vehicles.values()) {
+      if (car.id !== vehicleId && near(car.x, car.z, CONTACT_RADIUS.vehicle)) return "vehicle";
+    }
+    for (const bus of this.buses) {
+      const pose = sampleRoute(bus.route, bus.s);
+      if (near(pose.x, pose.z, CONTACT_RADIUS.danfo)) return "danfo";
+    }
+    return null;
+  }
+
+  /**
+   * A hard crash at speed earns one careless-driving citation. The server's measured speed must
+   * agree with either the client's reported impact or a contact the server saw itself.
+   */
+  private considerCitation(client: Client, player: Player, reportedSpeed: number | null, struck: "pedestrian" | "vehicle" | "danfo" | null = null) {
     const measured = this.measuredSpeed(player);
-    if (reportedSpeed < JUSTICE.carelessDrivingSpeed || measured < JUSTICE.carelessDrivingSpeed) return;
-    const evidence = { x: player.x, z: player.z, speed: Math.round(measured * 10) / 10, district: districtAt(player.x, player.z)?.name ?? null };
+    if (measured < JUSTICE.carelessDrivingSpeed) return;
+    if (reportedSpeed !== null && reportedSpeed < JUSTICE.carelessDrivingSpeed) return;
+    const now = Date.now();
+    if (now - player.lastCitationCheckAt < CITATION_CHECK_MS) return;
+    player.lastCitationCheckAt = now;
+    const evidence = {
+      x: player.x,
+      z: player.z,
+      speed: Math.round(measured * 10) / 10,
+      district: districtAt(player.x, player.z)?.name ?? null,
+      detectedBy: reportedSpeed === null ? ("server" as const) : ("client" as const),
+      struck,
+    };
     void issueCitation(player.userId, "careless_driving", evidence)
       .then((citation) => {
         if (!citation) return;
