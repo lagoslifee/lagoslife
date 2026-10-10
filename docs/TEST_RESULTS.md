@@ -25,9 +25,10 @@ rasteriser.
 
 | Suite | Result |
 |---|---|
-| `npm test -w @lagos-living/server` (PostgreSQL integration and room unit tests) | 32 / 32 passed |
+| `npm test -w @lagos-living/server` (PostgreSQL integration and room unit tests) | 50 / 50 passed |
 | `npm test -w @lagos-living/shared` | 6 / 6 passed |
-| `apps/web` `controller.test.ts` | 5 / 5 passed |
+| `apps/web` `controller.test.ts` and `car-controller.test.ts` | 13 / 13 passed |
+| Playwright `e2e/vehicles.spec.ts` | 1 / 1 passed (3.8 min, run twice) |
 | Playwright `e2e/playable-loop.spec.ts` | 2 / 2 passed (8.4 min) |
 | Playwright `e2e/accounts.spec.ts` | 5 / 5 passed |
 | `npm run build -w @lagos-living/web` and typechecks | passed |
@@ -43,6 +44,15 @@ rasteriser.
 7. Opened the Adebayo Court listing (rent ₦18,000 / 7 days, deposit ₦12,000, upfront ₦30,000, 3-day grace). Rented it and was charged exactly ₦30,000. The tenancy was assigned with its next due date.
 8. Entered with the digital key. Location `home:lekki-adebayo-flat-2`; the HUD shows "Adebayo Court".
 9. Reloaded. Balance ₦225,400, tenancy, and all progress flags persisted.
+
+### Vehicles (browser, real servers, LocalTester after a progress reset)
+
+1. At Lekki Motors chose the Eko Hatch in navy and confirmed once. Charged ₦120,000 (balance ₦130,000); the car appeared at the lay-by outside, tagged "Your car".
+2. Walked to the driver door, pressed E and drove to Ade Auto Works. The speedometer read 26 km/h in the captured frame; the sampled top speed exceeded 6.5 m/s (23 km/h), faster than sprinting.
+3. Stopped, stepped out, and the car was saved as parked with more than 200 m on the odometer, within 40 m of the mechanic.
+4. Phone → Vehicles → Insure 7 days charged ₦3,600 and showed the cover date.
+5. The mechanic quoted ₦2,500 service plus the ₦2,000 insured excess for the car's knocks (60% condition) and restored it to 100%.
+6. Reloaded: the car was within 0.5 m of where it was left, and no page errors were raised.
 
 ### Danfo room tests (`LagosRoom.test.ts`)
 
@@ -67,6 +77,8 @@ recovery through Mailpit.
 - React StrictMode's double mount crashed the first engine mid-start, and a missing `StandardMaterial` side-effect import stopped the game loading.
 - Room tick-rate units were wrong, so danfos moved about 1/1000th of their intended speed and never reached stops.
 - A second fare could be charged by pressing E right after auto-alighting.
+- The minimap threw on every frame for the new dealership and mechanic place kinds; the glyph table is now typed by place kind.
+- Cars parked on the danfo's lane; dealership and mechanic kerbs now sit in a lay-by.
 - A dev progress reset was overwritten by the live session's saved position.
 - Palm fronds were culled because of a stale thin-instance bounding box.
 - The HDR skybox rendered black or fully fogged on software GPUs; it was replaced by a gradient dome.
@@ -77,7 +89,8 @@ recovery through Mailpit.
 
 Screenshots are in `/opt/cursor/artifacts/screenshots/`: junction sign,
 minimap, current-location display, street, danfo at a stop, For Rent board,
-rental sheet, and home interior (medium preset). The earlier miniature-scale
+rental sheet, and home interior (medium preset), plus `m6-dealership-sheet`,
+`m6-driving` and `m6-mechanic-sheet` from the vehicle test. The earlier miniature-scale
 "before" view is `/opt/cursor/artifacts/before-street-old-miniature.png`.
 
 ## Not yet verified

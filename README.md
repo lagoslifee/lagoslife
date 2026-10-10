@@ -39,6 +39,13 @@ sign-in is disabled when `NODE_ENV` is not `development`.
 | Phone / Map / Controls card | P / M / H |
 | Hop | Space |
 
+**Driving.** Buy a car at Lekki Motors on Admiralty Way; it is parked outside
+when you sign. Walk up to it and press E to drive. W/S accelerate, brake and
+reverse, A/D steer, Space is the handbrake and Q sounds the horn. Slow below
+about 7 km/h and press E to step out; the car is parked where you leave it.
+Phone → Vehicles finds, insures, tows and garages your cars, and Ade Auto Works
+services and repairs them.
+
 Keys can be rebound under Phone → Settings, alongside mouse sensitivity,
 invert Y, subtitles, volumes, text size and graphics quality. Touch devices get
 an on-screen joystick and buttons.

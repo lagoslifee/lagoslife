@@ -28,7 +28,7 @@ owns validated wire contracts.
   danfo route with seats and fares, delivery job, food, starter home, rental
   and purchase, phone UI, accessibility settings, save receipts, unstuck and
   test reset. See [test results](TEST_RESULTS.md).
-- [ ] Milestone 6 — vehicle ownership, garage, driving, service, and insurance.
+- [x] Milestone 6 — vehicle ownership, garage, driving, service, and insurance.
 - [ ] Milestone 7 — streamed Ikoyi, Victoria Island, and Lekki Phase 1.
 - [ ] Milestone 8 — community systems, administration, fictional justice,
   optimisation, load testing, and deployment configuration.
@@ -70,6 +70,22 @@ rental access, non-owner denial, explicit guest access, owner-only furniture
 placement, idempotent placement, and persisted sleep/cook/clean state. Browser
 automation acquires the Glover Court flat, places furniture, cleans the home,
 reloads, re-enters, and observes the saved interior.
+
+### Milestone 6 verification note
+
+PostgreSQL integration tests cover idempotent and concurrent car purchases,
+unaffordable purchases, the atomic key claim (one session drives at a time and
+non-owners are refused), service and repair pricing, insurance stacking, towing
+with and without cover, and garaging at a held home. Room tests cover the
+vehicle speed envelope, limp mode, impact damage cooldowns, and parking when
+the driver steps out or disconnects. The three-car limit is enforced in the
+purchase service but has no dedicated test yet. Browser
+automation (`apps/web/e2e/vehicles.spec.ts`) buys an Eko Hatch, drives it about
+0.5 km along Admiralty Way to Ade Auto Works above sprint speed, parks, insures
+it from the phone, pays for a service, and finds it in the same spot after
+reload. The car is driven by a dev-only autopilot in that test; hand driving on
+a keyboard was not separately measured. Remote players see parked and moving
+cars through room snapshots, but only one browser drove in these runs.
 
 ### Vertical slice verification note
 
