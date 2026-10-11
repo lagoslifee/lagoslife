@@ -5,7 +5,8 @@ type Place = { id: string; name: string; kind: string; door: [number, number]; k
 type Economy = { balance: number; needs: { hunger: number; energy: number } };
 
 const BAR: [number, number] = [4996.3, 5000.4];
-const FLOOR: [number, number] = [5000.9, 5000.7];
+const FLOOR: [number, number] = [5000.4, 5000.7];
+const TABLE_2: [number, number] = [5003.3, 4999.8];
 
 async function spawnAt(page: Page, placeId: string) {
   const status = await page.evaluate(
@@ -62,6 +63,18 @@ test("pays the cover at Eko Nights, orders at the bar and dances", async ({ page
   await page.evaluate(() => window.__lagos.interact());
   await page.waitForTimeout(1_500);
   await shot("club-dance");
+
+  await walkInside(page, TABLE_2);
+  await until(async () => (await prompt(page))?.label === "VIP table 2", 8_000, "table prompt");
+  await page.evaluate(() => window.__lagos.interact());
+  const table = page.getByTestId("club-table");
+  await table.getByRole("button", { name: "Book for ₦60,000" }).click();
+  await expect(table.getByTestId("table-owner")).toContainText("Your table tonight");
+  await table.locator("li", { hasText: "Moët" }).getByRole("button").click();
+  await expect(page.getByText(/on its way to table 2/)).toBeVisible();
+  await table.getByRole("button", { name: "Close" }).click();
+  await until(async () => (await page.evaluate(() => window.__lagos.meshesNamed("bottle "))).length > 0, 20_000, "bottle on the table");
+  await shot("club-table");
 
   // Leaving and coming back the same night is free.
   await walkInside(page, [5000, 4996.1]);
