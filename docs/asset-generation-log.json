@@ -53,6 +53,420 @@
       "consumedCredits": 30,
       "thumbnail": null,
       "recordedAt": "2026-10-10T02:27:15.670Z"
+    },
+    {
+      "label": "car-toyota-camry preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b08-79a9-7330-8a14-8ee2540a79a1",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b08-79a9-7330-8a14-8ee2540a79a1/output/preview.png",
+      "recordedAt": "2026-10-11T12:56:25.572Z"
+    },
+    {
+      "label": "car-toyota-corolla preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b08-79b6-76ee-a7b0-eb9a69364ddc",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b08-79b6-76ee-a7b0-eb9a69364ddc/output/preview.png",
+      "recordedAt": "2026-10-11T12:56:25.611Z"
+    },
+    {
+      "label": "car-honda-accord preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b08-79c6-7649-be92-2172e99bee5d",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b08-79c6-7649-be92-2172e99bee5d/output/preview.png",
+      "recordedAt": "2026-10-11T12:56:25.624Z"
+    },
+    {
+      "label": "car-toyota-land-cruiser preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b08-79f0-72d1-add8-6198f5a0128c",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b08-79f0-72d1-add8-6198f5a0128c/output/preview.png",
+      "recordedAt": "2026-10-11T12:56:40.656Z"
+    },
+    {
+      "label": "car-lexus-rx350 preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b08-79c9-7749-8327-d4b9f287471c",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b08-79c9-7749-8327-d4b9f287471c/output/preview.png",
+      "recordedAt": "2026-10-11T12:56:50.772Z"
+    },
+    {
+      "label": "car-toyota-corolla refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b09-3323-75fd-83ab-d9b2f9683431",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b09-3323-75fd-83ab-d9b2f9683431/output/preview.png",
+      "recordedAt": "2026-10-11T12:58:53.946Z"
+    },
+    {
+      "label": "car-toyota-camry refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b09-32fc-7423-8b93-41309a721b64",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b09-32fc-7423-8b93-41309a721b64/output/preview.png",
+      "recordedAt": "2026-10-11T12:58:58.929Z"
+    },
+    {
+      "label": "car-honda-accord refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b09-332e-745d-b541-3e93a9a762d2",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b09-332e-745d-b541-3e93a9a762d2/output/preview.png",
+      "recordedAt": "2026-10-11T12:58:58.965Z"
+    },
+    {
+      "label": "car-toyota-land-cruiser refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b09-6de6-74d2-9aef-fabbe3237580",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b09-6de6-74d2-9aef-fabbe3237580/output/preview.png",
+      "recordedAt": "2026-10-11T12:59:13.989Z"
+    },
+    {
+      "label": "car-lexus-rx350 refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b09-956a-70af-be5b-6de5f0bd7ffa",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b09-956a-70af-be5b-6de5f0bd7ffa/output/preview.png",
+      "recordedAt": "2026-10-11T12:59:24.066Z"
+    },
+    {
+      "label": "car-toyota-sienna preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b0b-8b2c-77c1-a768-8fb2a451f3a7",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b0b-8b2c-77c1-a768-8fb2a451f3a7/output/preview.png",
+      "recordedAt": "2026-10-11T13:00:01.485Z"
+    },
+    {
+      "label": "car-range-rover preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b0b-8b9a-747e-a1a6-21a55c8a23fe",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b0b-8b9a-747e-a1a6-21a55c8a23fe/output/preview.png",
+      "recordedAt": "2026-10-11T13:00:06.534Z"
+    },
+    {
+      "label": "car-mercedes-g63 preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b0b-c5d2-7599-9660-2e4036108c9e",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b0b-c5d2-7599-9660-2e4036108c9e/output/preview.png",
+      "recordedAt": "2026-10-11T13:00:11.513Z"
+    },
+    {
+      "label": "car-toyota-hilux preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b0b-781a-7605-8e3f-d8df49f11aea",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b0b-781a-7605-8e3f-d8df49f11aea/output/preview.png",
+      "recordedAt": "2026-10-11T13:00:42.028Z"
+    },
+    {
+      "label": "car-mercedes-s-class preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b0b-ed23-702e-8154-b3c9bdc26fef",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b0b-ed23-702e-8154-b3c9bdc26fef/output/preview.png",
+      "recordedAt": "2026-10-11T13:01:37.046Z"
+    },
+    {
+      "label": "car-toyota-sienna refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b0c-7e63-7684-bb51-47f731e0cc2a",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b0c-7e63-7684-bb51-47f731e0cc2a/output/preview.png",
+      "recordedAt": "2026-10-11T13:02:48.919Z"
+    },
+    {
+      "label": "car-range-rover refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b0c-921d-7202-ad0c-f92872e7a14a",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b0c-921d-7202-ad0c-f92872e7a14a/output/preview.png",
+      "recordedAt": "2026-10-11T13:02:54.103Z"
+    },
+    {
+      "label": "car-mercedes-g63 refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b0c-a58f-738c-84fd-bd477f90439f",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b0c-a58f-738c-84fd-bd477f90439f/output/preview.png",
+      "recordedAt": "2026-10-11T13:02:54.483Z"
+    },
+    {
+      "label": "car-toyota-hilux refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b0d-1cc3-73b8-993f-00ba8663505f",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b0d-1cc3-73b8-993f-00ba8663505f/output/preview.png",
+      "recordedAt": "2026-10-11T13:03:20.549Z"
+    },
+    {
+      "label": "car-mercedes-gle preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b0f-0ddb-757e-8c83-7f13ac228307",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b0f-0ddb-757e-8c83-7f13ac228307/output/preview.png",
+      "recordedAt": "2026-10-11T13:03:36.359Z"
+    },
+    {
+      "label": "car-mercedes-s-class refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b0d-f3ad-7164-8c6b-ede5af5bead3",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b0d-f3ad-7164-8c6b-ede5af5bead3/output/preview.png",
+      "recordedAt": "2026-10-11T13:04:15.454Z"
+    },
+    {
+      "label": "car-porsche-911 preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b0f-8918-7245-837e-0f141183f17c",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b0f-8918-7245-837e-0f141183f17c/output/preview.png",
+      "recordedAt": "2026-10-11T13:04:17.875Z"
+    },
+    {
+      "label": "car-bmw-x5 preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b0f-21c1-7024-9fee-481b3eaf3ca2",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b0f-21c1-7024-9fee-481b3eaf3ca2/output/preview.png",
+      "recordedAt": "2026-10-11T13:04:26.789Z"
+    },
+    {
+      "label": "car-bmw-m4 preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b0f-22f1-7670-a92e-302435536952",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b0f-22f1-7670-a92e-302435536952/output/preview.png",
+      "recordedAt": "2026-10-11T13:04:46.990Z"
+    },
+    {
+      "label": "car-porsche-cayenne preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b10-5f6a-7458-92a4-c86fc5234c97",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b10-5f6a-7458-92a4-c86fc5234c97/output/preview.png",
+      "recordedAt": "2026-10-11T13:05:07.973Z"
+    },
+    {
+      "label": "car-mercedes-gle refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b0f-c5c0-73e7-9683-67b8366bef2d",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b0f-c5c0-73e7-9683-67b8366bef2d/output/preview.png",
+      "recordedAt": "2026-10-11T13:06:08.858Z"
+    },
+    {
+      "label": "car-porsche-911 refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b10-67ec-7183-a176-693959a19c30",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b10-67ec-7183-a176-693959a19c30/output/preview.png",
+      "recordedAt": "2026-10-11T13:06:40.472Z"
+    },
+    {
+      "label": "car-bmw-x5 refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b10-8abe-7216-918e-a976e5b884ab",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b10-8abe-7216-918e-a976e5b884ab/output/preview.png",
+      "recordedAt": "2026-10-11T13:06:59.375Z"
+    },
+    {
+      "label": "car-bmw-m4 refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b10-d9a9-72d3-8709-04151ddf9a65",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b10-d9a9-72d3-8709-04151ddf9a65/output/preview.png",
+      "recordedAt": "2026-10-11T13:07:19.423Z"
+    },
+    {
+      "label": "car-porsche-cayenne refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b11-2b9e-7720-94e0-17516579a7f4",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b11-2b9e-7720-94e0-17516579a7f4/output/preview.png",
+      "recordedAt": "2026-10-11T13:07:35.739Z"
+    },
+    {
+      "label": "car-lamborghini-huracan preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b12-95f2-74ff-ac75-acf3822e4ea7",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b12-95f2-74ff-ac75-acf3822e4ea7/output/preview.png",
+      "recordedAt": "2026-10-11T13:07:43.165Z"
+    },
+    {
+      "label": "car-ferrari-f8 preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b12-1aa4-7285-bf77-512ddb93d4e2",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b12-1aa4-7285-bf77-512ddb93d4e2/output/preview.png",
+      "recordedAt": "2026-10-11T13:07:51.424Z"
+    },
+    {
+      "label": "car-lamborghini-urus preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b12-e094-72c0-a426-d2272cb96b54",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b12-e094-72c0-a426-d2272cb96b54/output/preview.png",
+      "recordedAt": "2026-10-11T13:08:16.977Z"
+    },
+    {
+      "label": "car-rolls-royce-cullinan preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b13-2ea4-77a3-bf97-3c03cb501877",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b13-2ea4-77a3-bf97-3c03cb501877/output/preview.png",
+      "recordedAt": "2026-10-11T13:08:17.077Z"
+    },
+    {
+      "label": "car-bentley-continental-gt preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b13-6e2e-70b7-becf-07950d75e410",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b13-6e2e-70b7-becf-07950d75e410/output/preview.png",
+      "recordedAt": "2026-10-11T13:08:38.388Z"
+    },
+    {
+      "label": "car-lamborghini-huracan refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b13-89d9-754d-b873-d1d3f3dc9cd1",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b13-89d9-754d-b873-d1d3f3dc9cd1/output/preview.png",
+      "recordedAt": "2026-10-11T13:09:26.678Z"
+    },
+    {
+      "label": "car-ferrari-f8 refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b13-aa1e-775b-bf46-327093c410e9",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b13-aa1e-775b-bf46-327093c410e9/output/preview.png",
+      "recordedAt": "2026-10-11T13:09:38.837Z"
+    },
+    {
+      "label": "car-lamborghini-urus refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b14-0dee-73df-922e-4e842f683f5e",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b14-0dee-73df-922e-4e842f683f5e/output/preview.png",
+      "recordedAt": "2026-10-11T13:10:04.241Z"
+    },
+    {
+      "label": "car-rolls-royce-cullinan refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b14-0e52-76e9-8b18-37dfecfff83d",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b14-0e52-76e9-8b18-37dfecfff83d/output/preview.png",
+      "recordedAt": "2026-10-11T13:10:04.641Z"
+    },
+    {
+      "label": "car-bentley-continental-gt refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b14-6190-723c-8cf2-ce5e531df50d",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b14-6190-723c-8cf2-ce5e531df50d/output/preview.png",
+      "recordedAt": "2026-10-11T13:10:31.422Z"
+    },
+    {
+      "label": "car-toyota-sienna preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b15-ad93-7181-aa6c-c0f5533f8de8",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b15-ad93-7181-aa6c-c0f5533f8de8/output/preview.png",
+      "recordedAt": "2026-10-11T13:10:59.444Z"
+    },
+    {
+      "label": "car-toyota-land-cruiser preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b15-ad9c-7385-ab6c-52017c75ccee",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b15-ad9c-7385-ab6c-52017c75ccee/output/preview.png",
+      "recordedAt": "2026-10-11T13:10:59.537Z"
+    },
+    {
+      "label": "car-toyota-hilux preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b15-ad89-77f5-9577-2fc28f175379",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b15-ad89-77f5-9577-2fc28f175379/output/preview.png",
+      "recordedAt": "2026-10-11T13:12:10.409Z"
+    },
+    {
+      "label": "car-toyota-land-cruiser refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b16-88ed-70c8-8fa1-d8fdaa713a56",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b16-88ed-70c8-8fa1-d8fdaa713a56/output/preview.png",
+      "recordedAt": "2026-10-11T13:12:35.701Z"
+    },
+    {
+      "label": "car-toyota-sienna refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b16-8890-7221-9305-bc72afae2c1e",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b16-8890-7221-9305-bc72afae2c1e/output/preview.png",
+      "recordedAt": "2026-10-11T13:12:35.756Z"
+    },
+    {
+      "label": "car-toyota-hilux refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12b17-9dc3-70fc-9fb0-7e2c36654298",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b17-9dc3-70fc-9fb0-7e2c36654298/output/preview.png",
+      "recordedAt": "2026-10-11T13:13:21.512Z"
     }
   ]
 }

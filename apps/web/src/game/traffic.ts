@@ -1,5 +1,5 @@
 import type { Scene } from "@babylonjs/core/scene";
-import { getPlace, getVehicleModel, STOPS, type Vec2 } from "@lagos-living/shared";
+import { getPlace, getVehicleModel, STOPS, VEHICLE_MODELS, type Vec2 } from "@lagos-living/shared";
 import { appearanceFor, type Avatar, type AvatarFactory } from "./avatar";
 import type { DanfoView } from "./danfo";
 import { densify, hash, pointAt, polylineLength } from "./geometry";
@@ -35,8 +35,15 @@ type Walker = {
   yaw: number;
 };
 
-/** Everyday traffic mix, drawn from the dealership's own models. */
-const TRAFFIC_MIX = ["tokunbo-saloon", "tokunbo-saloon", "eko-hatch", "island-suv", "tokunbo-saloon", "lagoon-pickup", "eko-hatch", "banana-island-lx", "ojota-minibus", "admiralty-executive"];
+/**
+ * Traffic mix, drawn from the dealership's own models: everyday Toyotas and Hondas most often, with the luxury and
+ * supercar end of Lekki Motors showing up further down the list so every model appears at higher quality settings.
+ */
+const TRAFFIC_MIX = [
+  "toyota-corolla", "toyota-camry", "lexus-rx350", "mercedes-g63", "tokunbo-saloon", "toyota-hilux", "range-rover", "honda-accord", "ojota-minibus", "lamborghini-urus",
+  "toyota-sienna", "mercedes-gle", "toyota-land-cruiser", "ferrari-f8", "porsche-cayenne", "mercedes-s-class", "eko-hatch", "bmw-x5", "lamborghini-huracan", "toyota-corolla",
+  "rolls-royce-cullinan", "bmw-m4", "porsche-911", "bentley-continental-gt", "toyota-camry", "lagoon-pickup", "lexus-rx350", "honda-accord",
+].filter((id) => VEHICLE_MODELS.some((model) => model.id === id));
 /** Cabins are only drawn for cars this close to the player. */
 const CABIN_RANGE = 30;
 
@@ -63,7 +70,7 @@ export class AmbientLife {
     this.roads = roads.filter((road) => ["primary", "tertiary", "unclassified", "residential"].includes(road.kind) && polylineLength(road.points) > 120);
     this.sidewalkRoads = roads.filter((road) => ["primary", "tertiary", "unclassified", "residential"].includes(road.kind) && polylineLength(road.points) > 60);
     this.home = getPlace("starter-home").door;
-    const carCount = quality === "low" ? 10 : quality === "medium" ? 18 : 26;
+    const carCount = quality === "low" ? 10 : quality === "medium" ? 20 : 28;
     const walkerCount = avatars ? (quality === "low" ? 5 : quality === "medium" ? 10 : 16) : 0;
     for (let index = 0; index < carCount; index += 1) {
       const modelId = TRAFFIC_MIX[index % TRAFFIC_MIX.length]!;

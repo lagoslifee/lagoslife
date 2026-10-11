@@ -1,13 +1,15 @@
 import { z } from "zod";
-import { VEHICLE_ASSETS } from "./vehicle-assets";
+import { VEHICLE_ASSETS } from "./vehicle-assets.js";
+import { REAL_VEHICLE_ASSETS } from "./vehicle-assets-real.js";
 
-export const vehicleCategories = ["compact", "sedan", "suv", "luxury", "van", "bicycle"] as const;
+export const vehicleCategories = ["compact", "sedan", "suv", "luxury", "sports", "van", "bicycle"] as const;
 export type VehicleCategory = (typeof vehicleCategories)[number];
 export const vehicleCategoryLabels: Record<VehicleCategory, string> = {
   compact: "Compact",
   sedan: "Saloon",
   suv: "SUV",
   luxury: "Luxury",
+  sports: "Sports & supercars",
   van: "Vans & utility",
   bicycle: "Bicycles",
 };
@@ -53,10 +55,12 @@ export type VehicleAsset = {
   seats: Array<{ x: number; y: number; z: number }>;
   /** Centre of the steering wheel. */
   steering: { x: number; y: number; z: number };
+  /** The paint is textured (white with baked detail) and tinted by the chosen colour, rather than plain colour. */
+  paintTexture?: boolean;
 };
 
 /**
- * Fictional names; none depicts or is named after a real make or model. Cars use modelled bodies from
+ * Lekki Motors' own budget range, under fictional names. Cars use modelled bodies from
  * Kenney's CC0 Car Kit with fitted cabins, and take their size, wheels and seats from the built model
  * (`VEHICLE_ASSETS`); the bicycle is drawn procedurally. Prices are game naira; handling suits city streets.
  */
@@ -231,8 +235,55 @@ const CATALOGUE: VehicleModel[] = [
   },
 ];
 
-export const VEHICLE_MODELS: VehicleModel[] = CATALOGUE.map((model) => {
-  const asset = VEHICLE_ASSETS[model.id];
+const WHITE = "#f2f2ee";
+const BLACK = "#101418";
+const SILVER = "#b9bcc0";
+type RealCar = Omit<VehicleModel, "reverseSpeed" | "braking" | "wheelbase" | "maxSteer" | "length" | "width" | "height" | "wheelRadius" | "asset"> &
+  Partial<Pick<VehicleModel, "braking" | "maxSteer">>;
+
+/**
+ * Real makes and models, generated with Meshy (see docs/ASSET_MANIFEST.md). Size, wheels and seats come from the
+ * built model; a car is only listed once its model has been built.
+ */
+const REAL_CATALOGUE: RealCar[] = [
+  { id: "toyota-corolla", name: "Toyota Corolla", category: "sedan", body: "saloon", price: 240_000, topSpeed: 17, acceleration: 3.5, mass: 1_350, seats: 5, colours: [WHITE, SILVER, BLACK, "#8a1c1c", "#1f3a5f"], description: "Nigeria's favourite saloon. Cheap to run, easy to sell on." },
+  { id: "toyota-camry", name: "Toyota Camry", category: "sedan", body: "saloon", price: 340_000, topSpeed: 18, acceleration: 3.7, mass: 1_550, seats: 5, colours: [WHITE, BLACK, SILVER, "#3a3f46", "#7a1c1c"], description: "The Lagos executive's classic \"Muscle\" Camry. Roomy, smooth and reliable." },
+  { id: "honda-accord", name: "Honda Accord", category: "sedan", body: "saloon", price: 320_000, topSpeed: 18, acceleration: 3.8, mass: 1_500, seats: 5, colours: [WHITE, BLACK, SILVER, "#1f3a5f", "#5b6770"], description: "A sharp, sporty family saloon with a comfortable ride." },
+  { id: "lexus-rx350", name: "Lexus RX 350", category: "suv", body: "suv", price: 750_000, topSpeed: 19.5, acceleration: 4.1, mass: 1_950, seats: 5, colours: [WHITE, BLACK, SILVER, "#5a5048", "#23324a"], description: "Quiet, plush crossover. A status symbol on every Lekki estate road." },
+  { id: "toyota-land-cruiser", name: "Toyota Land Cruiser", category: "suv", body: "suv", price: 1_800_000, topSpeed: 19, acceleration: 3.9, mass: 2_600, seats: 7, colours: [WHITE, BLACK, SILVER, "#4b5320", "#5a5048"], description: "Seven-seat go-anywhere SUV. Floods and potholes don't slow it down." },
+  { id: "toyota-hilux", name: "Toyota Hilux", category: "van", body: "pickup", price: 520_000, topSpeed: 17, acceleration: 3.3, mass: 2_100, seats: 5, colours: [WHITE, SILVER, BLACK, "#8a1c1c", "#2e4d2c"], description: "Double-cab workhorse with an open bed for deliveries and moving day." },
+  { id: "toyota-sienna", name: "Toyota Sienna", category: "van", body: "van", price: 600_000, topSpeed: 17, acceleration: 3.2, mass: 2_100, seats: 8, colours: [WHITE, SILVER, BLACK, "#1f3a5f", "#5b6770"], description: "Eight-seat minivan with sliding doors. The school-run and church-run favourite." },
+  { id: "range-rover", name: "Range Rover", category: "luxury", body: "suv", price: 3_400_000, topSpeed: 21, acceleration: 4.6, mass: 2_500, seats: 5, colours: [WHITE, BLACK, SILVER, "#2d4a3a", "#3b3f46"], description: "Full-size British luxury SUV. Banana Island's default setting." },
+  { id: "mercedes-g63", name: "Mercedes-AMG G 63", category: "luxury", body: "suv", price: 4_800_000, topSpeed: 22, acceleration: 5.2, mass: 2_550, seats: 5, colours: [BLACK, WHITE, SILVER, "#4b5320", "#7a1c1c"], description: "The boxy \"G-Wagon\". Loud, square and impossible to ignore." },
+  { id: "mercedes-s-class", name: "Mercedes-Benz S-Class", category: "luxury", body: "saloon", price: 4_200_000, topSpeed: 22, acceleration: 4.9, mass: 2_100, seats: 5, colours: [BLACK, WHITE, SILVER, "#23324a", "#3b3f46"], description: "The chairman's limousine. Sit in the back and let someone else drive." },
+  { id: "mercedes-gle", name: "Mercedes-Benz GLE", category: "suv", body: "suv", price: 2_000_000, topSpeed: 20.5, acceleration: 4.5, mass: 2_250, seats: 5, colours: [WHITE, BLACK, SILVER, "#23324a", "#5a5048"], description: "Mid-size Mercedes SUV with a big presence and a soft ride." },
+  { id: "bmw-x5", name: "BMW X5", category: "suv", body: "suv", price: 1_900_000, topSpeed: 20.5, acceleration: 4.6, mass: 2_200, seats: 5, colours: [WHITE, BLACK, SILVER, "#1f3a5f", "#3b3f46"], description: "Sporty, sharp-handling SUV that still fits the whole family." },
+  { id: "bmw-m4", name: "BMW M4", category: "sports", body: "saloon", price: 2_800_000, topSpeed: 25, acceleration: 6, mass: 1_700, seats: 4, colours: [WHITE, BLACK, "#1f5fbf", "#e0b02a", "#c8102e"], description: "Two-door performance coupe. Quick off the lights on Ozumba Mbadiwe." },
+  { id: "porsche-911", name: "Porsche 911", category: "sports", body: "saloon", price: 4_500_000, topSpeed: 27, acceleration: 6.6, mass: 1_500, seats: 4, colours: [WHITE, BLACK, SILVER, "#c8102e", "#e0b02a"], description: "The everyday sports car. Rear engine, perfect balance, iconic shape." },
+  { id: "porsche-cayenne", name: "Porsche Cayenne", category: "suv", body: "suv", price: 2_600_000, topSpeed: 21.5, acceleration: 5, mass: 2_100, seats: 5, colours: [WHITE, BLACK, SILVER, "#23324a", "#7a1c1c"], description: "A sports car you can take the whole family in." },
+  { id: "ferrari-f8", name: "Ferrari F8 Tributo", category: "sports", body: "saloon", price: 9_800_000, topSpeed: 30, acceleration: 7.6, mass: 1_450, seats: 2, maxSteer: 0.5, braking: 12, colours: ["#c4161c", "#f2c200", BLACK, WHITE, "#1f5fbf"], description: "Mid-engined Italian supercar. Rosso red is the only correct answer." },
+  { id: "lamborghini-huracan", name: "Lamborghini Huracán", category: "sports", body: "saloon", price: 10_500_000, topSpeed: 30, acceleration: 7.8, mass: 1_500, seats: 2, maxSteer: 0.5, braking: 12, colours: ["#9bd318", "#f2a900", "#e05a00", BLACK, WHITE], description: "Wedge-shaped V10 supercar. Every head on Admiralty Way will turn." },
+  { id: "lamborghini-urus", name: "Lamborghini Urus", category: "sports", body: "suv", price: 8_200_000, topSpeed: 27, acceleration: 6.8, mass: 2_250, seats: 5, braking: 11.5, colours: ["#f2c200", BLACK, WHITE, "#e05a00", "#3b3f46"], description: "The super-SUV. Supercar speed with room for four friends." },
+  { id: "rolls-royce-cullinan", name: "Rolls-Royce Cullinan", category: "luxury", body: "suv", price: 15_000_000, topSpeed: 22, acceleration: 4.8, mass: 2_750, seats: 5, colours: [BLACK, WHITE, SILVER, "#23324a", "#5a1c2a"], description: "The most expensive thing on four wheels in Lagos. Arrive like royalty." },
+  { id: "bentley-continental-gt", name: "Bentley Continental GT", category: "luxury", body: "saloon", price: 9_200_000, topSpeed: 26, acceleration: 6, mass: 2_250, seats: 4, colours: [WHITE, BLACK, "#1d3b2f", "#23324a", "#7a1c1c"], description: "Hand-built British grand tourer. Fast, plush and very, very green." },
+];
+
+const realModels: VehicleModel[] = REAL_CATALOGUE.filter((car) => REAL_VEHICLE_ASSETS[car.id]).map((car) => ({
+  braking: 10,
+  maxSteer: 0.52,
+  ...car,
+  reverseSpeed: 5,
+  wheelbase: 0,
+  length: 0,
+  width: 0,
+  height: 0,
+  wheelRadius: 0,
+}));
+
+const ASSETS: Record<string, VehicleAsset> = { ...VEHICLE_ASSETS, ...REAL_VEHICLE_ASSETS };
+
+export const VEHICLE_MODELS: VehicleModel[] = [...CATALOGUE, ...realModels].map((model) => {
+  const asset = ASSETS[model.id];
   if (!asset) return model;
   const { length, width, height, wheelbase, wheelRadius } = asset;
   return { ...model, length, width, height, wheelbase, wheelRadius, seats: asset.seats.length, asset };

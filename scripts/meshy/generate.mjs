@@ -158,8 +158,35 @@ if (target === "avatar") {
       "chrome bumpers, dark tinted glass, black rubber tyres",
     polycount: 20000,
   });
+} else if (target === "cars") {
+  const { REAL_CARS } = await import("./real-cars.mjs");
+  const wanted = process.argv.slice(3);
+  const queue = REAL_CARS.filter((car) => (!wanted.length || wanted.includes(car.id)) && !existsSync(path.join(outDir, `car-${car.id}.glb`)));
+  const failures = [];
+  const worker = async () => {
+    for (let car = queue.shift(); car; car = queue.shift()) {
+      try {
+        await generateModel({
+          label: `car-${car.id}`,
+          prompt:
+            `${car.model}, realistic detailed production car exterior, accurate real-world proportions, ` +
+            "glossy solid white paint, dark tinted windows, black tyres on alloy wheels, headlights and tail lights, " +
+            "four wheels touching the ground, no number plate text, no people",
+          texturePrompt:
+            `${car.name} in glossy solid white automotive paint, dark tinted glass, black rubber tyres, ` +
+            "silver alloy wheels, clear headlights, red tail lights, black grille and trim",
+          polycount: 30000,
+        });
+      } catch (error) {
+        failures.push(car.id);
+        console.error(`car-${car.id} failed: ${error.message}`);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Number(process.env.MESHY_CONCURRENCY ?? 5) }, worker));
+  if (failures.length) console.log(`failed: ${failures.join(" ")}`);
 } else {
-  console.log("usage: node scripts/meshy/generate.mjs <avatar|danfo>");
+  console.log("usage: node scripts/meshy/generate.mjs <avatar|danfo|cars [id...]>");
   process.exit(1);
 }
 console.log(`credits spent this run: ${spent}`);

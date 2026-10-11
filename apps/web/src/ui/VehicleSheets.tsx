@@ -2,6 +2,7 @@ import {
   getPlace,
   insurancePremium,
   VEHICLE_MODELS,
+  vehicleCategories,
   vehicleCategoryLabels,
   VEHICLE_RULES,
   vehicleModelById,
@@ -11,6 +12,7 @@ import {
   type TowStage,
   type TowState,
   type Place,
+  type VehicleCategory,
   type Vec2,
 } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
@@ -61,6 +63,9 @@ export function DealershipSheet({ place, economy, vehicles, onClose, onRefresh, 
   const { busy, run } = useRunner(onToast, onRefresh);
   const [colours, setColours] = useState<Record<string, string>>(() => Object.fromEntries(VEHICLE_MODELS.map((model) => [model.id, model.colours[0]!])));
   const [confirming, setConfirming] = useState<{ modelId: string; key: string } | null>(null);
+  const [category, setCategory] = useState<VehicleCategory | "all">("all");
+  const shown = VEHICLE_MODELS.filter((model) => category === "all" || model.category === category);
+  const offered = vehicleCategories.filter((key) => VEHICLE_MODELS.some((model) => model.category === key));
   const balance = economy?.balance ?? 0;
   const bicycles = vehicles.filter((owned) => vehicleModelById.get(owned.modelId)?.body === "bicycle").length;
   const isFull = (model: { body: string }) => (model.body === "bicycle" ? bicycles >= 2 : vehicles.length - bicycles >= 3);
@@ -75,11 +80,24 @@ export function DealershipSheet({ place, economy, vehicles, onClose, onRefresh, 
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close">✕</button>
         </header>
-        <p className="muted">Fictional models, paid in game naira. Your car is parked outside on Admiralty Way the moment you sign. Up to 3 motor vehicles and 2 bicycles each.</p>
+        <p className="muted">Real-world favourites from Toyota to Lamborghini, plus Lekki Motors' own budget range, all paid in game naira. Your car is parked outside on Admiralty Way the moment you sign. Up to 3 motor vehicles and 2 bicycles each.</p>
         <VehiclePreview modelId={selected} colour={colours[selected]!} />
         <p className="muted small preview-name">{vehicleModelById.get(selected)!.name} · the exact model and colour you will get</p>
+        <div className="category-chips" role="tablist" aria-label="Vehicle category">
+          {(["all", ...offered] as const).map((key) => (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={category === key}
+              className={category === key ? "chip selected" : "chip"}
+              onClick={() => setCategory(key)}
+            >
+              {key === "all" ? `All (${VEHICLE_MODELS.length})` : vehicleCategoryLabels[key]}
+            </button>
+          ))}
+        </div>
         <ul className="menu vehicle-menu">
-          {VEHICLE_MODELS.map((model) => {
+          {shown.map((model) => {
             const colour = colours[model.id]!;
             const affordable = balance >= model.price;
             const pending = confirming?.modelId === model.id;

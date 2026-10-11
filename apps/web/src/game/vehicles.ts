@@ -10,8 +10,13 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
 import type { AssetContainer } from "@babylonjs/core/assetContainer";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { MeshoptCompression } from "@babylonjs/core/Meshes/Compression/meshoptCompression";
 import { getVehicleModel, VEHICLE_MODELS, vehicleSeats, type VehicleModel } from "@lagos-living/shared";
 import type { Materials } from "./materials";
+
+// Served from the game's own origin rather than Babylon's CDN.
+MeshoptCompression.Configuration = { decoder: { url: "/vendor/meshopt_decoder.js" } };
 
 type Part = "glass" | "trim" | "chrome" | "interior" | "plate" | "headOff" | "headOn" | "tailOff" | "tailOn" | "tailBrake" | "reverse" | "wheel" | "steer" | "fork";
 type Station = readonly [z: number, bottom: number, top: number, half: number];
@@ -299,7 +304,7 @@ function buildTemplate(scene: Scene, model: VehicleModel): Template {
  * Template from a modelled GLB (see scripts/assets/build-vehicles.mjs). Its meshes are baked into vehicle space,
  * so they instance exactly like the procedural parts; lamp meshes are shared by their off/on/brake states.
  */
-function assetTemplate(scene: Scene, model: VehicleModel, container: AssetContainer, looks: { palette: Material; cabin: Material; glass: Material }): Template {
+function assetTemplate(scene: Scene, model: VehicleModel, container: AssetContainer, looks: { palette: Material; cabin: Material; glass: Material; paint: PaintLook | null }): Template {
   container.addAllToScene();
   const meshes = new Map<string, Mesh>();
   for (const mesh of container.meshes) {
@@ -334,10 +339,13 @@ function assetTemplate(scene: Scene, model: VehicleModel, container: AssetContai
   sources.steer = templateSource(Mesh.MergeMeshes(steeringWheel(scene), true, true)!, `${model.id} steer`);
   const body = templateSource(meshes.get("paint")!, `${model.id} paint`);
   body.setEnabled(false);
-  return { body, sources, looks: { trim: looks.palette, wheel: looks.palette, interior: looks.cabin, glass: looks.glass }, modelled: true };
+  const textured = looks.paint ? { headOff: looks.palette, tailOff: looks.palette } : {};
+  return { body, sources, looks: { trim: looks.palette, wheel: looks.palette, interior: looks.cabin, glass: looks.glass, ...textured }, modelled: true, paint: looks.paint };
 }
 
-type Template = { body: Mesh; sources: Record<Part, Mesh | null>; looks: Partial<Record<Part, Material>>; modelled: boolean };
+/** Baked paint detail (white) that the chosen colour tints, with the model's own normal map. */
+type PaintLook = { albedo: BaseTexture; bump: BaseTexture | null; invertX: boolean; invertY: boolean };
+type Template = { body: Mesh; sources: Record<Part, Mesh | null>; looks: Partial<Record<Part, Material>>; modelled: boolean; paint?: PaintLook | null };
 type Sample = { t: number; x: number; z: number; yaw: number };
 type Wheel = { pivot: TransformNode; spin: TransformNode; front: boolean };
 
@@ -637,16 +645,24 @@ export class VehicleFactory {
     };
   }
 
-  private paint(hex: string) {
-    let material = this.paints.get(hex);
+  private paint(hex: string, modelId: string, look?: PaintLook | null) {
+    const key = look ? `${modelId} ${hex}` : hex;
+    let material = this.paints.get(key);
     if (!material) {
-      material = new PBRMaterial(`vehicle paint ${hex}`, this.scene);
+      material = new PBRMaterial(`vehicle paint ${key}`, this.scene);
       material.albedoColor = Color3.FromHexString(hex);
       material.metallic = 0.6;
       material.roughness = 0.28;
       material.clearCoat.isEnabled = true;
       material.clearCoat.intensity = 0.6;
-      this.paints.set(hex, material);
+      if (look) {
+        material.albedoTexture = look.albedo;
+        material.bumpTexture = look.bump;
+        material.invertNormalMapX = look.invertX;
+        material.invertNormalMapY = look.invertY;
+        material.metallic = 0.45;
+      }
+      this.paints.set(key, material);
     }
     return material;
   }
@@ -666,11 +682,27 @@ export class VehicleFactory {
     palette.albedoTexture = albedo;
     palette.roughness = 0.6;
     palette.metallic = 0.05;
+    let paint: PaintLook | null = null;
+    if (model.asset!.paintTexture && source) {
+      palette.bumpTexture = source.bumpTexture;
+      palette.invertNormalMapX = source.invertNormalMapX;
+      palette.invertNormalMapY = source.invertNormalMapY;
+      palette.metallicTexture = source.metallicTexture;
+      palette.useRoughnessFromMetallicTextureGreen = true;
+      palette.useMetallnessFromMetallicTextureBlue = true;
+      palette.useRoughnessFromMetallicTextureAlpha = false;
+      palette.metallic = 1;
+      palette.roughness = 1;
+      const painted = container.materials.find((material) => material.name === "paint") as PBRMaterial | undefined;
+      if (painted?.albedoTexture) {
+        paint = { albedo: painted.albedoTexture, bump: painted.bumpTexture, invertX: painted.invertNormalMapX, invertY: painted.invertNormalMapY };
+      }
+    }
     const cabin = new PBRMaterial(`${model.id} cabin`, this.scene);
     cabin.albedoColor = Color3.White();
     cabin.roughness = 0.9;
     cabin.backFaceCulling = false;
-    const template = assetTemplate(this.scene, model, container, { palette, cabin, glass: this.carGlass });
+    const template = assetTemplate(this.scene, model, container, { palette, cabin, glass: this.carGlass, paint });
     this.dress(template);
     this.templates.set(model.id, template);
   }
@@ -701,7 +733,7 @@ export class VehicleFactory {
     const paint = template.body.clone(`${id} paint`, null)!;
     paint.setEnabled(true);
     paint.position.y = 0;
-    paint.material = this.paint(colour);
+    paint.material = this.paint(colour, model.id, template.paint);
     const view = new VehicleView(id, [paint], root, model);
     view.attach(template, paint);
     return view;
