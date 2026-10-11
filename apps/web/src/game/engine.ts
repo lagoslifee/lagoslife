@@ -1866,14 +1866,21 @@ export class GameEngine {
   /** Local-only view of the driver heading to the pickup along real roads, timed to the server's arrival. */
   private startRideApproach(ride: RideState) {
     if (!this.vehicleFactory) return;
-    const seconds = Math.max(10, (ride.arrivesAt - Date.now()) / 1000);
-    const reach = Math.min(650, Math.max(180, seconds * RIDE.driverSpeed));
-    let best: RoutePlan | null = null;
+    const seconds = Math.max(4, (ride.arrivesAt - Date.now()) / 1000);
+    // Start on the road a short, town-speed drive away (about 7–10 m/s), preferring the same street.
+    const reach = Math.min(140, Math.max(50, seconds * 8));
+    const road = this.navigator.snap(ride.pickup);
+    const candidates: Vec2[] = [-1, 1].map((side) => [road.point[0] - Math.sin(road.yaw) * reach * side, road.point[1] - Math.cos(road.yaw) * reach * side]);
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const angle = Math.random() * Math.PI * 2;
-      const start = this.navigator.snap([ride.pickup[0] + Math.sin(angle) * reach * 0.8, ride.pickup[1] + Math.cos(angle) * reach * 0.8]);
+      candidates.push([ride.pickup[0] + Math.sin(angle) * reach, ride.pickup[1] + Math.cos(angle) * reach]);
+    }
+    let best: RoutePlan | null = null;
+    for (const candidate of candidates) {
+      const start = this.navigator.snap(candidate);
       const plan = this.navigator.plan(start.point, ride.pickup);
-      if (plan.reachable && plan.metres > 120 && (!best || Math.abs(plan.metres - reach) < Math.abs(best.metres - reach))) best = plan;
+      if (!plan.reachable || plan.metres < 30 || plan.metres > reach * 1.8) continue;
+      if (!best || Math.abs(plan.metres - reach) < Math.abs(best.metres - reach)) best = plan;
     }
     if (!best) return;
     const path = best.points.filter((point, index, all) => index === 0 || Math.hypot(point[0] - all[index - 1]![0], point[1] - all[index - 1]![1]) > 0.5);

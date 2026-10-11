@@ -1100,7 +1100,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       modelId: RIDE.modelId,
       vehicleId: null,
       bookedAt: now,
-      arrivesAt: now + (RIDE.pickupSecondsMin + randomInt(RIDE.pickupSecondsMax - RIDE.pickupSecondsMin)) * 1_000,
+      arrivesAt: now + (RIDE.pickupSecondsMin + randomInt(RIDE.pickupSecondsMax - RIDE.pickupSecondsMin + 1)) * 1_000,
       waitUntil: null,
       refunded: 0,
       message: null,

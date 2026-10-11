@@ -57,7 +57,7 @@ export function RideApp({ engine, ride, properties, onNavigate, onClose }: Props
     const result = engine.rideQuote(chosen.point);
     const straight = Math.hypot(result.dropoff.point[0] - result.pickup.point[0], result.dropoff.point[1] - result.pickup.point[1]);
     let problem: string | null = null;
-    if (result.indoors) problem = "Step outside first — drivers pick up from the street.";
+    if (result.indoors) problem = "You're indoors. Step out to the street first: the driver arrives about 10 seconds after you book from the kerb, and the timer only starts then.";
     else if (result.aboard) problem = "Get out of your current vehicle before booking.";
     else if (result.pickup.distance > RIDE.pickupRange) problem = `You are ${Math.round(result.pickup.distance)} m from the nearest road. Walk to a street so the driver can reach you.`;
     else if (!result.plan.reachable) problem = `No road connects here with ${chosen.label}. Try the danfo, or walk.`;

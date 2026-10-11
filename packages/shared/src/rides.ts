@@ -12,8 +12,9 @@ export const RIDE = {
   maxMetres: 25_000,
   /** Pickups must be on a road within this distance of the rider. */
   pickupRange: 45,
-  pickupSecondsMin: 25,
-  pickupSecondsMax: 70,
+  /** The driver is already nearby: pickups take about ten seconds from booking. */
+  pickupSecondsMin: 8,
+  pickupSecondsMax: 12,
   /** Cancelling within this many seconds of booking is free. */
   freeCancelSeconds: 60,
   lateCancelFee: 200,
