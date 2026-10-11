@@ -1,16 +1,16 @@
-import { CLUB_LAYOUT, clubLocation, CLUBS, getPlace } from "@lagos-living/shared";
+import { CLUB_LAYOUT, CLUB_TABLES, clubLocation, CLUBS, getPlace } from "@lagos-living/shared";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buyWristband, getClubStatus, hasWristband, orderAtBar } from "./club-service.js";
+import { bookTable, buyWristband, getClubStatus, hasWristband, listTables, orderAtBar, orderBottle, setTableGuest } from "./club-service.js";
 import { pool } from "./database.js";
 import { getEconomyState } from "./economy-service.js";
 import { setPlayerPosition } from "./player-presence.js";
 
-const users = [0, 1].map(() => ({
+const users = [0, 1, 2].map(() => ({
   id: `club-user-${randomUUID()}`,
   username: `club${randomUUID().replaceAll("-", "").slice(0, 12)}`,
 }));
-const [raver, broke] = users as [(typeof users)[0], (typeof users)[0]];
+const [raver, broke, friend] = users as [(typeof users)[0], (typeof users)[0], (typeof users)[0]];
 const club = getPlace("eko-nights");
 const cover = CLUBS["eko-nights"]!.cover;
 
@@ -84,5 +84,47 @@ describe("club bar", () => {
     expect(again.replayed).toBe(true);
     expect(await balance(raver.id)).toBe(before - first.item.price);
     await expect(orderAtBar(raver.id, club.id, "champagne", randomUUID())).rejects.toThrow("doesn't serve");
+  });
+});
+
+describe("VIP tables", () => {
+  const table = CLUB_TABLES[1]!;
+  const inClub = (userId: string) => setPlayerPosition(userId, ...table.spot, clubLocation(club.id));
+
+  it("needs tonight's wristband", async () => {
+    inClub(friend.id);
+    await expect(bookTable(friend.id, club.id, table.no)).rejects.toThrow("Pay the cover");
+  });
+
+  it("books once, lets the owner invite a guest, and serves bottles only to the table's party", async () => {
+    inClub(raver.id);
+    const before = await balance(raver.id);
+    const booked = await bookTable(raver.id, club.id, table.no);
+    expect(booked.charged).toBe(CLUBS["eko-nights"]!.tablePrice);
+    expect((await bookTable(raver.id, club.id, table.no)).charged).toBe(0);
+    expect(await balance(raver.id)).toBe(before - CLUBS["eko-nights"]!.tablePrice);
+    await expect(bookTable(raver.id, club.id, CLUB_TABLES[2]!.no)).rejects.toThrow("already have table");
+
+    setPlayerPosition(friend.id, ...club.door);
+    await buyWristband(friend.id, club.id);
+    inClub(friend.id);
+    await expect(bookTable(friend.id, club.id, table.no)).rejects.toThrow("already booked");
+    await expect(orderBottle(friend.id, club.id, table.no, "moet", randomUUID())).rejects.toThrow("invite you");
+    await expect(setTableGuest(friend.id, club.id, table.no, raver.username, true)).rejects.toThrow("Only the person");
+
+    await setTableGuest(raver.id, club.id, table.no, friend.username, true);
+    const key = randomUUID();
+    const ordered = await orderBottle(friend.id, club.id, table.no, "moet", key);
+    expect(ordered.replayed).toBe(false);
+    expect((await orderBottle(friend.id, club.id, table.no, "moet", key)).replayed).toBe(true);
+    const tables = await listTables(raver.id, club.id);
+    const mine = tables.find((entry) => entry.no === table.no)!;
+    expect(mine.mine).toBe(true);
+    expect(mine.guests).toHaveLength(1);
+    expect(mine.bottles.map((bottle) => bottle.itemId)).toEqual(["moet"]);
+    expect((await listTables(friend.id, club.id)).find((entry) => entry.no === table.no)!.guest).toBe(true);
+
+    await setTableGuest(raver.id, club.id, table.no, friend.username, false);
+    await expect(orderBottle(friend.id, club.id, table.no, "moet", randomUUID())).rejects.toThrow("invite you");
   });
 });

@@ -4,14 +4,18 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
-import { CLUB_LAYOUT, INTERIOR_EXIT, INTERIOR_HALF, INTERIOR_ORIGIN, type Club, type Vec2 } from "@lagos-living/shared";
+import { bottleById, CLUB_LAYOUT, CLUB_TABLES, INTERIOR_EXIT, INTERIOR_HALF, INTERIOR_ORIGIN, type Club, type Vec2 } from "@lagos-living/shared";
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import { MeshBuilderBatch } from "./geometry";
 import type { Materials } from "./materials";
 import { SignAtlas } from "./sign-atlas";
 
 export type InteriorKind = "starter" | "preview" | "home" | "club";
 export type Placement = { id?: string; itemId: string; gridX: number; gridZ: number; rotation: number };
-export type InteriorSpot = { id: "exit" | "bed" | "storage" | "kitchen" | "bar" | "dance"; point: Vec2; label: string };
+export type InteriorSpot = { id: "exit" | "bed" | "storage" | "kitchen" | "bar" | "dance" | `table-${number}`; point: Vec2; label: string };
 
 const HEIGHT = 3.0;
 const [OX, OZ] = INTERIOR_ORIGIN;
@@ -95,12 +99,10 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
 
   const disposables: Array<{ dispose(): void }> = [];
   let animate: (seconds: number) => void = () => {};
+  let clubView: ReturnType<typeof buildClub> | null = null;
   if (kind === "club") {
-    animate = buildClub(scene, get, solid, spots, disposables, club);
-    sofa(OX + HX - 0.6, OZ - 1.8, -Math.PI / 2);
-    sofa(OX + HX - 0.6, OZ + 1.2, -Math.PI / 2);
-    get("darkFrame").box(OX + HX - 1.6, 0.4, OZ - 1.8, 0.6, 0.06, 0.6);
-    get("darkFrame").box(OX + HX - 1.6, 0.4, OZ + 1.2, 0.6, 0.06, 0.6);
+    clubView = buildClub(scene, atlas, get, solid, spots, disposables, club);
+    animate = clubView.animate;
   } else if (kind === "starter") {
     bed(OX - HX + 1.0, OZ + HZ - 1.4, Math.PI);
     table(OX + 2.5, OZ + 2.6, 0);
@@ -164,6 +166,10 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     update(seconds: number) {
       animate(seconds);
     },
+    /** Club only: bottles standing on each VIP table. */
+    setTableBottles(no: number, bottles: Array<{ id: string; itemId: string }>) {
+      clubView?.setBottles(no, bottles);
+    },
     dispose() {
       for (const mesh of meshes) mesh.dispose();
       for (const item of disposables) item.dispose();
@@ -175,10 +181,23 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
 export type InteriorView = ReturnType<typeof buildInterior>;
 
 type Solid = (key: string, x: number, y: number, z: number, w: number, h: number, d: number, yaw?: number, color?: [number, number, number], collide?: boolean) => void;
+type Rgb = [number, number, number];
 
-/** Bar, DJ booth and a tiled dance floor whose panels and spotlights pulse to the club's tempo. */
+function neon(scene: Scene, name: string, color: Color3, disposables: Array<{ dispose(): void }>) {
+  const material = new StandardMaterial(name, scene);
+  material.disableLighting = true;
+  material.emissiveColor = color.clone();
+  disposables.push(material);
+  return material;
+}
+
+/**
+ * A Lagos club: LED wall behind the DJ, neon strips, mirror ball, backlit bar with stools, tiled dance floor, and three
+ * red-velvet VIP booths along the east wall. Panels, LEDs and spotlights pulse to the club's tempo.
+ */
 function buildClub(
   scene: Scene,
+  atlas: SignAtlas,
   get: (key: string) => MeshBuilderBatch,
   solid: Solid,
   spots: InteriorSpot[],
@@ -188,44 +207,76 @@ function buildClub(
   const accent = Color3.FromHexString(club?.accent ?? "#8a3cff");
   const bpm = club?.bpm ?? 112;
   const palette = [accent, Color3.FromHexString("#1ec8ff"), Color3.FromHexString("#ffd21e"), Color3.FromHexString("#ff3df0")];
+  const strips = new MeshBuilderBatch("club neon");
+  const stripMaterial = neon(scene, "club neon", accent, disposables);
+  const warm = new MeshBuilderBatch("club backlight");
+  const warmMaterial = neon(scene, "club backlight", Color3.FromHexString("#ffb347"), disposables);
 
+  // Neon: a ceiling cove line round the room and vertical tubes on the side walls.
+  for (const [x0, z0, x1, z1] of [
+    [OX - HX + 0.04, OZ - HZ, OX - HX + 0.04, OZ + HZ],
+    [OX + HX - 0.04, OZ - HZ, OX + HX - 0.04, OZ + HZ],
+    [OX - HX, OZ - HZ + 0.04, OX + HX, OZ - HZ + 0.04],
+    [OX - HX, OZ + HZ - 0.04, OX + HX, OZ + HZ - 0.04],
+  ] as const) {
+    strips.box((x0 + x1) / 2, HEIGHT - 0.12, (z0 + z1) / 2, Math.max(0.04, Math.abs(x1 - x0)), 0.05, Math.max(0.04, Math.abs(z1 - z0)));
+  }
+  for (let z = OZ - HZ + 1.2; z < OZ + HZ - 0.6; z += 1.8) strips.box(OX + HX - 0.05, 1.6, z, 0.04, 2.2, 0.06);
+  for (let x = OX - 3.6; x <= OX + 3.6; x += 2.4) if (Math.abs(x - INTERIOR_EXIT[0]) > 1) strips.box(x, 1.6, OZ - HZ + 0.05, 0.06, 2.2, 0.04);
+
+  // Bar: dark counter with an LED kick strip, polished top, stools, and a backlit bottle wall.
   const [barX, barZ] = CLUB_LAYOUT.bar;
   const counterX = barX - 0.85;
-  solid("darkFrame", counterX, 0.55, barZ, 0.6, 1.1, 4.2);
-  get("chrome").box(counterX, 1.12, barZ, 0.7, 0.04, 4.3);
+  solid("darkFrame", counterX, 0.55, barZ, 0.6, 1.1, 4.2, 0, [0.1, 0.09, 0.12]);
+  get("chrome").box(counterX, 1.12, barZ, 0.72, 0.04, 4.3, 0, 1, [0.85, 0.75, 0.5]);
+  strips.box(counterX + 0.31, 0.12, barZ, 0.02, 0.05, 4.1);
+  warm.box(OX - HX + 0.03, 1.65, barZ, 0.02, 1.3, 3.8);
   for (const shelfY of [1.2, 1.6, 2.0]) {
-    get("wood").box(OX - HX + 0.15, shelfY, barZ, 0.3, 0.04, 3.6);
-    for (let index = 0; index < 9; index += 1) {
-      const tint = palette[(index + Math.round(shelfY * 10)) % palette.length]!;
-      get("chrome").box(OX - HX + 0.15, shelfY + 0.14, barZ - 1.6 + index * 0.4, 0.08, 0.24, 0.08, 0, 1, [tint.r, tint.g, tint.b]);
+    get("chrome").box(OX - HX + 0.18, shelfY, barZ, 0.3, 0.03, 3.6, 0, 1, [0.7, 0.7, 0.72]);
+    for (let index = 0; index < 11; index += 1) {
+      const colour = [[0.12, 0.3, 0.12], [0.45, 0.25, 0.08], [0.8, 0.8, 0.85], [0.1, 0.1, 0.1]][(index + Math.round(shelfY * 10)) % 4]!;
+      get("chrome").box(OX - HX + 0.18, shelfY + 0.15, barZ - 1.7 + index * 0.34, 0.08, 0.27, 0.08, 0, 1, colour as Rgb);
     }
   }
-  for (const offset of [-1.2, 0, 1.2]) get("chrome").box(barX - 0.2, 0.4, barZ + offset, 0.36, 0.06, 0.36);
+  for (const offset of [-1.5, -0.5, 0.5, 1.5]) {
+    get("chrome").box(barX - 0.25, 0.38, barZ + offset, 0.05, 0.76, 0.05);
+    get("fabric").box(barX - 0.25, 0.78, barZ + offset, 0.38, 0.08, 0.38, 0, 1, [0.08, 0.08, 0.1]);
+  }
   spots.push({ id: "bar", point: [barX, barZ], label: "Order at the bar" });
 
+  // DJ booth with decks and a lit front panel, flanked by stacked speakers, in front of the LED wall.
   const [djX, djZ] = CLUB_LAYOUT.dj;
-  solid("darkFrame", djX, 0.55, djZ, 2.4, 1.1, 0.8);
-  get("chrome").box(djX - 0.5, 1.13, djZ, 0.5, 0.05, 0.4);
-  get("chrome").box(djX + 0.5, 1.13, djZ, 0.5, 0.05, 0.4);
-  for (const side of [-1, 1]) {
-    solid("darkFrame", djX + side * 2.0, 0.9, djZ + 0.2, 0.8, 1.8, 0.7, 0, [0.12, 0.12, 0.13]);
-    for (const [y, size] of [[1.35, 0.3], [0.7, 0.5]] as const) get("chrome").box(djX + side * 2.0, y, djZ - 0.16, size, size, 0.04, 0, 1, [0.2, 0.2, 0.22]);
+  solid("darkFrame", djX, 0.55, djZ, 2.4, 1.1, 0.8, 0, [0.08, 0.08, 0.09]);
+  strips.box(djX, 0.55, djZ - 0.41, 2.2, 0.08, 0.02);
+  for (const side of [-0.55, 0.55]) {
+    get("darkFrame").box(djX + side, 1.13, djZ, 0.5, 0.05, 0.42, 0, 1, [0.18, 0.18, 0.2]);
+    get("chrome").box(djX + side, 1.17, djZ, 0.22, 0.02, 0.22, 0, 1, [0.6, 0.6, 0.62]);
   }
+  get("darkFrame").box(djX, 1.15, djZ, 0.36, 0.08, 0.3, 0, 1, [0.12, 0.12, 0.14]);
+  for (const side of [-1, 1]) {
+    solid("darkFrame", djX + side * 2.0, 0.9, djZ + 0.2, 0.8, 1.8, 0.7, 0, [0.07, 0.07, 0.08]);
+    for (const [y, size] of [[1.4, 0.3], [0.7, 0.55]] as const) get("chrome").box(djX + side * 2.0, y, djZ - 0.16, size, size, 0.04, 0, 1, [0.2, 0.2, 0.22]);
+  }
+  const ledSize = { w: 256, h: 96 };
+  const led = new DynamicTexture("club led wall", { width: ledSize.w, height: ledSize.h }, scene, false);
+  const ledMaterial = new StandardMaterial("club led wall", scene);
+  ledMaterial.disableLighting = true;
+  ledMaterial.emissiveTexture = led;
+  ledMaterial.diffuseColor = Color3.Black();
+  const ledPlane = MeshBuilder.CreatePlane("club led wall", { width: 6.4, height: 2.1 }, scene);
+  ledPlane.position.set(djX, 1.95, OZ + HZ - 0.03);
+  ledPlane.material = ledMaterial;
+  disposables.push(led, ledMaterial, ledPlane);
+  const ledContext = led.getContext() as CanvasRenderingContext2D;
 
+  // Dance floor panels.
   const [floorX, floorZ] = CLUB_LAYOUT.floor.centre;
   const [halfX, halfZ] = CLUB_LAYOUT.floor.half;
   const columns = 6;
   const rows = 5;
   const sizeX = (halfX * 2) / columns;
   const sizeZ = (halfZ * 2) / rows;
-  const panels: StandardMaterial[] = [];
-  for (let index = 0; index < palette.length; index += 1) {
-    const material = new StandardMaterial(`club floor ${index}`, scene);
-    material.disableLighting = true;
-    material.emissiveColor = palette[index]!.clone();
-    panels.push(material);
-    disposables.push(material);
-  }
+  const panels = palette.map((colour, index) => neon(scene, `club floor ${index}`, colour, disposables));
   const panelBatches = panels.map((_, index) => new MeshBuilderBatch(`club floor ${index}`));
   for (let column = 0; column < columns; column += 1) {
     for (let row = 0; row < rows; row += 1) {
@@ -240,6 +291,56 @@ function buildClub(
   });
   spots.push({ id: "dance", point: [floorX, floorZ], label: "Dance" });
 
+  // Mirror ball over the floor.
+  const ballMaterial = new PBRMaterial("club mirror ball", scene);
+  ballMaterial.metallic = 1;
+  ballMaterial.roughness = 0.15;
+  ballMaterial.albedoColor = new Color3(0.9, 0.9, 0.95);
+  ballMaterial.emissiveColor = new Color3(0.25, 0.25, 0.3);
+  const ball = MeshBuilder.CreateSphere("club mirror ball", { diameter: 0.5, segments: 6 }, scene);
+  ball.convertToFlatShadedMesh();
+  ball.position.set(floorX, HEIGHT - 0.55, floorZ);
+  ball.material = ballMaterial;
+  const chain = MeshBuilder.CreateCylinder("club mirror ball chain", { height: 0.3, diameter: 0.02 }, scene);
+  chain.position.set(floorX, HEIGHT - 0.15, floorZ);
+  chain.material = ballMaterial;
+  disposables.push(ballMaterial, ball, chain);
+
+  // VIP booths: carpet, velvet sofa against the wall, low table with a lit top, and a table number plate.
+  const velvet: Rgb = [0.36, 0.04, 0.1];
+  const tableTop = new MeshBuilderBatch("club vip tables");
+  const tableMaterial = neon(scene, "club vip tables", Color3.FromHexString("#fff3d6"), disposables);
+  const plates = new MeshBuilderBatch("club vip plates");
+  const vipX = OX + HX - 3.0;
+  get("fabric").polygon([[vipX, OZ - HZ + 0.3], [OX + HX, OZ - HZ + 0.3], [OX + HX, OZ + HZ - 0.6], [vipX, OZ + HZ - 0.6]], 0.035, 1, [0.18, 0.02, 0.05]);
+  strips.box(vipX, 0.05, OZ + 0.15, 0.04, 0.03, HZ * 2 - 0.9);
+  for (const table of CLUB_TABLES) {
+    const [sx, sz] = table.sofa;
+    const [tx, tz] = table.table;
+    solid("fabric", sx, 0.24, sz, 0.8, 0.45, 2.2, 0, velvet);
+    get("fabric").box(sx + 0.36, 0.75, sz, 0.18, 0.7, 2.2, 0, 1, velvet);
+    get("fabric").box(sx - 0.05, 0.55, sz - 1.15, 0.9, 0.35, 0.16, 0, 1, velvet);
+    get("fabric").box(sx - 0.05, 0.55, sz + 1.15, 0.9, 0.35, 0.16, 0, 1, velvet);
+    solid("darkFrame", tx, 0.22, tz, 0.7, 0.44, 1.3, 0, [0.06, 0.06, 0.07]);
+    tableTop.box(tx, 0.455, tz, 0.72, 0.02, 1.32);
+    const uv = atlas.get(`VIP ${table.no}`, "plate", "Bottle service");
+    const plateY = 2.2;
+    const half = 0.45;
+    plates.quad(
+      [OX + HX - 0.03, plateY, tz + half],
+      [OX + HX - 0.03, plateY, tz - half],
+      [OX + HX - 0.03, plateY + (half * 2) / SignAtlas.aspect, tz - half],
+      [OX + HX - 0.03, plateY + (half * 2) / SignAtlas.aspect, tz + half],
+      [-1, 0, 0],
+      [[uv.u0, uv.v0], [uv.u1, uv.v0], [uv.u1, uv.v1], [uv.u0, uv.v1]],
+    );
+    spots.push({ id: `table-${table.no}`, point: table.spot, label: `VIP table ${table.no}` });
+  }
+  for (const [batch, material] of [[strips, stripMaterial], [warm, warmMaterial], [tableTop, tableMaterial], [plates, atlas.material]] as const) {
+    const mesh = batch.build(scene, material);
+    if (mesh) disposables.push(mesh);
+  }
+
   const beams = palette.slice(0, 3).map((color, index) => {
     const beam = new PointLight(`club spot ${index}`, new Vector3(floorX, HEIGHT - 0.4, floorZ), scene);
     beam.diffuse = color.clone();
@@ -248,8 +349,62 @@ function buildClub(
     disposables.push(beam);
     return beam;
   });
+  const vipLight = new PointLight("club vip light", new Vector3(OX + HX - 1.6, HEIGHT - 0.5, OZ), scene);
+  vipLight.diffuse = Color3.FromHexString("#ff5a7a");
+  vipLight.intensity = 4;
+  vipLight.range = 6;
+  disposables.push(vipLight);
 
-  return (seconds: number) => {
+  // Bottles on each table, with sparklers on the showpiece bottles for a few seconds after they arrive.
+  const glass = new PBRMaterial("club bottle glass", scene);
+  glass.albedoColor = new Color3(0.05, 0.18, 0.08);
+  glass.metallic = 0.1;
+  glass.roughness = 0.1;
+  const gold = new PBRMaterial("club bottle foil", scene);
+  gold.albedoColor = new Color3(0.85, 0.65, 0.2);
+  gold.metallic = 1;
+  gold.roughness = 0.3;
+  const spark = neon(scene, "club sparkler", Color3.FromHexString("#fff2b0"), disposables);
+  disposables.push(glass, gold);
+  const tableBottles = new Map<number, { ids: string; root: TransformNode; sparks: Array<{ mesh: ReturnType<typeof MeshBuilder.CreateBox>; until: number }> }>();
+  let clock = 0;
+  const setBottles = (no: number, bottles: Array<{ id: string; itemId: string }>) => {
+    const table = CLUB_TABLES.find((entry) => entry.no === no);
+    if (!table) return;
+    const ids = bottles.map((bottle) => bottle.id).join(",");
+    const previous = tableBottles.get(no);
+    if (previous?.ids === ids) return;
+    const known = new Set(previous?.ids.split(",") ?? []);
+    previous?.root.dispose();
+    const root = new TransformNode(`club table ${no} bottles`, scene);
+    const sparks: Array<{ mesh: ReturnType<typeof MeshBuilder.CreateBox>; until: number }> = [];
+    bottles.forEach((bottle, index) => {
+      const [tx, tz] = table.table;
+      const x = tx + (index % 2 ? 0.14 : -0.14);
+      const z = tz - 0.45 + Math.floor(index / 2) * 0.42;
+      const body = MeshBuilder.CreateCylinder(`bottle ${bottle.id}`, { height: 0.26, diameter: 0.09, tessellation: 10 }, scene);
+      body.position.set(x, 0.6, z);
+      body.material = glass;
+      body.parent = root;
+      const neck = MeshBuilder.CreateCylinder(`bottle neck ${bottle.id}`, { height: 0.1, diameterTop: 0.03, diameterBottom: 0.07, tessellation: 8 }, scene);
+      neck.position.set(x, 0.78, z);
+      neck.material = gold;
+      neck.parent = root;
+      if (bottleById.get(bottle.itemId)?.sparkler && !known.has(bottle.id)) {
+        const flare = MeshBuilder.CreateBox(`sparkler ${bottle.id}`, { size: 0.07 }, scene);
+        flare.position.set(x, 0.9, z);
+        flare.material = spark;
+        flare.parent = root;
+        sparks.push({ mesh: flare, until: clock + 12 });
+      }
+    });
+    tableBottles.set(no, { ids, root, sparks });
+  };
+  disposables.push({ dispose: () => tableBottles.forEach((entry) => entry.root.dispose()) });
+
+  let lastLed = -1;
+  const animate = (seconds: number) => {
+    clock = seconds;
     const beat = (seconds * bpm) / 60;
     const pulse = Math.pow(1 - (beat % 1), 2.5);
     const step = Math.floor(beat);
@@ -258,10 +413,40 @@ function buildClub(
       const level = 0.25 + 0.75 * (index % 2 === step % 2 ? pulse : 0.35);
       material.emissiveColor.set(colour.r * level, colour.g * level, colour.b * level);
     });
+    const glow = 0.55 + 0.45 * pulse;
+    const stripColour = palette[Math.floor(beat / 8) % palette.length]!;
+    stripMaterial.emissiveColor.set(stripColour.r * glow, stripColour.g * glow, stripColour.b * glow);
     beams.forEach((beam, index) => {
       const angle = seconds * 0.9 + (index * Math.PI * 2) / beams.length;
       beam.position.set(floorX + Math.cos(angle) * halfX * 0.8, HEIGHT - 0.4, floorZ + Math.sin(angle) * halfZ * 0.8);
       beam.intensity = 3 + 7 * pulse;
     });
+    ball.rotation.y = seconds * 0.6;
+    for (const entry of tableBottles.values()) {
+      for (const flare of entry.sparks) {
+        const live = seconds < flare.until;
+        flare.mesh.setEnabled(live);
+        if (live) flare.mesh.scaling.setAll(0.6 + Math.random() * 0.9);
+      }
+    }
+    if (seconds - lastLed > 1 / 15) {
+      lastLed = seconds;
+      ledContext.fillStyle = "#05030a";
+      ledContext.fillRect(0, 0, ledSize.w, ledSize.h);
+      const bars = 24;
+      for (let index = 0; index < bars; index += 1) {
+        const wave = 0.5 + 0.5 * Math.sin(seconds * 3 + index * 0.55) * Math.cos(seconds * 1.3 + index * 0.21);
+        const height = (0.2 + 0.8 * wave * (0.55 + 0.45 * pulse)) * ledSize.h;
+        const colour = palette[(index + Math.floor(beat / 4)) % palette.length]!;
+        ledContext.fillStyle = colour.toHexString();
+        ledContext.fillRect(index * (ledSize.w / bars) + 1, ledSize.h - height, ledSize.w / bars - 2, height);
+      }
+      ledContext.fillStyle = "rgba(255,255,255,0.9)";
+      ledContext.font = "bold 18px Inter, Arial, sans-serif";
+      ledContext.textAlign = "center";
+      ledContext.fillText(club ? club.dj.toUpperCase() : "LIVE", ledSize.w / 2, 24);
+      led.update(false);
+    }
   };
+  return { animate, setBottles };
 }

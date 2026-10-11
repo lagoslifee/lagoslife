@@ -1,6 +1,8 @@
 import {
   acquirePropertySchema,
   clubOrderSchema,
+  tableBottleSchema,
+  tableInviteSchema,
   communityVisitSchema,
   completeJobRequestSchema,
   defaultAppearance,
@@ -68,7 +70,7 @@ import {
 import { createMultiplayerToken } from "./multiplayer-token.js";
 import { loadCharacter, saveAppearance } from "./profile-service.js";
 import { getCommunityStatus, visitQuietPlace, volunteerShift } from "./community-service.js";
-import { buyWristband, getClubStatus, orderAtBar } from "./club-service.js";
+import { bookTable, buyWristband, getClubStatus, listTables, orderAtBar, orderBottle, setTableGuest } from "./club-service.js";
 import { z } from "zod";
 import {
   cancelDelivery,
@@ -416,6 +418,25 @@ export function configureRoutes(app: Express) {
   app.post("/api/clubs/:placeId/order", requirePlayer, rateLimited, guarded("Order could not be placed", (req, userId) => {
     const { itemId, idempotencyKey } = clubOrderSchema.parse(req.body);
     return orderAtBar(userId, String(req.params.placeId), itemId, idempotencyKey);
+  }));
+
+  const tableNo = (req: { params: Record<string, unknown> }) => Number(req.params.no);
+
+  app.get("/api/clubs/:placeId/tables", requirePlayer, guarded("Tables unavailable", (req, userId) =>
+    listTables(userId, String(req.params.placeId))));
+
+  app.post("/api/clubs/:placeId/tables/:no/book", requirePlayer, rateLimited, guarded("Table could not be booked", (req, userId) =>
+    bookTable(userId, String(req.params.placeId), tableNo(req))));
+
+  app.post("/api/clubs/:placeId/tables/:no/guests", requirePlayer, rateLimited, guarded("Guest list not updated", (req, userId) =>
+    setTableGuest(userId, String(req.params.placeId), tableNo(req), tableInviteSchema.parse(req.body).userName, true)));
+
+  app.post("/api/clubs/:placeId/tables/:no/guests/remove", requirePlayer, rateLimited, guarded("Guest list not updated", (req, userId) =>
+    setTableGuest(userId, String(req.params.placeId), tableNo(req), tableInviteSchema.parse(req.body).userName, false)));
+
+  app.post("/api/clubs/:placeId/tables/:no/bottle", requirePlayer, rateLimited, guarded("Bottle could not be ordered", (req, userId) => {
+    const { itemId, idempotencyKey } = tableBottleSchema.parse(req.body);
+    return orderBottle(userId, String(req.params.placeId), tableNo(req), itemId, idempotencyKey);
   }));
 
   app.get("/api/account/standing", requireSession, guarded("Standing unavailable", async (_req, userId) => {

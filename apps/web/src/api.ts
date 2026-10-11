@@ -1,4 +1,4 @@
-import type { Citation, ClubMenuItem, ClubStatus, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
+import type { BottleItem, Citation, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -160,6 +160,12 @@ export const api = {
   buyWristband: (placeId: string) => post<{ charged: number; balance: number; status: ClubStatus }>(`/api/clubs/${placeId}/wristband`),
   clubOrder: (placeId: string, itemId: string) =>
     post<{ replayed: boolean; item: ClubMenuItem; balance: number; needs: { hunger: number; energy: number } }>(`/api/clubs/${placeId}/order`, { itemId, idempotencyKey: crypto.randomUUID() }),
+  clubTables: (placeId: string) => request<ClubTable[]>(`/api/clubs/${placeId}/tables`),
+  bookTable: (placeId: string, no: number) => post<{ charged: number; balance?: number; tables: ClubTable[] }>(`/api/clubs/${placeId}/tables/${no}/book`),
+  inviteToTable: (placeId: string, no: number, userName: string) => post<{ guest: string; tables: ClubTable[] }>(`/api/clubs/${placeId}/tables/${no}/guests`, { userName }),
+  removeFromTable: (placeId: string, no: number, userName: string) => post<{ guest: string; tables: ClubTable[] }>(`/api/clubs/${placeId}/tables/${no}/guests/remove`, { userName }),
+  orderBottle: (placeId: string, no: number, itemId: string) =>
+    post<{ replayed: boolean; item: BottleItem; balance: number; tables: ClubTable[] }>(`/api/clubs/${placeId}/tables/${no}/bottle`, { itemId, idempotencyKey: crypto.randomUUID() }),
   standing: () => request<{ suspension: Suspension | null }>("/api/account/standing"),
   safety: () => request<SafetyStatus>("/api/safety"),
   block: (userName: string) => post<SafetyStatus>("/api/safety/block", { userName }),

@@ -1,4 +1,4 @@
-import { defaultSettings, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
+import { CLUBS, defaultSettings, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
@@ -9,7 +9,8 @@ import { FullMap, Minimap } from "./MapView";
 import { currentObjective, housingPath, type HousingPath } from "./objectives";
 import { Welcome } from "./Welcome";
 import { Phone, type PhoneApp } from "./Phone";
-import { ClubBarSheet, ClubDoorSheet } from "./ClubSheets";
+import { ClubRadio } from "./ClubRadio";
+import { ClubBarSheet, ClubDoorSheet, ClubTableSheet } from "./ClubSheets";
 import { COMMUNITY_KINDS, CommunitySheet } from "./CommunitySheets";
 import { PlaceSheet } from "./Sheets";
 import { PlotSheet } from "./PlotSheet";
@@ -76,6 +77,8 @@ export function GameView({
   const [sheet, setSheet] = useState<Place | null>(null);
   const [plotSheet, setPlotSheet] = useState<string | null>(null);
   const [clubBar, setClubBar] = useState<Place | null>(null);
+  const [clubTable, setClubTable] = useState<number | null>(null);
+  const [clubTables, setClubTables] = useState<ClubTable[]>([]);
   const [plots, setPlots] = useState<PlotState[]>([]);
   const [phone, setPhone] = useState<PhoneApp | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
@@ -396,6 +399,7 @@ export function GameView({
       if (event.code !== "Escape") return;
       if (plotSheet) setPlotSheet(null);
       else if (clubBar) setClubBar(null);
+      else if (clubTable) setClubTable(null);
       else if (sheet) setSheet(null);
       else if (mapOpen) setMapOpen(false);
       else if (phone) setPhone(null);
@@ -403,7 +407,7 @@ export function GameView({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sheet, plotSheet, clubBar, mapOpen, phone, helpOpen]);
+  }, [sheet, plotSheet, clubBar, clubTable, mapOpen, phone, helpOpen]);
 
   const moving = (hud?.speed ?? 0) > 1;
   useEffect(() => {
@@ -460,8 +464,32 @@ export function GameView({
       if (place?.kind === "club") setClubBar(place);
     } else if (interaction.spot === "dance") {
       engine?.playEmote("dance");
+    } else if (interaction.spot.startsWith("table-")) {
+      setClubTable(Number(interaction.spot.slice(6)));
     }
   };
+
+  const inClub = Boolean(hud?.location === "interior" && hud.propertyId && CLUBS[hud.propertyId]);
+  const clubId = inClub ? hud!.propertyId! : null;
+  const showClubTables = useCallback((tables: ClubTable[]) => {
+    setClubTables(tables);
+    engine?.setClubTables(tables);
+  }, [engine]);
+  useEffect(() => {
+    if (!clubId) {
+      setClubTables([]);
+      setClubTable(null);
+      return;
+    }
+    let live = true;
+    const poll = () => api.clubTables(clubId).then((tables) => live && showClubTables(tables)).catch(() => undefined);
+    void poll();
+    const timer = setInterval(poll, 4_000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [clubId, showClubTables]);
 
   handlers.current.self = (self) => {
     void refresh();
@@ -744,6 +772,22 @@ export function GameView({
       )}
       {sheet?.kind === "club" && (
         <ClubDoorSheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} onEnter={() => engine?.enterProperty(sheet.id, "enter")} />
+      )}
+      {engine && hud?.location === "interior" && hud.propertyId && CLUBS[hud.propertyId] && (
+        <ClubRadio clubId={hud.propertyId} volume={settings.masterVolume} onPlaying={(playing) => engine.setClubBeat(!playing)} />
+      )}
+      {clubTable !== null && inClub && hud?.propertyId && (
+        <ClubTableSheet
+          place={propertyPlace(hud.propertyId)!}
+          no={clubTable}
+          tables={clubTables}
+          economy={economy}
+          onClose={() => setClubTable(null)}
+          onRefresh={refresh}
+          onToast={toast}
+          onTables={showClubTables}
+          onSit={() => engine?.playEmote("dance")}
+        />
       )}
       {clubBar && hud?.propertyId === clubBar.id && (
         <ClubBarSheet place={clubBar} economy={economy} onClose={() => setClubBar(null)} onRefresh={refresh} onToast={toast} />

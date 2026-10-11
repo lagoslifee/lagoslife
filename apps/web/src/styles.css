@@ -703,3 +703,16 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 
 .camera-switch { position: absolute; right: 16px; bottom: 260px; z-index: 6; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.25); background: rgba(16, 22, 26, 0.82); color: #fff; font-weight: 700; }
 .touch .camera-switch { bottom: auto; top: 140px; right: 12px; min-height: 44px; }
+
+.club-radio { position: absolute; left: 20px; bottom: 150px; width: 264px; padding: 10px; border-radius: 12px; background: rgba(12, 8, 20, 0.88); color: #fff; z-index: 6; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); }
+.club-radio header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.club-radio header div { display: flex; flex-direction: column; min-width: 0; }
+.club-radio small { color: #ff6fb1; font-weight: 800; letter-spacing: 0.08em; font-size: 10px; }
+.club-radio strong { font-size: 14px; }
+.club-radio span { font-size: 12px; opacity: 0.8; }
+.club-radio .icon-button { color: #fff; }
+.club-radio-player { width: 244px; height: 200px; border-radius: 8px; overflow: hidden; background: #000; }
+.club-radio .muted { color: rgba(255, 255, 255, 0.6); margin: 6px 0 0; }
+.game-view.touch .club-radio { bottom: auto; top: 120px; left: 12px; }
+.invite-row { display: flex; gap: 8px; margin-top: 8px; }
+.invite-row input { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(23, 49, 46, 0.25); font: inherit; }

@@ -1,4 +1,4 @@
-import { CLUB_MENU, CLUBS, type ClubStatus, type Notice, type Place } from "@lagos-living/shared";
+import { BOTTLE_MENU, CLUB_MENU, CLUBS, TABLE_GUESTS_MAX, type ClubStatus, type ClubTable, type Notice, type Place } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import { api, naira, type EconomyState } from "../api";
 
@@ -136,6 +136,139 @@ export function ClubBarSheet({ place, economy, onClose, onRefresh, onToast }: Co
             </li>
           ))}
         </ul>
+      </section>
+    </div>
+  );
+}
+
+/** A VIP booth: book it for the night, invite friends, and order bottles that a waiter brings over. */
+export function ClubTableSheet({
+  place,
+  no,
+  tables,
+  economy,
+  onClose,
+  onRefresh,
+  onToast,
+  onTables,
+  onSit,
+}: Common & { place: Place; no: number; tables: ClubTable[]; onTables: (tables: ClubTable[]) => void; onSit: () => void }) {
+  const club = CLUBS[place.id];
+  const [busy, run] = useRun({ onRefresh, onToast });
+  const [invitee, setInvitee] = useState("");
+  const table = tables.find((entry) => entry.no === no);
+  const balance = economy?.balance ?? 0;
+  if (!club) return null;
+  const party = table && (table.mine || table.guest);
+
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <section className="sheet club-sheet" role="dialog" aria-label={`VIP table ${no}`} data-testid="club-table" onClick={(event) => event.stopPropagation()} style={{ borderTop: `4px solid ${club.accent}` }}>
+        <header>
+          <div>
+            <p className="eyebrow">{place.name.toUpperCase()} · VIP</p>
+            <h2>Table {no}</h2>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close">✕</button>
+        </header>
+        {!table ? (
+          <p className="muted">Checking the table…</p>
+        ) : !table.ownerName ? (
+          <>
+            <p>
+              A velvet booth by the dance floor for tonight: you and up to {TABLE_GUESTS_MAX} friends you invite, with bottle service brought to the
+              table.
+            </p>
+            <button
+              className="primary"
+              disabled={busy || balance < club.tablePrice}
+              onClick={() => void run(async () => {
+                const result = await api.bookTable(place.id, no);
+                onTables(result.tables);
+                return result.charged ? `Table ${no} is yours tonight. Paid ${naira(result.charged)}.` : `Table ${no} is already yours.`;
+              })}
+            >
+              {balance < club.tablePrice ? `Need ${naira(club.tablePrice)}` : `Book for ${naira(club.tablePrice)}`}
+            </button>
+          </>
+        ) : (
+          <>
+            <p data-testid="table-owner">
+              {table.mine ? "Your table tonight." : `${table.ownerName}'s table.`}
+              {table.guests.length ? ` Guests: ${table.guests.join(", ")}.` : ""}
+            </p>
+            {!party && <p className="muted">Ask {table.ownerName} to invite you to sit and order here.</p>}
+            {party && (
+              <button className="secondary" onClick={() => { onClose(); onSit(); }}>Dance at the table</button>
+            )}
+            {table.mine && (
+              <div className="table-guests">
+                <h3>Guest list</h3>
+                <ul className="menu">
+                  {table.guests.map((guest) => (
+                    <li key={guest}>
+                      <strong>{guest}</strong>
+                      <div className="menu-actions">
+                        <button className="secondary" disabled={busy} onClick={() => void run(async () => {
+                          const result = await api.removeFromTable(place.id, no, guest);
+                          onTables(result.tables);
+                          return `${result.guest} is off the guest list.`;
+                        })}>Remove</button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                {table.guests.length < TABLE_GUESTS_MAX && (
+                  <form
+                    className="invite-row"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const name = invitee.trim();
+                      if (!name) return;
+                      void run(async () => {
+                        const result = await api.inviteToTable(place.id, no, name);
+                        onTables(result.tables);
+                        setInvitee("");
+                        return `${result.guest} can join your table.`;
+                      });
+                    }}
+                  >
+                    <input value={invitee} onChange={(event) => setInvitee(event.target.value)} placeholder="Resident's username" aria-label="Invite by username" maxLength={40} />
+                    <button className="primary" disabled={busy || !invitee.trim()}>Invite</button>
+                  </form>
+                )}
+              </div>
+            )}
+            {party && (
+              <>
+                <h3>Bottle service</h3>
+                <ul className="menu">
+                  {BOTTLE_MENU.map((item) => (
+                    <li key={item.id}>
+                      <div>
+                        <strong>{item.name}</strong>
+                        {item.sparkler && <span>Arrives with sparklers</span>}
+                      </div>
+                      <div className="menu-actions">
+                        <button
+                          className="primary"
+                          disabled={busy || balance < item.price}
+                          onClick={() => void run(async () => {
+                            const result = await api.orderBottle(place.id, no, item.id);
+                            onTables(result.tables);
+                            return `${item.name} is on its way to table ${no}. Balance ${naira(result.balance)}.`;
+                          })}
+                        >
+                          {naira(item.price)}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </>
+        )}
       </section>
     </div>
   );

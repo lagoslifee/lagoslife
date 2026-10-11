@@ -42,6 +42,10 @@ import {
   PLACES,
   propertyTitle,
   CLUBS,
+  CLUB_LAYOUT,
+  CLUB_TABLES,
+  type Club,
+  type ClubTable,
   resolveBuildingCollision,
   getRoute,
   STOPS,
@@ -76,7 +80,7 @@ import { PlotsView } from "./plots";
 import { MultiplayerConnection, type MultiplayerStatus } from "../multiplayer";
 import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, MAX_AUTO_SCALING, qualityStep } from "./adaptive-quality";
 import { CityAudio } from "./audio";
-import { Avatar, AvatarFactory } from "./avatar";
+import { appearanceFor, Avatar, AvatarFactory } from "./avatar";
 import { CarController } from "./car-controller";
 import { VehicleFactory, type VehicleView } from "./vehicles";
 import { guide, type Guidance, type RoutePlan } from "./navigation";
@@ -251,6 +255,9 @@ export class GameEngine {
   private reroutedAt = 0;
   private routePoints: Vec2[] = [];
   private emote: MotionState | null = null;
+  private club: Club | null = null;
+  private tableBottles = new Map<number, string[]>();
+  private waiters: Array<{ avatar: Avatar; path: Vec2[]; t: number; table: number; bottles: Array<{ id: string; itemId: string }> }> = [];
   private settings: PlayerSettings;
   private bindings: Bindings;
   private disposed = false;
@@ -942,6 +949,7 @@ export class GameEngine {
 
     this.updateRemotes(now, dt);
     this.interior?.update(now * 0.001);
+    this.updateWaiters(dt);
     if (!this.interior) {
       this.world.stream(x, z);
       this.world.pump(this.readyFired ? 8 : 200);
@@ -1560,7 +1568,9 @@ export class GameEngine {
     if (leavingInterior) {
       this.interior?.dispose();
       this.interior = null;
+      this.club = null;
       this.audio.setClub(null);
+      this.clearWaiters();
     }
     if (enteringInterior) void this.loadInterior(self);
     const seat = self.vehicleSeat ?? 0;
@@ -1599,7 +1609,78 @@ export class GameEngine {
     if (this.self?.location !== self.location) return;
     this.interior?.dispose();
     this.interior = buildInterior(this.scene, this.materials, this.atlas, kind, title, placements, club);
-    this.audio.setClub(club ?? null);
+    this.club = club ?? null;
+    this.audio.setClub(this.club);
+  }
+
+  /**
+   * Latest VIP tables for the club the player is in. Bottles already on a table appear at once; newly ordered ones
+   * are carried over from the bar by a waiter first.
+   */
+  setClubTables(tables: ClubTable[]) {
+    if (!this.interior || !this.club) return;
+    for (const table of tables) {
+      const ids = table.bottles.map((bottle) => bottle.id);
+      const known = this.tableBottles.get(table.no);
+      this.tableBottles.set(table.no, ids);
+      const fresh = known ? ids.filter((id) => !known.includes(id)) : [];
+      const spec = CLUB_TABLES.find((entry) => entry.no === table.no)!;
+      if (!fresh.length || !this.avatars) {
+        if (!this.waiters.some((waiter) => waiter.table === table.no)) this.interior.setTableBottles(table.no, table.bottles);
+        continue;
+      }
+      const avatar = this.avatars.create(`waiter ${table.no} ${fresh[0]}`, { ...appearanceFor(900 + table.no), outfit: "office-smart" } satisfies CharacterAppearance);
+      const [barX, barZ] = CLUB_LAYOUT.bar;
+      const [tx, tz] = spec.table;
+      const path: Vec2[] = [[barX + 0.4, barZ], [barX + 0.6, tz], [tx - 0.55, tz]];
+      avatar.root.position.set(path[0]![0], 0.02, path[0]![1]);
+      this.waiters.push({ avatar, path, t: 0, table: table.no, bottles: table.bottles });
+    }
+  }
+
+  private updateWaiters(dt: number) {
+    if (!this.waiters.length) return;
+    const speed = 1.4;
+    for (const waiter of [...this.waiters]) {
+      waiter.t += dt * speed;
+      let remaining = waiter.t;
+      let done = true;
+      for (let index = 0; index < waiter.path.length - 1; index += 1) {
+        const a = waiter.path[index]!;
+        const b = waiter.path[index + 1]!;
+        const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (remaining <= length) {
+          const f = remaining / length;
+          waiter.avatar.root.position.set(a[0] + (b[0] - a[0]) * f, 0.02, a[1] + (b[1] - a[1]) * f);
+          waiter.avatar.root.rotation.y = Math.atan2(b[0] - a[0], b[1] - a[1]);
+          waiter.avatar.update(speed, "walk", dt);
+          done = false;
+          break;
+        }
+        remaining -= length;
+      }
+      if (!done) continue;
+      this.interior?.setTableBottles(waiter.table, waiter.bottles);
+      if (waiter.t > 99) continue;
+      // Stand at the table for a moment after serving, then leave.
+      waiter.t = 100;
+      waiter.avatar.update(0, "idle", dt);
+      setTimeout(() => {
+        waiter.avatar.dispose();
+        this.waiters = this.waiters.filter((entry) => entry !== waiter);
+      }, 2_500);
+    }
+  }
+
+  private clearWaiters() {
+    for (const waiter of this.waiters) waiter.avatar.dispose();
+    this.waiters = [];
+    this.tableBottles.clear();
+  }
+
+  /** Pauses the synthesised club beat while the DJ's real set is playing. */
+  setClubBeat(on: boolean) {
+    this.audio.setClub(on ? this.club : null);
   }
 
   async refreshInterior() {
