@@ -5,13 +5,14 @@ type Color = [number, number, number];
 type Get = (material: string) => MeshBuilderBatch;
 
 /** Mapped places drawn with their own architecture instead of the generic Lagos block. */
-export type LandmarkKind = "church" | "mosque" | "club" | "modern";
+export type LandmarkKind = "church" | "mosque" | "club" | "modern" | "terminal";
 
 export function landmarkFor(place: Place | undefined): LandmarkKind | null {
   if (!place) return null;
   if (place.kind === "worship") return /mosque/i.test(place.name) ? "mosque" : "church";
   if (place.kind === "club") return "club";
   if (place.kind === "sale" || place.kind === "rental") return "modern";
+  if (place.kind === "airport") return "terminal";
   return null;
 }
 
@@ -20,6 +21,7 @@ export const LANDMARK_PAINT: Record<LandmarkKind, Color> = {
   mosque: [0.97, 0.95, 0.88],
   club: [0.07, 0.07, 0.09],
   modern: [0.97, 0.97, 0.96],
+  terminal: [0.9, 0.91, 0.92],
 };
 
 export const LANDMARK_TRIM: Record<LandmarkKind, Color> = {
@@ -27,6 +29,7 @@ export const LANDMARK_TRIM: Record<LandmarkKind, Color> = {
   mosque: [0.82, 0.78, 0.66],
   club: [0.12, 0.12, 0.14],
   modern: [0.22, 0.22, 0.24],
+  terminal: [0.75, 0.77, 0.8],
 };
 
 const GOLD: Color = [0.86, 0.68, 0.26];
@@ -307,4 +310,319 @@ export function modernFront(get: Get, f: Facade, edgeLength: number, doorOffset:
     get("bush").box(px, 0.8, pz, 0.85, 0.5, 0.45, f.yaw);
   }
   get("pavers").box(f.x + f.nx * 1.8, 0.05, f.z + f.nz * 1.8, 1.6, 0.1, 3.6, f.yaw);
+}
+
+/** Square-section beam between two 3D points (wheel rims, spokes, legs, camel necks). */
+export function beam(batch: MeshBuilderBatch, p: V3, q: V3, thickness: number, color?: Color) {
+  const dx = q[0] - p[0];
+  const dy = q[1] - p[1];
+  const dz = q[2] - p[2];
+  const length = Math.hypot(dx, dy, dz);
+  if (length < 0.01) return;
+  const d: V3 = [dx / length, dy / length, dz / length];
+  const ref: V3 = Math.abs(d[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+  let u: V3 = [d[1] * ref[2] - d[2] * ref[1], d[2] * ref[0] - d[0] * ref[2], d[0] * ref[1] - d[1] * ref[0]];
+  const ul = Math.hypot(...u);
+  u = [u[0] / ul, u[1] / ul, u[2] / ul];
+  const v: V3 = [d[1] * u[2] - d[2] * u[1], d[2] * u[0] - d[0] * u[2], d[0] * u[1] - d[1] * u[0]];
+  const h = thickness / 2;
+  const corner = (base: V3, a: number, b: number): V3 => [base[0] + (u[0] * a + v[0] * b) * h, base[1] + (u[1] * a + v[1] * b) * h, base[2] + (u[2] * a + v[2] * b) * h];
+  const signs: Array<[number, number]> = [[1, 1], [-1, 1], [-1, -1], [1, -1]];
+  for (let index = 0; index < 4; index += 1) {
+    const [a0, b0] = signs[index]!;
+    const [a1, b1] = signs[(index + 1) % 4]!;
+    const normal: V3 = [(u[0] * (a0 + a1) + v[0] * (b0 + b1)) / 2, (u[1] * (a0 + a1) + v[1] * (b0 + b1)) / 2, (u[2] * (a0 + a1) + v[2] * (b0 + b1)) / 2];
+    batch.quad(corner(p, a0, b0), corner(p, a1, b1), corner(q, a1, b1), corner(q, a0, b0), normal, [[0, 0], [1, 0], [1, length], [0, length]], color);
+  }
+}
+
+/** Airport terminal frontage: a full-height glass wall on the door edge, a deep cantilevered canopy on slim columns and a kerbside drop-off strip. */
+export function terminalFront(get: Get, f: Facade, edge: { a: Vec2; b: Vec2 }, height: number) {
+  const [ax, az] = edge.a;
+  const [bx, bz] = edge.b;
+  const length = Math.hypot(bx - ax, bz - az);
+  const span = Math.min(length - 1, 60);
+  const mid: Vec2 = [f.x, f.z];
+  const glass = get("glass");
+  const corner = (along: number, y: number): V3 => [mid[0] + f.ex * along + f.nx * 0.05, y, mid[1] + f.ez * along + f.nz * 0.05];
+  glass.quad(corner(-span / 2, 0.2), corner(span / 2, 0.2), corner(span / 2, height - 0.6), corner(-span / 2, height - 0.6), [f.nx, 0, f.nz], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+  const frame = get("darkFrame");
+  for (let along = -span / 2; along <= span / 2 + 0.01; along += span / Math.max(1, Math.round(span / 3))) {
+    frame.box(mid[0] + f.ex * along + f.nx * 0.1, height / 2, mid[1] + f.ez * along + f.nz * 0.1, 0.12, height - 0.4, 0.14, f.yaw, 1, undefined, true);
+  }
+  for (const y of [3.4, height - 0.6]) frame.box(mid[0] + f.nx * 0.1, y, mid[1] + f.nz * 0.1, span, 0.16, 0.16, f.yaw, 1, undefined, true);
+  const depth = 9;
+  const canopy = get("concrete");
+  canopy.box(mid[0] + f.nx * (depth / 2), height - 0.2, mid[1] + f.nz * (depth / 2), span + 4, 0.5, depth, f.yaw, 2, [1.3, 1.31, 1.32]);
+  get("lamp").box(mid[0] + f.nx * (depth / 2), height - 0.47, mid[1] + f.nz * (depth / 2), span + 2, 0.03, depth - 2, f.yaw);
+  const columns = get("frame");
+  for (let along = -span / 2 + 2; along <= span / 2 - 1.9; along += 12) {
+    columns.box(mid[0] + f.ex * along + f.nx * (depth - 1), (height - 0.45) / 2, mid[1] + f.ez * along + f.nz * (depth - 1), 0.5, height - 0.45, 0.5, f.yaw);
+  }
+  get("pavers").box(mid[0] + f.nx * 3, 0.08, mid[1] + f.nz * 3, span, 0.16, 6, f.yaw, 2);
+}
+
+/**
+ * Observation wheel: twin rims braced together, cable spokes from both ends of the hub, capsules outside the rim and
+ * two A-frame legs. `yaw` is the direction of the wheel plane, `height` its top.
+ */
+export function observationWheel(get: Get, centre: Vec2, yaw: number, height: number) {
+  const radius = height * 0.45;
+  const hubY = height - radius - 4;
+  const ax = Math.sin(yaw);
+  const az = Math.cos(yaw);
+  const nx = Math.cos(yaw);
+  const nz = -Math.sin(yaw);
+  const at = (angle: number, r: number, side: number): V3 => [
+    centre[0] + ax * Math.cos(angle) * r + nx * side,
+    hubY + Math.sin(angle) * r,
+    centre[1] + az * Math.cos(angle) * r + nz * side,
+  ];
+  const steel = get("frame");
+  const white: Color = [0.95, 0.96, 0.97];
+  const segments = 48;
+  for (let index = 0; index < segments; index += 1) {
+    const a0 = (index / segments) * Math.PI * 2;
+    const a1 = ((index + 1) / segments) * Math.PI * 2;
+    for (const side of [-3, 3]) beam(steel, at(a0, radius, side), at(a1, radius, side), 1.6, white);
+    beam(steel, at(a0, radius, -3), at(a1, radius, 3), 0.5, white);
+  }
+  for (let index = 0; index < 32; index += 1) {
+    const angle = (index / 32) * Math.PI * 2;
+    beam(steel, at(0, 0, -7), at(angle, radius, 3), 0.25, white);
+    beam(steel, at(0, 0, 7), at(angle, radius, -3), 0.25, white);
+  }
+  steel.box(centre[0], hubY, centre[1], 15, 7, 7, yaw, 2, white);
+  for (let index = 0; index < segments; index += 1) {
+    const angle = ((index + 0.5) / segments) * Math.PI * 2;
+    const [x, y, z] = at(angle, radius + 3.4, 0);
+    get("glass").box(x, y, z, 9, 3.6, 3.6, yaw);
+    steel.box(x, y, z, 9.4, 0.5, 3.8, yaw, 1, white);
+  }
+  const neon = get("neon");
+  for (let index = 0; index < segments; index += 1) {
+    const a0 = (index / segments) * Math.PI * 2;
+    const a1 = ((index + 1) / segments) * Math.PI * 2;
+    beam(neon, at(a0, radius + 0.9, 0), at(a1, radius + 0.9, 0), 0.25, [0.85, 0.95, 1]);
+  }
+  for (const side of [-1, 1]) {
+    for (const along of [-1, 1]) {
+      const foot: V3 = [centre[0] + ax * along * radius * 0.42 + nx * side * radius * 0.22, 0, centre[1] + az * along * radius * 0.42 + nz * side * radius * 0.22];
+      beam(steel, foot, at(0, 0, side * 8), 3.2, white);
+    }
+  }
+}
+
+/**
+ * A Bedouin-style camp behind its gate: striped tents in a horseshoe, carpets and cushions, a fire pit with flames,
+ * lanterns on posts and a few camels resting outside. `facing` points from the camp out through the gate.
+ * Returns obstacle circles (x, z, r) for poles, the fire and the camels.
+ */
+export function desertCamp(get: Get, gate: Vec2, facing: number): Array<[number, number, number]> {
+  const fx = Math.sin(facing);
+  const fz = Math.cos(facing);
+  const rx = fz;
+  const rz = -fx;
+  const cx = gate[0] - fx * 26;
+  const cz = gate[1] - fz * 26;
+  const obstacles: Array<[number, number, number]> = [];
+  const local = (u: number, v: number): Vec2 => [cx + rx * u + fx * v, cz + rz * u + fz * v];
+  const stripes: Color[][] = [
+    [[0.62, 0.16, 0.12], [0.95, 0.9, 0.8]],
+    [[0.36, 0.22, 0.12], [0.92, 0.84, 0.68]],
+    [[0.12, 0.3, 0.36], [0.94, 0.9, 0.82]],
+  ];
+  const tents: Array<{ u: number; v: number; yaw: number; w: number; d: number }> = [
+    { u: 0, v: -14, yaw: facing, w: 14, d: 7 },
+    { u: -14, v: -2, yaw: facing + Math.PI / 2, w: 11, d: 6 },
+    { u: 14, v: -2, yaw: facing - Math.PI / 2, w: 11, d: 6 },
+    { u: -12, v: 12, yaw: facing + Math.PI * 0.8, w: 8, d: 5 },
+  ];
+  const canvas = get("canvas");
+  const wood = get("wood");
+  const paint = get("vertexPaint");
+  tents.forEach((tent, tentIndex) => {
+    const [tx, tz] = local(tent.u, tent.v);
+    const ox = Math.sin(tent.yaw);
+    const oz = Math.cos(tent.yaw);
+    const sx = oz;
+    const sz = -ox;
+    const p = (s: number, o: number, y: number): V3 => [tx + sx * s + ox * o, y, tz + sz * s + oz * o];
+    const colors = stripes[tentIndex % stripes.length]!;
+    const bands = Math.round(tent.w / 1.2);
+    for (let band = 0; band < bands; band += 1) {
+      const s0 = -tent.w / 2 + (tent.w * band) / bands;
+      const s1 = s0 + tent.w / bands;
+      const color = colors[band % 2]!;
+      canvas.quad(p(s0, -tent.d / 2, 3.6), p(s1, -tent.d / 2, 3.6), p(s1, 0, 2.6), p(s0, 0, 2.6), [ox * -0.3, 0.95, oz * -0.3], [[0, 0], [1, 0], [1, 1], [0, 1]], color);
+      canvas.quad(p(s0, 0, 2.6), p(s1, 0, 2.6), p(s1, tent.d / 2, 2.2), p(s0, tent.d / 2, 2.2), [ox * 0.2, 0.98, oz * 0.2], [[0, 0], [1, 0], [1, 1], [0, 1]], color);
+    }
+    canvas.quad(p(-tent.w / 2, -tent.d / 2, 0), p(tent.w / 2, -tent.d / 2, 0), p(tent.w / 2, -tent.d / 2, 3.6), p(-tent.w / 2, -tent.d / 2, 3.6), [ox, 0, oz], [[0, 0], [1, 0], [1, 1], [0, 1]], colors[1]);
+    for (const s of [-tent.w / 2, 0, tent.w / 2]) {
+      for (const o of [-tent.d / 2, tent.d / 2]) {
+        const [px, , pz] = p(s, o, 0);
+        const top = o < 0 ? 3.6 : 2.2;
+        wood.box(px, top / 2, pz, 0.14, top, 0.14, tent.yaw);
+        obstacles.push([px, pz, 0.15]);
+      }
+    }
+    const [mx, , mz] = p(0, 0, 0);
+    get("carpet").box(mx, 0.03, mz, tent.w - 1, 0.04, tent.d - 0.6, tent.yaw, 2);
+    paint.box(mx, 0.035, mz, tent.w - 2, 0.04, tent.d - 1.6, tent.yaw, 1, [0.78, 0.55, 0.18]);
+    for (let s = -tent.w / 2 + 1; s <= tent.w / 2 - 1; s += 1.4) {
+      const [qx, , qz] = p(s, -tent.d / 2 + 0.6, 0);
+      const hue = (Math.round(s * 7) + tentIndex) % 3;
+      paint.box(qx, 0.25, qz, 1.1, 0.4, 0.7, tent.yaw, 1, hue === 0 ? [0.55, 0.12, 0.16] : hue === 1 ? [0.85, 0.65, 0.2] : [0.15, 0.3, 0.45]);
+    }
+    const [lx, , lz] = p(0, 0.6, 0);
+    wood.box(lx, 0.22, lz, 2.2, 0.08, 1.0, tent.yaw);
+    wood.box(lx, 0.1, lz, 1.9, 0.2, 0.8, tent.yaw);
+  });
+  // Fire pit: a ring of stones, crossed logs and flames.
+  const stones = get("concrete");
+  for (let index = 0; index < 10; index += 1) {
+    const angle = (index / 10) * Math.PI * 2;
+    stones.box(cx + Math.cos(angle) * 1.3, 0.18, cz + Math.sin(angle) * 1.3, 0.5, 0.36, 0.4, angle, 1, [0.42, 0.38, 0.34]);
+  }
+  for (const angle of [0.3, 1.4, 2.5]) wood.box(cx, 0.15, cz, 1.6, 0.18, 0.18, angle);
+  const flames = get("neon");
+  const flame = (ox: number, oz: number, tall: number, color: Color) => {
+    const apex: V3 = [cx + ox, tall, cz + oz];
+    const ring: V3[] = [0, 1, 2].map((k) => [cx + ox + Math.cos((k / 3) * Math.PI * 2) * 0.35, 0.2, cz + oz + Math.sin((k / 3) * Math.PI * 2) * 0.35]);
+    ring.forEach((p, k) => {
+      const q = ring[(k + 1) % 3]!;
+      flames.triangle(p, q, apex, outward(p, q, apex, [cx + ox, 0.5, cz + oz]), [[0, 0], [1, 0], [0.5, 1]], color);
+    });
+  };
+  flame(0, 0, 1.5, [1, 0.55, 0.12]);
+  flame(0.25, 0.1, 1.0, [1, 0.8, 0.25]);
+  flame(-0.2, -0.15, 1.1, [1, 0.42, 0.08]);
+  obstacles.push([cx, cz, 1.6]);
+  // Lanterns on posts round the open square and either side of the gate.
+  const lanternAt = (x: number, z: number) => {
+    wood.box(x, 1.1, z, 0.1, 2.2, 0.1, facing);
+    get("darkFrame").box(x, 2.35, z, 0.36, 0.08, 0.36, facing);
+    flames.box(x, 2.12, z, 0.26, 0.36, 0.26, facing, 1, [1, 0.78, 0.4]);
+    obstacles.push([x, z, 0.12]);
+  };
+  for (let index = 0; index < 8; index += 1) {
+    const angle = (index / 8) * Math.PI * 2 + 0.2;
+    const [x, z] = local(Math.cos(angle) * 8, Math.sin(angle) * 8);
+    lanternAt(x, z);
+  }
+  for (const side of [-1, 1]) lanternAt(gate[0] + rx * side * 2.4 - fx * 0.5, gate[1] + rz * side * 2.4 - fz * 0.5);
+  // Camels resting outside the horseshoe.
+  for (const [u, v, turn] of [[20, 14, 0.6], [24, 8, 2.2], [18, 22, -0.9]] as const) {
+    const [x, z] = local(u, v);
+    camel(get, x, z, facing + turn);
+    obstacles.push([x, z, 1.4]);
+  }
+  return obstacles;
+}
+
+/** A standing dromedary built from a few blocks: body, hump, legs, a curved neck and the head. */
+export function camel(get: Get, x: number, z: number, yaw: number) {
+  const paint = get("vertexPaint");
+  const coat: Color = [0.72, 0.53, 0.33];
+  const dark: Color = [0.5, 0.36, 0.22];
+  const fx = Math.sin(yaw);
+  const fz = Math.cos(yaw);
+  const rx = fz;
+  const rz = -fx;
+  const p = (along: number, y: number, side = 0): V3 => [x + fx * along + rx * side, y, z + fz * along + rz * side];
+  paint.box(x, 1.75, z, 0.75, 0.7, 1.9, yaw, 1, coat);
+  paint.box(x - fx * 0.1, 2.25, z - fz * 0.1, 0.6, 0.45, 0.9, yaw, 1, coat);
+  paint.box(x - fx * 0.1, 2.52, z - fz * 0.1, 0.4, 0.2, 0.5, yaw, 1, coat);
+  for (const along of [-0.7, 0.7]) for (const side of [-0.22, 0.22]) beam(paint, p(along, 1.45, side), p(along, 0, side), 0.18, dark);
+  beam(paint, p(0.85, 1.85), p(1.35, 2.5), 0.3, coat);
+  beam(paint, p(1.35, 2.5), p(1.4, 2.95), 0.26, coat);
+  paint.box(x + fx * 1.6, 2.95, z + fz * 1.6, 0.26, 0.26, 0.6, yaw, 1, coat);
+  beam(paint, p(-0.95, 1.9), p(-1.05, 1.2), 0.06, dark);
+}
+
+/** A smooth, slightly lopsided sand dune: an elliptical mound with its steep slip face on the lee side. */
+export function dune(batch: MeshBuilderBatch, x: number, z: number, yaw: number, ru: number, rv: number, tall: number, tint: Color) {
+  const segments = 14;
+  const rings = 4;
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  const point = (ring: number, segment: number): V3 => {
+    const t = ring / rings;
+    const angle = (segment / segments) * Math.PI * 2;
+    const lee = Math.cos(angle) > 0 ? 0.7 : 1.15;
+    const u = Math.cos(angle) * ru * (1 - t) * lee;
+    const v = Math.sin(angle) * rv * (1 - t);
+    const y = tall * Math.sin((t * Math.PI) / 2) - 0.05;
+    return [x + u * c + v * s, y, z - u * s + v * c];
+  };
+  const centre: V3 = [x, -tall, z];
+  for (let ring = 0; ring < rings; ring += 1) {
+    for (let segment = 0; segment < segments; segment += 1) {
+      const p0 = point(ring, segment);
+      const p1 = point(ring, segment + 1);
+      const p2 = point(ring + 1, segment + 1);
+      const p3 = point(ring + 1, segment);
+      const shade = 1 - ring * 0.03;
+      const color: Color = [tint[0] * shade, tint[1] * shade, tint[2] * shade];
+      if (ring === rings - 1) batch.triangle(p0, p1, p2, outward(p0, p1, p2, centre), [[p0[0] / 6, p0[2] / 6], [p1[0] / 6, p1[2] / 6], [p2[0] / 6, p2[2] / 6]], color);
+      else batch.quad(p0, p1, p2, p3, outward(p0, p1, p2, centre), [[p0[0] / 6, p0[2] / 6], [p1[0] / 6, p1[2] / 6], [p2[0] / 6, p2[2] / 6], [p3[0] / 6, p3[2] / 6]], color);
+    }
+  }
+}
+
+/** A short timber jetty from the quay out over the water and a moored dhow alongside it. */
+export function dhowPier(get: Get, quay: Vec2, facing: number) {
+  const fx = Math.sin(facing);
+  const fz = Math.cos(facing);
+  const rx = fz;
+  const rz = -fx;
+  const wood = get("wood");
+  const length = 16;
+  const mx = quay[0] + fx * (length / 2 + 0.5);
+  const mz = quay[1] + fz * (length / 2 + 0.5);
+  wood.box(mx, 0.35, mz, 3.2, 0.2, length, facing, 1, [1.15, 1.05, 0.95]);
+  for (let along = 1; along <= length; along += 3) {
+    for (const side of [-1.5, 1.5]) {
+      const px = quay[0] + fx * along + rx * side;
+      const pz = quay[1] + fz * along + rz * side;
+      wood.box(px, -0.6, pz, 0.25, 2, 0.25, facing);
+      get("chrome").box(px, 0.85, pz, 0.06, 0.9, 0.06, facing);
+    }
+  }
+  for (const side of [-1.5, 1.5]) get("chrome").box(mx + rx * side, 1.28, mz + rz * side, 0.06, 0.06, length, facing);
+  // The dhow: a timber hull with a raised stern, a shade canopy and a mast with a furled sail.
+  const bx = mx + rx * 4.2;
+  const bz = mz + rz * 4.2;
+  const hull: Color = [0.55, 0.33, 0.18];
+  wood.box(bx, 0.2, bz, 3.6, 1.4, 12, facing, 1, hull);
+  wood.box(bx - fx * 5, 0.9, bz - fz * 5, 3.6, 0.6, 2.4, facing, 1, hull);
+  const p = (along: number, side: number, y: number): V3 => [bx + fx * along + rx * side, y, bz + fz * along + rz * side];
+  for (const side of [-1.8, 1.8]) wood.quad(p(6, side, -0.5), p(8.4, 0, 0.9), p(8.4, 0, 0.9), p(6, side, 0.9), [rx * Math.sign(side), 0, rz * Math.sign(side)], [[0, 0], [1, 0], [1, 1], [0, 1]], hull);
+  wood.triangle(p(6, -1.8, 0.9), p(6, 1.8, 0.9), p(8.4, 0, 0.9), [0, 1, 0], [[0, 0], [1, 0], [0.5, 1]], [0.7, 0.5, 0.3]);
+  wood.box(bx, 0.92, bz, 3.3, 0.06, 11.6, facing, 1, [0.78, 0.6, 0.4]);
+  get("canvas").box(bx - fx * 1.5, 2.6, bz - fz * 1.5, 3.4, 0.08, 6, facing, 1, [0.95, 0.92, 0.84]);
+  for (const along of [-4.3, 1.3]) for (const side of [-1.5, 1.5]) wood.box(bx + fx * along + rx * side, 1.75, bz + fz * along + rz * side, 0.1, 1.7, 0.1, facing);
+  wood.box(bx + fx * 2.5, 4.5, bz + fz * 2.5, 0.22, 7.5, 0.22, facing);
+  beam(get("canvas"), p(4.8, 0, 2), p(0.5, 0, 8), 0.45, [0.93, 0.9, 0.82]);
+}
+
+/** Beach umbrella with two loungers under it. */
+export function beachShade(get: Get, x: number, z: number, yaw: number, color: Color) {
+  get("pole").box(x, 1.25, z, 0.07, 2.5, 0.07, yaw);
+  const canvas = get("canvas");
+  const apex: V3 = [x, 2.75, z];
+  for (let index = 0; index < 8; index += 1) {
+    const a0 = (index / 8) * Math.PI * 2 + yaw;
+    const a1 = ((index + 1) / 8) * Math.PI * 2 + yaw;
+    const p: V3 = [x + Math.cos(a0) * 1.6, 2.2, z + Math.sin(a0) * 1.6];
+    const q: V3 = [x + Math.cos(a1) * 1.6, 2.2, z + Math.sin(a1) * 1.6];
+    canvas.triangle(p, q, apex, outward(p, q, apex, [x, 2, z]), [[0, 0], [1, 0], [0.5, 1]], index % 2 ? color : [0.97, 0.97, 0.95]);
+  }
+  const paint = get("vertexPaint");
+  for (const side of [-0.75, 0.75]) {
+    const lx = x + Math.cos(yaw) * side;
+    const lz = z - Math.sin(yaw) * side;
+    paint.box(lx, 0.32, lz, 0.6, 0.08, 1.9, yaw, 1, [0.96, 0.96, 0.94]);
+    paint.box(lx + Math.sin(yaw) * 0.85, 0.55, lz + Math.cos(yaw) * 0.85, 0.6, 0.45, 0.08, yaw, 1, [0.96, 0.96, 0.94]);
+  }
 }

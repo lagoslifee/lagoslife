@@ -22,5 +22,7 @@
   { "id": "lekki-police-division", "kind": "police", "name": "Lekki Police Division", "building": 1270253683, "street": "Admiralty Way" },
   { "id": "ikoyi-police-station", "kind": "police", "name": "Ikoyi Police Station", "building": 597498739, "street": "Awolowo Road" },
   { "id": "bar-beach-police-station", "kind": "police", "name": "Bar Beach Police Station", "building": 529943961, "street": "Ozumba Mbadiwe Avenue" },
-  { "id": "eko-shield-security", "kind": "security", "name": "Eko Shield Security", "building": 1268301921, "street": "Admiralty Way" }
+  { "id": "eko-shield-security", "kind": "security", "name": "Eko Shield Security", "building": 1268301921, "street": "Admiralty Way" },
+  { "id": "lagos-air-terminal", "kind": "airport", "name": "Lagos Air Terminal", "building": 533818621, "street": "Ozumba Mbadiwe Avenue" },
+  { "id": "dubai-consular-office", "kind": "consulate", "name": "Dubai Travel Consular Office", "building": 529247743, "street": "Ozumba Mbadiwe Avenue" }
 ]

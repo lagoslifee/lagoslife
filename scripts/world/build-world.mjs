@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Builds the 1:1 metric Lagos world (Lekki Phase 1, the Lekki-Ikoyi Link Bridge,
-// Ikoyi and Victoria Island) from the retained OpenStreetMap extracts (ODbL).
+// Ikoyi and Victoria Island) from the retained OpenStreetMap extracts (ODbL),
+// plus a separate Dubai holiday region (Dubai Marina, JBR and Bluewaters, with a
+// fictional desert camp) projected around its own origin and shifted south of Lagos.
 // Road names stay attached to their own OSM way; unnamed ways keep name = null
 // and are never labelled. Buildings and areas are split into streamed tiles.
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -21,11 +23,11 @@ const TILE = 320;
 const WATER_CELL = 10;
 
 /** Playable districts in local metres. Order matters: the first match names a point. */
-const DISTRICTS = [
-  { id: "lekki-phase-1", name: "Lekki Phase 1", lga: "Eti-Osa", rect: { minX: -1000, maxX: 450, minZ: -230, maxZ: 540 } },
-  { id: "link-bridge", name: "Lekki-Ikoyi Link Bridge", lga: "Eti-Osa", rect: { minX: -2300, maxX: -1000, minZ: 220, maxZ: 800 } },
-  { id: "ikoyi", name: "Ikoyi", lga: "Eti-Osa", rect: { minX: -4950, maxX: -1880, minZ: -440, maxZ: 1530 } },
-  { id: "victoria-island", name: "Victoria Island", lga: "Eti-Osa", rect: { minX: -7050, maxX: -4110, minZ: -2410, maxZ: -420 } },
+const LAGOS_DISTRICTS = [
+  { id: "lekki-phase-1", name: "Lekki Phase 1", lga: "Eti-Osa", region: "lagos", rect: { minX: -1000, maxX: 450, minZ: -230, maxZ: 540 } },
+  { id: "link-bridge", name: "Lekki-Ikoyi Link Bridge", lga: "Eti-Osa", region: "lagos", rect: { minX: -2300, maxX: -1000, minZ: 220, maxZ: 800 } },
+  { id: "ikoyi", name: "Ikoyi", lga: "Eti-Osa", region: "lagos", rect: { minX: -4950, maxX: -1880, minZ: -440, maxZ: 1530 } },
+  { id: "victoria-island", name: "Victoria Island", lga: "Eti-Osa", region: "lagos", rect: { minX: -7050, maxX: -4110, minZ: -2410, maxZ: -420 } },
 ];
 const EXTRACTS = [
   "lekki-phase1-extract.osm.json",
@@ -34,13 +36,37 @@ const EXTRACTS = [
   "victoria-island-extract.osm.json",
 ];
 
-const BOUNDS = {
-  minX: Math.min(...DISTRICTS.map(({ rect }) => rect.minX)),
-  maxX: Math.max(...DISTRICTS.map(({ rect }) => rect.maxX)),
-  minZ: Math.min(...DISTRICTS.map(({ rect }) => rect.minZ)),
-  maxZ: Math.max(...DISTRICTS.map(({ rect }) => rect.maxZ)),
-};
+/**
+ * Dubai is projected around its own origin and then shifted so the whole region sits far south of Lagos
+ * (x -7000…-1500, z -9800…-4700). Nothing streams across the gap; the regions are joined only by flights.
+ */
+const DUBAI_LAT0 = 25.08;
+const DUBAI_LON0 = 55.14;
+const DUBAI_KX = 111_320 * Math.cos((DUBAI_LAT0 * Math.PI) / 180);
+const DUBAI_SHIFT = [-4400, -7700];
+const DUBAI_DISTRICTS = [
+  // Dubai Marina, JBR (The Walk and the beach) and Bluewaters Island: local x -2500…800, z -1700…1450.
+  { id: "dubai-marina", name: "Dubai Marina & JBR", lga: "Dubai", region: "dubai", rect: { minX: -6900, maxX: -3600, minZ: -9400, maxZ: -6250 } },
+  // Fictional dunes, 1.3 km east of the Marina and not joined to it by any road.
+  { id: "dubai-desert", name: "Desert camp (fictionalised)", lga: "Dubai", region: "dubai", rect: { minX: -2300, maxX: -1600, minZ: -8200, maxZ: -7500 } },
+];
+const DUBAI_EXTRACT = "dubai-marina-extract.osm.json";
+const DUBAI_WATER_EXTRACT = "dubai-water-extract.osm.json";
+const DISTRICTS = [...LAGOS_DISTRICTS, ...DUBAI_DISTRICTS];
+
+const boundsOf = (list) => ({
+  minX: Math.min(...list.map(({ rect }) => rect.minX)),
+  maxX: Math.max(...list.map(({ rect }) => rect.maxX)),
+  minZ: Math.min(...list.map(({ rect }) => rect.minZ)),
+  maxZ: Math.max(...list.map(({ rect }) => rect.maxZ)),
+});
+const REGIONS = { lagos: boundsOf(LAGOS_DISTRICTS), dubai: boundsOf(DUBAI_DISTRICTS) };
+const BOUNDS = boundsOf(DISTRICTS);
 const project = (lat, lon) => [Math.round((lon - LON0) * KX * 100) / 100, Math.round((lat - LAT0) * KZ * 100) / 100];
+const projectDubai = (lat, lon) => [
+  Math.round(((lon - DUBAI_LON0) * DUBAI_KX + DUBAI_SHIFT[0]) * 100) / 100,
+  Math.round(((lat - DUBAI_LAT0) * KZ + DUBAI_SHIFT[1]) * 100) / 100,
+];
 const round2 = (value) => Math.round(value * 100) / 100;
 
 const inRect = ([x, z], rect, margin = 0) =>
@@ -48,27 +74,33 @@ const inRect = ([x, z], rect, margin = 0) =>
 const inDistricts = (point, margin = 0) => DISTRICTS.some(({ rect }) => inRect(point, rect, margin));
 
 // ---- Merge extracts: nodes and ways are deduplicated by OSM id. ----
-const nodes = new Map();
-const ways = new Map();
-const nodeTags = new Map();
 const timestamps = [];
-for (const file of EXTRACTS) {
-  const raw = JSON.parse(await readFile(path.join(osmDir, file), "utf8"));
-  timestamps.push({ file: `data/osm/${file}`, timestamp: raw.osm3s?.timestamp_osm_base ?? null });
-  for (const element of raw.elements) {
-    if (element.type === "node") {
-      nodes.set(element.id, project(element.lat, element.lon));
-      if (element.tags) nodeTags.set(element.id, element.tags);
+async function loadExtracts(files, projectNode) {
+  const nodes = new Map();
+  const ways = new Map();
+  const nodeTags = new Map();
+  for (const file of files) {
+    const raw = JSON.parse(await readFile(path.join(osmDir, file), "utf8"));
+    timestamps.push({ file: `data/osm/${file}`, timestamp: raw.osm3s?.timestamp_osm_base ?? null });
+    for (const element of raw.elements) {
+      if (element.type === "node") {
+        nodes.set(element.id, projectNode(element.lat, element.lon));
+        if (element.tags) nodeTags.set(element.id, element.tags);
+      }
+    }
+    for (const element of raw.elements) {
+      if (element.type !== "way" || !element.tags) continue;
+      const existing = ways.get(element.id);
+      if (!existing || element.nodes.length > existing.nodes.length) ways.set(element.id, element);
     }
   }
-  for (const element of raw.elements) {
-    if (element.type !== "way" || !element.tags) continue;
-    const existing = ways.get(element.id);
-    if (!existing || element.nodes.length > existing.nodes.length) ways.set(element.id, element);
-  }
+  return { nodes, ways, nodeTags };
 }
+const { nodes, ways, nodeTags } = await loadExtracts(EXTRACTS, project);
 
 const ROAD_KINDS = {
+  motorway: { kind: "primary", width: 12 },
+  motorway_link: { kind: "primary_link", width: 6 },
   trunk: { kind: "primary", width: 10 },
   primary: { kind: "primary", width: 8.5 },
   trunk_link: { kind: "primary_link", width: 6 },
@@ -85,11 +117,11 @@ const ROAD_KINDS = {
   pedestrian: { kind: "footway", width: 3 },
 };
 
-function clipPolyline(points) {
+function clipPolyline(points, districts) {
   const segments = [];
   let current = [];
   for (const point of points) {
-    if (inDistricts(point, 60)) current.push(point);
+    if (districts.some(({ rect }) => inRect(point, rect, 60))) current.push(point);
     else if (current.length) {
       current.push(point);
       segments.push(current);
@@ -109,57 +141,172 @@ function polygonArea(points) {
   }
   return area / 2;
 }
+const polylineLength = (points) => points.reduce((sum, point, index) => (index ? sum + Math.hypot(point[0] - points[index - 1][0], point[1] - points[index - 1][1]) : 0), 0);
+/** Douglas-Peucker: drops vertices within `tolerance` metres of the simplified line, never the `pinned` ones (junctions). */
+function simplify(points, tolerance, pinned = []) {
+  if (points.length < 3) return points;
+  const keep = new Uint8Array(points.length);
+  keep[0] = keep[points.length - 1] = 1;
+  const stack = [];
+  let from = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    if (!pinned[index] && index !== points.length - 1) continue;
+    keep[index] = 1;
+    stack.push([from, index]);
+    from = index;
+  }
+  while (stack.length) {
+    const [first, last] = stack.pop();
+    const [ax, az] = points[first];
+    const [bx, bz] = points[last];
+    const dx = bx - ax;
+    const dz = bz - az;
+    const lengthSquared = dx * dx + dz * dz || 1;
+    let worst = -1;
+    let worstDistance = tolerance;
+    for (let index = first + 1; index < last; index += 1) {
+      const [x, z] = points[index];
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / lengthSquared));
+      const distance = Math.hypot(ax + dx * t - x, az + dz * t - z);
+      if (distance > worstDistance) {
+        worst = index;
+        worstDistance = distance;
+      }
+    }
+    if (worst > 0) {
+      keep[worst] = 1;
+      stack.push([first, worst], [worst, last]);
+    }
+  }
+  return points.filter((_, index) => keep[index]);
+}
 const centroidOf = (ring) => [ring.reduce((sum, [x]) => sum + x, 0) / ring.length, ring.reduce((sum, [, z]) => sum + z, 0) / ring.length];
 
-const roads = [];
-const buildings = [];
-const areas = [];
-for (const element of ways.values()) {
-  const tags = element.tags;
-  const points = element.nodes.map((id) => nodes.get(id)).filter(Boolean);
-  if (points.length < 2) continue;
-  const roadKind = tags.highway ? ROAD_KINDS[tags.highway] : null;
-  if (roadKind && tags.area !== "yes") {
-    for (const segment of clipPolyline(points)) {
-      roads.push({
-        id: element.id,
-        name: tags.name ?? null,
-        kind: roadKind.kind,
-        oneway: tags.oneway === "yes",
-        lanes: tags.lanes ? Number(tags.lanes) : null,
-        width: roadKind.width,
-        ...(tags.bridge === "yes" ? { bridge: true } : {}),
-        points: segment,
-      });
-    }
-  } else if (tags.building) {
-    const ring = points.slice(0, -1);
-    if (ring.length < 3) continue;
-    if (!inDistricts(centroidOf(ring))) continue;
-    const area = polygonArea(ring);
-    if (Math.abs(area) < 12) continue;
-    const levels = tags["building:levels"] ? Number.parseInt(tags["building:levels"], 10) : null;
-    buildings.push({
-      id: element.id,
-      kind: tags.building,
-      levels: Number.isFinite(levels) && levels > 0 ? levels : null,
-      name: tags.name ?? null,
-      points: area < 0 ? ring.reverse() : ring,
-    });
-  } else if (tags.landuse || tags.leisure || tags.natural || tags.waterway) {
-    const kind = tags.landuse ?? tags.leisure ?? tags.natural ?? tags.waterway;
-    if (kind === "coastline") continue;
-    if (!points.some((point) => inDistricts(point))) continue;
-    areas.push({ id: element.id, kind, name: tags.name ?? null, points });
+/** Observation-wheel footprints: drawn as a landmark (rim, spokes, cabins) instead of an extruded block. */
+const wheels = [];
+/**
+ * Roads, building footprints and areas of one region. Dubai names prefer `name:en` (most Dubai ways carry
+ * Arabic `name`), take storeys from `height` when `building:levels` is missing, widen the Marina promenade to
+ * its paved width and keep closed pontoon/pier outlines as areas.
+ */
+function extractRegion(regionWays, regionNodes, districts, dubai = false) {
+  const within = (point, margin = 0) => districts.some(({ rect }) => inRect(point, rect, margin));
+  const nameOf = (tags) => (dubai ? tags["name:en"] ?? tags.name ?? null : tags.name ?? null);
+  const nodeUses = new Map();
+  for (const element of regionWays.values()) {
+    if (!element.tags.highway) continue;
+    element.nodes.forEach((id, index) => nodeUses.set(id, (nodeUses.get(id) ?? 0) + (index === 0 || index === element.nodes.length - 1 ? 2 : 1)));
   }
+  const sharedNodes = new Set([...nodeUses].filter(([, uses]) => uses > 1).map(([id]) => id));
+  const roads = [];
+  const buildings = [];
+  const areas = [];
+  for (const element of regionWays.values()) {
+    const tags = element.tags;
+    const points = element.nodes.map((id) => regionNodes.get(id)).filter(Boolean);
+    if (points.length < 2) continue;
+    const roadKind = tags.highway ? ROAD_KINDS[tags.highway] : null;
+    if (roadKind && tags.area !== "yes") {
+      const name = nameOf(tags);
+      const promenade = dubai && roadKind.kind === "footway" && /^Marina (Walk|Promenade)$/.test(name ?? "");
+      // Dubai maps sidewalks and crossings as separate ways; the renderer draws its own sidewalks.
+      if (dubai && roadKind.kind === "footway" && (tags.footway === "sidewalk" || tags.footway === "crossing")) continue;
+      const kept = dubai ? simplify(points, 0.3, element.nodes.filter((id) => regionNodes.has(id)).map((id) => sharedNodes.has(id))) : points;
+      for (const segment of clipPolyline(kept, districts)) {
+        if (dubai && roadKind.kind === "footway" && !name && polylineLength(segment) < 15) continue;
+        roads.push({
+          id: element.id,
+          name,
+          kind: roadKind.kind,
+          oneway: tags.oneway === "yes",
+          lanes: tags.lanes ? Number(tags.lanes) : null,
+          width: promenade ? 6 : roadKind.width,
+          ...(tags.bridge === "yes" ? { bridge: true } : {}),
+          points: segment,
+        });
+      }
+    } else if (tags.building) {
+      const ring = points.slice(0, -1);
+      if (ring.length < 3) continue;
+      if (!within(centroidOf(ring))) continue;
+      // Footbridge outlines would block the roads beneath them; the bridges come in as highway decks instead.
+      if (dubai && tags.building === "bridge") continue;
+      if (dubai && tags.attraction === "big_wheel") {
+        wheels.push({ ring, height: Number.parseFloat(tags.height) || 210 });
+        continue;
+      }
+      const area = polygonArea(ring);
+      if (Math.abs(area) < 12) continue;
+      let levels = tags["building:levels"] ? Number.parseInt(tags["building:levels"], 10) : null;
+      if (dubai && !(levels > 0) && tags.height) levels = Math.round(Number.parseFloat(tags.height) / 3.4);
+      buildings.push({
+        id: element.id,
+        kind: tags.building,
+        levels: Number.isFinite(levels) && levels > 0 ? levels : null,
+        name: nameOf(tags),
+        points: area < 0 ? ring.reverse() : ring,
+      });
+    } else if (tags.landuse || tags.leisure || tags.natural || tags.waterway || (dubai && tags.man_made === "pier" && element.nodes[0] === element.nodes.at(-1))) {
+      const kind = tags.landuse ?? tags.leisure ?? tags.natural ?? tags.waterway ?? "pier";
+      if (kind === "coastline") continue;
+      if (dubai && (kind === "tree_row" || element.nodes[0] !== element.nodes.at(-1))) continue;
+      if (!points.some((point) => within(point))) continue;
+      areas.push({ id: element.id, kind, name: nameOf(tags), points });
+    }
+  }
+  roads.sort((a, b) => a.id - b.id);
+  buildings.sort((a, b) => a.id - b.id);
+  return { roads, buildings, areas };
 }
-roads.sort((a, b) => a.id - b.id);
-buildings.sort((a, b) => a.id - b.id);
 
+const lagos = extractRegion(ways, nodes, LAGOS_DISTRICTS);
 const pois = [...nodeTags]
   .filter(([, tags]) => tags.amenity || tags.shop)
   .map(([id, tags]) => ({ id, kind: tags.amenity ?? tags.shop, name: tags.name ?? null, position: nodes.get(id) }))
   .filter((poi) => inDistricts(poi.position));
+
+// ---- Dubai: OSM content only inside the Marina district; the desert is synthesised. ----
+const dubaiOsm = await loadExtracts([DUBAI_EXTRACT], projectDubai);
+const dubai = extractRegion(dubaiOsm.ways, dubaiOsm.nodes, [DUBAI_DISTRICTS[0]], true);
+const desertRect = DUBAI_DISTRICTS[1].rect;
+/** Sand track loop round the dunes plus a short spur to the camp gate; fictional, like the camp itself. */
+const DESERT_LOOP = { cx: (desertRect.minX + desertRect.maxX) / 2, cz: desertRect.minZ + 300, rx: 280, rz: 220 };
+const DESERT_TRACK = "Desert Camp Track";
+const desertLoop = Array.from({ length: 73 }, (_, index) => {
+  const angle = ((index % 72) / 72) * Math.PI * 2;
+  return [round2(DESERT_LOOP.cx + Math.cos(angle) * DESERT_LOOP.rx), round2(DESERT_LOOP.cz + Math.sin(angle) * DESERT_LOOP.rz)];
+});
+const spurStart = desertLoop[18];
+const desertRoads = [
+  { id: -1, name: DESERT_TRACK, kind: "unclassified", oneway: false, lanes: null, width: 6, surface: "sand", points: desertLoop },
+  { id: -2, name: DESERT_TRACK, kind: "unclassified", oneway: false, lanes: null, width: 6, surface: "sand", points: [spurStart, [spurStart[0], round2(spurStart[1] + 40)], [spurStart[0], round2(spurStart[1] + 80)]] },
+];
+
+const roads = [...lagos.roads, ...dubai.roads, ...desertRoads];
+/** The wheel stands on the long axis of its footprint (the legs), centred on it. */
+const features = wheels.map(({ ring, height }) => {
+  let best = null;
+  for (let index = 0; index < ring.length; index += 1) {
+    const a = ring[index];
+    const b = ring[(index + 1) % ring.length];
+    const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (length < 0.5) continue;
+    const ux = (b[0] - a[0]) / length;
+    const uz = (b[1] - a[1]) / length;
+    const us = ring.map(([x, z]) => x * ux + z * uz);
+    const vs = ring.map(([x, z]) => -x * uz + z * ux);
+    const [minU, maxU, minV, maxV] = [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)];
+    const area = (maxU - minU) * (maxV - minV);
+    if (best && area >= best.area) continue;
+    const cu = (minU + maxU) / 2;
+    const cv = (minV + maxV) / 2;
+    const long = maxU - minU >= maxV - minV;
+    best = { area, centre: [cu * ux - cv * uz, cu * uz + cv * ux], axis: long ? [ux, uz] : [-uz, ux], span: Math.max(maxU - minU, maxV - minV) };
+  }
+  return { kind: "observation_wheel", point: best.centre.map(round2), yaw: round2(Math.atan2(best.axis[0], best.axis[1])), span: round2(best.span), height };
+});
+const buildings = [...lagos.buildings, ...dubai.buildings];
+const areas = [...lagos.areas, ...dubai.areas];
 
 // ---- Water: Lagos Lagoon, Five Cowries Creek and Commodore Channel multipolygons. ----
 function assembleRings(memberWays) {
@@ -197,15 +344,75 @@ const waterBodies = waterRaw.elements.map((relation) =>
   ),
 );
 
+// ---- Dubai water: the Gulf from the coastline (land on the left of each way), plus lakes and the Marina basins. ----
+const dubaiCoast = await loadExtracts([DUBAI_WATER_EXTRACT], projectDubai);
 /** The water mask reaches two tiles past the districts so edge tiles render real shoreline. */
-const MASK = { minX: BOUNDS.minX - 2 * TILE, maxX: BOUNDS.maxX + 2 * TILE, minZ: BOUNDS.minZ - 2 * TILE, maxZ: BOUNDS.maxZ + 2 * TILE };
+const maskOf = (bounds) => ({ minX: bounds.minX - 2 * TILE, maxX: bounds.maxX + 2 * TILE, minZ: bounds.minZ - 2 * TILE, maxZ: bounds.maxZ + 2 * TILE });
+const LAGOS_MASK = maskOf(REGIONS.lagos);
+const DUBAI_MASK = maskOf(REGIONS.dubai);
+const MASK = {
+  minX: Math.min(LAGOS_MASK.minX, DUBAI_MASK.minX),
+  maxX: Math.max(LAGOS_MASK.maxX, DUBAI_MASK.maxX),
+  minZ: Math.min(LAGOS_MASK.minZ, DUBAI_MASK.minZ),
+  maxZ: Math.max(LAGOS_MASK.maxZ, DUBAI_MASK.maxZ),
+};
+/** Grid rows split between the regions; neither region's water is rasterised into the other's rows. */
+const REGION_SPLIT_Z = -4000;
+const dubaiSea = (() => {
+  let pending = [...dubaiCoast.ways.values()].filter((way) => way.tags.natural === "coastline").map((way) => [...way.nodes]);
+  const chains = [];
+  while (pending.length) {
+    let chainNodes = pending.pop();
+    let grown = true;
+    while (grown && chainNodes[0] !== chainNodes.at(-1)) {
+      grown = false;
+      for (let index = 0; index < pending.length; index += 1) {
+        const way = pending[index];
+        if (way[0] === chainNodes.at(-1)) chainNodes = chainNodes.concat(way.slice(1));
+        else if (way.at(-1) === chainNodes[0]) chainNodes = way.concat(chainNodes.slice(1));
+        else continue;
+        pending.splice(index, 1);
+        grown = true;
+        break;
+      }
+    }
+    chains.push(chainNodes);
+  }
+  const rings = [];
+  let openChains = 0;
+  for (const chainNodes of chains) {
+    const points = chainNodes.map((id) => dubaiCoast.nodes.get(id)).filter(Boolean);
+    if (chainNodes[0] === chainNodes.at(-1)) {
+      rings.push(points);
+      continue;
+    }
+    // Only the open chain that crosses the region matters; close it far out on its sea side (to the north-west here).
+    if (!points.some((point) => inRect(point, DUBAI_MASK))) continue;
+    openChains += 1;
+    const first = points[0];
+    const last = points.at(-1);
+    rings.push([...points, [last[0] - 30_000, last[1] + 30_000], [first[0] - 30_000, first[1] + 30_000], first]);
+  }
+  if (openChains !== 1) throw new Error(`Expected one open Dubai coastline chain across the region, found ${openChains}`);
+  return rings;
+})();
+const dubaiLakes = [...dubaiOsm.ways.values()]
+  .filter((way) => way.tags.natural === "water" && way.tags.water !== "fountain" && way.tags.amenity !== "fountain" && way.nodes[0] === way.nodes.at(-1))
+  .map((way) => [way.nodes.map((id) => dubaiOsm.nodes.get(id)).filter(Boolean)])
+  .filter(([ring]) => ring.some((point) => inRect(point, DUBAI_MASK)) && Math.abs(polygonArea(ring)) > 400);
+const regionBodies = [
+  ...waterBodies.map((rings) => ({ rings, minZ: LAGOS_MASK.minZ, maxZ: LAGOS_MASK.maxZ })),
+  ...[dubaiSea, ...dubaiLakes].map((rings) => ({ rings, minZ: MASK.minZ, maxZ: REGION_SPLIT_Z })),
+];
+
 const cols = Math.ceil((MASK.maxX - MASK.minX) / WATER_CELL);
 const rows = Math.ceil((MASK.maxZ - MASK.minZ) / WATER_CELL);
 /** Vertex samples (cols + 1) x (rows + 1): 1 = water. Even-odd per water body, unioned across bodies. */
 const water = new Uint8Array((cols + 1) * (rows + 1));
-for (const rings of waterBodies) {
+for (const { rings, minZ, maxZ } of regionBodies) {
   for (let row = 0; row <= rows; row += 1) {
     const z = MASK.minZ + row * WATER_CELL;
+    if (z < minZ || z > maxZ) continue;
     const crossings = [];
     for (const ring of rings) {
       for (let index = 1; index < ring.length; index += 1) {
@@ -249,6 +456,11 @@ for (const road of roads) {
       }
     }
   }
+}
+// The open sea between the regions: rendered as nothing (no tile is ever near it) but never walkable.
+for (let row = 0; row <= rows; row += 1) {
+  const z = MASK.minZ + row * WATER_CELL;
+  if (z > DUBAI_MASK.maxZ && z < LAGOS_MASK.minZ) blocked.fill(1, row * (cols + 1), (row + 1) * (cols + 1));
 }
 const pack = (bits) => {
   const bytes = new Uint8Array(Math.ceil(bits.length / 8));
@@ -540,11 +752,17 @@ function doorFor(buildingId, streetName) {
     frontage: round2(best.length),
   };
 }
-const placeSeeds = JSON.parse(await readFile(path.join(root, "scripts/world/places.json"), "utf8"));
-/** Kerbside parking spot on the place's street, nearest its door, facing along the near lane. */
+const placeSeeds = [
+  ...JSON.parse(await readFile(path.join(root, "scripts/world/places.json"), "utf8")),
+  ...JSON.parse(await readFile(path.join(root, "scripts/world/dubai-places.json"), "utf8")).map((seed) => ({ ...seed, dubai: true })),
+];
+/**
+ * Kerbside parking spot on the place's street (any drivable road when null), nearest its door, facing along the near lane.
+ * Spots that fall inside a footprint (Marina service roads run under tower podiums) give way to the next nearest segment.
+ */
 function kerbFor(door, streetName) {
-  let best = null;
-  for (const road of roads.filter((candidate) => candidate.name === streetName)) {
+  const candidates = [];
+  for (const road of roads.filter((candidate) => (streetName === null || candidate.name === streetName) && candidate.kind !== "footway")) {
     for (let p = 1; p < road.points.length; p += 1) {
       const r0 = road.points[p - 1];
       const r1 = road.points[p];
@@ -554,16 +772,24 @@ function kerbFor(door, streetName) {
       const t = Math.max(0, Math.min(1, ((door[0] - r0[0]) * dx + (door[1] - r0[1]) * dz) / (length * length)));
       const point = [r0[0] + dx * t, r0[1] + dz * t];
       const distance = Math.hypot(point[0] - door[0], point[1] - door[1]);
-      if (!best || distance < best.distance) best = { point, distance, ux: dx / length, uz: dz / length, width: road.width };
+      candidates.push({ point, distance, ux: dx / length, uz: dz / length, width: road.width });
     }
   }
-  // Pick the side of the carriageway nearest the door; right-hand traffic means travel along +u on the right side.
-  const side = (door[0] - best.point[0]) * best.uz - (door[1] - best.point[1]) * best.ux >= 0 ? 1 : -1;
-  // A lay-by just past the carriageway edge keeps parked cars out of the danfo's kerb lane.
-  const offset = Math.min(best.width / 2 + 1.1, Math.max(best.width / 2 - 1.3, best.distance - 2.5));
-  const kerb = [round2(best.point[0] + best.uz * offset * side), round2(best.point[1] - best.ux * offset * side)];
-  const yaw = side > 0 ? Math.atan2(best.ux, best.uz) : Math.atan2(-best.ux, -best.uz);
-  return { kerb, kerbYaw: round2(yaw) };
+  candidates.sort((a, b) => a.distance - b.distance);
+  const spotOn = (best) => {
+    // Pick the side of the carriageway nearest the door; right-hand traffic means travel along +u on the right side.
+    const side = (door[0] - best.point[0]) * best.uz - (door[1] - best.point[1]) * best.ux >= 0 ? 1 : -1;
+    // A lay-by just past the carriageway edge keeps parked cars out of the danfo's kerb lane.
+    const offset = Math.min(best.width / 2 + 1.1, Math.max(best.width / 2 - 1.3, best.distance - 2.5));
+    const kerb = [round2(best.point[0] + best.uz * offset * side), round2(best.point[1] - best.ux * offset * side)];
+    const yaw = side > 0 ? Math.atan2(best.ux, best.uz) : Math.atan2(-best.ux, -best.uz);
+    return { kerb, kerbYaw: round2(yaw) };
+  };
+  for (const candidate of candidates.slice(0, 400)) {
+    const spot = spotOn(candidate);
+    if (walkableAt(spot.kerb)) return spot;
+  }
+  return spotOn(candidates[0]);
 }
 /** Entrance on an open area (a park): the boundary point nearest the street, stepped outward. */
 function gateFor(areaId, streetName) {
@@ -601,9 +827,70 @@ function gateFor(areaId, streetName) {
   };
 }
 const districtOf = (point) => DISTRICTS.find(({ rect }) => inRect(point, rect))?.id ?? null;
+
+/** Walkable bridge strips: half-width stops just inside the parapet the client draws at `width / 2 + DECK_PAD`. */
+const DECK_PAD = 1;
+const decks = roads.filter((road) => road.bridge).map((road) => ({ id: road.id, half: Math.round((road.width / 2 + DECK_PAD - 0.35) * 100) / 100, points: road.points }));
+const segmentDistance = (x, z, a, b) => {
+  const dx = b[0] - a[0];
+  const dz = b[1] - a[1];
+  const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz || 1)));
+  return Math.hypot(a[0] + dx * t - x, a[1] + dz * t - z);
+};
+/** The same test as the shared `walkable()`: in a district, off open water (bilinear mask) unless on a deck, not inside a footprint. */
+function walkableAt([x, z]) {
+  if (!districtOf([x, z])) return false;
+  const u = (x - MASK.minX) / WATER_CELL;
+  const v = (z - MASK.minZ) / WATER_CELL;
+  const col = Math.floor(u);
+  const row = Math.floor(v);
+  const sample = (c, r) => (c < 0 || r < 0 || c > cols || r > rows ? 0 : blocked[r * (cols + 1) + c]);
+  const fu = u - col;
+  const fv = v - row;
+  const wet = sample(col, row) * (1 - fu) * (1 - fv) + sample(col + 1, row) * fu * (1 - fv) + sample(col, row + 1) * (1 - fu) * fv + sample(col + 1, row + 1) * fu * fv;
+  if (wet > 0.5 && !decks.some((deck) => deck.points.some((point, index) => index > 0 && segmentDistance(x, z, deck.points[index - 1], point) <= deck.half))) return false;
+  for (const building of buildings) {
+    const ring = building.points;
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+      if (ring[i][1] > z !== ring[j][1] > z && x < ((ring[j][0] - ring[i][0]) * (z - ring[i][1])) / (ring[j][1] - ring[i][1]) + ring[i][0]) inside = !inside;
+    }
+    if (inside && Math.min(...ring.map((point, index) => segmentDistance(x, z, point, ring[(index + 1) % ring.length]))) > 0.6) return false;
+  }
+  return true;
+}
+/** Places on a promenade or beach park on a nearby carriageway: `kerbStreet` names it, or null for the nearest drivable road. */
+const kerbStreetOf = (seed) => (seed.kerbStreet === undefined ? seed.street : seed.kerbStreet);
+/**
+ * An open spot (pier head, viewpoint, desert camp gate): `at` is { lat, lon } in the region's projection or
+ * { x, z } in world metres. The door faces `look` when given (the view or the water), otherwise the street.
+ */
+function spotFor(seed) {
+  const toWorld = (at) => ("x" in at ? [at.x, at.z] : seed.dubai ? projectDubai(at.lat, at.lon) : project(at.lat, at.lon));
+  const start = toWorld(seed.at);
+  let point = start;
+  // The nearest dry, open ground (a pier head seeded just off the quay lands right at the water's edge).
+  for (let radius = 0.5; radius <= 40 && !walkableAt(point); radius += 0.5) {
+    const steps = Math.ceil(radius * 4);
+    for (let index = 0; index < steps; index += 1) {
+      const angle = (index / steps) * Math.PI * 2;
+      const candidate = [start[0] + Math.sin(angle) * radius, start[1] + Math.cos(angle) * radius];
+      if (walkableAt(candidate)) {
+        point = candidate;
+        break;
+      }
+    }
+  }
+  const { kerb } = kerbFor(point, kerbStreetOf(seed));
+  const target = seed.look ? toWorld(seed.look) : kerb;
+  const facing = Math.atan2(target[0] - point[0], target[1] - point[1]);
+  const door = [round2(point[0]), round2(point[1])];
+  return { door, facade: door, facing: round2(facing), frontage: 6 };
+}
+
 const places = placeSeeds.map((seed) => {
-  const door = seed.area ? gateFor(seed.area, seed.street) : doorFor(seed.building, seed.street);
-  return {
+  const door = seed.at ? spotFor(seed) : seed.area ? gateFor(seed.area, seed.street) : doorFor(seed.building, seed.street);
+  const place = {
     id: seed.id,
     kind: seed.kind,
     name: seed.name,
@@ -612,22 +899,32 @@ const places = placeSeeds.map((seed) => {
     buildingId: seed.building ?? null,
     ...(seed.area ? { areaId: seed.area } : {}),
     ...door,
-    ...kerbFor(door.door, seed.street),
+    ...kerbFor(door.door, kerbStreetOf(seed)),
   };
+  if (!walkableAt(place.door)) throw new Error(`Door of ${place.id} at ${place.door} is not walkable`);
+  if (districtOf(place.kerb) !== place.district) throw new Error(`Kerb of ${place.id} at ${place.kerb} is outside its district`);
+  if (!walkableAt(place.kerb)) throw new Error(`Kerb of ${place.id} at ${place.kerb} is not walkable`);
+  return place;
 });
 
-const districts = DISTRICTS.map(({ id, name, lga, rect }) => ({ id, name, lga, rect }));
+const districts = DISTRICTS.map(({ id, name, lga, region, rect }) => ({ id, name, lga, region, rect }));
 const world = {
-  name: "Lagos Living: Lekki Phase 1, Ikoyi and Victoria Island",
+  name: "Lagos Living: Lekki Phase 1, Ikoyi and Victoria Island, with a Dubai Marina holiday region",
   attribution: "Map data © OpenStreetMap contributors, ODbL 1.0",
-  source: { extracts: timestamps, projection: { lat0: LAT0, lon0: LON0, unit: "metre", axes: "x east, z north" } },
+  source: {
+    extracts: timestamps,
+    projection: { lat0: LAT0, lon0: LON0, unit: "metre", axes: "x east, z north" },
+    dubaiProjection: { lat0: DUBAI_LAT0, lon0: DUBAI_LON0, shift: DUBAI_SHIFT, unit: "metre", axes: "x east, z north" },
+  },
   bounds: BOUNDS,
+  regions: REGIONS,
   districts,
   tileSize: TILE,
   tiles: [...tiles.values()].map(({ key, buildings: list }) => ({ key, buildings: list.length })),
   water: waterGrid(water),
   roads,
   pois,
+  features,
 };
 
 // Rewrite tiles in place and remove only stale ones: deleting the directory while a Vite dev
@@ -640,10 +937,7 @@ for (const tile of tiles.values()) {
 }
 await writeFile(path.join(worldDir, "lagos.world.json"), JSON.stringify(world));
 await mkdir(path.dirname(sharedTarget), { recursive: true });
-/** Walkable bridge strips: half-width stops just inside the parapet the client draws at `width / 2 + DECK_PAD`. */
-const DECK_PAD = 1;
-const decks = roads.filter((road) => road.bridge).map((road) => ({ id: road.id, half: Math.round((road.width / 2 + DECK_PAD - 0.35) * 100) / 100, points: road.points }));
-await writeFile(sharedTarget, JSON.stringify({ bounds: BOUNDS, districts, tileSize: TILE, blocked: waterGrid(blocked), decks, routes, places }));
+await writeFile(sharedTarget, JSON.stringify({ bounds: BOUNDS, regions: REGIONS, districts, tileSize: TILE, blocked: waterGrid(blocked), decks, routes, places }));
 
 const files = await readdir(tileDir);
 for (const route of routes) console.log(`route ${route.routeNumber} ${route.length} m, stops ${route.stops.map((stop) => `${stop.id}@${stop.s}`).join(", ")}`);
@@ -652,4 +946,8 @@ console.log(
   `roads ${roads.length} (named ${roads.filter((road) => road.name).length}, bridges ${roads.filter((road) => road.bridge).length}), ` +
     `buildings ${buildings.length}, areas ${areas.length}, pois ${pois.length}, tiles ${files.length}, ` +
     `water ${water.reduce((sum, bit) => sum + bit, 0)} / ${water.length} samples, blocked ${blocked.reduce((sum, bit) => sum + bit, 0)}`,
+);
+console.log(
+  `dubai: roads ${dubai.roads.length + desertRoads.length} (named ${dubai.roads.filter((road) => road.name).length}, bridges ${dubai.roads.filter((road) => road.bridge).length}), ` +
+    `buildings ${dubai.buildings.length} (with storeys ${dubai.buildings.filter((building) => building.levels).length}, 30+ storeys ${dubai.buildings.filter((building) => building.levels >= 30).length}), areas ${dubai.areas.length}`,
 );

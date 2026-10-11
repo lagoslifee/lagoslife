@@ -1,0 +1,17 @@
+[
+  { "id": "dubai-arrivals", "kind": "airport", "name": "Dubai Arrivals Hall", "building": 525410185, "street": "King Salman bin Abdulaziz Al Saud Street" },
+  { "id": "dubai-car-rental", "kind": "car_rental", "name": "Gulf Wheels Car Rental", "building": 430676888, "street": "King Salman bin Abdulaziz Al Saud Street" },
+  { "id": "marina-sands-inn", "kind": "hotel", "name": "Marina Sands Inn", "building": 194028738, "street": "Thowaab Street" },
+  { "id": "jbr-palm-suites", "kind": "hotel", "name": "JBR Palm Suites", "building": 196177272, "street": "Al Sayorah Street" },
+  { "id": "marina-crown-hotel", "kind": "hotel", "name": "Marina Crown Hotel", "building": 574137549, "street": "King Salman bin Abdulaziz Al Saud Street" },
+  { "id": "walk-grill", "kind": "restaurant", "name": "The Walk Grill", "building": 532586689, "street": "Al Mamsha Street" },
+  { "id": "marina-dhow-cafe", "kind": "cafe", "name": "Marina Dhow Café", "building": 195819892, "street": "Marina Walk", "kerbStreet": "King Salman bin Abdulaziz Al Saud Street" },
+  { "id": "marina-boutique", "kind": "boutique", "name": "Marina Thread Boutique", "building": 200915107, "street": "Al Marsa Street" },
+  { "id": "marina-souvenirs", "kind": "souvenir", "name": "Dune & Pearl Souvenirs", "building": 532586694, "street": "Al Mamsha Street" },
+  { "id": "skyline-rooftop", "kind": "lounge", "name": "Skyline Rooftop Lounge", "building": 186351092, "street": "Al Marsa Street" },
+  { "id": "jbr-beach", "kind": "beach", "name": "JBR Beach", "area": 320162564, "at": { "x": -5190, "z": -7925 }, "look": { "x": -5300, "z": -7860 }, "street": "The Walk at Jumeirah Beach Residence", "kerbStreet": null },
+  { "id": "marina-dhow-pier", "kind": "marina", "name": "Marina Dhow Pier", "at": { "lat": 25.077920, "lon": 55.140089 }, "look": { "lat": 25.07792, "lon": 55.139306 }, "street": "Marina Walk", "kerbStreet": null },
+  { "id": "marina-photo-point", "kind": "photo", "name": "Marina Skyline Photo Point", "at": { "lat": 25.077106, "lon": 55.139524 }, "look": { "lat": 25.079548, "lon": 55.137025 }, "street": "Marina Walk", "kerbStreet": null },
+  { "id": "ain-dubai-view", "kind": "photo", "name": "Ain Dubai view", "at": { "lat": 25.074257, "lon": 55.126759 }, "look": { "lat": 25.08009, "lon": 55.123754 }, "street": "JBR Jogging Track", "kerbStreet": null },
+  { "id": "desert-camp", "kind": "desert", "name": "Golden Dune Camp", "at": { "x": -1950, "z": -7591 }, "street": "Desert Camp Track" }
+]

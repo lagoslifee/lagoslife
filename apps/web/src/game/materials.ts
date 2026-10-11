@@ -1,4 +1,5 @@
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { Scene } from "@babylonjs/core/scene";
@@ -33,6 +34,101 @@ function flat(scene: Scene, name: string, hex: string, roughness: number, metall
   material.roughness = roughness;
   material.metallic = metallic;
   material.environmentIntensity = 0.6;
+  return material;
+}
+
+/**
+ * Curtain-wall glass for the Dubai towers: one storey by two mullion bays per repeat (walls use a 3.2 m UV tile),
+ * blue-green vision glass over a dark spandrel band, so a whole tower face is a single quad.
+ */
+function curtainWall(scene: Scene) {
+  const texture = new DynamicTexture("curtain wall", { width: 256, height: 256 }, scene, true);
+  const ctx = texture.getContext() as unknown as CanvasRenderingContext2D;
+  const glass = ctx.createLinearGradient(0, 0, 0, 200);
+  glass.addColorStop(0, "#6fa9b8");
+  glass.addColorStop(1, "#2f6a7e");
+  ctx.fillStyle = glass;
+  ctx.fillRect(0, 0, 256, 256);
+  ctx.fillStyle = "#24414c";
+  ctx.fillRect(0, 200, 256, 56);
+  ctx.fillStyle = "#d7dee0";
+  ctx.fillRect(0, 196, 256, 6);
+  ctx.fillRect(0, 0, 256, 3);
+  for (const x of [0, 128]) ctx.fillRect(x, 0, 5, 256);
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
+  for (const x of [5, 133]) ctx.fillRect(x, 3, 40, 193);
+  texture.update(true);
+  texture.wrapU = Texture.WRAP_ADDRESSMODE;
+  texture.wrapV = Texture.WRAP_ADDRESSMODE;
+  const material = new PBRMaterial("curtain wall glass", scene);
+  material.albedoTexture = texture;
+  material.metallic = 0.55;
+  material.roughness = 0.14;
+  material.environmentIntensity = 1.25;
+  return material;
+}
+
+/** Seeded noise so the procedural Dubai textures look the same on every load. */
+function speckle(ctx: CanvasRenderingContext2D, size: number, count: number, colors: string[], seed: number) {
+  let state = seed;
+  const next = () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 2 ** 32;
+  };
+  for (let index = 0; index < count; index += 1) {
+    ctx.fillStyle = colors[Math.floor(next() * colors.length)]!;
+    ctx.fillRect(next() * size, next() * size, 1 + next() * 2, 1 + next() * 2);
+  }
+}
+
+/** Pale golden sand: the stock ground textures are dark laterite and concrete, too dark to tint into Gulf sand. */
+function sandMaterial(scene: Scene) {
+  const texture = new DynamicTexture("sand", { width: 256, height: 256 }, scene, true);
+  const ctx = texture.getContext() as unknown as CanvasRenderingContext2D;
+  ctx.fillStyle = "#e9d2a2";
+  ctx.fillRect(0, 0, 256, 256);
+  ctx.strokeStyle = "rgba(196,160,104,0.18)";
+  ctx.lineWidth = 3;
+  for (let y = 8; y < 256; y += 21) {
+    ctx.beginPath();
+    for (let x = 0; x <= 256; x += 8) ctx.lineTo(x, y + Math.sin((x / 256) * Math.PI * 4 + y) * 4);
+    ctx.stroke();
+  }
+  speckle(ctx, 256, 2600, ["#f5e3bd", "#d7b98a", "#c9a876", "#fbefd4"], 7);
+  texture.update(true);
+  texture.wrapU = Texture.WRAP_ADDRESSMODE;
+  texture.wrapV = Texture.WRAP_ADDRESSMODE;
+  const material = new PBRMaterial("desert sand", scene);
+  material.albedoTexture = texture;
+  material.roughness = 1;
+  material.metallic = 0;
+  material.environmentIntensity = 0.55;
+  return material;
+}
+
+/** Large-format pale stone slabs for Dubai pavements and the promenade (one 2.2 m texture repeat = 2 x 2 slabs). */
+function stonePavers(scene: Scene) {
+  const texture = new DynamicTexture("stone pavers", { width: 256, height: 256 }, scene, true);
+  const ctx = texture.getContext() as unknown as CanvasRenderingContext2D;
+  ctx.fillStyle = "#c9bfae";
+  ctx.fillRect(0, 0, 256, 256);
+  const shades = ["#efe8dc", "#e8e0d2", "#f3ede3", "#e3dacb"];
+  for (let row = 0; row < 2; row += 1) {
+    for (let column = 0; column < 2; column += 1) {
+      ctx.fillStyle = shades[(row * 2 + column + row) % shades.length]!;
+      ctx.fillRect(column * 128 + 2, row * 128 + 2, 124, 124);
+    }
+  }
+  speckle(ctx, 256, 1400, ["rgba(255,255,255,0.35)", "rgba(150,140,120,0.18)"], 11);
+  texture.update(true);
+  texture.wrapU = Texture.WRAP_ADDRESSMODE;
+  texture.wrapV = Texture.WRAP_ADDRESSMODE;
+  const material = new PBRMaterial("stone pavers", scene);
+  material.albedoTexture = texture;
+  material.roughness = 0.75;
+  material.metallic = 0;
+  material.environmentIntensity = 0.55;
+  material.zOffset = -3;
   return material;
 }
 
@@ -97,7 +193,21 @@ export function createMaterials(scene: Scene, quality: Quality) {
   neon.unlit = true;
   const carpet = flat(scene, "red carpet", "#9c0f1e", 0.95);
 
+  // Dubai holiday region.
+  const sand = sandMaterial(scene);
+  const promenade = stonePavers(scene);
+  const gulf = flat(scene, "gulf water", "#2f9fae", 0.1, 0.15);
+  gulf.environmentIntensity = 1;
+  const canvas = flat(scene, "tent canvas", "#ffffff", 0.9);
+  canvas.backFaceCulling = false;
+
   return {
+    sand,
+    promenade,
+    gulf,
+    canvas,
+    curtainWall: curtainWall(scene),
+    signBlue: flat(scene, "dubai street sign", "#1d4f91", 0.45),
     water,
     lagoon,
     lamp,

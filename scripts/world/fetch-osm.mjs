@@ -47,6 +47,30 @@ export const EXTRACTS = {
     bbox: "6.4100,3.3950,6.4700,3.4900",
     query: (bbox) => `[out:json][timeout:120][bbox:${bbox}];(way["natural"="coastline"];);out body;>;out skel qt;`,
   },
+  // Dubai holiday region: Dubai Marina, JBR and Bluewaters Island. Projected separately (lat0 25.08, lon0 55.14).
+  "dubai-marina": {
+    file: "dubai-marina-extract.osm.json",
+    bbox: "25.0630,55.1120,25.0940,55.1530",
+    query: (bbox) => `[out:json][timeout:180][bbox:${bbox}];
+(
+  way["highway"];
+  way["building"];
+  way["landuse"];
+  way["leisure"];
+  way["natural"];
+  way["waterway"];
+  way["man_made"="pier"];
+);
+out body;
+>;
+out skel qt;`,
+  },
+  // The Gulf coastline (open chains plus island rings) around the Marina, wide enough that the chain crosses the area once.
+  "dubai-water": {
+    file: "dubai-water-extract.osm.json",
+    bbox: "25.0000,55.0500,25.1600,55.2100",
+    query: (bbox) => `[out:json][timeout:120][bbox:${bbox}];(way["natural"="coastline"];);out body;>;out skel qt;`,
+  },
 };
 
 const wanted = process.argv.slice(2);

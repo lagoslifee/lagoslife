@@ -19,7 +19,20 @@ export type PlaceKind =
   | "park"
   | "club"
   | "police"
-  | "security";
+  | "security"
+  | "airport"
+  | "consulate"
+  | "hotel"
+  | "restaurant"
+  | "cafe"
+  | "boutique"
+  | "souvenir"
+  | "lounge"
+  | "beach"
+  | "marina"
+  | "photo"
+  | "desert"
+  | "car_rental";
 
 export type Place = {
   id: string;
@@ -27,7 +40,7 @@ export type Place = {
   name: string;
   street: string;
   district: DistrictId;
-  /** Mapped footprint the place occupies; null for open areas such as parks. */
+  /** Mapped footprint the place occupies; null for open areas (parks, the beach) and open spots (piers, viewpoints, the desert camp). */
   buildingId: number | null;
   areaId?: number;
   door: Vec2;
@@ -47,21 +60,36 @@ export type TransitStop = {
   alight: Vec2;
 };
 
-export type DistrictId = "lekki-phase-1" | "link-bridge" | "ikoyi" | "victoria-island";
+export type DistrictId = "lekki-phase-1" | "link-bridge" | "ikoyi" | "victoria-island" | "dubai-marina" | "dubai-desert";
+/** Separate parts of the one world map, joined only by flights: Lagos and the Dubai holiday region far to its south. */
+export type RegionId = "lagos" | "dubai";
+export type Rect = { minX: number; maxX: number; minZ: number; maxZ: number };
 export type District = {
   id: DistrictId;
   name: string;
   lga: string;
-  rect: { minX: number; maxX: number; minZ: number; maxZ: number };
+  region: RegionId;
+  rect: Rect;
 };
 
+/** Bounds of every district in both regions. */
 export const WORLD_BOUNDS = lagos.bounds;
+/** District bounds of each region. */
+export const REGION_BOUNDS = lagos.regions as Record<RegionId, Rect>;
 export const DISTRICTS = lagos.districts as District[];
+export const LAGOS_DISTRICTS = DISTRICTS.filter((district) => district.region === "lagos");
+/** Dubai Marina & JBR (from OpenStreetMap) and the fictional desert camp, which no road joins to the Marina. */
+export const DUBAI_DISTRICTS = DISTRICTS.filter((district) => district.region === "dubai");
 /** Edge length of a streamed world tile in metres. */
 export const TILE_SIZE = lagos.tileSize;
 
 export function districtAt(x: number, z: number): District | null {
   return DISTRICTS.find(({ rect }) => x >= rect.minX && x <= rect.maxX && z >= rect.minZ && z <= rect.maxZ) ?? null;
+}
+
+/** Which region a point belongs to: its district's, or by latitude in the open sea between them (Dubai lies south of z = -4000). */
+export function regionAt(x: number, z: number): RegionId {
+  return districtAt(x, z)?.region ?? (z < -4000 ? "dubai" : "lagos");
 }
 
 export function tileKeyAt(x: number, z: number) {
@@ -301,7 +329,7 @@ export const SAFE_POINTS: Array<{ id: string; label: string; point: Vec2 }> = [
   { id: "starter-home", label: "Kayode Court Hostel", point: getPlace("starter-home").door },
   ...STOPS.map((stop) => ({ id: `stop:${stop.id}`, label: stop.name, point: stop.alight })),
   { id: "swift-parcel-hub", label: "Swift Parcel Hub", point: getPlace("swift-parcel-hub").door },
-  ...PLACES.filter((place) => place.district === "ikoyi" || place.district === "victoria-island").map((place) => ({
+  ...PLACES.filter((place) => place.district === "ikoyi" || place.district === "victoria-island" || place.district.startsWith("dubai-")).map((place) => ({
     id: place.id,
     label: place.name,
     point: place.door,

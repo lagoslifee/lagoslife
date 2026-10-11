@@ -7,7 +7,10 @@ import {
   CLUBS,
   districtAt,
   insideBuilding,
+  DUBAI_DISTRICTS,
   PLACES,
+  REGION_BOUNDS,
+  regionAt,
   registerFootprints,
   sampleRoute,
   STOPS,
@@ -17,7 +20,24 @@ import {
 } from "@lagos-living/shared";
 import { densify, hash, MeshBuilderBatch, offsetPolyline, pointAt, polylineLength, slicePolyline } from "./geometry";
 import type { Materials, Quality } from "./materials";
-import { archedWindows, churchTower, clubFront, gableRoof, LANDMARK_PAINT, LANDMARK_TRIM, landmarkFor, modernFront, mosqueDomeAndMinaret, worshipDoor } from "./landmarks";
+import {
+  archedWindows,
+  beachShade,
+  churchTower,
+  clubFront,
+  desertCamp,
+  dhowPier,
+  dune,
+  gableRoof,
+  LANDMARK_PAINT,
+  LANDMARK_TRIM,
+  landmarkFor,
+  modernFront,
+  mosqueDomeAndMinaret,
+  observationWheel,
+  terminalFront,
+  worshipDoor,
+} from "./landmarks";
 import { SignAtlas, type SignStyle, type UvRect } from "./sign-atlas";
 import { findJunctions, waterSampler, type WorldArea, type WorldBuilding, type WorldData, type WorldRoad, type WorldTile } from "./street-index";
 
@@ -60,6 +80,35 @@ const SHOP_NAMES = [
   "Ifeoma Boutique",
 ];
 const SHOP_COLORS = ["#f6efe2", "#ffe7a3", "#d8ecf3", "#fbe0d6", "#e0f0dc"];
+
+/** Above 1 on purpose: the shared plaster and concrete textures are mid-grey, and Dubai's stone and render are near white. */
+const DUBAI_STONE: Color[] = [
+  [1.12, 1.07, 0.97],
+  [1.1, 1.03, 0.91],
+  [1.15, 1.12, 1.06],
+  [1.06, 1.0, 0.88],
+  [1.14, 1.1, 1.03],
+];
+const DUBAI_WHITE: Color = [1.32, 1.32, 1.3];
+const DUBAI_SHOP_NAMES = [
+  "Marina Fresh Market",
+  "Dune Coffee Co.",
+  "Pearl Pharmacy",
+  "Gulf Optics",
+  "Sea Breeze Juices",
+  "Falcon Electronics",
+  "Oasis Salon",
+  "Seaside Sweets",
+  "Sandstone Bakery",
+  "Harbour Exchange",
+];
+const DUBAI_SHOP_COLORS = ["#f7f3ea", "#e6eef2", "#f3e6cf", "#eef3ea"];
+const DUBAI_BLUE = "#1d4f91";
+const DUBAI_COMMERCIAL = new Set(["restaurant", "cafe", "boutique", "souvenir", "car_rental", "lounge"]);
+const DESERT = DUBAI_DISTRICTS.find((district) => district.id === "dubai-desert")?.rect ?? null;
+/** Map features that are not buildings (the observation wheel on Bluewaters). */
+type WorldFeature = { kind: string; point: Vec2; yaw: number; span: number; height: number };
+const isSandTrack = (road: WorldRoad) => (road as WorldRoad & { surface?: string }).surface === "sand";
 
 export const FLOOR_HEIGHT = 3.2;
 const SIDEWALK_Y = 0.16;
@@ -392,6 +441,20 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
   lagoon.material = materials.lagoon;
   lagoon.isPickable = false;
   lagoon.freezeWorldMatrix();
+  // The Gulf off Dubai is turquoise; it stops at the region split so it is never in view from Lagos.
+  const dubaiBounds = REGION_BOUNDS.dubai;
+  if (dubaiBounds) {
+    const minX = dubaiBounds.minX - 2600;
+    const maxX = dubaiBounds.maxX + 2600;
+    const minZ = dubaiBounds.minZ - 2600;
+    const maxZ = -4000;
+    const gulf = MeshBuilder.CreateGround("gulf", { width: maxX - minX, height: maxZ - minZ, subdivisions: 1 }, scene);
+    gulf.position.set((minX + maxX) / 2, -0.38, (minZ + maxZ) / 2);
+    gulf.material = materials.gulf;
+    gulf.isPickable = false;
+    gulf.freezeWorldMatrix();
+  }
+  const features = (data as WorldData & { features?: WorldFeature[] }).features ?? [];
 
   // Frontage compound walls are claimed per road side so neighbours never overlap; results are cached by
   // building so a tile rebuilt after unloading gets the same walls.
@@ -447,6 +510,82 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     return false;
   };
 
+  const sandTracks = data.roads.filter(isSandTrack);
+  const sandTrackDistance = (x: number, z: number) => {
+    let best = Infinity;
+    for (const road of sandTracks) {
+      for (let index = 1; index < road.points.length; index += 1) {
+        const [ax, az] = road.points[index - 1]!;
+        const [bx, bz] = road.points[index]!;
+        const dx = bx - ax;
+        const dz = bz - az;
+        const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+        best = Math.min(best, Math.hypot(ax + dx * t - x, az + dz * t - z) - road.width / 2);
+      }
+    }
+    return best;
+  };
+
+  // Landmarks seen from far across the region are built once rather than with their tile.
+  {
+    const landmarks = new ChunkSet(100_000, "landmarks", [-1e6, -1e6], [1e6, 1e6]);
+    for (const feature of features) {
+      if (feature.kind !== "observation_wheel") continue;
+      const [fx, fz] = feature.point;
+      observationWheel((materialKey) => landmarks.get(fx, fz, materialKey), feature.point, feature.yaw, feature.height);
+      const radius = feature.height * 0.45;
+      for (const side of [-1, 1]) {
+        for (const along of [-1, 1]) {
+          const foot: Vec2 = [
+            fx + Math.sin(feature.yaw) * along * radius * 0.42 + Math.cos(feature.yaw) * side * radius * 0.22,
+            fz + Math.cos(feature.yaw) * along * radius * 0.42 - Math.sin(feature.yaw) * side * radius * 0.22,
+          ];
+          obstacles.add(foot, foot, 2.2);
+        }
+      }
+    }
+    for (const chunk of landmarks.build(scene, materialMap)) {
+      for (const mesh of chunk.meshes) mesh.freezeWorldMatrix();
+    }
+  }
+
+  /** Door edge (the edge closest to the nearest street, or the mapped place frontage) and the door position along it. */
+  const frontageOf = (ring: Vec2[], place: Place | undefined) => {
+    let doorEdge = 0;
+    let doorT = 0.5;
+    let bestScore = Infinity;
+    ring.forEach((a, index) => {
+      const b = ring[(index + 1) % ring.length]!;
+      const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (length < 2.6) return;
+      const nx = (b[1] - a[1]) / length;
+      const nz = -(b[0] - a[0]) / length;
+      const mx = (a[0] + b[0]) / 2 + nx * 1.5;
+      const mz = (a[1] + b[1]) / 2 + nz * 1.5;
+      let score: number;
+      if (place) {
+        score = Math.hypot(mx - place.facade[0], mz - place.facade[1]);
+      } else {
+        const near = roads.nearest(mx, mz);
+        score = near ? near.distance - Math.min(length, 12) * 0.3 : 999;
+      }
+      if (score < bestScore) {
+        bestScore = score;
+        doorEdge = index;
+      }
+    });
+    {
+      const a = ring[doorEdge]!;
+      const b = ring[(doorEdge + 1) % ring.length]!;
+      const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (place) {
+        const t = ((place.facade[0] - a[0]) * (b[0] - a[0]) + (place.facade[1] - a[1]) * (b[1] - a[1])) / (length * length);
+        doorT = Math.max(1 / length, Math.min(1 - 1 / length, t));
+      }
+    }
+    return { doorEdge, doorT };
+  };
+
   function buildTile(key: string, content: WorldTile | null): LoadedTile {
   const [tx, tz] = key.split("_").map(Number) as [number, number];
   const x0 = tx * TILE;
@@ -465,6 +604,10 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
   const tankInstances: Array<[number, number, number]> = [];
   const placeSigns: BuiltWorld["placeSigns"] = [];
   const signUv = (text: string, style: SignStyle, sub?: string, color?: string) => atlas.get(text, style, sub, color, key);
+  const dubai = regionAt(x0 + TILE / 2, z0 + TILE / 2) === "dubai";
+  const nearDesert = Boolean(dubai && DESERT && x0 + TILE > DESERT.minX - 700 && x0 < DESERT.maxX + 700 && z0 + TILE > DESERT.minZ - 700 && z0 < DESERT.maxZ + 700);
+  const groundTint: Color | undefined = !dubai ? undefined : nearDesert ? [1.02, 0.9, 0.72] : [1, 0.97, 0.92];
+  const modernLights: Array<[number, number, number]> = [];
 
   // Land: full cells merge into row strips; shoreline cells use marching squares on the water samples.
   {
@@ -473,7 +616,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     const c0 = Math.round((x0 - grid.originX) / cell);
     const r0 = Math.round((z0 - grid.originZ) / cell);
     const n = Math.round(TILE / cell);
-    const ground = base.get(x0 + TILE / 2, z0 + TILE / 2, "dirt");
+    const ground = base.get(x0 + TILE / 2, z0 + TILE / 2, dubai ? "sand" : "dirt");
     for (let row = 0; row < n; row += 1) {
       let runStart = -1;
       const zA = grid.originZ + (r0 + row) * cell;
@@ -482,7 +625,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
         if (runStart < 0) return;
         const xA = grid.originX + (c0 + runStart) * cell;
         const xB = grid.originX + (c0 + end) * cell;
-        ground.polygon([[xA, zA], [xB, zA], [xB, zB], [xA, zB]], 0, 7);
+        ground.polygon([[xA, zA], [xB, zA], [xB, zB], [xA, zB]], 0, 7, groundTint);
         runStart = -1;
       };
       for (let col = 0; col < n; col += 1) {
@@ -507,7 +650,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
           if (!corners[corner]) ring.push(p);
           if (corners[corner] !== corners[next]) ring.push([(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]);
         }
-        if (ring.length >= 3) ground.polygon(ring, 0, 7);
+        if (ring.length >= 3) ground.polygon(ring, 0, 7, groundTint);
       }
       flushRun(n);
     }
@@ -516,6 +659,20 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
   for (const area of content?.areas ?? []) {
     const [cx, cz] = centroid(area.points);
     const ring = shoelace(area.points) < 0 ? [...area.points].reverse() : area.points;
+    if (dubai) {
+      if (["beach", "sand", "beach_resort", "shingle"].includes(area.kind)) base.get(cx, cz, "sand").polygon(ring, 0.02, 6, [1.06, 0.96, 0.8]);
+      else if (area.kind === "pier") {
+        base.get(cx, cz, "wood").polygon(ring, 0.07, 3, [1.35, 1.2, 1.05]);
+        base.get(cx, cz, "wood").polygon(ring, -0.25, 3, [0.7, 0.6, 0.5], true);
+      } else if (["pitch", "park", "garden", "grass", "playground", "dog_park", "grassland", "recreation_ground", "golf_course", "village_green"].includes(area.kind)) {
+        base.get(cx, cz, "grass").polygon(ring, 0.012, 5, [0.9, 1.05, 0.85]);
+      } else if (area.kind === "swimming_pool" || area.kind === "water") {
+        base.get(cx, cz, "water").polygon(ring, 0.05, 4);
+      } else if (area.kind === "construction" || area.kind === "brownfield") {
+        base.get(cx, cz, "sand").polygon(ring, 0.01, 4, [0.92, 0.82, 0.66]);
+      }
+      continue;
+    }
     if (["pitch", "recreation_ground", "greenfield", "park", "garden", "golf_course", "grass", "village_green"].includes(area.kind)) {
       base.get(cx, cz, "grass").polygon(ring, 0.012, 5);
     } else if (area.kind === "swimming_pool") {
@@ -562,8 +719,47 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       }
     }
 
+    if (road.kind === "footway" && dubai) {
+      base.get(mx, mz, "promenade").worldRibbon(dense, -road.width / 2, road.width / 2, 0.05, 2.5);
+      if (road.width < 5 || road.bridge) continue;
+      // The waterfront promenade: a glass balustrade on the water side, palms on the land side.
+      const span = polylineLength(dense);
+      for (const side of [1, -1]) {
+        const edge = side * (road.width / 2 - 0.15);
+        const keep = offsetPolyline(dense, side * (road.width / 2 + 4)).map(([x, z]) => overWater(x, z));
+        let run: Vec2[] = [];
+        const flush = () => {
+          if (run.length >= 2) {
+            const [rx, rz] = run[Math.floor(run.length / 2)]!;
+            base.get(rx, rz, "glass").curtain(run, edge, 0.05, 1.1, 2, side < 0);
+            base.get(rx, rz, "glass").curtain(run, edge, 0.05, 1.1, 2, side > 0);
+            base.get(rx, rz, "chrome").worldRibbon(run, edge - 0.05, edge + 0.05, 1.12, 1);
+          }
+          run = [];
+        };
+        dense.forEach((point, index) => {
+          if (keep[index]) run.push(point);
+          else flush();
+        });
+        flush();
+        for (let s = 5; s < span; s += 18) {
+          const p = pointAt(dense, s);
+          const x = p.x + p.dz * side * (road.width / 2 + 1.4);
+          const z = p.z - p.dx * side * (road.width / 2 + 1.4);
+          if (overWater(x, z) || roads.onAsphalt(x, z, 1.4) || insideBuilding(x, z, 0.5)) continue;
+          palms.push([x, z, 0.55 + hash(Math.round(x * 13 + z * 7)) * 0.2]);
+        }
+      }
+      continue;
+    }
     if (road.kind === "footway") {
       base.get(mx, mz, "pavers").worldRibbon(dense, -road.width / 2, road.width / 2, 0.05, 2.5);
+      continue;
+    }
+    if (isSandTrack(road)) {
+      base.get(mx, mz, "sand").worldRibbon(dense, -road.width / 2, road.width / 2, 0.03, 5, [0.86, 0.72, 0.54]);
+      base.get(mx, mz, "sand").worldRibbon(dense, -road.width / 2 - 1.2, -road.width / 2, 0.015, 5, [0.94, 0.82, 0.64]);
+      base.get(mx, mz, "sand").worldRibbon(dense, road.width / 2, road.width / 2 + 1.2, 0.015, 5, [0.94, 0.82, 0.64]);
       continue;
     }
     const y = ROAD_Y[road.kind] ?? 0.03;
@@ -586,12 +782,21 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
             const [rx, rz] = run[Math.floor(run.length / 2)]!;
             const left = side > 0 ? inner : -outer;
             const right = side > 0 ? outer : -inner;
-            base.get(rx, rz, "pavers").worldRibbon(run, left, right, SIDEWALK_Y, 2.2);
-            base.get(rx, rz, "concrete").curtain(run, side * inner, 0, SIDEWALK_Y, 1.5, side > 0);
-            base.get(rx, rz, "concrete").curtain(run, side * outer, 0, SIDEWALK_Y, 1.5, side < 0);
             const drainLeft = side > 0 ? road.width / 2 : -inner;
             const drainRight = side > 0 ? inner : -road.width / 2;
-            base.get(rx, rz, "drain").worldRibbon(run, drainLeft, drainRight, 0.015, 1.2);
+            if (dubai) {
+              const kerbWhite: Color = [1.12, 1.12, 1.12];
+              base.get(rx, rz, "promenade").worldRibbon(run, left, right, SIDEWALK_Y, 2.2);
+              base.get(rx, rz, "concrete").curtain(run, side * inner, 0, SIDEWALK_Y, 1.5, side > 0, kerbWhite);
+              base.get(rx, rz, "concrete").curtain(run, side * outer, 0, SIDEWALK_Y, 1.5, side < 0, kerbWhite);
+              base.get(rx, rz, "concrete").worldRibbon(run, side > 0 ? inner : -inner - 0.2, side > 0 ? inner + 0.2 : -inner, SIDEWALK_Y + 0.02, 1, kerbWhite);
+              base.get(rx, rz, "asphaltMinor").worldRibbon(run, drainLeft, drainRight, 0.02, 1.2, [0.82, 0.83, 0.85]);
+            } else {
+              base.get(rx, rz, "pavers").worldRibbon(run, left, right, SIDEWALK_Y, 2.2);
+              base.get(rx, rz, "concrete").curtain(run, side * inner, 0, SIDEWALK_Y, 1.5, side > 0);
+              base.get(rx, rz, "concrete").curtain(run, side * outer, 0, SIDEWALK_Y, 1.5, side < 0);
+              base.get(rx, rz, "drain").worldRibbon(run, drainLeft, drainRight, 0.015, 1.2);
+            }
           }
           run = [];
         };
@@ -628,6 +833,30 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       }
     }
 
+    if (dubai) {
+      // Clean, regular planting: palms on both kerbs and slim twin-head lights between them.
+      if (road.kind === "service" || road.bridge || !sidewalkRoads.has(road.kind)) continue;
+      const verge = road.width / 2 + 0.55 + sidewalkWidth(road) - 0.5;
+      const step = road.kind === "residential" ? 30 : 24;
+      for (const side of [1, -1]) {
+        for (let s = 4; s < length; s += step) {
+          const p = pointAt(dense, s);
+          const x = p.x + p.dz * side * verge;
+          const z = p.z - p.dx * side * verge;
+          if (roads.onAsphalt(x, z, 1.4) || insideBuilding(x, z, 0.3) || overWater(x, z)) continue;
+          palms.push([x, z, 0.5 + hash(Math.round(x * 13 + z * 7)) * 0.25]);
+        }
+        if (road.kind === "residential") continue;
+        for (let s = 16; s < length; s += 48) {
+          const p = pointAt(dense, s);
+          const x = p.x + p.dz * side * verge;
+          const z = p.z - p.dx * side * verge;
+          if (roads.onAsphalt(x, z, 1.0, road) || insideBuilding(x, z, 0.3) || overWater(x, z)) continue;
+          modernLights.push([x, z, Math.atan2(-p.dz * side, p.dx * side)]);
+        }
+      }
+      continue;
+    }
     if (road.kind === "primary") {
       for (let s = 6; s < length; s += 13) {
         const p = pointAt(dense, s);
@@ -687,7 +916,18 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
   }
 
   for (const building of content?.buildings ?? []) {
-    buildBuilding(building);
+    if (dubai) buildDubaiBuilding(building);
+    else buildBuilding(building);
+  }
+
+  /** A blue name board standing on top of a terminal canopy. */
+  function terminalSign(place: Place, f: { x: number; z: number; nx: number; nz: number; yaw: number }, height: number, cx: number, cz: number) {
+    const width = 9;
+    const signY = height + 1.0;
+    const sx = f.x + f.nx * 8.4;
+    const sz = f.z + f.nz * 8.4;
+    base.get(cx, cz, "signBlue").box(sx, signY, sz, width + 0.4, width / SignAtlas.aspect + 0.3, 0.2, f.yaw);
+    textQuad(base.get(cx, cz, "signs"), sx + f.nx * 0.11, signY, sz + f.nz * 0.11, f.yaw, width, width / SignAtlas.aspect, signUv(place.name, "plate", place.street, DUBAI_BLUE));
   }
 
   function buildBuilding(building: WorldBuilding) {
@@ -712,6 +952,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     if (landmark === "church") floors = Math.max(floors, 2);
     // A prayer hall reads as a mosque only if its dome clears the roofline from the street.
     if (landmark === "mosque") floors = 2;
+    if (landmark === "terminal") floors = 2;
     const height = floors * FLOOR_HEIGHT + 0.3;
     const paint = landmark ? LANDMARK_PAINT[landmark] : PAINTS[Math.floor(hash(building.id * 7) * PAINTS.length)]!;
     const trim: Color = landmark ? LANDMARK_TRIM[landmark] : hash(building.id * 11) > 0.5 ? [0.98, 0.98, 0.97] : [0.62, 0.6, 0.57];
@@ -729,39 +970,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       return;
     }
 
-    // Door edge: the edge closest to the nearest street, or the mapped place frontage.
-    let doorEdge = 0;
-    let doorT = 0.5;
-    let bestScore = Infinity;
-    ring.forEach((a, index) => {
-      const b = ring[(index + 1) % ring.length]!;
-      const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      if (length < 2.6) return;
-      const nx = (b[1] - a[1]) / length;
-      const nz = -(b[0] - a[0]) / length;
-      const mx = (a[0] + b[0]) / 2 + nx * 1.5;
-      const mz = (a[1] + b[1]) / 2 + nz * 1.5;
-      let score: number;
-      if (place) {
-        score = Math.hypot(mx - place.facade[0], mz - place.facade[1]);
-      } else {
-        const near = roads.nearest(mx, mz);
-        score = near ? near.distance - Math.min(length, 12) * 0.3 : 999;
-      }
-      if (score < bestScore) {
-        bestScore = score;
-        doorEdge = index;
-      }
-    });
-    {
-      const a = ring[doorEdge]!;
-      const b = ring[(doorEdge + 1) % ring.length]!;
-      const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      if (place) {
-        const t = ((place.facade[0] - a[0]) * (b[0] - a[0]) + (place.facade[1] - a[1]) * (b[1] - a[1])) / (length * length);
-        doorT = Math.max(1 / length, Math.min(1 - 1 / length, t));
-      }
-    }
+    const { doorEdge, doorT } = frontageOf(ring, place);
     const doorA = ring[doorEdge]!;
     const doorB = ring[(doorEdge + 1) % ring.length]!;
     const doorLength = Math.hypot(doorB[0] - doorA[0], doorB[1] - doorA[1]);
@@ -817,6 +1026,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       }
 
       if (landmark === "club") return;
+      if (landmark === "terminal" && index === doorEdge) return;
       if (landmark === "church" || landmark === "mosque") {
         archedWindows((key) => base.get(cx, cz, key), a, b, height, index === doorEdge ? { t: doorT * length, half: 2.6 } : null);
         return;
@@ -982,6 +1192,9 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       textQuad(base.get(cx, cz, "signs"), doorX + doorNx * 0.205, signY, doorZ + doorNz * 0.205, doorYaw, signWidth, signWidth / SignAtlas.aspect, uv);
     } else if (landmark === "church" || landmark === "mosque") {
       worshipDoor(landmarkGet, facade);
+    } else if (landmark === "terminal") {
+      terminalFront(landmarkGet, facade, { a: doorA, b: doorB }, height);
+      terminalSign(place!, facade, height, cx, cz);
     } else if (shopfront) {
       const width = Math.min(doorLength - 0.8, 9);
       const centreT = Math.max(width / 2 + 0.4, Math.min(doorLength - width / 2 - 0.4, doorT * doorLength));
@@ -1143,6 +1356,274 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     }
   }
 
+  /**
+   * Dubai: curtain-wall towers on stone podiums (setbacks, crowns and spires by height) and pale stone low-rise with
+   * strip windows. No compound walls, AC units, burglar bars, tanks or tin roofs.
+   */
+  function buildDubaiBuilding(building: WorldBuilding) {
+    const ring = shoelace(building.points) < 0 ? [...building.points].reverse() : building.points;
+    const area = Math.abs(shoelace(ring));
+    const [cx, cz] = centroid(ring);
+    const seed = hash(building.id);
+    const place = placeByBuilding.get(building.id);
+    const get = (materialKey: string) => base.get(cx, cz, materialKey);
+    const stone = DUBAI_STONE[Math.floor(hash(building.id * 7) * DUBAI_STONE.length)]!;
+    const white = DUBAI_WHITE;
+    if (building.kind === "roof") {
+      get("concrete").polygon(ring, 4.6, 4, white);
+      get("concrete").polygon(ring, 4.4, 4, white, true);
+      for (const [x, z] of ring) get("frame").box(x, 2.25, z, 0.3, 4.5, 0.3);
+      return;
+    }
+    let floors = building.levels ?? 0;
+    if (!floors) {
+      if (building.kind === "hotel") floors = 12 + Math.floor(seed * 18);
+      else if (building.kind === "apartments" || building.kind === "residential") floors = area > 700 ? 10 + Math.floor(seed * 20) : 4 + Math.floor(seed * 4);
+      else if (building.kind === "office" || building.kind === "commercial") floors = area > 900 ? 12 + Math.floor(seed * 10) : 3;
+      else if (area > 2500) floors = 3;
+      else floors = 2 + Math.floor(seed * 2);
+    }
+    floors = Math.min(floors, 90);
+    const terminal = place?.kind === "airport";
+    if (terminal) floors = 2;
+    if (place?.id === "marina-crown-hotel") floors = Math.max(floors, 48);
+    const tower = floors >= 10;
+    const height = floors * FLOOR_HEIGHT + 0.3;
+    const { doorEdge, doorT } = frontageOf(ring, place);
+    const doorA = ring[doorEdge]!;
+    const doorB = ring[(doorEdge + 1) % ring.length]!;
+    const doorLength = Math.hypot(doorB[0] - doorA[0], doorB[1] - doorA[1]);
+    const doorNx = (doorB[1] - doorA[1]) / doorLength;
+    const doorNz = -(doorB[0] - doorA[0]) / doorLength;
+    const doorX = doorA[0] + (doorB[0] - doorA[0]) * doorT;
+    const doorZ = doorA[1] + (doorB[1] - doorA[1]) * doorT;
+    const ex = (doorB[0] - doorA[0]) / doorLength;
+    const ez = (doorB[1] - doorA[1]) / doorLength;
+    const doorYaw = Math.atan2(doorNx, doorNz);
+    const facade = { x: doorX, z: doorZ, nx: doorNx, nz: doorNz, ex, ez, yaw: doorYaw };
+    const frontRoad = roads.nearest(doorX + doorNx * 2, doorZ + doorNz * 2);
+    const onMainRoad = frontRoad && ["primary", "primary_link", "tertiary"].includes(frontRoad.road.kind) && frontRoad.distance < 32;
+    const shopfront =
+      (place && DUBAI_COMMERCIAL.has(place.kind)) ||
+      (!place && onMainRoad && ["retail", "commercial", "restaurant", "yes"].includes(building.kind) && hash(building.id * 5) > 0.4);
+
+    const edges = (points: Vec2[], visit: (a: Vec2, b: Vec2, length: number, nx: number, nz: number, index: number) => void) => {
+      points.forEach((a, index) => {
+        const b = points[(index + 1) % points.length]!;
+        const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (length < 0.05) return;
+        visit(a, b, length, (b[1] - a[1]) / length, -(b[0] - a[0]) / length, index);
+      });
+    };
+    /** A projecting horizontal band (cornice, floor band, spandrel line) round a ring. */
+    const band = (points: Vec2[], y0: number, y1: number, out: number, color: Color) => {
+      const trims = get("concrete");
+      edges(points, (a, b, length, nx, nz) => {
+        trims.wall(a[0] + nx * out, a[1] + nz * out, b[0] + nx * out, b[1] + nz * out, y0, y1, 1.5, color);
+        trims.quad([a[0], y1, a[1]], [b[0], y1, b[1]], [b[0] + nx * out, y1, b[1] + nz * out], [a[0] + nx * out, y1, a[1] + nz * out], [0, 1, 0], [[0, 0], [length, 0], [length, out], [0, out]], color);
+      });
+    };
+    /** Upstand round a roof edge: outer face, inner face and cap. */
+    const upstand = (points: Vec2[], y0: number, y1: number, materialKey: string, color?: Color) => {
+      const batch = get(materialKey);
+      edges(points, (a, b, length, nx, nz) => {
+        const ix = -nx * 0.2;
+        const iz = -nz * 0.2;
+        batch.wall(a[0], a[1], b[0], b[1], y0, y1, 2.5, color);
+        batch.wall(b[0] + ix, b[1] + iz, a[0] + ix, a[1] + iz, y0, y1, 2.5, color);
+        batch.quad([a[0], y1, a[1]], [b[0], y1, b[1]], [b[0] + ix, y1, b[1] + iz], [a[0] + ix, y1, a[1] + iz], [0, 1, 0], [[0, 0], [length, 0], [length, 0.2], [0, 0.2]], color);
+      });
+    };
+
+    if (tower) {
+      const lobby = 2 * FLOOR_HEIGHT;
+      const setbackFloors = floors >= 40 ? Math.round(floors * 0.82) : floors;
+      const setbackY = setbackFloors * FLOOR_HEIGHT + 0.3;
+      const upper: Vec2[] = ring.map(([x, z]) => [cx + (x - cx) * 0.8, cz + (z - cz) * 0.8]);
+      const top = setbackFloors < floors ? upper : ring;
+      const stoneWalls = get("plaster");
+      const curtain = get("curtainWall");
+      const fins = get("frame");
+      const finEvery = ring.length <= 16 ? 1 : Math.ceil(ring.length / 12);
+      edges(ring, (a, b, length, nx, nz, index) => {
+        stoneWalls.wall(a[0], a[1], b[0], b[1], 0, lobby, 2.5, stone);
+        if (index === doorEdge || length > 8) {
+          get("glass").quad(
+            [a[0] + nx * 0.04 + (b[0] - a[0]) * (0.6 / length), 0.3, a[1] + nz * 0.04 + (b[1] - a[1]) * (0.6 / length)],
+            [b[0] + nx * 0.04 - (b[0] - a[0]) * (0.6 / length), 0.3, b[1] + nz * 0.04 - (b[1] - a[1]) * (0.6 / length)],
+            [b[0] + nx * 0.04 - (b[0] - a[0]) * (0.6 / length), lobby - 0.7, b[1] + nz * 0.04 - (b[1] - a[1]) * (0.6 / length)],
+            [a[0] + nx * 0.04 + (b[0] - a[0]) * (0.6 / length), lobby - 0.7, a[1] + nz * 0.04 + (b[1] - a[1]) * (0.6 / length)],
+            [nx, 0, nz],
+            [[0, 0], [1, 0], [1, 1], [0, 1]],
+          );
+        }
+        curtain.wall(a[0], a[1], b[0], b[1], lobby, setbackY, FLOOR_HEIGHT);
+        windows += 1;
+        if (index % finEvery === 0) fins.box(a[0], (lobby + setbackY) / 2, a[1], 0.5, setbackY - lobby, 0.5, Math.atan2(nx, nz), 1, white);
+      });
+      band(ring, lobby - 0.2, lobby + 0.35, 0.3, stone);
+      for (let floor = 10; floor < setbackFloors; floor += 10) band(ring, floor * FLOOR_HEIGHT, floor * FLOOR_HEIGHT + 0.45, 0.14, white);
+      if (top === upper) {
+        get("concrete").polygon(ring, setbackY, 4, [1.15, 1.15, 1.13]);
+        upstand(ring, setbackY, setbackY + 1.1, "glass");
+        edges(upper, (a, b, _length, nx, nz, index) => {
+          curtain.wall(a[0], a[1], b[0], b[1], setbackY, height, FLOOR_HEIGHT);
+          windows += 1;
+          if (index % finEvery === 0) fins.box(a[0], (setbackY + height) / 2, a[1], 0.45, height - setbackY, 0.45, Math.atan2(nx, nz), 1, white);
+        });
+      }
+      get("concrete").polygon(top, height, 4, [1.1, 1.1, 1.1]);
+      band(top, height - 0.2, height + 0.25, 0.2, white);
+      const obb = orientedBox(top);
+      const crown = floors >= 25 ? 3 + floors * 0.08 : 1.2;
+      if (floors >= 25) {
+        // The crown: an open aluminium screen round the roof with a lit ring at its top.
+        const screen: Vec2[] = top.map(([x, z]) => [obb.cx + (x - obb.cx) * 0.96, obb.cz + (z - obb.cz) * 0.96]);
+        upstand(screen, height, height + crown, "frame", white);
+        edges(screen, (a, b) => get("neon").wall(a[0], a[1], b[0], b[1], height + crown - 0.35, height + crown - 0.15, 1, [0.82, 0.92, 1]));
+      } else {
+        upstand(top, height, height + crown, "plaster", stone);
+      }
+      get("concrete").box(obb.cx, height + 1.4, obb.cz, Math.min(obb.hu, 7), 2.8, Math.min(obb.hv, 7), Math.atan2(obb.ux, obb.uz), 2, [1.2, 1.2, 1.18]);
+      if (floors >= 50) {
+        const spire = 12 + floors * 0.35;
+        fins.box(obb.cx, height + crown + spire / 2, obb.cz, 1.1, spire, 1.1, 0, 1, white);
+        get("neon").box(obb.cx, height + crown + spire + 0.3, obb.cz, 0.7, 0.7, 0.7, 0, 1, [1, 0.12, 0.1]);
+      }
+      if (place?.kind === "lounge") {
+        edges(top, (a, b, _length, nx, nz) =>
+          get("neon").wall(a[0] + nx * 0.12, a[1] + nz * 0.12, b[0] + nx * 0.12, b[1] + nz * 0.12, height - 1.6, height - 0.5, 1, [0.35, 0.85, 1]),
+        );
+      }
+      if (place && (place.kind === "hotel" || place.kind === "lounge")) {
+        // Name lettering high on the street face.
+        const signWidth = Math.min(doorLength * (top === upper ? 0.8 : 1) - 2, 20);
+        if (signWidth > 4) {
+          const scale = top === upper ? 0.8 : 1;
+          const sx = obb.cx + (doorX - obb.cx) * scale + doorNx * 0.35;
+          const sz = obb.cz + (doorZ - obb.cz) * scale + doorNz * 0.35;
+          textQuad(get("signs"), sx, height - 3.2, sz, doorYaw, signWidth, signWidth / SignAtlas.aspect, signUv(place.name, "plate", undefined, "#0f2236"));
+        }
+      }
+    } else {
+      const parapet = 1.0;
+      const walls = get("plaster");
+      const glass = get("glass");
+      edges(ring, (a, b, length, nx, nz, index) => {
+        walls.wall(a[0], a[1], b[0], b[1], 0.3, height + parapet, 2.5, stone);
+        if (length < 3) return;
+        const ux = (b[0] - a[0]) / length;
+        const uz = (b[1] - a[1]) / length;
+        for (let floor = 0; floor < floors; floor += 1) {
+          if (floor === 0 && index === doorEdge) continue;
+          const sill = floor * FLOOR_HEIGHT + 0.95;
+          const topY = sill + 1.6;
+          const inset = Math.min(1.2, length * 0.15);
+          windows += 1;
+          glass.quad(
+            [a[0] + ux * inset + nx * 0.03, sill, a[1] + uz * inset + nz * 0.03],
+            [b[0] - ux * inset + nx * 0.03, sill, b[1] - uz * inset + nz * 0.03],
+            [b[0] - ux * inset + nx * 0.03, topY, b[1] - uz * inset + nz * 0.03],
+            [a[0] + ux * inset + nx * 0.03, topY, a[1] + uz * inset + nz * 0.03],
+            [nx, 0, nz],
+            [[0, 0], [1, 0], [1, 1], [0, 1]],
+          );
+          get("darkFrame").wall(a[0] + ux * inset + nx * 0.06, a[1] + uz * inset + nz * 0.06, b[0] - ux * inset + nx * 0.06, b[1] - uz * inset + nz * 0.06, topY, topY + 0.08, 1);
+        }
+      });
+      band(ring, 0, 0.3, 0.08, [1.0, 0.97, 0.92]);
+      for (let floor = 1; floor < floors; floor += 1) band(ring, floor * FLOOR_HEIGHT + 0.05, floor * FLOOR_HEIGHT + 0.3, 0.1, white);
+      edges(ring, (a, b, length, nx, nz) => {
+        const ix = -nx * 0.22;
+        const iz = -nz * 0.22;
+        walls.wall(b[0] + ix, b[1] + iz, a[0] + ix, a[1] + iz, height, height + parapet, 2.5, stone);
+        get("concrete").quad(
+          [a[0] + nx * 0.06, height + parapet, a[1] + nz * 0.06],
+          [b[0] + nx * 0.06, height + parapet, b[1] + nz * 0.06],
+          [b[0] + ix, height + parapet, b[1] + iz],
+          [a[0] + ix, height + parapet, a[1] + iz],
+          [0, 1, 0],
+          [[0, 0], [length, 0], [length, 0.3], [0, 0.3]],
+          white,
+        );
+      });
+      get("concrete").polygon(ring, height, 4, [1.15, 1.15, 1.12]);
+    }
+
+    // Entrances: terminal canopies, glass shopfronts with fascia signs, or glazed lobby doors under a canopy.
+    if (terminal) {
+      terminalFront(get, facade, { a: doorA, b: doorB }, height);
+      terminalSign(place!, facade, height, cx, cz);
+    } else if (shopfront) {
+      const width = Math.min(doorLength - 0.8, 10);
+      const centreT = Math.max(width / 2 + 0.4, Math.min(doorLength - width / 2 - 0.4, doorT * doorLength));
+      const sx = doorA[0] + ex * centreT;
+      const sz = doorA[1] + ez * centreT;
+      if (width > 1.5) {
+        get("glass").quad(
+          [sx - ex * width / 2 + doorNx * 0.05, 0.3, sz - ez * width / 2 + doorNz * 0.05],
+          [sx + ex * width / 2 + doorNx * 0.05, 0.3, sz + ez * width / 2 + doorNz * 0.05],
+          [sx + ex * width / 2 + doorNx * 0.05, 3.0, sz + ez * width / 2 + doorNz * 0.05],
+          [sx - ex * width / 2 + doorNx * 0.05, 3.0, sz - ez * width / 2 + doorNz * 0.05],
+          [doorNx, 0, doorNz],
+          [[0, 0], [1, 0], [1, 1], [0, 1]],
+        );
+        const mullions = detail.get(cx, cz, "chrome");
+        for (let offset = -width / 2; offset <= width / 2 + 0.01; offset += width / Math.max(1, Math.round(width / 2.5))) {
+          mullions.box(sx + ex * offset + doorNx * 0.08, 1.65, sz + ez * offset + doorNz * 0.08, 0.06, 2.7, 0.08, doorYaw, 1, undefined, true);
+        }
+        const name = place?.name ?? DUBAI_SHOP_NAMES[Math.floor(hash(building.id * 37) * DUBAI_SHOP_NAMES.length)]!;
+        const signColor = DUBAI_SHOP_COLORS[Math.floor(hash(building.id * 19) * DUBAI_SHOP_COLORS.length)]!;
+        const signWidth = Math.min(width, 5.6);
+        get("darkFrame").box(sx + doorNx * 0.12, 3.6, sz + doorNz * 0.12, width + 0.3, 0.9, 0.2, doorYaw);
+        textQuad(get("signs"), sx + doorNx * 0.32, 3.6, sz + doorNz * 0.32, doorYaw, signWidth, signWidth / SignAtlas.aspect, signUv(name, "shop", place ? place.street : undefined, signColor));
+        get("concrete").box(sx + doorNx * 0.9, 3.12, sz + doorNz * 0.9, width + 0.4, 0.12, 1.8, doorYaw, 1, white);
+      }
+    } else {
+      const doorWidth = tower || building.kind === "hotel" ? 2.6 : 1.8;
+      get("glass").quad(
+        [doorX - ex * doorWidth / 2 + doorNx * 0.06, 0.3, doorZ - ez * doorWidth / 2 + doorNz * 0.06],
+        [doorX + ex * doorWidth / 2 + doorNx * 0.06, 0.3, doorZ + ez * doorWidth / 2 + doorNz * 0.06],
+        [doorX + ex * doorWidth / 2 + doorNx * 0.06, 2.9, doorZ + ez * doorWidth / 2 + doorNz * 0.06],
+        [doorX - ex * doorWidth / 2 + doorNx * 0.06, 2.9, doorZ - ez * doorWidth / 2 + doorNz * 0.06],
+        [doorNx, 0, doorNz],
+        [[0, 0], [1, 0], [1, 1], [0, 1]],
+      );
+      const frame = detail.get(cx, cz, "chrome");
+      frame.box(doorX + doorNx * 0.09, 2.95, doorZ + doorNz * 0.09, doorWidth + 0.2, 0.1, 0.1, doorYaw, 1, undefined, true);
+      for (const side of [-1, 0, 1]) frame.box(doorX + ex * side * doorWidth / 2 + doorNx * 0.09, 1.6, doorZ + ez * side * doorWidth / 2 + doorNz * 0.09, 0.07, 2.6, 0.1, doorYaw, 1, undefined, true);
+      get("concrete").box(doorX + doorNx * 0.5, 0.15, doorZ + doorNz * 0.5, doorWidth + 1.2, 0.3, 1.0, doorYaw, 1, [1.2, 1.18, 1.12], true);
+      if (place?.kind === "hotel") {
+        // Porte-cochère: a deep white canopy on slim columns over the drop-off.
+        const depth = 7;
+        const span = Math.min(12, Math.max(8, doorLength * 0.6));
+        const canopyY = Math.min(height - 0.4, 5.2);
+        get("concrete").box(doorX + doorNx * depth / 2, canopyY, doorZ + doorNz * depth / 2, span, 0.45, depth, doorYaw, 2, white);
+        get("lamp").box(doorX + doorNx * depth / 2, canopyY - 0.24, doorZ + doorNz * depth / 2, span - 1.5, 0.02, depth - 1.5, doorYaw);
+        for (const side of [-1, 1]) {
+          const px = doorX + doorNx * (depth - 0.6) + ex * side * (span / 2 - 0.6);
+          const pz = doorZ + doorNz * (depth - 0.6) + ez * side * (span / 2 - 0.6);
+          get("frame").box(px, canopyY / 2, pz, 0.4, canopyY, 0.4, doorYaw, 1, white);
+          addObstacle([px, pz], [px, pz], 0.25);
+        }
+        if (!tower) {
+          const signWidth = Math.min(span - 1, 6);
+          textQuad(get("signs"), doorX + doorNx * (depth + 0.24), canopyY + 0.75, doorZ + doorNz * (depth + 0.24), doorYaw, signWidth, signWidth / SignAtlas.aspect, signUv(place.name, "plate", place.street, "#0f2236"));
+        }
+      } else {
+        get("concrete").box(doorX + doorNx * 0.9, 3.25, doorZ + doorNz * 0.9, doorWidth + 1.6, 0.16, 1.8, doorYaw, 1, white);
+      }
+    }
+
+    if (place) {
+      placeSigns.push({ placeId: place.id, point: place.door });
+      if (!shopfront && !terminal) {
+        const plateAt = Math.min(2.4, doorLength / 2 - 0.2);
+        textQuad(get("signs"), doorX + ex * plateAt + doorNx * 0.05, 2.0, doorZ + ez * plateAt + doorNz * 0.05, doorYaw, 1.3, 1.3 / SignAtlas.aspect, signUv(place.name, "plate", place.street));
+      }
+    }
+  }
+
   // Junction street-name signs, one blade per named street.
   const junctionSigns: BuiltWorld["junctionSigns"] = [];
   for (const junction of tileJunctions) {
@@ -1173,12 +1654,12 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       const dir = dirs[index]!;
       const y = 3.0 - index * 0.36;
       const yawAlong = Math.atan2(dir[0], dir[1]);
-      const uv = signUv(road.name!, "street", districtAt(px, pz)?.name ?? "Lagos");
+      const uv = dubai ? signUv(road.name!, "street", districtAt(px, pz)?.name ?? "Dubai", DUBAI_BLUE) : signUv(road.name!, "street", districtAt(px, pz)?.name ?? "Lagos");
       const width = 1.7;
       const height = width / SignAtlas.aspect * 1.25;
       const cxBlade = px + dir[0] * (width / 2 - 0.1);
       const czBlade = pz + dir[1] * (width / 2 - 0.1);
-      base.get(px, pz, "signGreen").box(cxBlade, y, czBlade, 0.03, height, width, yawAlong);
+      base.get(px, pz, dubai ? "signBlue" : "signGreen").box(cxBlade, y, czBlade, 0.03, height, width, yawAlong);
       const normalYaw = yawAlong + Math.PI / 2;
       const signs = base.get(px, pz, "signs");
       textQuad(signs, cxBlade + Math.sin(normalYaw) * 0.017, y, czBlade + Math.cos(normalYaw) * 0.017, normalYaw, width, height, uv);
@@ -1188,7 +1669,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
   }
 
   // Open-area venues (parks): a name board at the gate and benches just inside.
-  for (const place of PLACES.filter((candidate) => candidate.buildingId === null && candidate.areaId && inTile(candidate.door[0], candidate.door[1]))) {
+  for (const place of PLACES.filter((candidate) => candidate.buildingId === null && candidate.areaId && !dubai && inTile(candidate.door[0], candidate.door[1]))) {
     const yaw = place.facing;
     const fx = Math.sin(yaw);
     const fz = Math.cos(yaw);
@@ -1214,6 +1695,94 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       addObstacle([sx - rx * 0.8, sz - rz * 0.8], [sx + rx * 0.8, sz + rz * 0.8], 0.3);
     }
     placeSigns.push({ placeId: place.id, point: place.door });
+  }
+
+  // Dubai open-air spots: the beach, the dhow pier, photo points and the desert camp.
+  for (const place of PLACES.filter((candidate) => candidate.buildingId === null && dubai && inTile(candidate.door[0], candidate.door[1]))) {
+    const yaw = place.facing;
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
+    const rx = fz;
+    const rz = -fx;
+    const [dx, dz] = place.door;
+    const get = (materialKey: string) => base.get(dx, dz, materialKey);
+    const board = (bx: number, bz: number, boardYaw: number) => {
+      const brx = Math.cos(boardYaw);
+      const brz = -Math.sin(boardYaw);
+      const bfx = Math.sin(boardYaw);
+      const bfz = Math.cos(boardYaw);
+      for (const side of [-0.8, 0.8]) {
+        get("frame").box(bx + brx * side, 1.1, bz + brz * side, 0.08, 2.2, 0.08, boardYaw);
+        addObstacle([bx + brx * side, bz + brz * side], [bx + brx * side, bz + brz * side], 0.08);
+      }
+      get("signBlue").box(bx, 1.9, bz, 1.9, 0.5, 0.05, boardYaw);
+      const uv = signUv(place.name, "plate", place.street, DUBAI_BLUE);
+      textQuad(get("signs"), bx + bfx * 0.03, 1.9, bz + bfz * 0.03, boardYaw, 1.8, 1.8 / SignAtlas.aspect, uv);
+      textQuad(get("signs"), bx - bfx * 0.03, 1.9, bz - bfz * 0.03, boardYaw + Math.PI, 1.8, 1.8 / SignAtlas.aspect, uv);
+    };
+    if (place.kind === "marina") {
+      dhowPier(get, place.door, yaw);
+      board(dx - fx * 1.5 - rx * 3, dz - fz * 1.5 - rz * 3, yaw + Math.PI);
+    } else if (place.kind === "photo") {
+      // A small stone viewing deck with a rail and a coin binocular facing the view.
+      get("promenade").box(dx, 0.06, dz, 5, 0.12, 4, yaw, 2);
+      get("chrome").box(dx + fx * 1.9, 1.05, dz + fz * 1.9, 5, 0.06, 0.06, yaw);
+      for (const side of [-2.4, -0.8, 0.8, 2.4]) get("chrome").box(dx + fx * 1.9 + rx * side, 0.55, dz + fz * 1.9 + rz * side, 0.06, 1.0, 0.06, yaw);
+      addObstacle([dx + fx * 1.9 - rx * 2.5, dz + fz * 1.9 - rz * 2.5], [dx + fx * 1.9 + rx * 2.5, dz + fz * 1.9 + rz * 2.5], 0.08);
+      const bx = dx + fx * 1.2 + rx * 1.2;
+      const bz = dz + fz * 1.2 + rz * 1.2;
+      get("pole").box(bx, 0.6, bz, 0.12, 1.2, 0.12, yaw);
+      get("signBlue").box(bx, 1.3, bz, 0.34, 0.3, 0.6, yaw);
+      get("darkFrame").box(bx + fx * 0.32, 1.33, bz + fz * 0.32, 0.3, 0.12, 0.1, yaw);
+      addObstacle([bx, bz], [bx, bz], 0.2);
+      board(dx - fx * 1.5 - rx * 3, dz - fz * 1.5 - rz * 3, yaw + Math.PI);
+    } else if (place.kind === "beach") {
+      board(dx - fx * 1.5, dz - fz * 1.5, yaw + Math.PI);
+      const colors: Color[] = [[0.12, 0.42, 0.75], [0.95, 0.55, 0.15], [0.1, 0.6, 0.6]];
+      for (let row = 0; row < 2; row += 1) {
+        for (let column = -4; column <= 4; column += 1) {
+          const x = dx + fx * (9 + row * 8) + rx * column * 7;
+          const z = dz + fz * (9 + row * 8) + rz * column * 7;
+          if (overWater(x, z) || insideBuilding(x, z, 1) || roads.onAsphalt(x, z, 2)) continue;
+          beachShade(get, x, z, yaw, colors[(column + 4 + row) % colors.length]!);
+          addObstacle([x, z], [x, z], 0.1);
+        }
+      }
+    } else if (place.kind === "desert") {
+      for (const [x, z, r] of desertCamp(get, place.door, yaw)) addObstacle([x, z], [x, z], r);
+      board(dx + rx * 4.5, dz + rz * 4.5, yaw);
+    }
+    placeSigns.push({ placeId: place.id, point: place.door });
+  }
+
+  // Dunes round the desert camp, kept clear of the track and the camp; inside the district they are solid.
+  if (nearDesert && DESERT) {
+    const camp = PLACES.find((candidate) => candidate.kind === "desert");
+    const campCentre: Vec2 | null = camp ? [camp.door[0] - Math.sin(camp.facing) * 26, camp.door[1] - Math.cos(camp.facing) * 26] : null;
+    const sand = base.get(x0 + TILE / 2, z0 + TILE / 2, "sand");
+    const step = 75;
+    for (let gx = Math.ceil(x0 / step) * step; gx < x0 + TILE; gx += step) {
+      for (let gz = Math.ceil(z0 / step) * step; gz < z0 + TILE; gz += step) {
+        const h0 = hash(gx * 92821 + gz * 7);
+        const h1 = hash(gx * 13 + gz * 68023);
+        const x = gx + (h0 - 0.5) * 44;
+        const z = gz + (h1 - 0.5) * 44;
+        if (!inTile(x, z) || x < DESERT.minX - 700 || x > DESERT.maxX + 700 || z < DESERT.minZ - 700 || z > DESERT.maxZ + 700) continue;
+        const ru = 16 + h0 * 26;
+        const rv = ru * (0.45 + h1 * 0.35);
+        if (campCentre && Math.hypot(x - campCentre[0], z - campCentre[1]) < 55 + ru) continue;
+        if (sandTrackDistance(x, z) < ru * 1.15 + 8) continue;
+        const duneYaw = 0.7 + (h1 - 0.5) * 0.6;
+        dune(sand, x, z, duneYaw, ru, rv, 2.5 + h0 * h1 * 9, [1.03, 0.9, 0.71]);
+        const inside = x >= DESERT.minX && x <= DESERT.maxX && z >= DESERT.minZ && z <= DESERT.maxZ;
+        if (inside) {
+          const reach = Math.max(0, ru - rv) * 0.7;
+          const ux = Math.cos(duneYaw);
+          const uz = -Math.sin(duneYaw);
+          addObstacle([x - ux * reach, z - uz * reach], [x + ux * reach, z + uz * reach], rv * 0.75);
+        }
+      }
+    }
   }
 
   // Bus stops: shelter, bench, flag sign and painted bay on the carriageway.
@@ -1327,6 +1896,27 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     head.bakeTransformIntoVertices(Matrix.Translation(0, 7.85, -1.7));
     head.material = materials.lamp;
     const matrices = lights.map(([x, z, yaw]) => {
+      addObstacle([x, z], [x, z], 0.14);
+      return Matrix.Compose(Vector3.One(), Quaternion.RotationYawPitchRoll(yaw, 0, 0), new Vector3(x, 0, z));
+    });
+    addInstances(merged, matrices);
+    addInstances(head, matrices.map((matrix) => matrix.clone()));
+  }
+  if (modernLights.length) {
+    // Slim white column with twin flat LED heads, Dubai's boulevard light.
+    const pole = MeshBuilder.CreateCylinder("modern light pole", { height: 9, diameterTop: 0.12, diameterBottom: 0.22, tessellation: 8 }, scene);
+    pole.bakeTransformIntoVertices(Matrix.Translation(0, 4.5, 0));
+    const arm = MeshBuilder.CreateBox("modern light arm", { width: 0.07, height: 0.07, depth: 2.4 }, scene);
+    arm.bakeTransformIntoVertices(Matrix.Translation(0, 8.7, 0));
+    const merged = Mesh.MergeMeshes([pole, arm], true)!;
+    merged.material = materials.frame;
+    const heads = MeshBuilder.CreateBox("modern light heads", { width: 0.28, height: 0.07, depth: 0.7 }, scene);
+    const twin = heads.clone("modern light head twin");
+    heads.bakeTransformIntoVertices(Matrix.Translation(0, 8.65, -1.4));
+    twin.bakeTransformIntoVertices(Matrix.Translation(0, 8.65, 1.4));
+    const head = Mesh.MergeMeshes([heads, twin], true)!;
+    head.material = materials.lamp;
+    const matrices = modernLights.map(([x, z, yaw]) => {
       addObstacle([x, z], [x, z], 0.14);
       return Matrix.Compose(Vector3.One(), Quaternion.RotationYawPitchRoll(yaw, 0, 0), new Vector3(x, 0, z));
     });
@@ -1493,7 +2083,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     if (!hit) return 0;
     const half = hit.road.width / 2;
     if (hit.distance < half) return ROAD_Y[hit.road.kind] ?? 0.03;
-    if (!sidewalkRoads.has(hit.road.kind)) return 0;
+    if (!sidewalkRoads.has(hit.road.kind) || isSandTrack(hit.road)) return 0;
     const inner = half + 0.55;
     const outer = inner + sidewalkWidth(hit.road);
     if (hit.distance >= inner && hit.distance <= outer && !roads.onAsphalt(x, z, 1.2, hit.road)) return SIDEWALK_Y;
