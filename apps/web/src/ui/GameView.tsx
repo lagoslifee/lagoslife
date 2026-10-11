@@ -94,7 +94,8 @@ export function GameView({
   const restartsRef = useRef(0);
   const [graphicsPaused, setGraphicsPaused] = useState(false);
   const lostTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  /** Rebuilds the 3D view in place (same session, same server connection afterwards) at low graphics. */
+  const lowered = useRef<{ from: Quality; to: Quality } | null>(null);
+  /** Rebuilds the 3D view in place (same session, same server connection afterwards) one quality step lower. */
   const restartGraphics = useCallback((why: string) => {
     clearTimeout(lostTimer.current);
     setGraphicsPaused(false);
@@ -105,10 +106,14 @@ export function GameView({
       return;
     }
     restartsRef.current += 1;
-    localStorage.setItem("lagos-quality", "low");
     setFatal(null);
     setEngine(null);
-    setQuality("low");
+    setQuality((current) => {
+      const next: Quality = current === "high" ? "medium" : "low";
+      if (next !== current) lowered.current = { from: current, to: next };
+      localStorage.setItem("lagos-quality", next);
+      return next;
+    });
     setRestarts(restartsRef.current);
   }, []);
   const [manualTarget, setManualTarget] = useState<{ point: Vec2; label: string } | null>(null);
@@ -133,6 +138,14 @@ export function GameView({
     setLog((current) => [...current.slice(-40), { ...notice, at }]);
     setTimeout(() => setToasts((current) => current.filter((entry) => entry.id !== id)), notice.tone === "error" ? 6500 : 4500);
   }, []);
+
+  useEffect(() => {
+    if (!engine || !lowered.current) return;
+    const { from, to } = lowered.current;
+    lowered.current = null;
+    const label = (quality: Quality) => quality[0]!.toUpperCase() + quality.slice(1);
+    toast({ tone: "info", text: `Your device ran out of graphics memory, so graphics went from ${label(from)} to ${label(to)}. You can change this in Phone → Settings.` });
+  }, [engine, toast]);
 
   const refreshPlots = useCallback(async () => {
     try {

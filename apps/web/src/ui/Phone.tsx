@@ -475,9 +475,9 @@ function SettingsApp({ settings, onSettings, bindings, onBindings, quality, onQu
           <option value="high">High</option>
         </select>
       </label>
-      <p className="muted small">Changing quality reloads the world.</p>
+      <p className="muted small">Changing quality reloads the world. If your device runs out of graphics memory, the game steps down one level and tells you.</p>
       {toggle("autoGraphics", "Lower detail automatically when slow")}
-      <p className="muted small">Steps down resolution, shadows and view distance while the frame rate stays under 30 fps, and restores them when it recovers.</p>
+      <p className="muted small">Steps down resolution, shadows and view distance while the frame rate stays under 30 fps, and restores them when it recovers. Turn this off to keep exactly the quality you picked.</p>
       <h3>Character</h3>
       <button className="secondary" onClick={onCustomise}>Customise character</button>
       <p className="muted small">The 3D resident currently uses one generated model for everyone; saved style choices are kept for the modular wardrobe.</p>

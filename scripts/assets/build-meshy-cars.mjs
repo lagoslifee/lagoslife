@@ -237,8 +237,8 @@ async function build(car) {
   addMesh("wheel", parts.wheel, makeMaterial("wheel"));
   await document.transform(
     weld(),
-    textureCompress({ encoder: sharp, targetFormat: "webp", slots: /^baseColorTexture$/, resize: [1024, 1024], quality: 80 }),
-    textureCompress({ encoder: sharp, targetFormat: "webp", slots: /^(normalTexture|metallicRoughnessTexture)$/, resize: [512, 512], quality: 75 }),
+    textureCompress({ encoder: sharp, targetFormat: "webp", slots: /^baseColorTexture$/, resize: [512, 512], quality: 82 }),
+    textureCompress({ encoder: sharp, targetFormat: "webp", slots: /^(normalTexture|metallicRoughnessTexture)$/, resize: [256, 256], quality: 75 }),
     meshopt({ encoder: MeshoptEncoder, level: "medium" }),
   );
   const file = path.join(outDir, `${car.id}-v1.glb`);
