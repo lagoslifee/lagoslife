@@ -1,5 +1,6 @@
 import {
   accessories,
+  bodies,
   defaultAppearance,
   hairstyles,
   outfits,
@@ -7,6 +8,7 @@ import {
   type CharacterAppearance,
 } from "@lagos-living/shared";
 import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
+import { ACCESSORY_LABELS, BODY_LABELS, HAIR_LABELS, OUTFITS } from "./game/wardrobe";
 import { apiConfigured, apiUrl, authClient, authHeaders, guestMode, signOut, startGuestSession } from "./auth-client";
 
 /** After a new deploy, an open tab asks for chunk names that no longer exist; reload once to get the new build. */
@@ -208,10 +210,11 @@ function CharacterCreator({
   }
 
   const selectors = [
-    ["Skin tone", "skinTone", skinTones],
-    ["Hair", "hairstyle", hairstyles],
-    ["Outfit", "outfit", outfits],
-    ["Accessory", "accessory", accessories],
+    ["Body", "body", bodies, BODY_LABELS],
+    ["Skin tone", "skinTone", skinTones, null],
+    ["Hair", "hairstyle", hairstyles, HAIR_LABELS],
+    ["Outfit", "outfit", outfits, Object.fromEntries(outfits.map((outfit) => [outfit, OUTFITS[outfit].label]))],
+    ["Accessory", "accessory", accessories, ACCESSORY_LABELS],
   ] as const;
 
   return (
@@ -225,7 +228,7 @@ function CharacterCreator({
         <div className="creator-options">
           <p className="step-label">CHARACTER STUDIO</p>
           <h2>Make Lagos yours</h2>
-          {selectors.map(([label, key, options]) => (
+          {selectors.map(([label, key, options, names]) => (
             <label key={key}>{label}
               <select
                 value={appearance[key]}
@@ -234,7 +237,7 @@ function CharacterCreator({
                 }
               >
                 {options.map((option) => (
-                  <option key={option} value={option}>{option.replaceAll("-", " ")}</option>
+                  <option key={option} value={option}>{(names as Record<string, string> | null)?.[option] ?? option.replaceAll("-", " ")}</option>
                 ))}
               </select>
             </label>
@@ -300,7 +303,7 @@ function GameShell({
           onCustomise={() => setCreatorOpen(true)}
           onSignOut={async () => {
             await signOut();
-            location.assign(guestMode ? "/" : "/?manual=1");
+            location.assign("/?manual=1");
           }}
         />
       </Suspense>
