@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { VEHICLE_ASSETS } from "./vehicle-assets";
 
 export const vehicleCategories = ["compact", "sedan", "suv", "luxury", "van", "bicycle"] as const;
 export type VehicleCategory = (typeof vehicleCategories)[number];
@@ -33,13 +34,33 @@ export type VehicleModel = {
   seats: number;
   colours: string[];
   description: string;
+  /** Modelled vehicles: the GLB and the cabin fitted to it, in vehicle space (metres; x right, y up from the ground, z forward). */
+  asset?: VehicleAsset;
+};
+
+export type VehicleAsset = {
+  url: string;
+  /** Where the model came from (see docs/ASSET_MANIFEST.md). */
+  source: string;
+  length: number;
+  width: number;
+  height: number;
+  wheelbase: number;
+  wheelRadius: number;
+  /** Distance from the centre line to each wheel's mid-plane. */
+  track: number;
+  /** Seat 0 is the driver. `y` is the seated avatar's root height. */
+  seats: Array<{ x: number; y: number; z: number }>;
+  /** Centre of the steering wheel. */
+  steering: { x: number; y: number; z: number };
 };
 
 /**
- * Original fictional designs drawn procedurally; none depicts a real make or model.
- * Prices are game naira; handling is tuned for city streets.
+ * Fictional names; none depicts or is named after a real make or model. Cars use modelled bodies from
+ * Kenney's CC0 Car Kit with fitted cabins, and take their size, wheels and seats from the built model
+ * (`VEHICLE_ASSETS`); the bicycle is drawn procedurally. Prices are game naira; handling suits city streets.
  */
-export const VEHICLE_MODELS: VehicleModel[] = [
+const CATALOGUE: VehicleModel[] = [
   {
     id: "eko-hatch",
     name: "Eko Hatch",
@@ -92,20 +113,20 @@ export const VEHICLE_MODELS: VehicleModel[] = [
     reverseSpeed: 5,
     acceleration: 4.2,
     braking: 10,
-    wheelbase: 2.85,
-    maxSteer: 0.55,
-    length: 4.8,
-    width: 1.95,
-    height: 1.8,
-    mass: 1_950,
-    wheelRadius: 0.37,
+    wheelbase: 1.98,
+    maxSteer: 0.45,
+    length: 4.05,
+    width: 1.88,
+    height: 1.95,
+    mass: 1_850,
+    wheelRadius: 0.45,
     seats: 5,
-    colours: ["#101418", "#f2f2ee", "#4b5320", "#2d4a73"],
-    description: "Tall, comfortable and quick off the line.",
+    colours: ["#2f8f6a", "#101418", "#f2f2ee", "#4b5320", "#2d4a73"],
+    description: "A short, tall three-door off-roader with a rear-mounted spare. Seats five and shrugs off potholes.",
   },
   {
     id: "admiralty-executive",
-    name: "Admiralty Executive",
+    name: "Admiralty Sport",
     category: "luxury",
     body: "saloon",
     price: 950_000,
@@ -120,9 +141,9 @@ export const VEHICLE_MODELS: VehicleModel[] = [
     height: 1.47,
     mass: 1_900,
     wheelRadius: 0.35,
-    seats: 5,
+    seats: 4,
     colours: ["#0c0d10", "#e9e9e4", "#3b3f46", "#23324a"],
-    description: "A long, quiet executive saloon with a smooth ride.",
+    description: "A low four-seat sports saloon with a rear wing. The quickest car on the forecourt.",
   },
   {
     id: "banana-island-lx",
@@ -210,6 +231,13 @@ export const VEHICLE_MODELS: VehicleModel[] = [
   },
 ];
 
+export const VEHICLE_MODELS: VehicleModel[] = CATALOGUE.map((model) => {
+  const asset = VEHICLE_ASSETS[model.id];
+  if (!asset) return model;
+  const { length, width, height, wheelbase, wheelRadius } = asset;
+  return { ...model, length, width, height, wheelbase, wheelRadius, seats: asset.seats.length, asset };
+});
+
 export const vehicleModelById = new Map(VEHICLE_MODELS.map((model) => [model.id, model]));
 
 export function getVehicleModel(id: string) {
@@ -223,6 +251,7 @@ export function getVehicleModel(id: string) {
  * Seat 0 is the driver, on the left as in Nigeria's right-hand traffic.
  */
 export function vehicleSeats(model: VehicleModel): Array<{ x: number; z: number }> {
+  if (model.asset) return model.asset.seats.map(({ x, z }) => ({ x, z }));
   if (model.body === "bicycle") return [{ x: 0, z: -0.1 }];
   const across = model.width * 0.22;
   const front = model.length * { hatch: -0.05, saloon: 0.01, suv: 0.06, pickup: 0.06, van: 0.3 }[model.body];
