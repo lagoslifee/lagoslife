@@ -52,14 +52,42 @@ keeps Node processes alive, such as the compose stack below.
 
 - In the Netlify site settings, set the environment variable `VITE_API_URL` to
   the game server's HTTPS origin and redeploy. Without it, the site shows a
-  "game server not configured" screen.
+  "game server not configured" screen. Don't put it in `netlify.toml`: values
+  there override the dashboard. (It used to point at a Cloudflare quick tunnel
+  to a development VM, which stopped working when that VM went away.)
 - Set the server's `WEB_ORIGIN` to the Netlify site's origin, or the server
   rejects the requests.
 - Sign-in cookies are set by the API origin. Browsers block cookies between
   unrelated sites (for example `*.netlify.app` and another provider's domain),
   so sign-in only works reliably when the web client and API share a parent
   domain: for example `play.example.com` on Netlify and `api.example.com` for
-  the server.
+  the server. Guest mode (`VITE_GUEST_MODE` and `GUEST_MODE`) sends the
+  session as `Authorization: Bearer` instead, so it works across unrelated
+  domains.
+
+## Render game server
+
+`render.yaml` is a Render Blueprint for the server and a PostgreSQL 17
+database, both on Render's free plan in Frankfurt (the closest region to
+Lagos).
+
+1. Render dashboard → **New** → **Blueprint**, connect this GitHub repository
+   and apply it. Render builds `apps/server/Dockerfile`, generates
+   `BETTER_AUTH_SECRET`, and wires `DATABASE_URL` to the database.
+2. Each start runs `node dist/migrate.js` (already-applied migrations are
+   skipped) and then the server. `BETTER_AUTH_URL` defaults to the service's
+   `onrender.com` address.
+3. Copy the service URL (for example `https://lagos-living-server.onrender.com`)
+   into Netlify's `VITE_API_URL` and redeploy the Netlify site.
+4. `WEB_ORIGIN` is `https://silver-elf-acde6c.netlify.app`. Change it in the
+   service's environment if the web client moves.
+
+Free-plan limits: the service sleeps after 15 minutes without traffic, and the
+first visit after that waits about a minute for it to wake. A free Render
+database expires 30 days after creation. For a lasting deployment, upgrade
+both, or point `DATABASE_URL` at another managed PostgreSQL (keep
+`DATABASE_SSL=require` for a database reached over the internet). Password-reset
+email needs `SMTP_*` variables; guest mode doesn't use them.
 
 ## Single-host stack (`docker-compose.prod.yml`)
 
