@@ -256,6 +256,11 @@ export function cabinSeats(cabin: CabinClass): string[] {
     : ECONOMY_ROWS.flatMap((row) => Object.keys(ECONOMY_LETTERS).map((letter) => `${row}${letter}`));
 }
 
+export const FLIGHT_CAPACITY = cabinSeats("business").length + cabinSeats("economy").length;
+
+/** Reactions passengers can send in the cabin (seated avatars can't play standing emotes). */
+export const REACTIONS = ["👋", "😄", "👏", "🎉", "😴", "✈️"] as const;
+
 export function seatCabin(seat: string): CabinClass {
   return Number.parseInt(seat, 10) < 10 ? "business" : "economy";
 }
@@ -353,7 +358,7 @@ export type TripState = {
   stage: "none" | "airport" | "boarded" | "arrived";
   ticketId: string | null;
   leg: Leg | null;
-  flight: { id: string; code: string; label: string; cabin: CabinClass; seat: string; departAt: number; arriveAt: number; companions: string[] } | null;
+  flight: { id: string; code: string; label: string; cabin: CabinClass; seat: string; departAt: number; arriveAt: number; companions: string[]; passengers: number; capacity: number } | null;
   immigrationDone: boolean;
   bagCollected: boolean;
   excursion: { activity: ActivityId; startsAt: number; endsAt: number } | null;

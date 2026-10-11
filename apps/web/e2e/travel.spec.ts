@@ -144,6 +144,7 @@ test("flies Lagos to Dubai, stays in a hotel, takes the dhow cruise and flies ho
   await useSpot(page, at(-4, 7.6), "gate");
   await page.getByTestId("do-board").click();
   await expect(page.getByTestId("flight-panel")).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId("skip-flight-ask").click();
   await page.getByTestId("skip-flight").click();
   await until(async () => (await state(page)).location === "airport:los", 20_000, "home in Lagos");
   await shot("travel-home");

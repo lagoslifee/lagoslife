@@ -52,6 +52,7 @@ export type MultiplayerHandlers = {
   police: (event: PoliceEvent) => void;
   trip: (trip: TripState) => void;
   photo: (photo: { spot: string; companions: string[] }) => void;
+  react: (reaction: { sessionId: string; emoji: string }) => void;
 };
 
 export class MultiplayerConnection {
@@ -125,6 +126,9 @@ export class MultiplayerConnection {
       room.onMessage("holdUp", (holdUp: HoldUp) => typeof holdUp?.robberyId === "string" && this.handlers.police({ type: "holdUp", holdUp }));
       room.onMessage("holdUpEnd", (end: { robberyId?: unknown }) => this.handlers.police({ type: "holdUpEnd", robberyId: String(end?.robberyId ?? "") }));
       room.onMessage("trip", (trip: TripState) => typeof trip?.stage === "string" && this.handlers.trip(trip));
+      room.onMessage("react", (reaction: { sessionId?: unknown; emoji?: unknown }) =>
+        this.handlers.react({ sessionId: String(reaction?.sessionId ?? ""), emoji: String(reaction?.emoji ?? "") }),
+      );
       room.onMessage("photo", (photo: { spot?: unknown; companions?: unknown }) =>
         this.handlers.photo({ spot: String(photo?.spot ?? ""), companions: Array.isArray(photo?.companions) ? photo.companions.map(String) : [] }),
       );
@@ -165,6 +169,7 @@ export class MultiplayerConnection {
 
   send(
     type:
+      | "react"
       | "board"
       | "alight"
       | "requestStop"

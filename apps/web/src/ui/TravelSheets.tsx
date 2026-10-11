@@ -4,6 +4,7 @@ import {
   CAR_RENTAL,
   CONSULATE_NAME,
   CONSULATE_NOTICE,
+  REACTIONS,
   ROOFTOP_MENU,
   ROOM_SERVICE,
   RENTAL_CARS,
@@ -736,16 +737,19 @@ export function HotelStay({ booking, busy, run, balance, onClose }: { booking: H
 
 /* ---------- Flight and excursion overlays ---------- */
 
-const PHASE_LABEL = { boarding: "Boarding · doors closing", takeoff: "Takeoff", cruise: "Cruising · cabin service", descent: "Descent", landed: "Landed" } as const;
+const PHASE_LABEL = { boarding: "Waiting for passengers", takeoff: "Takeoff", cruise: "Cruising · cabin service", descent: "Descent", landed: "Landed" } as const;
 
 export function FlightPanel({ engine, trip, now }: { engine: GameEngine; trip: TripState; now: number }) {
   const flight = trip.flight!;
   const [audio, setAudio] = useState(() => engine.getCabinAudio());
+  const [names, setNames] = useState(() => engine.namesShown());
+  const [confirmSkip, setConfirmSkip] = useState(false);
   const serverNow = now + engine.serverClockOffset();
   const phase = flightPhase(flight.departAt, serverNow);
   const elapsed = Math.max(0, (serverNow - flight.departAt) / 1000);
   const left = Math.max(0, Math.ceil((flight.arriveAt - serverNow) / 1000));
   const pending = engine.arrivalPreload();
+  const city = trip.leg === "return" ? "Lagos" : "Dubai";
   const toggle = (key: "hum" | "announcements") => {
     const next = { ...audio, [key]: !audio[key] };
     setAudio(next);
@@ -755,21 +759,36 @@ export function FlightPanel({ engine, trip, now }: { engine: GameEngine; trip: T
     <section className="flight-panel" data-testid="flight-panel">
       <p className="eyebrow">{flight.code} · {flight.label}</p>
       <p><strong>{CABINS[flight.cabin].name}</strong> · {seatLabel(flight.seat)}</p>
-      <p>{PHASE_LABEL[phase]}{phase === "boarding" ? ` · ${Math.max(0, Math.ceil((flight.departAt - serverNow) / 1000))} s` : ` · lands in ${left} s`}</p>
+      {phase === "boarding" ? (
+        <p data-testid="boarding-window">
+          <strong>Waiting for passengers · {Math.max(0, Math.ceil((flight.departAt - serverNow) / 1000))} s</strong> · {flight.passengers} of {flight.capacity} aboard
+        </p>
+      ) : (
+        <p>{PHASE_LABEL[phase]} · lands in {left} s · {flight.passengers} aboard</p>
+      )}
       <div className="flight-progress" aria-label="Flight progress">
         <i style={{ width: `${Math.min(100, (elapsed / TRAVEL.flightSeconds) * 100)}%` }} />
         <span style={{ left: `${(TRAVEL.takeoffEnds / TRAVEL.flightSeconds) * 100}%` }} />
         <span style={{ left: `${(TRAVEL.cruiseEnds / TRAVEL.flightSeconds) * 100}%` }} />
       </div>
-      {flight.companions.length > 0 && <p className="small">Travelling with {flight.companions.join(", ")}</p>}
+      {flight.companions.length > 0 && <p className="small">Your group: {flight.companions.join(", ")}</p>}
       <p className="small muted" data-testid="arrival-preload">
-        {phase === "boarding" ? `${trip.leg === "return" ? "Lagos" : "Dubai"} starts loading after takeoff.` : pending > 0 ? `Preparing ${trip.leg === "return" ? "Lagos" : "Dubai"}… ${pending} map area${pending === 1 ? "" : "s"} left` : `${trip.leg === "return" ? "Lagos" : "Dubai"} is ready.`}
+        {phase === "boarding" ? `${city} starts loading after takeoff.` : pending > 0 ? `Preparing ${city}… ${pending} map area${pending === 1 ? "" : "s"} left` : `${city} is ready.`}
       </p>
+      <div className="reactions" aria-label="Reactions">
+        {REACTIONS.map((emoji) => <button key={emoji} className="reaction" onClick={() => engine.react(emoji)} aria-label={`React ${emoji}`}>{emoji}</button>)}
+      </div>
       <div className="row">
         <button className={`secondary small-button ${audio.hum ? "active" : ""}`} aria-pressed={audio.hum} onClick={() => toggle("hum")}>Cabin sound {audio.hum ? "on" : "off"}</button>
         <button className={`secondary small-button ${audio.announcements ? "active" : ""}`} aria-pressed={audio.announcements} onClick={() => toggle("announcements")}>Announcements {audio.announcements ? "on" : "off"}</button>
-        <button className="primary small-button" data-testid="skip-flight" onClick={() => engine.travelCounter("skip")}>Skip flight</button>
+        <button className={`secondary small-button ${names ? "active" : ""}`} aria-pressed={names} onClick={() => { engine.showNames(!names); setNames(!names); }}>Names {names ? "on" : "off"}</button>
+        {confirmSkip ? (
+          <button className="primary small-button" data-testid="skip-flight" onClick={() => engine.travelCounter("skip")}>Skip just me</button>
+        ) : (
+          <button className="primary small-button" data-testid="skip-flight-ask" onClick={() => setConfirmSkip(true)}>Skip to arrival</button>
+        )}
       </div>
+      {confirmSkip && <p className="small muted">Only you land now; everyone else keeps flying. Chat with the cabin using 💬.</p>}
     </section>
   );
 }

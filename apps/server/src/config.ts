@@ -27,6 +27,8 @@ const configSchema = z
     SMTP_PASS: z.string().optional(),
     SMTP_FROM: z.string().default("Lagos Living <no-reply@lagosliving.local>"),
     STARTING_NAIRA: z.coerce.number().int().nonnegative().default(250_000),
+    /** Players per world instance before a new instance opens. Raise it only after measuring a full room. */
+    ROOM_CAPACITY: z.coerce.number().int().min(2).max(500).default(100),
     /**
      * Comma-separated IPs/CIDRs of reverse proxies that append to X-Forwarded-For. Without it only a single-value
      * header is trusted, so the proxy in front of the API must overwrite that header.

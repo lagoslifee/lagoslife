@@ -776,3 +776,7 @@ table.departures td { padding: 6px 10px; border-bottom: 1px solid #23413d; }
 .photo-grid img, .photo-placeholder { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 8px; background: #e5e0d3; display: grid; place-items: center; font-size: 26px; }
 .photo-grid figcaption { font-size: 11px; color: #5c6a66; }
 .game-view.touch .flight-panel { top: auto; bottom: 150px; }
+.flight-panel .reactions { display: flex; gap: 6px; margin-top: 6px; }
+.flight-panel .reaction { min-width: 36px; padding: 4px 6px; border-radius: 999px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08); font-size: 18px; cursor: pointer; }
+.chat-bubble.reaction { font-size: 22px; background: transparent; box-shadow: none; }
+.world-tags.hide-names .world-tag:not(.vehicle-tag):not(.bus-tag):not(:has(.chat-bubble)) { visibility: hidden; }

@@ -97,6 +97,8 @@ import {
   regionOf,
   placeById,
   placeDistance,
+  FLIGHT_CAPACITY,
+  REACTIONS,
   type Leg,
   type TripState,
   type ActivityId,
@@ -105,6 +107,8 @@ import {
 } from "@lagos-living/shared";
 import {
   advanceLeg,
+  retimeFlight,
+  SeatTakenError,
   tripRecord,
   clearImmigration,
   hotelAccess,
@@ -174,7 +178,7 @@ const INTEREST_RADIUS = 180;
 /** Danfos are sent within this range; the client hides them beyond 700 m. */
 export const BUS_INTEREST_RADIUS = 900;
 /** One room holds the whole city; past this Colyseus opens another room, which players in the first cannot see. */
-export const ROOM_CAPACITY = 100;
+export const ROOM_CAPACITY = config.ROOM_CAPACITY;
 /** Snapshots carry at most this many players (the nearest), so a crowd cannot blow up per-client bandwidth. */
 export const MAX_VISIBLE_PLAYERS = 40;
 const STUCK_RECOVERY_MS = 20_000;
@@ -436,7 +440,15 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       const player = this.players.get(client.sessionId);
       const parsed = emoteRequestSchema.safeParse(payload);
       if (!player || !parsed.success || player.busId) return;
+      const seated = player.location.startsWith("flight:") || player.location.startsWith("excursion:");
+      if (seated) return;
       player.motion = parsed.data.emote === "none" ? "idle" : parsed.data.emote;
+    });
+    this.onMessage("react", (client, payload) => {
+      const player = this.players.get(client.sessionId);
+      const emoji = typeof payload === "object" && payload ? (payload as { emoji?: unknown }).emoji : null;
+      if (!player || typeof emoji !== "string" || !(REACTIONS as readonly string[]).includes(emoji) || this.limited(player.actionRate, 3)) return;
+      for (const other of this.chatRecipients(player)) this.clientFor(other)?.send("react", { sessionId: player.sessionId, emoji });
     });
     this.onMessage("carrying", (client, payload) => {
       const player = this.players.get(client.sessionId);
@@ -2339,25 +2351,71 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private async boardFlight(client: Client, player: Player, leg: Leg) {
     const record = await tripRecord(player.userId);
     if (!record) throw new EconomyError("You don't have a ticket. Buy one at the ticket desk or in Phone → Travel.", 409);
-    const now = Date.now();
-    const party = record.partyId;
-    let flight = [...this.flights.values()].find((entry) => entry.leg === leg && entry.departAt > now + 1_500 && [...entry.seats.values()].some((seat) => seat.partyId === party));
-    flight ??= [...this.flights.values()].find((entry) => entry.leg === leg && entry.departAt > now + 1_500);
-    if (!flight) {
-      const departAt = now + TRAVEL.boardingSeconds * 1_000;
-      flight = { id: randomUUID(), leg, departAt, arriveAt: departAt + TRAVEL.flightSeconds * 1_000, seats: new Map() };
-      this.flights.set(flight.id, flight);
-    }
-    const taken = new Set([...flight.seats.entries()].filter(([userId]) => userId !== player.userId).map(([, entry]) => entry.seat));
-    const seat = !taken.has(record.seat) ? record.seat : cabinSeats(record.cabin).find((candidate) => !taken.has(candidate)) ?? record.seat;
-    await advanceLeg(player.userId, leg, "boarded", { id: flight.id, seat, departAt: flight.departAt, arriveAt: flight.arriveAt });
     if (!player.location.startsWith("airport:")) return;
-    flight.seats.set(player.userId, { seat, cabin: record.cabin, partyId: party, name: player.name });
-    await this.endHire(player);
-    this.seatInFlight(client, player, flight, record.ticketId);
-    const route = legRoute(leg);
-    this.notify(client, { tone: "success", text: `Welcome aboard ${route.code} to ${leg === "outbound" ? "Dubai" : "Lagos"}. ${seatLabel(seat)}, ${CABINS[record.cabin].name}. Doors close in ${Math.max(1, Math.round((flight.departAt - now) / 1000))} s.` });
-    this.refreshFlightCompanions(flight);
+    const party = record.partyId;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const now = Date.now();
+      // Boarding is open until a second before doors close; later passengers join the next departure.
+      const open = (entry: Flight) => entry.leg === leg && entry.departAt > now + 1_000 && this.freeSeats(entry, record.cabin).length > 0;
+      let flight =
+        [...this.flights.values()].find((entry) => open(entry) && [...entry.seats.values()].some((seat) => seat.partyId === party)) ??
+        [...this.flights.values()].find(open);
+      if (!flight) {
+        const departAt = now + TRAVEL.boardingSeconds * 1_000;
+        flight = { id: randomUUID(), leg, departAt, arriveAt: departAt + TRAVEL.flightSeconds * 1_000, seats: new Map() };
+        this.flights.set(flight.id, flight);
+      }
+      // Reserved before any await, so two passengers boarding at once can never pick the same seat.
+      const seat = this.pickSeat(flight, record.cabin, record.seat, party);
+      flight.seats.set(player.userId, { seat, cabin: record.cabin, partyId: party, name: player.name });
+      try {
+        await advanceLeg(player.userId, leg, "boarded", { id: flight.id, seat, departAt: flight.departAt, arriveAt: flight.arriveAt });
+      } catch (error) {
+        flight.seats.delete(player.userId);
+        if (error instanceof SeatTakenError) {
+          flight.seats.set(`held:${seat}`, { seat, cabin: record.cabin, partyId: null, name: "" });
+          continue;
+        }
+        throw error;
+      }
+      if (!player.location.startsWith("airport:")) return;
+      await this.endHire(player);
+      this.seatInFlight(client, player, flight, record.ticketId);
+      const route = legRoute(leg);
+      const full = this.freeSeats(flight, "business").length + this.freeSeats(flight, "economy").length === 0;
+      if (full && flight.departAt > Date.now() + 1_500) {
+        flight.departAt = Date.now() + 1_500;
+        flight.arriveAt = flight.departAt + TRAVEL.flightSeconds * 1_000;
+        void retimeFlight(flight.id, flight.departAt, flight.arriveAt).catch(() => undefined);
+      }
+      const waiting = Math.max(1, Math.round((flight.departAt - Date.now()) / 1000));
+      this.notify(client, {
+        tone: "success",
+        text: `Welcome aboard ${route.code} to ${leg === "outbound" ? "Dubai" : "Lagos"}. ${seatLabel(seat)}, ${CABINS[record.cabin].name}. ${full ? "The flight is full — departing now." : `Doors close in ${waiting} s for anyone else boarding.`}`,
+      });
+      this.refreshFlightCompanions(flight);
+      return;
+    }
+    throw new EconomyError("Seats are being taken fast — try boarding again.", 409);
+  }
+
+  private freeSeats(flight: Flight, cabin: CabinClass) {
+    const taken = new Set([...flight.seats.values()].map((entry) => entry.seat));
+    return cabinSeats(cabin).filter((seat) => !taken.has(seat));
+  }
+
+  /** The ticket's own seat when free; otherwise the free seat closest to someone from the same booking party. */
+  private pickSeat(flight: Flight, cabin: CabinClass, preferred: string, party: string) {
+    const free = this.freeSeats(flight, cabin);
+    const friends = [...flight.seats.values()].filter((entry) => entry.partyId === party && entry.cabin === cabin).map((entry) => seatPoint(entry.seat));
+    if (friends.length) {
+      const gap = (seat: string) => {
+        const [x, z] = seatPoint(seat);
+        return Math.min(...friends.map(([fx, fz]) => Math.hypot(fx - x, fz - z)));
+      };
+      return free.reduce((best, seat) => (gap(seat) < gap(best) ? seat : best), free[0]!);
+    }
+    return free.includes(preferred) ? preferred : free[0]!;
   }
 
   private seatInFlight(client: Client | undefined, player: Player, flight: Flight, ticketId: string) {
@@ -2370,7 +2428,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       ticketId,
       leg: flight.leg,
       immigrationDone: player.trip.immigrationDone,
-      flight: { id: flight.id, code: route.code, label: route.label, cabin: entry.cabin, seat: entry.seat, departAt: flight.departAt, arriveAt: flight.arriveAt, companions: [] },
+      flight: { id: flight.id, code: route.code, label: route.label, cabin: entry.cabin, seat: entry.seat, departAt: flight.departAt, arriveAt: flight.arriveAt, companions: [], passengers: flight.seats.size, capacity: FLIGHT_CAPACITY },
     };
     this.moveInside(client, player, `flight:${flight.id}`, seatPoint(entry.seat), destination?.door ?? getPlace("starter-home").door, null);
   }
@@ -2380,6 +2438,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       const player = this.playerByUser(userId);
       if (!player?.trip.flight || player.trip.flight.id !== flight.id) continue;
       player.trip.flight.companions = [...flight.seats.entries()].filter(([other, mate]) => other !== userId && mate.partyId === entry.partyId).map(([, mate]) => mate.name);
+      player.trip.flight.passengers = flight.seats.size;
+      player.trip.flight.departAt = flight.departAt;
+      player.trip.flight.arriveAt = flight.arriveAt;
       this.sendTrip(player);
     }
   }
@@ -2412,6 +2473,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       if (now < flight.arriveAt) continue;
       this.flights.delete(id);
       for (const userId of flight.seats.keys()) {
+        if (userId.startsWith("held:")) continue;
         const player = this.playerByUser(userId);
         void advanceLeg(userId, flight.leg, "flown")
           .catch(() => undefined)

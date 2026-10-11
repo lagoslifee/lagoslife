@@ -1,4 +1,4 @@
-import { blockedByWater, getPlace, getRoute, ROUTES, sampleRoute, type RideState, type TransitRoute } from "@lagos-living/shared";
+import { blockedByWater, cabinSeats, seatPoint, travelSpot, TRAVEL, getPlace, getRoute, ROUTES, sampleRoute, type RideState, type TransitRoute } from "@lagos-living/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const economy = vi.hoisted(() => ({
@@ -46,6 +46,12 @@ const justice = vi.hoisted(() => ({
 vi.mock("../justice-service.js", () => justice);
 const rides = vi.hoisted(() => ({ chargeRide: vi.fn(async () => 1_000), refundRide: vi.fn(async () => 1_000) }));
 vi.mock("../ride-service.js", () => rides);
+const travel = vi.hoisted(() => ({
+  tripRecord: vi.fn(async (_userId: string): Promise<Record<string, unknown> | null> => null),
+  advanceLeg: vi.fn(async (..._args: unknown[]): Promise<Record<string, unknown>> => ({})),
+  retimeFlight: vi.fn(async (..._args: unknown[]) => undefined),
+}));
+vi.mock("../travel-service.js", async (importOriginal) => ({ ...(await importOriginal<object>()), ...travel }));
 vi.mock("../profile-service.js", async () => {
   const { EventEmitter } = await import("node:events");
   return { loadAppearance: vi.fn(async () => ({ skinTone: "rich", hairstyle: "low-fade", outfit: "island-casual", accessory: "none" })), profileEvents: new EventEmitter() };
@@ -947,5 +953,90 @@ describe("LagosRoom Lagos Living Ride", () => {
     expect(ride().status).toBe("riding");
     expect(player(ada).vehicleId).toBe(ride().vehicleId);
     expect(player(ada).vehicleSeat).toBeGreaterThan(0);
+  });
+});
+
+describe("LagosRoom shared flights", () => {
+  type Internals = RoomInternals & { handleTravelCounter(client: FakeClient, payload: unknown): Promise<void>; flights: Map<string, { departAt: number; seats: Map<string, { seat: string }> }> };
+  const parties: Record<string, string> = {};
+  beforeEach(() => {
+    vi.clearAllMocks();
+    travel.tripRecord.mockImplementation(async (userId: string) => ({
+      ticketId: `t-${userId}`,
+      partyId: parties[userId] ?? userId,
+      cabin: userId.endsWith("biz") ? "business" : "economy",
+      seat: userId.endsWith("biz") ? "1A" : "10A",
+      outbound: "checked_in",
+      return: "booked",
+      flight: null,
+      immigrationDone: false,
+    }));
+    travel.advanceLeg.mockImplementation(async (userId: unknown, _leg: unknown, _to: unknown, flight: unknown) => ({ ticketId: `t-${String(userId)}`, cabin: "economy", seat: (flight as { seat: string }).seat, status: "boarded", changed: true }));
+  });
+  const atGate = (room: Internals, client: FakeClient) => {
+    const player = room.players.get(client.sessionId)!;
+    const gate = travelSpot("airport-los", "gate")!;
+    Object.assign(player, { location: "airport:los", x: gate[0], z: gate[1], trip: { stage: "airport", ticketId: null, leg: "outbound", flight: null, immigrationDone: false, bagCollected: false, excursion: null, room: null } });
+  };
+  const board = (room: Internals, client: FakeClient) => room.handleTravelCounter(client, { action: "board" });
+
+  it("puts everyone boarding in the window on one flight with unique seats and one departure time", async () => {
+    const { room, join, player } = setup();
+    const internals = room as Internals;
+    const [ada, bayo, chi] = [join("ada"), join("bayo"), join("chibiz")];
+    for (const client of [ada, bayo, chi]) atGate(internals, client);
+    await board(internals, ada);
+    const departAt = [...internals.flights.values()][0]!.departAt;
+    await board(internals, bayo);
+    await board(internals, chi);
+    expect(internals.flights.size).toBe(1);
+    const flight = [...internals.flights.values()][0]!;
+    expect(flight.departAt).toBe(departAt);
+    expect(departAt - Date.now()).toBeLessThanOrEqual(TRAVEL.boardingSeconds * 1_000);
+    const locations = new Set([ada, bayo, chi].map((client) => player(client).location));
+    expect(locations.size).toBe(1);
+    const seats = [...flight.seats.values()].map((entry) => entry.seat);
+    expect(new Set(seats).size).toBe(3);
+    expect(cabinSeats("business")).toContain(flight.seats.get("u-chibiz")!.seat);
+    expect(cabinSeats("economy")).toContain(flight.seats.get("u-bayo")!.seat);
+    const trip = player(bayo).trip as { flight: { passengers: number; departAt: number } };
+    expect(trip.flight.passengers).toBe(3);
+    expect(trip.flight.departAt).toBe(departAt);
+  });
+
+  it("seats friends from the same booking together and sends late passengers to the next departure", async () => {
+    const { room, join, player } = setup();
+    const internals = room as Internals;
+    parties["u-dami"] = "group";
+    parties["u-efe"] = "group";
+    const [stranger, dami, efe] = [join("stranger"), join("dami"), join("efe")];
+    for (const client of [stranger, dami, efe]) atGate(internals, client);
+    await board(internals, stranger);
+    await board(internals, dami);
+    await board(internals, efe);
+    const flight = [...internals.flights.values()][0]!;
+    const [dx, dz] = seatPoint(flight.seats.get("u-dami")!.seat);
+    const [ex, ez] = seatPoint(flight.seats.get("u-efe")!.seat);
+    expect(Math.hypot(dx - ex, dz - ez)).toBeLessThan(1);
+    flight.departAt = Date.now() - 100;
+    const late = join("late");
+    atGate(internals, late);
+    await board(internals, late);
+    expect(internals.flights.size).toBe(2);
+    expect(player(late).location).not.toBe(player(dami).location);
+  });
+
+  it("retries another seat when the database reports the seat as taken, and never double-books", async () => {
+    const { room, join } = setup();
+    const internals = room as Internals;
+    const { SeatTakenError } = await import("../travel-service.js");
+    const fay = join("fay");
+    atGate(internals, fay);
+    travel.advanceLeg.mockRejectedValueOnce(new SeatTakenError());
+    await board(internals, fay);
+    const flight = [...internals.flights.values()][0]!;
+    expect(travel.advanceLeg).toHaveBeenCalledTimes(2);
+    const seats = [...flight.seats.values()].map((entry) => entry.seat);
+    expect(new Set(seats).size).toBe(seats.length);
   });
 });

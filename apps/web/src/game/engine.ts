@@ -411,6 +411,7 @@ export class GameEngine {
     ) as unknown as EngineCallbacks;
     this.settings = settings;
     this.bindings = bindings;
+    overlay.classList.toggle("hide-names", localStorage.getItem("lagos-name-labels") === "0");
     this.controller = new LocomotionController((x, z) => this.collide(x, z));
     this.audio = new CityAudio(settings);
     this.net = new MultiplayerConnection({
@@ -472,6 +473,17 @@ export class GameEngine {
         this.callbacks.police(event);
       },
       trip: (trip) => this.onTrip(trip),
+      react: ({ sessionId, emoji }) => {
+        if (sessionId === this.net.sessionId) return;
+        const remote = this.remotes.get(sessionId);
+        if (!remote) return;
+        remote.tag.querySelector(".chat-bubble")?.remove();
+        const bubble = document.createElement("span");
+        bubble.className = "chat-bubble reaction";
+        bubble.textContent = emoji;
+        remote.tag.prepend(bubble);
+        setTimeout(() => bubble.remove(), 3_000);
+      },
       photo: (photo) => {
         // The drawing buffer is only readable straight after a render.
         this.scene?.onAfterRenderObservable.addOnce(() => {
@@ -1971,6 +1983,20 @@ export class GameEngine {
     this.cabinAudio = next;
     localStorage.setItem("lagos-cabin-audio", JSON.stringify(next));
     this.audio.setCabinHum(this.travelView?.kind === "cabin" && next.hum ? 1 : 0);
+  }
+
+  /** Seated reactions, shown over this player's avatar to everyone in the same cabin or boat. */
+  react(emoji: string) {
+    this.net.send("react", { emoji });
+  }
+
+  namesShown() {
+    return !this.overlay.classList.contains("hide-names");
+  }
+
+  showNames(show: boolean) {
+    this.overlay.classList.toggle("hide-names", !show);
+    localStorage.setItem("lagos-name-labels", show ? "1" : "0");
   }
 
   /** Milliseconds to add to Date.now() to read the room's clock. */

@@ -241,10 +241,15 @@ export async function advanceLeg(userId: string, leg: Leg, to: "checked_in" | "b
       if (!current || current.status !== "issued") throw new EconomyError("Your visa isn't ready yet. Wait for the consular office to finish processing it.", 409);
     }
     if (to === "boarded" && flight) {
-      await client.query(
-        `UPDATE travel_ticket SET ${column} = 'boarded', flight_id = $2, flight_leg = $3, flight_seat = $4, depart_at = $5, arrive_at = $6 WHERE id = $1`,
-        [ticket.id, flight.id, leg, flight.seat, new Date(flight.departAt), new Date(flight.arriveAt)],
-      );
+      try {
+        await client.query(
+          `UPDATE travel_ticket SET ${column} = 'boarded', flight_id = $2, flight_leg = $3, flight_seat = $4, depart_at = $5, arrive_at = $6 WHERE id = $1`,
+          [ticket.id, flight.id, leg, flight.seat, new Date(flight.departAt), new Date(flight.arriveAt)],
+        );
+      } catch (error) {
+        if ((error as { code?: string }).code === "23505") throw new SeatTakenError();
+        throw error;
+      }
     } else if (to === "flown") {
       await client.query(`UPDATE travel_ticket SET ${column} = 'flown', flight_id = NULL WHERE id = $1`, [ticket.id]);
     } else {
@@ -252,6 +257,17 @@ export async function advanceLeg(userId: string, leg: Leg, to: "checked_in" | "b
     }
     return { ticketId: String(ticket.id), cabin: ticket.cabin as CabinClass, seat: String(flight?.seat ?? ticket.flight_seat ?? ticket.seat), status: to, changed: true };
   });
+}
+
+export class SeatTakenError extends EconomyError {
+  constructor() {
+    super("That seat was just taken.", 409);
+  }
+}
+
+/** A full flight leaves early: every passenger's stored clock moves with it, so reconnects see the same times. */
+export async function retimeFlight(flightId: string, departAt: number, arriveAt: number) {
+  await pool.query(`UPDATE travel_ticket SET depart_at = $2, arrive_at = $3 WHERE flight_id = $1`, [flightId, new Date(departAt), new Date(arriveAt)]);
 }
 
 /** Where a player's trip stands, from the database alone (used on join and after a restart). */
