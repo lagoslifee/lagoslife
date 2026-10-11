@@ -14,6 +14,12 @@ export function regionOf(x: number, z: number): TravelRegion {
   return district && (DUBAI_DISTRICT_IDS as readonly string[]).includes(district.id) ? "dubai" : "lagos";
 }
 
+/** Distance to a place's door; open-air places with no building (piers, beaches, viewpoints) can also be used from their kerb. */
+export function placeDistance(place: { door: Vec2; kerb: Vec2; buildingId: number | null }, x: number, z: number) {
+  const door = Math.hypot(place.door[0] - x, place.door[1] - z);
+  return place.buildingId !== null ? door : Math.min(door, Math.hypot(place.kerb[0] - x, place.kerb[1] - z));
+}
+
 export const TRAVEL_PLACES = {
   lagosAirport: "lagos-air-terminal",
   consulate: "dubai-consular-office",

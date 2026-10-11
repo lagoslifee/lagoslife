@@ -79,6 +79,7 @@ import {
   EXCURSION_SEATS,
   flightPhase,
   placeById,
+  placeDistance,
   seatPoint,
   TRAVEL,
   TRAVEL_PLACES,
@@ -243,6 +244,17 @@ const CABIN_ANNOUNCEMENTS: Partial<Record<FlightPhase, string>> = {
   takeoff: "Cabin crew, seats for take-off. Please keep your seatbelt fastened.",
   cruise: "We've reached cruising altitude. Our crew will now come through the cabin with food and drinks.",
   descent: "We have started our descent. Please return your seat to the upright position.",
+};
+
+const TRAVEL_DISTRICT: Record<TravelInterior, string> = {
+  consulate: "Victoria Island · Lagos",
+  "airport-los": "Lagos",
+  "airport-dxb": "Dubai",
+  cabin: "In the air",
+  hotel: "Dubai Marina · Dubai",
+  rooftop: "Dubai Marina · Dubai",
+  dhow: "Dubai Marina · Dubai",
+  safari: "Dubai desert",
 };
 
 export type CabinAudio = { hum: boolean; announcements: boolean };
@@ -1441,7 +1453,7 @@ export class GameEngine {
       );
     }
     for (const place of PLACES) {
-      const distance = Math.hypot(place.door[0] - x, place.door[1] - z);
+      const distance = place.kind === "delivery" ? Math.hypot(place.door[0] - x, place.door[1] - z) : placeDistance(place, x, z);
       if (distance > INTERACTION_RANGE + (place.kind === "rental" || place.kind === "sale" ? 2 : 0)) continue;
       if (place.kind === "delivery") {
         if (this.deliveryTarget && Math.hypot(this.deliveryTarget.point[0] - place.door[0], this.deliveryTarget.point[1] - place.door[1]) < 1) {
@@ -1483,7 +1495,7 @@ export class GameEngine {
       online: this.online,
       street,
       streetNamed: named,
-      district: district ? `${district.name} · ${district.lga}` : "Lagos",
+      district: (this.travelView && TRAVEL_DISTRICT[this.travelView.kind]) ?? (district ? `${district.name} · ${district.lga}` : "Lagos"),
       location: bus ? "bus" : this.interior ? "interior" : "street",
       interiorTitle: this.interior ? this.travelTitle() ?? (this.self?.propertyId ? propertyTitle(this.self.propertyId) : null) : null,
       propertyId: this.self?.propertyId ?? null,

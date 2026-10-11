@@ -96,6 +96,7 @@ import {
   excursionSeat,
   regionOf,
   placeById,
+  placeDistance,
   type Leg,
   type TripState,
   type ActivityId,
@@ -2233,7 +2234,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (player.vehicleId) return fail("Park and step out first.");
     const near = (placeId: string, range = 6) => {
       const place = placeById.get(placeId);
-      return place && Math.hypot(player.x - place.door[0], player.z - place.door[1]) <= range ? place : null;
+      return place && placeDistance(place, player.x, player.z) <= range ? place : null;
     };
     const { target } = parsed.data;
     if (target === "consulate") {
@@ -2461,7 +2462,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const { activity } = parsed.data;
     const details = ACTIVITIES[activity];
     const desks = activity === "desert-safari" ? [TRAVEL_PLACES.pier, TRAVEL_PLACES.desertCamp] : [TRAVEL_PLACES.pier];
-    const desk = desks.map((id) => placeById.get(id)).find((place) => place && Math.hypot(player.x - place.door[0], player.z - place.door[1]) <= 18);
+    const desk = desks.map((id) => placeById.get(id)).find((place) => place && placeDistance(place, player.x, player.z) <= 18);
     if (!desk) return fail(`Book the ${details.name} at the Marina tours desk by the dhow pier.`);
     player.entering = true;
     try {
@@ -2520,7 +2521,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (player.location !== "street" || player.vehicleId || player.busId) return this.notify(client, { tone: "error", text: "Step out onto the street first." });
     const camp = placeById.get(TRAVEL_PLACES.desertCamp);
     const pier = placeById.get(TRAVEL_PLACES.pier);
-    if (!camp || !pier || Math.hypot(player.x - camp.door[0], player.z - camp.door[1]) > 40) return this.notify(client, { tone: "error", text: "The 4×4 back to the Marina leaves from the desert camp." });
+    if (!camp || !pier || placeDistance(camp, player.x, player.z) > 40) return this.notify(client, { tone: "error", text: "The 4×4 back to the Marina leaves from the desert camp." });
     [player.x, player.z] = pier.kerb;
     player.lastAcceptedAt = Date.now();
     setPlayerPosition(player.userId, player.x, player.z, "street");
@@ -2537,7 +2538,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     let valid = false;
     if (player.location === "street") {
       const place = placeById.get(spot);
-      valid = Boolean(place && PHOTO_PLACES.has(place.id) && Math.hypot(player.x - place.door[0], player.z - place.door[1]) <= 25);
+      valid = Boolean(place && PHOTO_PLACES.has(place.id) && placeDistance(place, player.x, player.z) <= 25);
     } else {
       valid = spot === player.location.split(":")[0];
     }
@@ -2563,7 +2564,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const fail = (text: string) => this.notify(client, { tone: "error", text });
     if (player.location !== "street" || player.busId || player.vehicleId) return fail("Step out onto the street first.");
     const desk = placeById.get(TRAVEL_PLACES.carRental);
-    if (!desk || Math.hypot(player.x - desk.door[0], player.z - desk.door[1]) > CAR_RENTAL.range) return fail("Hire cars are collected at the Dubai car hire desk.");
+    if (!desk || placeDistance(desk, player.x, player.z) > CAR_RENTAL.range) return fail("Hire cars are collected at the Dubai car hire desk.");
     const model = vehicleModelById.get(parsed.data.modelId);
     if (!model) return fail("That car isn't on the fleet.");
     player.entering = true;

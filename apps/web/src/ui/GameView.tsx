@@ -184,23 +184,34 @@ export function GameView({
   // One playing tab per browser: two copies of the city exhaust a phone's graphics memory.
   const [elsewhere, setElsewhere] = useState(false);
   const tabId = useMemo(() => crypto.randomUUID(), []);
-  const channel = useMemo(() => ("BroadcastChannel" in window ? new BroadcastChannel("lagos-living-tab") : null), []);
-  const [claimed, setClaimed] = useState(!channel);
+  const hasChannel = "BroadcastChannel" in window;
+  const channelRef = useRef<BroadcastChannel | null>(null);
+  const [claimed, setClaimed] = useState(!hasChannel);
+  const claimedAt = useRef(0);
   useEffect(() => {
-    if (!channel) return;
-    channel.onmessage = (event: MessageEvent<{ type: string; id: string }>) => {
-      if (event.data.type === "claim" && event.data.id !== tabId) {
+    if (!hasChannel) return;
+    const channel = new BroadcastChannel("lagos-living-tab");
+    channelRef.current = channel;
+    // Only a newer claim takes over, so a page that is reloading or closing can never pause its replacement.
+    channel.onmessage = (event: MessageEvent<{ type: string; id: string; at?: number }>) => {
+      if (event.data.type === "claim" && event.data.id !== tabId && (event.data.at ?? 0) >= claimedAt.current) {
         setEngine(null);
         setElsewhere(true);
       }
     };
-    channel.postMessage({ type: "claim", id: tabId });
+    claimedAt.current = Date.now();
+    channel.postMessage({ type: "claim", id: tabId, at: claimedAt.current });
     // Give the other tab a moment to release its graphics before this one allocates.
     const timer = setTimeout(() => setClaimed(true), 400);
-    return () => clearTimeout(timer);
-  }, [channel, tabId]);
+    return () => {
+      clearTimeout(timer);
+      channel.close();
+      if (channelRef.current === channel) channelRef.current = null;
+    };
+  }, [hasChannel, tabId]);
   const playHere = () => {
-    channel?.postMessage({ type: "claim", id: tabId });
+    claimedAt.current = Date.now();
+    channelRef.current?.postMessage({ type: "claim", id: tabId, at: claimedAt.current });
     setClaimed(false);
     setElsewhere(false);
     setTimeout(() => setClaimed(true), 400);
@@ -614,7 +625,7 @@ export function GameView({
             <div className="save-state" data-testid="save-state">✓ {ago(savedAt, now)}</div>
           </section>
 
-          {objective && !guideHidden && (
+          {objective && !guideHidden && !(hud.location === "interior" && (trip?.flight || trip?.excursion)) && (
             <section className={`objective ${guideOpen ? "open" : "collapsed"}`} data-testid="objective">
               <div className="objective-head">
                 <button className="objective-toggle" onClick={() => setGuideOpen((open) => !open)} aria-expanded={guideOpen} aria-label={guideOpen ? "Collapse guide" : "Expand guide"}>
