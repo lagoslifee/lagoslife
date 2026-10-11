@@ -606,6 +606,9 @@ export class VehicleView {
 
 export class VehicleFactory {
   private templates = new Map<string, Template>();
+  private fallbacks = new Map<string, Template>();
+  private loading = new Map<string, Promise<void>>();
+  private failed = new Set<string>();
   private paints = new Map<string, PBRMaterial>();
   private looks: Record<Part, Material>;
   private carGlass: PBRMaterial;
@@ -667,11 +670,34 @@ export class VehicleFactory {
     return material;
   }
 
-  /** Loads the modelled vehicles; any that fail fall back to their procedural design. */
-  static async load(scene: Scene, materials: Pick<Materials, "glass" | "chrome">) {
+  /**
+   * Loads the given modelled vehicles up front (all of them if omitted); others download the first time they are
+   * needed. Any that fail fall back to their procedural design.
+   */
+  static async load(scene: Scene, materials: Pick<Materials, "glass" | "chrome">, modelIds?: readonly string[]) {
     const factory = new VehicleFactory(scene, materials);
-    await Promise.all(VEHICLE_MODELS.filter((model) => model.asset).map((model) => factory.loadAsset(model).catch(() => undefined)));
+    await Promise.all((modelIds ?? VEHICLE_MODELS.map((model) => model.id)).map((id) => factory.ensure(id)));
     return factory;
+  }
+
+  /** Downloads a modelled vehicle once; resolves when `create` will use it (or its fallback, if it failed). */
+  ensure(modelId: string): Promise<void> {
+    const model = getVehicleModel(modelId);
+    if (!model.asset || this.templates.has(model.id) || this.failed.has(model.id)) return Promise.resolve();
+    let pending = this.loading.get(model.id);
+    if (!pending) {
+      pending = this.loadAsset(model).catch(() => {
+        this.failed.add(model.id);
+      });
+      this.loading.set(model.id, pending);
+    }
+    return pending;
+  }
+
+  /** Whether `create` would draw this model as it should look right now. */
+  ready(modelId: string) {
+    const model = getVehicleModel(modelId);
+    return !model.asset || this.templates.has(model.id) || this.failed.has(model.id);
   }
 
   private async loadAsset(model: VehicleModel) {
@@ -717,11 +743,17 @@ export class VehicleFactory {
   }
 
   private template(model: VehicleModel) {
-    let template = this.templates.get(model.id);
+    const loaded = this.templates.get(model.id);
+    if (loaded) return loaded;
+    const waiting = Boolean(model.asset) && !this.failed.has(model.id);
+    if (waiting) void this.ensure(model.id);
+    let template = this.fallbacks.get(model.id);
     if (!template) {
       template = buildTemplate(this.scene, model);
       this.dress(template);
-      this.templates.set(model.id, template);
+      // A stand-in for a model still downloading must not replace it once it arrives.
+      if (waiting) this.fallbacks.set(model.id, template);
+      else this.templates.set(model.id, template);
     }
     return template;
   }

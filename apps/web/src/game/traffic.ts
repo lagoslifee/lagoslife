@@ -44,6 +44,12 @@ const TRAFFIC_MIX = [
   "toyota-sienna", "mercedes-gle", "toyota-land-cruiser", "ferrari-f8", "porsche-cayenne", "mercedes-s-class", "eko-hatch", "bmw-x5", "lamborghini-huracan", "toyota-corolla",
   "rolls-royce-cullinan", "bmw-m4", "porsche-911", "bentley-continental-gt", "toyota-camry", "lagoon-pickup", "lexus-rx350", "honda-accord",
 ].filter((id) => VEHICLE_MODELS.some((model) => model.id === id));
+
+/** Distinct street models per quality: each modelled car costs a download and several megabytes of GPU textures. */
+export function trafficModels(quality: Quality) {
+  const distinct = [...new Set(TRAFFIC_MIX)];
+  return distinct.slice(0, quality === "low" ? 4 : quality === "medium" ? 8 : 12);
+}
 /** Cabins are only drawn for cars this close to the player. */
 const CABIN_RANGE = 30;
 
@@ -72,8 +78,9 @@ export class AmbientLife {
     this.home = getPlace("starter-home").door;
     const carCount = quality === "low" ? 10 : quality === "medium" ? 20 : 28;
     const walkerCount = avatars ? (quality === "low" ? 5 : quality === "medium" ? 10 : 16) : 0;
+    const mix = trafficModels(quality);
     for (let index = 0; index < carCount; index += 1) {
-      const modelId = TRAFFIC_MIX[index % TRAFFIC_MIX.length]!;
+      const modelId = mix[index % mix.length]!;
       const colours = getVehicleModel(modelId).colours;
       const view = vehicles.create(`traffic-${index}`, modelId, colours[Math.floor(hash(index * 13 + 5) * colours.length)]!);
       view.setDetail(false);

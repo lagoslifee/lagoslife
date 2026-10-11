@@ -66,7 +66,7 @@ export function VehiclePreview({ modelId, colour }: { modelId: string; colour: s
     chrome.metallic = 1;
     chrome.roughness = 0.15;
     let live = true;
-    void VehicleFactory.load(scene, { glass, chrome }).then((factory) => {
+    void VehicleFactory.load(scene, { glass, chrome }, []).then((factory) => {
       if (!live) return;
       stage.current = { factory, camera, view: null };
       setReady((count) => count + 1);
@@ -85,11 +85,18 @@ export function VehiclePreview({ modelId, colour }: { modelId: string; colour: s
   useEffect(() => {
     const current = stage.current;
     if (!current) return;
-    current.view?.dispose();
-    const model = getVehicleModel(modelId);
-    current.view = current.factory.create(`preview-${modelId}`, modelId, colour);
-    current.camera.radius = Math.max(3, model.length * 1.55 + 1);
-    current.camera.target.y = model.height * 0.45;
+    let live = true;
+    void current.factory.ensure(modelId).then(() => {
+      if (!live || stage.current !== current) return;
+      current.view?.dispose();
+      const model = getVehicleModel(modelId);
+      current.view = current.factory.create(`preview-${modelId}`, modelId, colour);
+      current.camera.radius = Math.max(3, model.length * 1.55 + 1);
+      current.camera.target.y = model.height * 0.45;
+    });
+    return () => {
+      live = false;
+    };
   }, [modelId, colour, ready]);
 
   return (

@@ -64,6 +64,7 @@ import {
   type SelfState,
   type Vec2,
   RIDE,
+  TOW,
   walkable,
   BIKE_RENTAL,
   BIKE_STATIONS,
@@ -98,7 +99,7 @@ import { buildInterior, type InteriorKind, type InteriorSpot, type InteriorView,
 import { createMaterials, type Materials, type Quality } from "./materials";
 import { SignAtlas } from "./sign-atlas";
 import { RoadNavigator, StreetTracker, type WorldData, type WorldTile } from "./street-index";
-import { AmbientLife } from "./traffic";
+import { AmbientLife, trafficModels } from "./traffic";
 import { buildWorld, type BuiltWorld } from "./world-builder";
 
 export type Prompt = { key: string; label: string; detail?: string | undefined; disabled?: boolean };
@@ -522,7 +523,9 @@ export class GameEngine {
     this.parcel.setEnabled(false);
 
     this.callbacks.loading("Loading vehicles…", 0.85);
-    this.vehicleFactory = await VehicleFactory.load(scene, this.materials);
+    // Only what is on screen at start; owned and passing cars download when they first appear.
+    const startModels = [...trafficModels(this.quality), RIDE.modelId, BIKE_RENTAL.modelId, TOW.truckModelId, "toyota-hilux", "banana-island-lx", "island-suv"];
+    this.vehicleFactory = await VehicleFactory.load(scene, this.materials, startModels);
     this.assertLive();
     this.life = new AmbientLife(scene, this.world, this.data.roads, this.avatars, this.quality, this.vehicleFactory);
     this.life.onHonk = () => {
@@ -762,6 +765,10 @@ export class GameEngine {
       seen.add(state.id);
       let entry = this.vehicles.get(state.id);
       if (!entry || entry.state.modelId !== state.modelId || entry.state.colour !== state.colour) {
+        if (!this.vehicleFactory.ready(state.modelId)) {
+          void this.vehicleFactory.ensure(state.modelId);
+          continue;
+        }
         entry?.view.dispose();
         entry?.tag.remove();
         entry?.driver?.dispose();
