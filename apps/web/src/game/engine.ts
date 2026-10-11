@@ -257,6 +257,9 @@ const TRAVEL_DISTRICT: Record<TravelInterior, string> = {
   safari: "Dubai desert",
 };
 
+/** Full avatars drawn at once for other residents, per graphics preset. */
+const AVATAR_LIMIT: Record<Quality, number> = { low: 10, medium: 18, high: 30 };
+
 export type CabinAudio = { hum: boolean; announcements: boolean };
 function loadCabinAudio(): CabinAudio {
   try {
@@ -1622,6 +1625,16 @@ export class GameEngine {
       }
     }
     const seen = new Set<string>();
+    // Only the nearest residents get a full avatar; the rest keep their name tag until they come closer.
+    const cap = AVATAR_LIMIT[this.quality] + (this.interior ? 6 : 0);
+    const { x: ox, z: oz } = this.controller;
+    const near = new Set(
+      snapshot.players
+        .filter((player) => player.sessionId !== own)
+        .sort((a, b) => Math.hypot(a.x - ox, a.z - oz) - Math.hypot(b.x - ox, b.z - oz))
+        .slice(0, cap)
+        .map((player) => player.sessionId),
+    );
     for (const player of snapshot.players) {
       if (player.sessionId === own) {
         this.ownGuards = player.guards;
@@ -1634,10 +1647,16 @@ export class GameEngine {
         tag.className = "world-tag";
         tag.textContent = player.name;
         this.overlay.appendChild(tag);
-        const avatar = this.avatars?.create(`remote-${player.sessionId}`, this.looks.get(player.sessionId) ?? defaultAppearance) ?? null;
-        if (avatar) avatar.onMeshes = (meshes) => this.addCaster(meshes);
-        remote = { avatar, tag, samples: [], speed: 0, lastSeen: now, name: player.name, guards: 0 };
+        remote = { avatar: null, tag, samples: [], speed: 0, lastSeen: now, name: player.name, guards: 0 };
         this.remotes.set(player.sessionId, remote);
+      }
+      if (near.has(player.sessionId) && !remote.avatar && this.avatars) {
+        const avatar = this.avatars.create(`remote-${player.sessionId}`, this.looks.get(player.sessionId) ?? defaultAppearance);
+        avatar.onMeshes = (meshes) => this.addCaster(meshes);
+        remote.avatar = avatar;
+      } else if (!near.has(player.sessionId) && remote.avatar) {
+        remote.avatar.dispose();
+        remote.avatar = null;
       }
       remote.lastSeen = now;
       remote.guards = player.guards;
