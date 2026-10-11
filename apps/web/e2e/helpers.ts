@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 
-export const API = "http://localhost:2567";
+export const API = process.env.E2E_API ?? "http://localhost:2567";
 
 type Vec2 = [number, number];
 type LagosHooks = {
