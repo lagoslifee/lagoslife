@@ -15,12 +15,14 @@ Adebayo Court (₦30,000 upfront) straight away or to buy Okoro Terrace
 | Furniture | Lagoon Sofa ₦28,000, Island Double Bed ₦36,000 (enables sleeping) |
 | Rent at Adebayo Court | ₦18,000 per 7 days, plus a ₦12,000 deposit |
 | Okoro Terrace | ₦235,000 |
-| Cars at Lekki Motors | Eko Hatch ₦120,000, Tokunbo Saloon ₦180,000, Lagoon Pickup ₦300,000, Island SUV ₦420,000 (at most 3 per player) |
+| Cars at Lekki Motors | Budget range: Eko Hatch ₦120,000, Tokunbo Saloon ₦180,000, Lagoon Pickup ₦300,000, Island SUV ₦420,000. Real-world range: Toyota Corolla ₦240,000 up to Rolls-Royce Cullinan ₦15,000,000 (20 models; prices in `packages/shared/src/vehicles.ts`). At most 3 per player |
 | Car insurance | 3% of the price per 7 days (Eko Hatch ₦3,600); can't be bought again while more than a day of cover is left |
 | Service at Ade Auto Works | ₦2,500 check-up plus repairs at 0.15% of the price per condition point; insured cars pay at most ₦2,000 towards repairs |
 | Tow to Ade Auto Works | ₦4,000, free when insured |
 | Volunteer shift (Island Community Hall, Victoria Island) | ₦1,500, once per Lagos calendar day (UTC+1); uses 10 energy and 5 hunger and needs at least 15 energy |
 | Careless-driving citation (Island Traffic Wardens, fictional) | ₦2,500 game naira, due in 72 h. Issued for a crash at 13.9 m/s (50 km/h) or more, when the server's measured speed agrees, at most once per 10 minutes. Paid from Phone → Justice as a `fine_payment` transaction. One appeal while unpaid; overturned fines are void, upheld ones get at least 24 h to pay. Overdue fines block buying cars |
+| Club cover (Admiralty Lounge ₦2,000, Eko Nights ₦3,500, Awolowo Rooftop Club ₦5,000) | Once per club per Lagos night (6 am to 6 am, UTC+1) for a wristband; re-entry that night is free |
+| Club bar | Water ₦300 to small chops ₦2,500; raises hunger (up to +20) and energy (up to +10), served only at the bar inside |
 | Quiet places (Ikoyi Reading Room, Muri Okunola Park, Grace Assembly, Al-Noor Mosque) | Free. +8 energy, on one 30-minute cooldown shared by all four. Identical for every venue, and optional |
 
 Bumps at 3 m/s or more cost condition (2.5 points per m/s above 2, at most 35
@@ -49,6 +51,11 @@ won't start until it is towed and repaired. A routine service is due every
   car. Entering a car claims it with a single conditional update, so two players
   can't drive the same car, and only its owner can.
 
+- A club wristband is one row per player, club and Lagos night (unique index), and
+  its charge is keyed `club:<player>:<club>:<night>`, so a double-clicked Pay
+  charges once. Bar orders carry a per-order idempotency key and need the
+  player's live position at the bar inside that club.
+
 - Paying a citation locks the wallet and the citation row. A paid citation
   returns its earlier result instead of charging again, so a double-clicked
   Pay charges once. Fines are never deducted automatically, and a balance
@@ -57,7 +64,7 @@ won't start until it is towed and repaired. A routine service is due every
 ## Development reset
 
 On localhost in development, Phone → Help → **Reset test progress** wipes the
-signed-in player's wallet, inventory, jobs, journeys, tenancies, vehicles, community visits and progress,
+signed-in player's wallet, inventory, jobs, journeys, tenancies, vehicles, community visits, club wristbands and progress,
 then re-grants the starting balance. The route is unavailable in production and
 for non-localhost hosts. The same restriction applies to `POST /api/dev/spawn-at`,
 which sets the next session's start to a place's kerb so far districts can be

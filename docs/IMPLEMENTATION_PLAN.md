@@ -176,6 +176,11 @@ neutral. In-game law (citations and appeals) and account moderation
 (milestone 8) are separate systems with independent audit trails
 (`justice_event` and `moderation_audit`).
 
+Nightlife: three clubs (Admiralty Lounge, Lekki; Awolowo Rooftop Club, Ikoyi;
+Eko Nights, Victoria Island) with a nightly cover, a shared dance floor, a bar
+and synthesised music (`packages/shared/src/nightlife.ts`,
+`apps/server/src/club-service.ts`, `apps/web/e2e/clubs.spec.ts`).
+
 Still deferred:
 
 - a fictional court beyond moderator-decided appeals;
