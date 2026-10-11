@@ -32,6 +32,7 @@ import {
   roleChangeSchema,
   hireSecuritySchema,
   policeReportSchema,
+  ROBBERY,
 } from "@lagos-living/shared";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
@@ -582,5 +583,11 @@ export function configureRoutes(app: Express) {
     markProgressReset(userId);
     await savePlayerPlace(userId, place.kerb[0], place.kerb[1], "street");
     return { x: place.kerb[0], z: place.kerb[1] };
+  }));
+
+  /** Local test harness: makes this account older than the new-resident protection against robbery. */
+  app.post("/api/dev/age-account", devOnly, requirePlayer, guarded("Age account failed", async (_req, userId) => {
+    await pool.query(`UPDATE "user" SET "createdAt" = NOW() - make_interval(secs => $2) WHERE id = $1`, [userId, ROBBERY.newResidentMs / 1_000 + 60]);
+    return { aged: true };
   }));
 }
