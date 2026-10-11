@@ -1,4 +1,4 @@
-import { nearestStop, ROUTES, type RideState, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
+import { BIKE_RENTAL, nearestStop, ROUTES, type RideState, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import { api, naira, type EconomyState, type InteriorState, type MyVehicle, type PropertyListing } from "../api";
 import { actionLabels, keyLabel, type Action, type Bindings } from "../game/controller";
@@ -142,11 +142,59 @@ export function Phone(props: Props) {
   );
 }
 
-function TransportApp({ hud, onNavigate, onClose }: Props) {
+function BikesSection({ engine, onNavigate, onClose }: Props) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => tick((value) => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  if (!engine) return null;
+  const { stations, hire } = engine.bikeStatus();
+  const sorted = [...stations].sort((a, b) => a.distance - b.distance);
+  const go = (point: Vec2, label: string) => {
+    onNavigate({ point, label });
+    onClose();
+  };
+  return (
+    <section className="route bikes" data-testid="bikes">
+      <div className="route-card">
+        <span className="route-number">🚲</span>
+        <div>
+          <strong>Lagos Bike Hire</strong>
+          <p className="muted">{naira(BIKE_RENTAL.unlockFee)} unlock + {naira(BIKE_RENTAL.perMinute)}/min · {naira(BIKE_RENTAL.deposit)} deposit, refunded minus the ride when you dock at any station</p>
+        </div>
+      </div>
+      {hire && (
+        <div className="callout" data-testid="bike-hire">
+          {hire.riding ? "Riding your hired bike" : "Your hired bike is locked on the street"} · {hire.minutes} min · {naira(hire.usage)} so far
+          <div className="row">
+            {!hire.riding && <button onClick={() => go(hire.point, "Your hired bike")}>Find my bike</button>}
+            <button onClick={() => go(sorted.find((station) => station.stock < BIKE_RENTAL.docks)?.point ?? sorted[0]!.point, "Nearest dock with space")}>Nearest dock with space</button>
+          </div>
+        </div>
+      )}
+      <ol className="stop-list">
+        {sorted.map((station) => (
+          <li key={station.id} data-testid={`bike-station-${station.id}`}>
+            <span>
+              {station.name}
+              <small className="muted"> · {station.stock} bike{station.stock === 1 ? "" : "s"} · {BIKE_RENTAL.docks - station.stock} free dock{BIKE_RENTAL.docks - station.stock === 1 ? "" : "s"} · {station.distance >= 1000 ? `${(station.distance / 1000).toFixed(1)} km` : `${Math.round(station.distance)} m`}</small>
+            </span>
+            <button className="link" onClick={() => go(station.point, `${station.name} bikes`)}>Navigate</button>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function TransportApp(props: Props) {
+  const { hud, onNavigate, onClose } = props;
   const nearest = hud ? nearestStop(hud.x, hud.z) : null;
   const routes = nearest ? [nearest.route, ...ROUTES.filter((route) => route !== nearest.route)] : ROUTES;
   return (
     <div className="app-section">
+      <BikesSection {...props} />
       {hud?.bus && (
         <p className="callout">Aboard {hud.bus.routeNumber} · seat {hud.bus.seat !== null ? hud.bus.seat + 1 : "—"} · next stop {hud.bus.nextStop}{hud.bus.stopRequested ? " · stop requested" : ""}</p>
       )}

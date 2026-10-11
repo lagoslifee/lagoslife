@@ -306,6 +306,8 @@ export class VehicleView {
   private lamps: Partial<Record<Part, InstancedMesh>> = {};
   private details: InstancedMesh[] = [];
   private roll = 0;
+  /** Pedal crank angle (radians) for bicycles, advanced by riding speed. */
+  crank = 0;
   private pitch = 0;
   private steerAngle = 0;
   private lightsOn = false;
@@ -423,6 +425,8 @@ export class VehicleView {
     if (dt <= 0) return;
     const model = this.model;
     const bike = model.body === "bicycle";
+    // Roughly 2.4 wheel turns per crank turn; coasting freewheels instead of back-pedalling.
+    if (bike && motion.speed > 0.2 && motion.accel > -0.5) this.crank = (this.crank + (motion.speed * dt) / model.wheelRadius / 2.4) % (Math.PI * 2);
     for (const wheel of this.wheels) {
       wheel.spin.rotation.x = (wheel.spin.rotation.x + (motion.speed * dt) / model.wheelRadius) % (Math.PI * 2);
       if (wheel.front) wheel.pivot.rotation.y = motion.steer;

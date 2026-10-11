@@ -417,6 +417,8 @@ export type RoomVehicle = {
   testDrive?: { endsAt: number; origin: [number, number]; yaw: number; warned: boolean };
   /** Lagos Living Ride car, driven for a rider by a non-player driver; never stored. */
   npc?: boolean;
+  /** Hired from a bike station; billed per minute until returned to any dock. */
+  rental?: { id: string; stationId: string; startedAt: number };
 };
 
 const roomColumns = `vehicle.id, vehicle.owner_user_id, vehicle.model_id, vehicle.colour, vehicle.plate,

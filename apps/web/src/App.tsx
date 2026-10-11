@@ -9,9 +9,24 @@ import {
 import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 import { apiConfigured, apiUrl, authClient, authHeaders, guestMode, signOut, startGuestSession } from "./auth-client";
 
-const GameView = lazy(() => import("./ui/GameView").then((module) => ({ default: module.GameView })));
-const CharacterPreview = lazy(() => import("./ui/CharacterPreview").then((module) => ({ default: module.CharacterPreview })));
-const ModerationConsole = lazy(() => import("./ui/ModerationConsole").then((module) => ({ default: module.ModerationConsole })));
+/** After a new deploy, an open tab asks for chunk names that no longer exist; reload once to get the new build. */
+function reloadOnStaleChunk<T>(load: () => Promise<T>) {
+  return () =>
+    load().catch((error: unknown) => {
+      const key = "lagos-chunk-reload";
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, String(Date.now()));
+        location.reload();
+        return new Promise<T>(() => undefined);
+      }
+      throw error;
+    });
+}
+window.addEventListener("load", () => setTimeout(() => sessionStorage.removeItem("lagos-chunk-reload"), 10_000));
+
+const GameView = lazy(reloadOnStaleChunk(() => import("./ui/GameView").then((module) => ({ default: module.GameView }))));
+const CharacterPreview = lazy(reloadOnStaleChunk(() => import("./ui/CharacterPreview").then((module) => ({ default: module.CharacterPreview }))));
+const ModerationConsole = lazy(reloadOnStaleChunk(() => import("./ui/ModerationConsole").then((module) => ({ default: module.ModerationConsole }))));
 
 type Suspension = { reason: string; until: string | null };
 

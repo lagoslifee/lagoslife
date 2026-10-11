@@ -24,6 +24,12 @@ import {
   testDriveSchema,
   TEST_DRIVE,
   RIDE,
+  BIKE_RENTAL,
+  BIKE_STATIONS,
+  bikeStationById,
+  nearestBikeStation,
+  rentBikeSchema,
+  rentalUsage,
   rideFare,
   rideBookSchema,
   rideCancelSchema,
@@ -82,6 +88,7 @@ import {
 import { loadAppearance, profileEvents } from "../profile-service.js";
 import { buildingEvents } from "../building-service.js";
 import { chargeRide, refundRide } from "../ride-service.js";
+import { activeRental, parkRental, returnRental, startRental, type ActiveRental } from "../bike-service.js";
 import "../world-footprints.js";
 
 export const LagosState = schema({
@@ -272,6 +279,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("unstuck", (client) => this.handleUnstuck(client));
     this.onMessage("enterVehicle", (client, payload) => void this.handleEnterVehicle(client, payload));
     this.onMessage("exitVehicle", (client) => void this.handleExitVehicle(client));
+    this.onMessage("rentBike", (client, payload) => void this.handleRentBike(client, payload));
+    this.onMessage("returnBike", (client) => void this.handleReturnBike(client));
     this.onMessage("rideBook", (client, payload) => void this.handleRideBook(client, payload));
     this.onMessage("rideBoard", (client) => this.handleRideBoard(client));
     this.onMessage("rideArrive", (client) => void this.handleRideArrive(client));
@@ -376,6 +385,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     setPlayerPosition(player.userId, player.x, player.z, player.location);
     this.sendLook(player, client.sessionId);
     this.sendSelf(client, player, saved ? "Welcome back — progress restored." : "Welcome to Lekki Phase 1.");
+    client.send("bikeStock", Object.fromEntries(this.bikeStock));
+    const rental = await activeRental(player.userId).catch(() => null);
+    if (rental && this.players.get(client.sessionId) === player) this.placeRentalBike(player, rental);
   }
 
   /** Everyone's current look, asked for by a client once its message handlers are registered. */
@@ -423,6 +435,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       }
       await this.endRide(player, "cancelled", "You disconnected, so the ride ended.", "system").catch(() => undefined);
       await this.parkPlayerVehicle(player).catch(() => undefined);
+      for (const vehicle of this.vehicles.values()) {
+        if (vehicle.rental && vehicle.ownerUserId === player.userId) await parkRental(vehicle.rental.id, vehicle.x, vehicle.z, vehicle.yaw).catch(() => undefined);
+      }
       await this.persist(player).catch(() => undefined);
       if (this.players.get(client.sessionId) === player) this.players.delete(client.sessionId);
       removePlayerPosition(player.userId);
@@ -540,7 +555,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       }
       if (distance > 0.05) player.heading = [(player.x - from[0]) / distance, (player.z - from[1]) / distance];
       player.driveMetres += distance;
-      if (!vehicle.testDrive && !vehicle.npc && now - player.lastVehicleSaveAt > VEHICLE_SAVE_MS) {
+      if (!vehicle.testDrive && !vehicle.npc && !vehicle.rental && now - player.lastVehicleSaveAt > VEHICLE_SAVE_MS) {
         const metres = player.driveMetres;
         player.driveMetres = 0;
         player.lastVehicleSaveAt = now;
@@ -783,6 +798,11 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       if (vehicle.ownerUserId !== userId) continue;
       this.ejectPassengers(id);
       this.vehicles.delete(id);
+      if (vehicle.rental) {
+        const station = vehicle.rental.stationId;
+        this.bikeStock.set(station, Math.min(BIKE_RENTAL.docks, (this.bikeStock.get(station) ?? 0) + 1));
+        this.broadcastBikeStock();
+      }
     }
     for (const player of this.players.values()) {
       if (player.userId !== userId || !player.vehicleId) continue;
@@ -839,6 +859,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       this.vehicles.delete(vehicleId);
       return vehicle;
     }
+    if (vehicle.rental) return vehicle;
     await saveDrivingVehicle(vehicleId, vehicle, metres, true);
     return vehicle;
   }
@@ -879,6 +900,130 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     setPlayerPosition(player.userId, player.x, player.z, "street");
     this.notify(client, { tone: "success", text: `You're riding in ${vehicle.ownerName}'s ${model.name}. Step out any time.` });
     this.sendSelf(client, player, "boarded");
+  }
+
+  private bikeStock = new Map<string, number>(BIKE_STATIONS.map((station) => [station.id, BIKE_RENTAL.startingBikes]));
+
+  private broadcastBikeStock() {
+    this.broadcast("bikeStock", Object.fromEntries(this.bikeStock));
+  }
+
+  /** Puts the player in the driver's seat of a vehicle that needs no ownership claim (test cars, hired bikes). */
+  private mountVehicle(client: Client, player: Player, vehicle: RoomVehicle, message: string) {
+    const now = Date.now();
+    vehicle.driverSessionId = client.sessionId;
+    player.vehicleId = vehicle.id;
+    player.vehicleSeat = 0;
+    [player.x, player.z, player.yaw] = [vehicle.x, vehicle.z, vehicle.yaw];
+    player.motion = "drive";
+    player.driveMetres = 0;
+    player.lastAcceptedAt = now;
+    setPlayerPosition(player.userId, player.x, player.z, "street");
+    this.notify(client, { tone: "success", text: message });
+    this.sendSelf(client, player, "drive");
+    client.send("vehicleStatus", { vehicleId: vehicle.id, condition: vehicle.condition });
+  }
+
+  private rentalVehicle(player: Player, rental: ActiveRental, x: number, z: number, yaw: number): RoomVehicle {
+    return {
+      id: `hire-${rental.id}`,
+      ownerUserId: player.userId,
+      ownerName: `Lagos Bike Hire · ${player.name}`,
+      modelId: BIKE_RENTAL.modelId,
+      colour: BIKE_RENTAL.colour,
+      plate: `HIRE ${rental.id.slice(0, 4).toUpperCase()}`,
+      condition: 100,
+      x,
+      z,
+      yaw,
+      driverSessionId: null,
+      lights: false,
+      locked: true,
+      rental: { id: rental.id, stationId: rental.stationId, startedAt: rental.startedAt },
+    };
+  }
+
+  /** Restores a hire that outlived the last session, where the bike was last locked. */
+  private placeRentalBike(player: Player, rental: ActiveRental) {
+    const id = `hire-${rental.id}`;
+    if (this.vehicles.has(id)) return;
+    this.vehicles.set(id, this.rentalVehicle(player, rental, rental.x, rental.z, rental.yaw));
+    const client = this.clientFor(player);
+    if (client) this.notify(client, { tone: "info", text: "Your hired bike is still out — find it with Phone → Transport → Bikes. The meter has kept running." });
+  }
+
+  private async handleRentBike(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = rentBikeSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
+    const station = bikeStationById.get(parsed.data.stationId);
+    if (!station) return;
+    const fail = (text: string) => this.notify(client, { tone: "error", text });
+    if (player.location !== "street" || player.busId || player.vehicleId || player.entering) return fail("Step out onto the street first.");
+    if (Math.hypot(player.x - station.point[0], player.z - station.point[1]) > BIKE_RENTAL.rentRange + 5) return fail(`Walk up to the ${station.name} bike dock.`);
+    if ((this.bikeStock.get(station.id) ?? 0) <= 0) return fail(`No bikes left at ${station.name}. Check Phone → Transport → Bikes for the nearest station with bikes.`);
+    player.entering = true;
+    this.bikeStock.set(station.id, (this.bikeStock.get(station.id) ?? 1) - 1);
+    try {
+      const { rental, balance } = await startRental(player.userId, station.id, parsed.data.idempotencyKey);
+      if (player.location !== "street" || player.vehicleId || this.players.get(client.sessionId) !== player) {
+        await returnRental(player.userId, rental.id, station.id).catch(() => undefined);
+        this.bikeStock.set(station.id, (this.bikeStock.get(station.id) ?? 0) + 1);
+        return;
+      }
+      // Wheeled out beside the rack, facing along the pavement.
+      const sides: Array<[number, number]> = [1.8, -1.8].map((side) => [station.point[0] + Math.cos(station.yaw) * side, station.point[1] - Math.sin(station.yaw) * side]);
+      const [x, z] = sides.find(([sx, sz]) => walkable(sx, sz, 0.4)) ?? station.point;
+      const vehicle = this.rentalVehicle(player, rental, x, z, station.yaw);
+      this.vehicles.set(vehicle.id, vehicle);
+      this.mountVehicle(
+        client,
+        player,
+        vehicle,
+        `Bike unlocked: ₦${BIKE_RENTAL.unlockFee} paid and ₦${BIKE_RENTAL.deposit.toLocaleString("en-NG")} deposit held (balance ₦${balance.toLocaleString("en-NG")}). ₦${BIKE_RENTAL.perMinute}/min, return at any station.`,
+      );
+      this.broadcastBikeStock();
+    } catch (error) {
+      this.bikeStock.set(station.id, (this.bikeStock.get(station.id) ?? 0) + 1);
+      const message = (error as Error).message;
+      fail(message.includes("Insufficient") ? `You need ₦${(BIKE_RENTAL.unlockFee + BIKE_RENTAL.deposit).toLocaleString("en-NG")} to hire a bike (₦${BIKE_RENTAL.deposit.toLocaleString("en-NG")} of it comes back on return).` : message);
+    } finally {
+      player.entering = false;
+    }
+  }
+
+  /** Return a parked hire bike while standing next to it at a dock. */
+  private async handleReturnBike(client: Client) {
+    const player = this.players.get(client.sessionId);
+    if (!player || this.limited(player.actionRate, 4)) return;
+    if (player.vehicleId) return this.handleExitVehicle(client);
+    const bike = [...this.vehicles.values()].find((vehicle) => vehicle.rental && vehicle.ownerUserId === player.userId);
+    if (!bike) return;
+    const { station, distance } = nearestBikeStation(bike.x, bike.z);
+    if (distance > BIKE_RENTAL.returnRange) return this.notify(client, { tone: "error", text: `Bring the bike to a station first — the nearest is ${station.name}, ${Math.round(distance)} m away.` });
+    if ((this.bikeStock.get(station.id) ?? 0) >= BIKE_RENTAL.docks) return this.notify(client, { tone: "error", text: `${station.name} is full. Try another station.` });
+    await this.returnBike(client, player, bike);
+  }
+
+  private async returnBike(client: Client, player: Player, bike: RoomVehicle) {
+    const rental = bike.rental;
+    if (!rental) return;
+    const { station } = nearestBikeStation(bike.x, bike.z);
+    this.vehicles.delete(bike.id);
+    this.bikeStock.set(station.id, Math.min(BIKE_RENTAL.docks, (this.bikeStock.get(station.id) ?? 0) + 1));
+    this.broadcastBikeStock();
+    try {
+      const result = await returnRental(player.userId, rental.id, station.id);
+      this.notify(client, {
+        tone: "success",
+        text: `Bike docked at ${station.name}: ${result.minutes} min, ₦${result.usage.toLocaleString("en-NG")}. ₦${result.refund.toLocaleString("en-NG")} of your deposit is back in your wallet.`,
+      });
+      client.send("bikeReturned", { usage: result.usage, refund: result.refund, minutes: result.minutes });
+    } catch (error) {
+      console.error("Bike return failed", error);
+      const { usage } = rentalUsage(rental.startedAt, Date.now());
+      this.notify(client, { tone: "error", text: `The dock took the bike but the deposit could not be settled right now (≈₦${usage} used). Report it from Phone → Safety.` });
+    }
   }
 
   private sendRide(player: Player) {
@@ -1189,6 +1334,11 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     }
     if (vehicle.npc) return this.notify(client, { tone: "error", text: "That is a Lagos Living Ride car. Book your own from Phone → Ride." });
     if (vehicle.testDrive && !owner) return this.notify(client, { tone: "error", text: "That is someone's dealer test car." });
+    if (vehicle.rental) {
+      if (!owner) return this.notify(client, { tone: "error", text: "That bike is hired by another resident." });
+      if (vehicle.driverSessionId) return;
+      return this.mountVehicle(client, player, vehicle, "Back on your hired bike. The meter is still running.");
+    }
     if (!owner && vehicle.locked) {
       return this.notify(client, { tone: "error", text: `This vehicle belongs to ${vehicle.ownerName}. It is locked.` });
     }
@@ -1242,6 +1392,23 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const testCar = Boolean(this.vehicles.get(player.vehicleId)?.testDrive);
     const vehicle = await this.parkPlayerVehicle(player).catch(() => null);
     if (vehicle) [player.x, player.z] = this.exitPoint(vehicle, seat);
+    if (vehicle?.rental && seat === 0) {
+      player.lastAcceptedAt = Date.now();
+      setPlayerPosition(player.userId, player.x, player.z, "street");
+      this.sendSelf(client, player, "parked");
+      const { station, distance } = nearestBikeStation(vehicle.x, vehicle.z);
+      if (distance <= BIKE_RENTAL.returnRange && (this.bikeStock.get(station.id) ?? 0) < BIKE_RENTAL.docks) return this.returnBike(client, player, vehicle);
+      void parkRental(vehicle.rental.id, vehicle.x, vehicle.z, vehicle.yaw).catch(() => undefined);
+      if (!quiet) {
+        this.notify(client, {
+          tone: "info",
+          text: distance <= BIKE_RENTAL.returnRange
+            ? `${station.name} is full, so the bike is locked here. Try the next station; the meter keeps running.`
+            : `Bike locked here. The meter keeps running at ₦${BIKE_RENTAL.perMinute}/min until you return it at any station.`,
+        });
+      }
+      return;
+    }
     if (testCar && !quiet) this.notify(client, { tone: "info", text: "Test drive finished. Lekki Motors has collected the car." });
     if (seat > 0 || testCar) {
       player.lastAcceptedAt = Date.now();
@@ -1468,6 +1635,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         lights: vehicle.lights,
         locked: vehicle.locked,
         testDriveEndsAt: vehicle.testDrive?.endsAt ?? null,
+        rentalStartedAt: vehicle.rental?.startedAt ?? null,
         npc: Boolean(vehicle.npc),
         ownerName: vehicle.ownerName,
         mine: !vehicle.npc && vehicle.ownerUserId === viewer.userId,

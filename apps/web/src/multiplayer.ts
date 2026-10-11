@@ -36,6 +36,7 @@ export type MultiplayerHandlers = {
   looks: (looks: Look[]) => void;
   plots: () => void;
   ride: (ride: RideState | null) => void;
+  bikeStock: (stock: Record<string, number>) => void;
 };
 
 export class MultiplayerConnection {
@@ -100,6 +101,8 @@ export class MultiplayerConnection {
       });
       room.onMessage("plots", () => this.handlers.plots());
       room.onMessage("ride", (ride: RideState | null) => this.handlers.ride(ride));
+      room.onMessage("bikeStock", (stock: Record<string, number>) => this.handlers.bikeStock(stock));
+      room.onMessage("bikeReturned", () => undefined);
       room.onMessage("suspended", (payload: { reason?: unknown; until?: unknown }) => {
         this.closed = true;
         this.handlers.suspended({ reason: String(payload?.reason ?? ""), until: typeof payload?.until === "string" ? payload.until : null });
@@ -153,7 +156,9 @@ export class MultiplayerConnection {
       | "rideBook"
       | "rideBoard"
       | "rideArrive"
-      | "rideCancel",
+      | "rideCancel"
+      | "rentBike"
+      | "returnBike",
     payload?: unknown,
   ) {
     this.room?.send(type, payload);

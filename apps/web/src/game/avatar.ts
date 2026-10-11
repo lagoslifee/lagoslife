@@ -4,6 +4,8 @@ import type { AssetContainer } from "@babylonjs/core/assetContainer";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Axis } from "@babylonjs/core/Maths/math.axis";
+import { Quaternion } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
 import {
   accessories,
@@ -81,8 +83,27 @@ export class AvatarFactory {
     for (const [key, clip] of Object.entries(CLIPS) as Array<[ClipKey, string]>) {
       groups[key] = entries.animationGroups.find((group) => group.name.endsWith(clip));
     }
-    return new Avatar(root, meshes, groups, entries.animationGroups, plugins, anchor, appearance);
+    const node = (suffix: string) => joint(suffix)?.getTransformNode() ?? null;
+    const limbs: Limbs = {
+      leftUp: node("LeftUpLeg"),
+      leftLow: node("LeftLeg"),
+      rightUp: node("RightUpLeg"),
+      rightLow: node("RightLeg"),
+      leftArm: node("LeftArm"),
+      rightArm: node("RightArm"),
+    };
+    return new Avatar(root, meshes, groups, entries.animationGroups, plugins, anchor, appearance, limbs);
   }
+}
+
+type Limbs = Record<"leftUp" | "leftLow" | "rightUp" | "rightLow" | "leftArm" | "rightArm", TransformNode | null>;
+
+const flex = new Quaternion();
+/** Bends a joint about its local flexion axis, on top of the pose the clips set this frame. */
+function bend(joint: TransformNode | null, angle: number) {
+  if (!joint?.rotationQuaternion) return;
+  Quaternion.RotationAxisToRef(Axis.X, angle, flex);
+  joint.rotationQuaternion.multiplyInPlace(flex);
 }
 
 export class Avatar {
@@ -97,6 +118,7 @@ export class Avatar {
     private readonly plugins: ResidentAppearancePlugin[],
     private readonly anchor: TransformNode | null,
     private current: CharacterAppearance,
+    private readonly limbs: Limbs | null = null,
   ) {
     for (const group of all) group.stop();
   }
@@ -153,6 +175,23 @@ export class Avatar {
         group.speedRatio = Math.max(0.35, Math.min(2.4, Math.max(speed, 0.3) / CLIP_STRIDE_SPEED[key]));
       }
     }
+  }
+
+  /**
+   * Pedalling over the seated clip: thighs and knees follow a crank at `phase` radians, legs half a turn
+   * apart, arms reaching forward to the handlebars. Call after update() each frame while riding a bicycle.
+   */
+  pedal(phase: number) {
+    const limbs = this.limbs;
+    if (!limbs) return;
+    for (const [up, low, offset] of [[limbs.leftUp, limbs.leftLow, 0], [limbs.rightUp, limbs.rightLow, Math.PI]] as const) {
+      const crank = phase + offset;
+      // Thigh lifts with the pedal at the top; the knee opens on the downstroke.
+      bend(up, 0.5 + Math.sin(crank) * 0.32);
+      bend(low, -0.35 + Math.cos(crank) * 0.38);
+    }
+    bend(limbs.leftArm, -0.55);
+    bend(limbs.rightArm, -0.55);
   }
 
   setVisible(visible: boolean) {

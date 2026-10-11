@@ -195,7 +195,7 @@ export function GameView({
         hud: setHud,
         notice: (notice) => {
           toast(notice);
-          if (/Fare paid|stepped off/.test(notice.text)) void refresh();
+          if (/Fare paid|stepped off|Bike unlocked|Bike docked/.test(notice.text)) void refresh();
         },
         subtitle: (text, kind = "speech") => {
           const shown = { text, kind };
@@ -568,7 +568,9 @@ export function GameView({
               <div className="speed-meta">
                 <p><b>{hud.vehicle.name}</b> · <span className="plate">{hud.vehicle.plate}</span></p>
                 <p className="condition-line">
-                  {hud.vehicle.testDriveLeft !== null
+                  {hud.vehicle.hire
+                    ? `Hire · ${hud.vehicle.hire.minutes} min · ₦${hud.vehicle.hire.cost.toLocaleString("en-NG")} so far${hud.vehicle.hire.dockName ? ` · dock here: ${hud.vehicle.hire.dockName}` : ""}`
+                    : hud.vehicle.testDriveLeft !== null
                     ? `Test drive · ${Math.floor(hud.vehicle.testDriveLeft / 60)}:${String(hud.vehicle.testDriveLeft % 60).padStart(2, "0")} left · stay near Lekki Motors`
                     : `Condition ${hud.vehicle.condition}%${hud.vehicle.limp ? ` · LIMP MODE (max ${hud.vehicle.topKmh} km/h)` : ""}`}
                 </p>

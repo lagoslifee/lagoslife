@@ -1,4 +1,4 @@
-import { blockedByWater, getPlace, getRoute, ROUTES, sampleRoute, type TransitRoute } from "@lagos-living/shared";
+import { blockedByWater, getPlace, getRoute, ROUTES, sampleRoute, type RideState, type TransitRoute } from "@lagos-living/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const economy = vi.hoisted(() => ({
@@ -896,7 +896,7 @@ describe("LagosRoom Lagos Living Ride", () => {
         roadMetres: 660,
         idempotencyKey: crypto.randomUUID(),
       });
-    return { ...context, ada, room, book, ride: () => context.player(ada).ride! };
+    return { ...context, ada, room, book, ride: () => (context.player(ada) as unknown as { ride: RideState }).ride };
   }
 
   beforeEach(() => {

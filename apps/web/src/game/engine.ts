@@ -59,6 +59,10 @@ import {
   type Vec2,
   RIDE,
   walkable,
+  BIKE_RENTAL,
+  BIKE_STATIONS,
+  nearestBikeStation,
+  rentalUsage,
   type RideState,
 } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "../auth-client";
@@ -73,6 +77,7 @@ import { CarController } from "./car-controller";
 import { VehicleFactory, type VehicleView } from "./vehicles";
 import { guide, type Guidance, type RoutePlan } from "./navigation";
 import { RoutePilot } from "./route-pilot";
+import { BikeStationsView } from "./bike-stations";
 import { defaultBindings, InputState, LocomotionController, MAX_FRAME_DT, SUBSTEP_DT, type Bindings, type MoveMode } from "./controller";
 import { DanfoFactory, type DanfoView } from "./danfo";
 import { MeshBuilderBatch } from "./geometry";
@@ -99,7 +104,7 @@ export type HudState = {
   prompt: Prompt | null;
   secondaryPrompt: Prompt | null;
   bus: { id: string; routeNumber: string; routeName: string; seat: number | null; nextStop: string; atStop: string | null; stopRequested: boolean; occupied: number; capacity: number } | null;
-  vehicle: { id: string; name: string; plate: string; kmh: number; topKmh: number; condition: number; limp: boolean; reversing: boolean; bicycle: boolean; lights: boolean; seats: number; testDriveLeft: number | null } | null;
+  vehicle: { id: string; name: string; plate: string; kmh: number; topKmh: number; condition: number; limp: boolean; reversing: boolean; bicycle: boolean; lights: boolean; seats: number; testDriveLeft: number | null; hire: { minutes: number; cost: number; dockName: string | null } | null } | null;
   passenger: { owner: string; model: string } | null;
   speed: number;
   mode: MoveMode;
@@ -250,6 +255,8 @@ export class GameEngine {
   private vehicleFactory: VehicleFactory | null = null;
   private vehicles = new Map<string, { view: VehicleView; state: WorldVehicle; tag: HTMLDivElement; driver: Avatar | null }>();
   private ride: RideState | null = null;
+  private bikeStock: Record<string, number> = {};
+  private bikeStations: BikeStationsView | null = null;
   private rideCar: { vehicleId: string; car: CarController; pilot: RoutePilot; stopping: boolean; sentAt: number } | null = null;
   private rideApproach: { rideId: string; view: VehicleView; driver: Avatar | null; path: Vec2[]; along: number[]; startAt: number; arrivesAt: number } | null = null;
   private car: CarController | null = null;
@@ -325,6 +332,9 @@ export class GameEngine {
       looks: (looks) => this.onLooks(looks),
       plots: () => this.callbacks.plotsChanged(),
       ride: (ride) => this.onRide(ride),
+      bikeStock: (stock) => {
+        this.bikeStock = stock;
+      },
     });
   }
 
@@ -450,6 +460,7 @@ export class GameEngine {
       this.caption("A car honks — you are blocking the road");
     };
     this.vehicleFactory = new VehicleFactory(scene, this.materials);
+    this.bikeStations = new BikeStationsView(scene, this.materials, (x, z) => this.world.groundHeight(x, z), this.vehicleFactory, (meshes) => this.addCaster(meshes));
 
     this.input = new InputState(this.canvas, this.bindings);
     const start = getPlace("starter-home");
@@ -675,6 +686,7 @@ export class GameEngine {
   private updateVehicles(now: number, dt: number) {
     const { x: cx, z: cz } = this.controller;
     this.updateRideApproach(dt);
+    this.bikeStations?.update(this.bikeStock, cx, cz, Boolean(this.interior));
     for (const [id, { view, state, driver }] of this.vehicles) {
       let pose: { x: number; z: number; yaw: number } | null;
       const rideCar = this.rideCar?.vehicleId === id ? this.rideCar.car : null;
@@ -838,6 +850,7 @@ export class GameEngine {
       this.player.root.rotation.y = seat.yaw;
       this.player.root.setEnabled(true);
       this.player.update(0, "sit", dt);
+      if (seatView.model.body === "bicycle" && ride.seat === 0) this.player.pedal(seatView.crank);
     } else if (this.player) {
       this.player.root.position.set(x, this.groundY + this.controller.hop, z);
       this.player.root.rotation.y = this.controller.yaw;
@@ -1018,8 +1031,11 @@ export class GameEngine {
     }
     if (this.car && this.driving) {
       const plate = this.vehicles.get(this.driving.vehicleId)?.state.plate;
+      const hired = Boolean(this.vehicles.get(this.driving.vehicleId)?.state.rentalStartedAt);
+      const dock = hired ? nearestBikeStation(this.car.x, this.car.z) : null;
+      const docking = dock && dock.distance <= BIKE_RENTAL.returnRange;
       this.prompt = Math.abs(this.car.speed) < 2
-        ? { key: bind("interact"), label: "Step out & park here", detail: plate }
+        ? { key: bind("interact"), label: docking ? "Dock the bike & end the hire" : hired ? "Lock the bike here" : "Step out & park here", detail: docking ? dock.station.name : plate }
         : { key: "…", label: "Slow down to step out", disabled: true };
       this.interaction = () => this.exitVehicle();
       this.secondary = { key: bind("stop"), label: "Horn" };
@@ -1069,6 +1085,21 @@ export class GameEngine {
         offer(distance, { key: bind("interact"), label: full ? "Danfo full — wait for the next one" : `Board danfo ${route.routeNumber} · ₦${route.fare}`, detail: `Next: ${next} · ${state.occupied}/${state.capacity} seats`, disabled: full }, () => !full && this.board(danfo.id));
       } else {
         offer(distance + 2, { key: "…", label: "Wait for the danfo to stop", disabled: true }, () => undefined);
+      }
+    }
+    for (const station of BIKE_STATIONS) {
+      const distance = Math.hypot(station.point[0] - x, station.point[1] - z);
+      if (distance > BIKE_RENTAL.rentRange) continue;
+      const stock = this.bikeStock[station.id] ?? BIKE_RENTAL.startingBikes;
+      const hire = [...this.vehicles.values()].find(({ state }) => state.mine && state.rentalStartedAt);
+      if (hire && Math.hypot(hire.view.x - station.point[0], hire.view.z - station.point[1]) <= BIKE_RENTAL.returnRange) {
+        offer(distance - 0.2, { key: bind("interact"), label: "Dock your hired bike", detail: station.name }, () => this.net.send("returnBike"));
+      } else if (hire) {
+        offer(distance + 0.5, { key: "🚲", label: "You already have a hired bike", detail: "Return it at any station", disabled: true }, () => undefined);
+      } else if (stock <= 0) {
+        offer(distance, { key: "…", label: `${station.name} · no bikes left`, detail: "Phone → Transport → Bikes shows other stations", disabled: true }, () => undefined);
+      } else {
+        offer(distance, { key: bind("interact"), label: `Hire a bike · ₦${BIKE_RENTAL.unlockFee} + ₦${BIKE_RENTAL.perMinute}/min`, detail: `₦${BIKE_RENTAL.deposit.toLocaleString("en-NG")} deposit back on return · ${stock} here` }, () => this.rentBike(station.id));
       }
     }
     for (const { view, state } of this.vehicles.values()) {
@@ -1226,6 +1257,13 @@ export class GameEngine {
       })(),
       lights: this.lights,
       seats: car.model.seats,
+      hire: (() => {
+        const started = this.vehicles.get(driving.vehicleId)?.state.rentalStartedAt;
+        if (!started) return null;
+        const { minutes, usage } = rentalUsage(started, Date.now());
+        const { station, distance } = nearestBikeStation(car.x, car.z);
+        return { minutes, cost: usage, dockName: distance <= BIKE_RENTAL.returnRange ? station.name : null };
+      })(),
     };
   }
 
@@ -1341,6 +1379,7 @@ export class GameEngine {
         remote.avatar.root.rotation.y = seat.yaw;
         remote.avatar.root.setEnabled(true);
         remote.avatar.update(0, "sit", dt);
+        if (seatView.model.body === "bicycle" && (b.vehicleSeat ?? 0) === 0) remote.avatar.pedal(seatView.crank);
       } else if (remote.avatar) {
         remote.avatar.root.position.set(x, this.interior ? 0.02 : this.world.groundHeight(x, z), z);
         remote.avatar.root.rotation.y = a.yaw + dyaw * t;
@@ -1674,6 +1713,26 @@ export class GameEngine {
     this.net.send("enterVehicle", seat ? { vehicleId, seat } : { vehicleId });
   }
 
+  rentBike(stationId: string) {
+    this.net.send("rentBike", { stationId, idempotencyKey: crypto.randomUUID() });
+  }
+
+  returnBike() {
+    this.net.send("returnBike");
+  }
+
+  /** Stations with live stock, and the player's current hire if any. */
+  bikeStatus() {
+    const { x, z } = this.controller;
+    const hire = [...this.vehicles.values()].find(({ state }) => state.mine && state.rentalStartedAt);
+    return {
+      stations: BIKE_STATIONS.map((station) => ({ ...station, stock: this.bikeStock[station.id] ?? BIKE_RENTAL.startingBikes, distance: Math.hypot(station.point[0] - x, station.point[1] - z) })),
+      hire: hire
+        ? { vehicleId: hire.state.id, startedAt: hire.state.rentalStartedAt!, point: [hire.view.x, hire.view.z] as Vec2, riding: this.driving?.vehicleId === hire.state.id, ...rentalUsage(hire.state.rentalStartedAt!, Date.now()) }
+        : null,
+    };
+  }
+
   /** Road pickup near the player, the drop-off road point near `destination`, and the road route between them. */
   rideQuote(destination: Vec2) {
     const { x, z } = this.controller;
@@ -1939,6 +1998,7 @@ export class GameEngine {
         }),
       interact: () => this.triggerInteract(),
       ride: () => this.ride,
+      bikes: () => this.bikeStatus(),
       rideCar: () => (this.rideCar ? { x: this.rideCar.car.x, z: this.rideCar.car.z, speed: this.rideCar.car.speed, remaining: this.rideCar.pilot.remaining(this.rideCar.car) } : null),
       navigation: () => this.navigation(),
       navigate: (point: Vec2, label: string) => this.setWaypoint({ point, label }),
