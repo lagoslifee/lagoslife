@@ -1,6 +1,7 @@
 # Netlify hosts only the web client. The game server (Express + Colyseus + PostgreSQL) needs a host that runs
-# long-lived Node processes with WebSockets; set VITE_API_URL in the Netlify site's environment variables to its
-# HTTPS origin before building. See docs/OPERATIONS.md#netlify-web-client.
+# long-lived Node processes with WebSockets, such as the Render Blueprint in render.yaml.
+# Set VITE_API_URL to its HTTPS origin in the Netlify site's environment variables, not here: values in this file
+# override the dashboard. See docs/OPERATIONS.md#netlify-web-client.
 [build]
   base = "."
   command = "npm run build -w @lagos-living/web"
@@ -8,9 +9,10 @@
 
 [build.environment]
   NODE_VERSION = "22"
-  # Testing server: a Cloudflare quick tunnel to a server on the development VM. It changes whenever the tunnel
-  # restarts and stops when the VM does; replace it with the real API origin for a lasting deployment.
-  VITE_API_URL = "https://omaha-celebrate-promising-test.trycloudflare.com"
+  # Testing server: a Cloudflare quick tunnel to a server on a Cursor cloud agent VM. It changes whenever the tunnel
+  # restarts and stops when the VM does. Remove this line once the Render server (render.yaml) is up and set
+  # VITE_API_URL in the Netlify dashboard instead, since values in this file override the dashboard.
+  VITE_API_URL = "https://nashville-annotated-nylon-content.trycloudflare.com"
   # Testing only: visitors get a guest account instead of the sign-in page.
   VITE_GUEST_MODE = "true"
 

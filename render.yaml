@@ -1,0 +1,43 @@
+# Render Blueprint for the game server (Express + Colyseus) and its PostgreSQL database.
+# Render dashboard > New > Blueprint > pick this repository. See docs/OPERATIONS.md#render-game-server.
+databases:
+  - name: lagos-living-db
+    plan: free
+    region: frankfurt
+    postgresMajorVersion: "17"
+    databaseName: lagos_living
+    user: lagos
+    ipAllowList: []
+
+services:
+  - type: web
+    name: lagos-living-server
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./apps/server/Dockerfile
+    dockerContext: .
+    # Free instances have no pre-deploy step, so migrations run on every start (already-applied ones are skipped).
+    # BETTER_AUTH_URL falls back to the service's own onrender.com address.
+    dockerCommand: >-
+      sh -c 'export BETTER_AUTH_URL="${BETTER_AUTH_URL:-$RENDER_EXTERNAL_URL}"
+      && node dist/migrate.js && exec node --enable-source-maps dist/index.js'
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lagos-living-db
+          property: connectionString
+      # The internal connection string only resolves on Render's private network.
+      - key: DATABASE_SSL
+        value: disable
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      - key: WEB_ORIGIN
+        value: https://silver-elf-acde6c.netlify.app
+      # Testing only: visitors get a guest account instead of the sign-in page. Matches VITE_GUEST_MODE on Netlify.
+      - key: GUEST_MODE
+        value: "true"
