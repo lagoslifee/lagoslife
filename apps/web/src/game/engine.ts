@@ -388,7 +388,11 @@ export class GameEngine {
   private cameraReach = 0;
   /** Police have waved the car down: it brakes to a halt until the driver complies or floors it. */
   private flaggedDown = false;
-  private transfer: { el: HTMLDivElement; shownAt: number; arrivedAt: number | null } | null = null;
+  private transfer: { el: HTMLDivElement; shownAt: number; arrivedAt: number | null; minMs: number } | null = null;
+  /** When the last enter/exit/travel request was sent; repeat taps are ignored until the server answers or 3 s pass. */
+  private transitionAt = 0;
+  /** Bumped on every interior change so a slow furniture fetch cannot replace a newer room. */
+  private interiorToken = 0;
   private carPilot: {
     path: Vec2[];
     index: number;
@@ -422,6 +426,10 @@ export class GameEngine {
       self: (self) => this.onSelf(self),
       notice: (notice) => {
         this.callbacks.notice(notice);
+        if (notice.tone === "error" && this.transitionAt) {
+          this.transitionAt = 0;
+          if (this.transfer?.el.classList.contains("plain") && !this.transfer.arrivedAt) this.transfer.arrivedAt = performance.now() - 6_000;
+        }
         if (notice.announcement) {
           if (this.settings.subtitles) this.callbacks.subtitle(notice.announcement);
           this.audio.announce(notice.announcement);
@@ -1866,11 +1874,14 @@ export class GameEngine {
   private onSelf(self: SelfState) {
     const previous = this.self;
     this.self = self;
-    if (this.transfer && !this.transfer.arrivedAt && (self.reason === "teleported" || self.reason === "parked" || self.reason === "travelled")) this.transfer.arrivedAt = performance.now();
+    const moved = Boolean(previous && previous.location !== self.location);
+    if (moved || self.reason === "teleported" || self.reason === "travelled") this.transitionAt = 0;
+    if (this.transfer && !this.transfer.arrivedAt && (moved || self.reason === "teleported" || self.reason === "parked" || self.reason === "travelled")) this.transfer.arrivedAt = performance.now();
     if (self.reason === "alighted" && previous?.busId) this.justAlighted = { busId: previous.busId, at: performance.now() };
     const enteringInterior = self.location !== "street" && (!previous || previous.location !== self.location);
     const leavingInterior = self.location === "street" && this.interior;
     if (leavingInterior) {
+      this.interiorToken += 1;
       this.interior?.dispose();
       this.interior = null;
       this.travelView = null;
@@ -2029,6 +2040,7 @@ export class GameEngine {
   }
 
   enterTravel(target: "consulate" | "airport" | "rooftop" | "hotel", options: { hotelId?: string; bookingId?: string; previewRoom?: "standard" | "suite" | "luxury" } = {}) {
+    if (!this.beginTransition()) return;
     this.net.send("travelEnter", { target, ...options });
   }
 
@@ -2053,6 +2065,7 @@ export class GameEngine {
   }
 
   backToMarina() {
+    if (!this.beginTransition()) return;
     this.net.send("travelTransfer", { to: "marina" });
   }
 
@@ -2061,6 +2074,7 @@ export class GameEngine {
   }
 
   private async loadInterior(self: SelfState) {
+    const token = ++this.interiorToken;
     const travel = travelInteriorOf(self.location);
     if (travel) {
       this.interior?.dispose();
@@ -2086,7 +2100,7 @@ export class GameEngine {
       if (response?.ok) placements = ((await response.json()) as { furniture: Placement[] }).furniture;
       else this.callbacks.notice({ tone: "error", text: "Could not load your furniture — showing an empty room." });
     }
-    if (this.self?.location !== self.location) return;
+    if (token !== this.interiorToken || this.self?.location !== self.location) return;
     this.interior?.dispose();
     this.interior = buildInterior(this.scene, this.materials, this.atlas, kind, title, placements, club);
     this.club = club ?? null;
@@ -2374,11 +2388,22 @@ export class GameEngine {
   }
 
   enterProperty(propertyId: string, mode: "enter" | "preview") {
+    if (!this.beginTransition()) return;
     this.net.send("enterProperty", { propertyId, mode });
   }
 
   exitProperty() {
+    if (!this.beginTransition()) return;
     this.net.send("exitProperty");
+  }
+
+  /** One location change at a time: ignores repeat taps and hides the swap behind a short fade. */
+  private beginTransition() {
+    const now = performance.now();
+    if (now - this.transitionAt < 3_000) return false;
+    this.transitionAt = now;
+    if (!this.transfer) this.showVeil("fade", "", "", 250);
+    return true;
   }
 
   enterVehicle(vehicleId: string, seat?: "driver" | "passenger") {
@@ -2465,14 +2490,22 @@ export class GameEngine {
   }
 
   private beginTransfer(label: string) {
+    this.showVeil("🚕", `Heading to ${label}…`, "Lagos Living Ride express", 900);
+  }
+
+  private showVeil(icon: string, title: string, caption: string, minMs: number) {
     this.transfer?.el.remove();
     const el = document.createElement("div");
-    el.className = "transfer-veil";
+    el.className = icon === "fade" ? "transfer-veil plain" : "transfer-veil";
     el.setAttribute("data-testid", "transfer-veil");
-    el.innerHTML = `<span class="transfer-car" aria-hidden="true">🚕</span><strong></strong><small>Lagos Living Ride express</small>`;
-    el.querySelector("strong")!.textContent = `Heading to ${label}…`;
+    if (icon !== "fade") {
+      el.innerHTML = `<span class="transfer-car" aria-hidden="true"></span><strong></strong><small></small>`;
+      el.querySelector(".transfer-car")!.textContent = icon;
+      el.querySelector("strong")!.textContent = title;
+      el.querySelector("small")!.textContent = caption;
+    }
     this.overlay.appendChild(el);
-    this.transfer = { el, shownAt: performance.now(), arrivedAt: null };
+    this.transfer = { el, shownAt: performance.now(), arrivedAt: null, minMs };
   }
 
   /** Lifts the veil once the player has been moved and the tiles around them are built, or gives up after a few seconds. */
@@ -2480,8 +2513,10 @@ export class GameEngine {
     const transfer = this.transfer;
     if (!transfer) return;
     const age = now - transfer.shownAt;
-    const settled = transfer.arrivedAt !== null && (this.interior || this.world.pendingNear() === 0) && age > 900;
-    const timedOut = transfer.arrivedAt === null ? age > 6_000 : now - transfer.arrivedAt > 6_000;
+    const settled = transfer.arrivedAt !== null && (this.interior || this.world.pendingNear() === 0) && age > transfer.minMs;
+    // A plain fade lifts quickly when the server refuses the move (no arrival), so the player is never stuck behind it.
+    const plain = transfer.minMs < 900;
+    const timedOut = transfer.arrivedAt === null ? age > (plain ? 3_000 : 6_000) : now - transfer.arrivedAt > (plain ? 1_500 : 6_000);
     if (!settled && !timedOut) return;
     this.transfer = null;
     transfer.el.classList.add("leaving");

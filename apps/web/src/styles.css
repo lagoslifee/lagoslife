@@ -178,6 +178,7 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
   pointer-events: auto; animation: transfer-in .25s ease-out; transition: opacity .4s ease;
 }
 .transfer-veil.leaving { opacity: 0; }
+.transfer-veil.plain { background: rgba(6, 12, 11, .92); animation-duration: .18s; }
 .transfer-veil strong { font-size: calc(18px * var(--text-scale)); }
 .transfer-veil small { color: #e7bd62; letter-spacing: .12em; text-transform: uppercase; font-size: calc(10px * var(--text-scale)); }
 .transfer-car { font-size: 44px; animation: transfer-drive 1.1s ease-in-out infinite alternate; }
