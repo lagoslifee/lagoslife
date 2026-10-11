@@ -44,7 +44,7 @@ const justice = vi.hoisted(() => ({
   issueCitation: vi.fn(async (..._args: unknown[]): Promise<{ fine: number } | null> => ({ fine: 2_500 })),
 }));
 vi.mock("../justice-service.js", () => justice);
-const rides = vi.hoisted(() => ({ chargeRide: vi.fn(async () => 1_000), refundRide: vi.fn(async () => 1_000) }));
+const rides = vi.hoisted(() => ({ chargeRide: vi.fn(async () => 1_000), refundRide: vi.fn(async () => 1_000), closeRide: vi.fn(async () => undefined), refundOrphanedRides: vi.fn(async () => 0) }));
 vi.mock("../ride-service.js", () => rides);
 const travel = vi.hoisted(() => ({
   tripRecord: vi.fn(async (_userId: string): Promise<Record<string, unknown> | null> => null),
@@ -915,7 +915,7 @@ describe("LagosRoom Lagos Living Ride", () => {
     await book();
     expect(notices(ada)).toEqual([expect.stringContaining("Ride booked")]);
     expect(ride().status).toBe("approaching");
-    expect(rides.chargeRide).toHaveBeenCalledWith("u-ada", ride().fare, "Ade Auto Works", expect.any(String));
+    expect(rides.chargeRide).toHaveBeenCalledWith("u-ada", ride().fare, "Ade Auto Works", expect.any(String), ride().id);
     await book();
     expect(rides.chargeRide).toHaveBeenCalledTimes(1);
   });

@@ -148,7 +148,7 @@ import {
 } from "../vehicle-service.js";
 import { loadAppearance, profileEvents } from "../profile-service.js";
 import { buildingEvents } from "../building-service.js";
-import { chargeRide, refundRide } from "../ride-service.js";
+import { chargeRide, closeRide, refundOrphanedRides, refundRide } from "../ride-service.js";
 import { activeRental, parkRental, returnRental, startRental, type ActiveRental } from "../bike-service.js";
 import { requestTow } from "../tow-service.js";
 import { hasWristband } from "../club-service.js";
@@ -550,6 +550,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.sendLook(player, client.sessionId);
     this.sendTrip(player);
     this.sendSelf(client, player, resumed ?? (saved ? "Welcome back — progress restored." : "Welcome to Lekki Phase 1."));
+    const orphaned = await refundOrphanedRides(player.userId, player.ride?.id ?? null).catch(() => 0);
+    if (orphaned > 0) this.notify(client, { tone: "info", text: `A ride you paid for was cut off when the server restarted. ₦${orphaned.toLocaleString("en-NG")} has been refunded.` });
     client.send("bikeStock", Object.fromEntries(this.bikeStock));
     client.send("tows", this.tows.states(player.userId));
     const rental = await activeRental(player.userId).catch(() => null);
@@ -1272,7 +1274,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     };
     const ride = player.ride;
     try {
-      const balance = await chargeRide(player.userId, fare, label, idempotencyKey);
+      const balance = await chargeRide(player.userId, fare, label, idempotencyKey, id);
       if (parsed.data.express) {
         this.notify(client, { tone: "success", text: `Express ride booked: ₦${fare.toLocaleString("en-NG")} paid, balance ₦${balance.toLocaleString("en-NG")}.` });
         await this.skipRide(player);
@@ -1433,6 +1435,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         ride.message = `${message} The refund could not be paid right now; please report it from Phone → Safety.`;
       }
     }
+    void closeRide(ride.id).catch((error) => console.error("Could not close ride record", error));
     const client = this.clientFor(player);
     if (client) this.notify(client, { tone: status === "completed" ? "success" : "info", text: ride.message ?? message });
     this.sendRide(player);
