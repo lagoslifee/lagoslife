@@ -763,7 +763,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     const doorX = doorA[0] + (doorB[0] - doorA[0]) * doorT;
     const doorZ = doorA[1] + (doorB[1] - doorA[1]) * doorT;
     const frontRoad = roads.nearest(doorX + doorNx * 2, doorZ + doorNz * 2);
-    const commercialKinds = new Set(["shop", "food", "furniture", "job"]);
+    const commercialKinds = new Set(["shop", "food", "furniture", "job", "dealership", "mechanic"]);
     const onMainRoad = frontRoad && (frontRoad.road.kind === "primary" || frontRoad.road.kind === "tertiary" || frontRoad.road.kind === "primary_link") && frontRoad.distance < 32;
     const shopfront =
       (place && commercialKinds.has(place.kind)) ||

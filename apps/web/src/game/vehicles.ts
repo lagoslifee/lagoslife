@@ -8,7 +8,9 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
-import { getVehicleModel, vehicleSeats, type VehicleModel } from "@lagos-living/shared";
+import type { AssetContainer } from "@babylonjs/core/assetContainer";
+import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
+import { getVehicleModel, VEHICLE_MODELS, vehicleSeats, type VehicleModel } from "@lagos-living/shared";
 import type { Materials } from "./materials";
 
 type Part = "glass" | "trim" | "chrome" | "interior" | "plate" | "headOff" | "headOn" | "tailOff" | "tailOn" | "tailBrake" | "reverse" | "wheel" | "steer" | "fork";
@@ -262,34 +264,80 @@ function buildWheel(scene: Scene, model: VehicleModel) {
   return wheel;
 }
 
-function buildTemplate(scene: Scene, model: VehicleModel) {
-  const parts = Object.fromEntries((["glass", "trim", "chrome", "interior", "plate", "headOff", "headOn", "tailOff", "tailOn", "tailBrake", "reverse", "wheel", "steer", "fork"] as Part[]).map((part) => [part, [] as Mesh[]])) as Record<Part, Mesh[]>;
+const PARTS: Part[] = ["glass", "trim", "chrome", "interior", "plate", "headOff", "headOn", "tailOff", "tailOn", "tailBrake", "reverse", "wheel", "steer", "fork"];
+
+function steeringWheel(scene: Scene) {
+  const rim = MeshBuilder.CreateTorus("steering wheel", { diameter: 0.38, thickness: 0.035, tessellation: 20 }, scene);
+  const bar = MeshBuilder.CreateBox("steering spoke", { width: 0.34, height: 0.02, depth: 0.05 }, scene);
+  const boss = MeshBuilder.CreateCylinder("steering boss", { diameter: 0.09, height: 0.04, tessellation: 10 }, scene);
+  return [rim, bar, boss];
+}
+
+function templateSource(mesh: Mesh, name: string) {
+  mesh.name = name;
+  mesh.isPickable = false;
+  mesh.position.y = -1000;
+  return mesh;
+}
+
+function buildTemplate(scene: Scene, model: VehicleModel): Template {
+  const parts = Object.fromEntries(PARTS.map((part) => [part, [] as Mesh[]])) as Record<Part, Mesh[]>;
   const paint: Mesh[] = [];
   if (model.body === "bicycle") buildBicycle(scene, model, parts, paint);
   else buildCar(scene, model, parts, paint);
   parts.wheel.push(buildWheel(scene, model));
-  if (model.body !== "bicycle") {
-    const rim = MeshBuilder.CreateTorus("steering wheel", { diameter: 0.38, thickness: 0.035, tessellation: 20 }, scene);
-    const bar = MeshBuilder.CreateBox("steering spoke", { width: 0.34, height: 0.02, depth: 0.05 }, scene);
-    const boss = MeshBuilder.CreateCylinder("steering boss", { diameter: 0.09, height: 0.04, tessellation: 10 }, scene);
-    parts.steer.push(rim, bar, boss);
-  }
-  const merge = (meshes: Mesh[], name: string) => {
-    if (!meshes.length) return null;
-    const merged = Mesh.MergeMeshes(meshes, true, true)!;
-    merged.name = `${model.id} ${name}`;
-    merged.isPickable = false;
-    merged.position.y = -1000;
-    return merged;
-  };
+  if (model.body !== "bicycle") parts.steer.push(...steeringWheel(scene));
+  const merge = (meshes: Mesh[], name: string) => (meshes.length ? templateSource(Mesh.MergeMeshes(meshes, true, true)!, `${model.id} ${name}`) : null);
   const sources = {} as Record<Part, Mesh | null>;
-  for (const part of Object.keys(parts) as Part[]) sources[part] = merge(parts[part], part);
+  for (const part of PARTS) sources[part] = merge(parts[part], part);
   const body = merge(paint, "paint")!;
   body.setEnabled(false);
-  return { body, sources };
+  return { body, sources, looks: {}, modelled: false };
 }
 
-type Template = ReturnType<typeof buildTemplate>;
+/**
+ * Template from a modelled GLB (see scripts/assets/build-vehicles.mjs). Its meshes are baked into vehicle space,
+ * so they instance exactly like the procedural parts; lamp meshes are shared by their off/on/brake states.
+ */
+function assetTemplate(scene: Scene, model: VehicleModel, container: AssetContainer, looks: { palette: Material; cabin: Material; glass: Material }): Template {
+  container.addAllToScene();
+  const meshes = new Map<string, Mesh>();
+  for (const mesh of container.meshes) {
+    if (!(mesh instanceof Mesh) || !mesh.getTotalVertices()) continue;
+    const world = mesh.computeWorldMatrix(true).clone();
+    mesh.parent = null;
+    mesh.rotationQuaternion = null;
+    mesh.position.setAll(0);
+    mesh.rotation.setAll(0);
+    mesh.scaling.setAll(1);
+    mesh.bakeTransformIntoVertices(world);
+    meshes.set(mesh.name, mesh);
+  }
+  for (const mesh of container.meshes) if (!meshes.has(mesh.name)) mesh.dispose();
+  for (const material of container.materials.slice()) material.dispose(false, false);
+  const take = (name: string, part: Part, copy = false) => {
+    const mesh = meshes.get(name);
+    if (!mesh) return null;
+    return templateSource(copy ? mesh.clone(`${name} ${part}`, null)! : mesh, `${model.id} ${part}`);
+  };
+  const sources = Object.fromEntries(PARTS.map((part) => [part, null])) as Record<Part, Mesh | null>;
+  sources.glass = take("glass", "glass");
+  sources.trim = take("trim", "trim");
+  sources.plate = take("plate", "plate");
+  sources.interior = take("interior", "interior");
+  sources.wheel = take("wheel", "wheel");
+  sources.headOn = take("headlamp", "headOn", true);
+  sources.headOff = take("headlamp", "headOff");
+  sources.tailOn = take("taillamp", "tailOn", true);
+  sources.tailBrake = take("taillamp", "tailBrake", true);
+  sources.tailOff = take("taillamp", "tailOff");
+  sources.steer = templateSource(Mesh.MergeMeshes(steeringWheel(scene), true, true)!, `${model.id} steer`);
+  const body = templateSource(meshes.get("paint")!, `${model.id} paint`);
+  body.setEnabled(false);
+  return { body, sources, looks: { trim: looks.palette, wheel: looks.palette, interior: looks.cabin, glass: looks.glass }, modelled: true };
+}
+
+type Template = { body: Mesh; sources: Record<Part, Mesh | null>; looks: Partial<Record<Part, Material>>; modelled: boolean };
 type Sample = { t: number; x: number; z: number; yaw: number };
 type Wheel = { pivot: TransformNode; spin: TransformNode; front: boolean };
 
@@ -311,6 +359,8 @@ export class VehicleView {
   private pitch = 0;
   private steerAngle = 0;
   private lightsOn = false;
+  /** Drawn from a modelled asset (its cabin layout applies) rather than the procedural fallback. */
+  modelled = false;
   private last: { x: number; z: number; yaw: number; speed: number } | null = null;
 
   constructor(
@@ -327,6 +377,7 @@ export class VehicleView {
 
   attach(template: Template, paint: Mesh) {
     const { sources } = template;
+    this.modelled = template.modelled;
     const model = this.model;
     paint.parent = this.body;
     const instance = (part: Part, parent: TransformNode) => {
@@ -347,14 +398,16 @@ export class VehicleView {
     }
     const R = model.wheelRadius;
     const bike = model.body === "bicycle";
-    const track = bike ? 0 : model.width / 2 + 0.015 - 0.1;
+    const track = bike ? 0 : (model.asset?.track ?? model.width / 2 + 0.015 - 0.1);
     for (const [x, z] of bike ? ([[0, 1], [0, -1]] as const) : ([[-1, 1], [1, 1], [-1, -1], [1, -1]] as const)) {
       const pivot = new TransformNode(`${this.id} wheel pivot`, this.root.getScene());
       pivot.parent = this.root;
       pivot.position.set(x * track, R, z * (model.wheelbase / 2));
       const spin = new TransformNode(`${this.id} wheel spin`, this.root.getScene());
       spin.parent = pivot;
-      instance("wheel", spin);
+      const wheel = instance("wheel", spin);
+      // Modelled wheels face outward on the left; turning one about Y puts its face outward on the right.
+      if (wheel && template.modelled && x > 0) wheel.rotation.y = Math.PI;
       this.wheels.push({ pivot, spin, front: z > 0 });
       if (bike && z > 0) {
         const fork = instance("fork", pivot);
@@ -366,7 +419,9 @@ export class VehicleView {
       const profile = PROFILES[model.body as keyof typeof PROFILES];
       const column = new TransformNode(`${this.id} steering column`, this.root.getScene());
       column.parent = this.body;
-      column.position.set(seat.x, profile.cabin.belt * model.height + 0.02, seat.z + 0.5);
+      const steering = template.modelled ? model.asset?.steering : undefined;
+      if (steering) column.position.set(steering.x, steering.y, steering.z);
+      else column.position.set(seat.x, profile.cabin.belt * model.height + 0.02, seat.z + 0.5);
       column.rotation.x = -1.13;
       const spin = new TransformNode(`${this.id} steering`, this.root.getScene());
       spin.parent = column;
@@ -480,7 +535,8 @@ export class VehicleView {
   }
 
   /** Height of the avatar root when seated, relative to the ground. */
-  seatHeight() {
+  seatHeight(index = 0) {
+    if (this.modelled && this.model.asset) return this.model.asset.seats[Math.min(index, this.model.asset.seats.length - 1)]!.y;
     if (this.model.body === "bicycle") return 0.5;
     const profile = PROFILES[this.model.body as keyof typeof PROFILES];
     return Math.max(0, profile.lower[1]![1] * this.model.height - 0.12);
@@ -544,6 +600,7 @@ export class VehicleFactory {
   private templates = new Map<string, Template>();
   private paints = new Map<string, PBRMaterial>();
   private looks: Record<Part, Material>;
+  private carGlass: PBRMaterial;
 
   constructor(
     private readonly scene: Scene,
@@ -559,6 +616,9 @@ export class VehicleFactory {
       return material;
     };
     const wheel = pbr("vehicle wheel", "#ffffff", { roughness: 0.55, metallic: 0.25 });
+    this.carGlass = pbr("car glass", "#1a2427", { roughness: 0.05, metallic: 0.2 });
+    this.carGlass.alpha = 0.45;
+    this.carGlass.backFaceCulling = false;
     this.looks = {
       glass: materials.glass,
       trim: pbr("vehicle trim", "#141518", { roughness: 0.7 }),
@@ -591,16 +651,44 @@ export class VehicleFactory {
     return material;
   }
 
+  /** Loads the modelled vehicles; any that fail fall back to their procedural design. */
+  static async load(scene: Scene, materials: Pick<Materials, "glass" | "chrome">) {
+    const factory = new VehicleFactory(scene, materials);
+    await Promise.all(VEHICLE_MODELS.filter((model) => model.asset).map((model) => factory.loadAsset(model).catch(() => undefined)));
+    return factory;
+  }
+
+  private async loadAsset(model: VehicleModel) {
+    const container = await LoadAssetContainerAsync(model.asset!.url, this.scene);
+    const source = container.materials.find((material) => material.name === "trim") as PBRMaterial | undefined;
+    const albedo = source?.albedoTexture ?? null;
+    const palette = new PBRMaterial(`${model.id} palette`, this.scene);
+    palette.albedoTexture = albedo;
+    palette.roughness = 0.6;
+    palette.metallic = 0.05;
+    const cabin = new PBRMaterial(`${model.id} cabin`, this.scene);
+    cabin.albedoColor = Color3.White();
+    cabin.roughness = 0.9;
+    cabin.backFaceCulling = false;
+    const template = assetTemplate(this.scene, model, container, { palette, cabin, glass: this.carGlass });
+    this.dress(template);
+    this.templates.set(model.id, template);
+  }
+
+  private dress(template: Template) {
+    for (const part of PARTS) {
+      const source = template.sources[part];
+      if (!source) continue;
+      source.material = template.looks[part] ?? this.looks[part];
+      if (part === "wheel" && !template.modelled) source.useVertexColors = true;
+    }
+  }
+
   private template(model: VehicleModel) {
     let template = this.templates.get(model.id);
     if (!template) {
       template = buildTemplate(this.scene, model);
-      for (const part of Object.keys(template.sources) as Part[]) {
-        const source = template.sources[part];
-        if (!source) continue;
-        source.material = this.looks[part];
-        if (part === "wheel") source.useVertexColors = true;
-      }
+      this.dress(template);
       this.templates.set(model.id, template);
     }
     return template;

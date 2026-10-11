@@ -1,22 +1,15 @@
-import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
-import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
-import { Color3 } from "@babylonjs/core/Maths/math.color";
-import { Matrix } from "@babylonjs/core/Maths/math.vector";
-import { Mesh } from "@babylonjs/core/Meshes/mesh";
-import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Scene } from "@babylonjs/core/scene";
-import { getPlace, STOPS, type Vec2 } from "@lagos-living/shared";
+import { getPlace, getVehicleModel, STOPS, type Vec2 } from "@lagos-living/shared";
 import { appearanceFor, type Avatar, type AvatarFactory } from "./avatar";
 import type { DanfoView } from "./danfo";
 import { densify, hash, pointAt, polylineLength } from "./geometry";
-import type { Materials, Quality } from "./materials";
+import type { Quality } from "./materials";
 import type { WorldRoad } from "./street-index";
+import type { VehicleFactory, VehicleView } from "./vehicles";
 import type { BuiltWorld } from "./world-builder";
 
-const CAR_COLORS = ["#e8e8e6", "#a9adb1", "#16181b", "#1d2f52", "#8d1d1d", "#b9a37e", "#e7e2d6"];
-
 type Car = {
-  mesh: Mesh;
+  view: VehicleView;
   road: WorldRoad;
   points: Vec2[];
   length: number;
@@ -42,26 +35,10 @@ type Walker = {
   yaw: number;
 };
 
-function carTemplate(scene: Scene, materials: Materials) {
-  const body = MeshBuilder.CreateBox("car body", { width: 1.78, height: 0.62, depth: 4.4 }, scene);
-  body.bakeTransformIntoVertices(Matrix.Translation(0, 0.62, 0));
-  const nose = MeshBuilder.CreateBox("car hood", { width: 1.74, height: 0.18, depth: 4.2 }, scene);
-  nose.bakeTransformIntoVertices(Matrix.Translation(0, 0.98, 0));
-  const cabin = MeshBuilder.CreateBox("car cabin", { width: 1.58, height: 0.52, depth: 2.3 }, scene);
-  cabin.bakeTransformIntoVertices(Matrix.Translation(0, 1.33, -0.25));
-  const wheels: Mesh[] = [];
-  for (const [x, z] of [[-0.82, 1.35], [0.82, 1.35], [-0.82, -1.35], [0.82, -1.35]] as const) {
-    const wheel = MeshBuilder.CreateCylinder("car wheel", { diameter: 0.64, height: 0.24, tessellation: 12 }, scene);
-    wheel.bakeTransformIntoVertices(Matrix.RotationZ(Math.PI / 2).multiply(Matrix.Translation(x, 0.32, z)));
-    wheels.push(wheel);
-  }
-  const lights = MeshBuilder.CreateBox("car lights", { width: 1.5, height: 0.12, depth: 4.42 }, scene);
-  lights.bakeTransformIntoVertices(Matrix.Translation(0, 0.78, 0));
-  const merged = Mesh.MergeMeshes([body, nose, cabin, ...wheels, lights], true, true, undefined, false, true)!;
-  merged.isPickable = false;
-  void materials;
-  return merged;
-}
+/** Everyday traffic mix, drawn from the dealership's own models. */
+const TRAFFIC_MIX = ["tokunbo-saloon", "tokunbo-saloon", "eko-hatch", "island-suv", "tokunbo-saloon", "lagoon-pickup", "eko-hatch", "banana-island-lx", "ojota-minibus", "admiralty-executive"];
+/** Cabins are only drawn for cars this close to the player. */
+const CABIN_RANGE = 30;
 
 /** Client-only ambient traffic and pedestrians; they yield to the player and to danfos. */
 export class AmbientLife {
@@ -70,7 +47,6 @@ export class AmbientLife {
   private statics: Array<{ avatar: Avatar; x: number; z: number; motion: "idle" | "sit" | "wave" }> = [];
   private roads: WorldRoad[];
   private sidewalkRoads: WorldRoad[];
-  private template: Mesh;
   honks = 0;
   onHonk: (() => void) | null = null;
   /** Where the first cars are placed before the player's position is known. */
@@ -80,32 +56,21 @@ export class AmbientLife {
     private readonly scene: Scene,
     private readonly world: BuiltWorld,
     roads: WorldRoad[],
-    materials: Materials,
     private readonly avatars: AvatarFactory | null,
     quality: Quality,
+    vehicles: VehicleFactory,
   ) {
     this.roads = roads.filter((road) => ["primary", "tertiary", "unclassified", "residential"].includes(road.kind) && polylineLength(road.points) > 120);
     this.sidewalkRoads = roads.filter((road) => ["primary", "tertiary", "unclassified", "residential"].includes(road.kind) && polylineLength(road.points) > 60);
     this.home = getPlace("starter-home").door;
-    this.template = carTemplate(scene, materials);
-    this.template.setEnabled(false);
     const carCount = quality === "low" ? 10 : quality === "medium" ? 18 : 26;
     const walkerCount = avatars ? (quality === "low" ? 5 : quality === "medium" ? 10 : 16) : 0;
-    const variants = CAR_COLORS.map((hex, index) => {
-      const paint = new PBRMaterial(`car paint ${index}`, scene);
-      paint.albedoColor = Color3.FromHexString(hex);
-      paint.metallic = 0.6;
-      paint.roughness = 0.32;
-      const multi = new MultiMaterial(`car ${index}`, scene);
-      // Submesh order follows the merge order: body, hood, cabin, 4 wheels, lights.
-      multi.subMaterials = [paint, paint, materials.glass, materials.rubber, materials.rubber, materials.rubber, materials.rubber, materials.lamp];
-      return multi;
-    });
     for (let index = 0; index < carCount; index += 1) {
-      const mesh = this.template.clone(`car ${index}`, null)!;
-      mesh.setEnabled(true);
-      mesh.material = variants[index % variants.length]!;
-      const car: Car = { mesh, road: this.roads[0]!, points: [], length: 0, s: 0, direction: 1, speed: 0, cruise: 8, lane: 1.9, stoppedFor: 0, yaw: 0 };
+      const modelId = TRAFFIC_MIX[index % TRAFFIC_MIX.length]!;
+      const colours = getVehicleModel(modelId).colours;
+      const view = vehicles.create(`traffic-${index}`, modelId, colours[Math.floor(hash(index * 13 + 5) * colours.length)]!);
+      view.setDetail(false);
+      const car: Car = { view, road: this.roads[0]!, points: [], length: 0, s: 0, direction: 1, speed: 0, cruise: 8, lane: 1.9, stoppedFor: 0, yaw: 0 };
       this.spawnCar(car, index * 7.31, null);
       this.cars.push(car);
     }
@@ -202,13 +167,14 @@ export class AmbientLife {
 
   /** Whether a point is inside (or within `margin` of) an ambient car's body. */
   carAt(x: number, y: number, z: number, margin = 0.25) {
-    if (y > 1.6 + margin) return false;
     return this.cars.some((car) => {
-      const dx = x - car.mesh.position.x;
-      const dz = z - car.mesh.position.z;
+      const { model } = car.view;
+      if (y > model.height + margin) return false;
+      const dx = x - car.view.x;
+      const dz = z - car.view.z;
       const forward = dx * Math.sin(car.yaw) + dz * Math.cos(car.yaw);
       const lateral = dx * Math.cos(car.yaw) - dz * Math.sin(car.yaw);
-      return Math.abs(forward) < 2.2 + margin && Math.abs(lateral) < 0.89 + margin;
+      return Math.abs(forward) < model.length / 2 + margin && Math.abs(lateral) < model.width / 2 + margin;
     });
   }
 
@@ -219,7 +185,7 @@ export class AmbientLife {
       const p = pointAt(car.points, s);
       const dirX = p.dx * car.direction;
       const dirZ = p.dz * car.direction;
-      return { x: p.x + dirZ * car.lane, z: p.z - dirX * car.lane, now: [car.mesh.position.x, car.mesh.position.z] as Vec2, kind: car.road.kind };
+      return { x: p.x + dirZ * car.lane, z: p.z - dirX * car.lane, now: [car.view.x, car.view.z] as Vec2, kind: car.road.kind };
     });
   }
 
@@ -241,7 +207,7 @@ export class AmbientLife {
       if (blockedBy(player[0], player[1], 1.7, 10)) target = 0;
       for (const bus of buses) if (blockedBy(bus.root.position.x, bus.root.position.z, 2.0, 12)) target = 0;
       for (const other of this.cars) {
-        if (other !== car && blockedBy(other.mesh.position.x, other.mesh.position.z, 1.6, 11)) target = Math.min(target, 0);
+        if (other !== car && blockedBy(other.view.x, other.view.z, 1.6, 7 + other.view.model.length / 2 + car.view.model.length / 2)) target = Math.min(target, 0);
       }
       const accel = target > car.speed ? 2.5 : 7;
       car.speed += Math.max(-accel * dt, Math.min(accel * dt, target - car.speed));
@@ -255,24 +221,26 @@ export class AmbientLife {
       } else if (car.stoppedFor > 0) car.stoppedFor = 0;
       car.s += car.speed * car.direction * dt;
       if (Math.hypot(x - player[0], z - player[1]) > 320) {
-        this.spawnCar(car, seed + car.mesh.uniqueId * 0.11, player);
+        this.spawnCar(car, seed + car.view.root.uniqueId * 0.11, player);
         continue;
       }
       if (car.s < 0 || car.s > car.length) {
         const far = Math.hypot(x - player[0], z - player[1]) > 90;
-        if (far) this.spawnCar(car, seed + car.mesh.uniqueId * 0.13, player);
+        if (far) this.spawnCar(car, seed + car.view.root.uniqueId * 0.13, player);
         else if (!car.road.oneway) {
           car.direction = car.direction === 1 ? -1 : 1;
           car.s = Math.max(0, Math.min(car.length, car.s));
-        } else this.spawnCar(car, seed + car.mesh.uniqueId * 0.17, player);
+        } else this.spawnCar(car, seed + car.view.root.uniqueId * 0.17, player);
       }
       const yaw = Math.atan2(dirX, dirZ);
       let delta = yaw - car.yaw;
       while (delta > Math.PI) delta -= Math.PI * 2;
       while (delta < -Math.PI) delta += Math.PI * 2;
       car.yaw += delta * Math.min(1, dt * 6);
-      car.mesh.position.set(x, 0.05, z);
-      car.mesh.rotation.y = car.yaw;
+      car.view.setPose(x, 0.05, z, car.yaw);
+      const near = Math.hypot(x - player[0], z - player[1]) < CABIN_RANGE;
+      car.view.setDetail(near);
+      car.view.animate(dt, { speed: car.speed, steer: delta * 0.6, braking: target < car.speed - 0.5, accel: 0, yawRate: 0 });
     }
 
     for (const walker of this.walkers) {
@@ -314,9 +282,8 @@ export class AmbientLife {
   }
 
   dispose() {
-    for (const car of this.cars) car.mesh.dispose();
+    for (const car of this.cars) car.view.dispose();
     for (const walker of this.walkers) walker.avatar.dispose();
     for (const npc of this.statics) npc.avatar.dispose();
-    this.template.dispose();
   }
 }

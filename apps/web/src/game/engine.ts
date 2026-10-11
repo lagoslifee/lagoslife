@@ -23,6 +23,7 @@ import {
   effectiveTopSpeed,
   getPlace,
   getVehicleModel,
+  TEST_DRIVE,
   INTERACTION_RANGE,
   VEHICLE_RULES,
   type WorldVehicle,
@@ -268,6 +269,8 @@ export class GameEngine {
   private ride: RideState | null = null;
   private bikeStock: Record<string, number> = {};
   private bikeStations: BikeStationsView | null = null;
+  /** Lekki Motors' forecourt display cars (client-only, but solid). */
+  private showroom: VehicleView[] = [];
   private rideCar: { vehicleId: string; car: CarController; pilot: RoutePilot; stopping: boolean; sentAt: number } | null = null;
   private tows = new Map<string, TowState>();
   private rideApproach: { rideId: string; view: VehicleView; driver: Avatar | null; path: Vec2[]; along: number[]; startAt: number; arrivesAt: number } | null = null;
@@ -476,13 +479,16 @@ export class GameEngine {
     this.parcel.material = cardboard;
     this.parcel.setEnabled(false);
 
-    this.life = new AmbientLife(scene, this.world, this.data.roads, this.materials, this.avatars, this.quality);
+    this.callbacks.loading("Loading vehicles…", 0.85);
+    this.vehicleFactory = await VehicleFactory.load(scene, this.materials);
+    this.assertLive();
+    this.life = new AmbientLife(scene, this.world, this.data.roads, this.avatars, this.quality, this.vehicleFactory);
     this.life.onHonk = () => {
       this.audio.horn(0.8);
       this.caption("A car honks — you are blocking the road");
     };
-    this.vehicleFactory = new VehicleFactory(scene, this.materials);
     buildServiceBay(scene, getPlace("ade-auto-works"), (x, z) => this.world.groundHeight(x, z));
+    this.showroom = this.buildShowroom(this.vehicleFactory);
     this.bikeStations = new BikeStationsView(scene, this.materials, (x, z) => this.world.groundHeight(x, z), this.vehicleFactory, (meshes) => this.addCaster(meshes));
 
     this.input = new InputState(this.canvas, this.bindings);
@@ -571,12 +577,36 @@ export class GameEngine {
     for (const mesh of meshes) this.shadows.addShadowCaster(mesh, false);
   }
 
+  /** Two of the cars on sale, angled toward Admiralty Way either side of the clear path to the door. */
+  private buildShowroom(factory: VehicleFactory) {
+    const place = getPlace(TEST_DRIVE.dealerPlaceId);
+    const [dx, dz] = place.door;
+    const fx = Math.sin(place.facing);
+    const fz = Math.cos(place.facing);
+    const rx = Math.cos(place.facing);
+    const rz = -Math.sin(place.facing);
+    const lots = [
+      { modelId: "banana-island-lx", side: -1 },
+      { modelId: "island-suv", side: 1 },
+    ];
+    return lots.map(({ modelId, side }, index) => {
+      const model = getVehicleModel(modelId);
+      const view = factory.create(`showroom-${index}`, modelId, model.colours[0]!);
+      const x = dx + fx * 4.2 + rx * side * 5.4;
+      const z = dz + fz * 4.2 + rz * side * 5.4;
+      view.setPose(x, this.world.groundHeight(x, z), z, place.facing + side * 0.55);
+      this.addCaster(view.meshes);
+      return view;
+    });
+  }
+
   private collide(x: number, z: number): [number, number] {
     if (this.interior) return this.interior.collide(x, z, MOVEMENT.radius);
     let [px, pz] = resolveBuildingCollision(x, z, MOVEMENT.radius);
     [px, pz] = this.world.obstacles.resolve(px, pz, MOVEMENT.radius);
     for (const bus of this.buses.values()) [px, pz] = bus.pushOut(px, pz, MOVEMENT.radius);
     for (const { view } of this.vehicles.values()) [px, pz] = view.pushOut(px, pz, MOVEMENT.radius);
+    for (const view of this.showroom) [px, pz] = view.pushOut(px, pz, MOVEMENT.radius);
     const { x: ox, z: oz } = this.controller;
     // Open water and the district edges stop residents; slide along them, and never trap someone already outside.
     if (!this.onLand(px, pz) && this.onLand(ox, oz)) {
@@ -595,6 +625,7 @@ export class GameEngine {
     for (const [id, { view }] of this.vehicles) {
       if (id !== this.driving?.vehicleId && id !== this.rideCar?.vehicleId) [px, pz] = view.pushOut(px, pz, radius);
     }
+    for (const view of this.showroom) [px, pz] = view.pushOut(px, pz, radius);
     // Water and district edges count as a fixed overlap, so the car stops at the shore but can always reverse off it.
     if (!this.onLand(px, pz)) return [px + radius, pz];
     return [px, pz];
@@ -876,7 +907,7 @@ export class GameEngine {
     const seatView = ride ? this.vehicles.get(ride.vehicleId)?.view : undefined;
     if (this.player && seatView && ride) {
       const seat = seatView.seat(ride.seat);
-      this.player.root.position.set(seat.x, this.world.groundHeight(seat.x, seat.z) + seatView.seatHeight(), seat.z);
+      this.player.root.position.set(seat.x, this.world.groundHeight(seat.x, seat.z) + seatView.seatHeight(ride.seat), seat.z);
       this.player.root.rotation.y = seat.yaw;
       this.player.root.setEnabled(true);
       const bike = seatView.model.body === "bicycle";
@@ -1445,7 +1476,7 @@ export class GameEngine {
       const seatView = b.vehicleId && !this.interior ? this.vehicles.get(b.vehicleId)?.view : undefined;
       if (remote.avatar && seatView) {
         const seat = seatView.seat(b.vehicleSeat ?? 0);
-        remote.avatar.root.position.set(seat.x, this.world.groundHeight(seat.x, seat.z) + seatView.seatHeight(), seat.z);
+        remote.avatar.root.position.set(seat.x, this.world.groundHeight(seat.x, seat.z) + seatView.seatHeight(b.vehicleSeat ?? 0), seat.z);
         remote.avatar.root.rotation.y = seat.yaw;
         remote.avatar.root.setEnabled(true);
         const bike = seatView.model.body === "bicycle";

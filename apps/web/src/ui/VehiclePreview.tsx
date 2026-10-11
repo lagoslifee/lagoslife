@@ -18,6 +18,7 @@ export function VehiclePreview({ modelId, colour }: { modelId: string; colour: s
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stage = useRef<{ factory: VehicleFactory; camera: ArcRotateCamera; view: VehicleView | null } | null>(null);
   const [failed, setFailed] = useState(false);
+  const [ready, setReady] = useState(0);
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -64,11 +65,17 @@ export function VehiclePreview({ modelId, colour }: { modelId: string; colour: s
     chrome.albedoColor = Color3.FromHexString("#c9ccd0");
     chrome.metallic = 1;
     chrome.roughness = 0.15;
-    stage.current = { factory: new VehicleFactory(scene, { glass, chrome }), camera, view: null };
+    let live = true;
+    void VehicleFactory.load(scene, { glass, chrome }).then((factory) => {
+      if (!live) return;
+      stage.current = { factory, camera, view: null };
+      setReady((count) => count + 1);
+    });
     engine.runRenderLoop(() => scene.render());
     const resize = new ResizeObserver(() => engine.resize());
     resize.observe(canvas);
     return () => {
+      live = false;
       resize.disconnect();
       stage.current = null;
       engine.dispose();
@@ -83,7 +90,7 @@ export function VehiclePreview({ modelId, colour }: { modelId: string; colour: s
     current.view = current.factory.create(`preview-${modelId}`, modelId, colour);
     current.camera.radius = Math.max(3, model.length * 1.55 + 1);
     current.camera.target.y = model.height * 0.45;
-  }, [modelId, colour]);
+  }, [modelId, colour, ready]);
 
   return (
     <div className="vehicle-preview" data-testid="vehicle-preview">
