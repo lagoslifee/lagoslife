@@ -18,5 +18,9 @@
   { "id": "muri-okunola-park", "kind": "park", "name": "Muri Okunola Park", "area": 224073907, "street": "Akin Adesola Street" },
   { "id": "admiralty-lounge", "kind": "club", "name": "Admiralty Lounge", "building": 1270253733, "street": "Admiralty Way" },
   { "id": "awolowo-rooftop", "kind": "club", "name": "Awolowo Rooftop Club", "building": 625645017, "street": "Awolowo Road" },
-  { "id": "eko-nights", "kind": "club", "name": "Eko Nights", "building": 626132127, "street": "Adeola Odeku Street" }
+  { "id": "eko-nights", "kind": "club", "name": "Eko Nights", "building": 626132127, "street": "Adeola Odeku Street" },
+  { "id": "lekki-police-division", "kind": "police", "name": "Lekki Police Division", "building": 1270253683, "street": "Admiralty Way" },
+  { "id": "ikoyi-police-station", "kind": "police", "name": "Ikoyi Police Station", "building": 597498739, "street": "Awolowo Road" },
+  { "id": "bar-beach-police-station", "kind": "police", "name": "Bar Beach Police Station", "building": 529943961, "street": "Ozumba Mbadiwe Avenue" },
+  { "id": "eko-shield-security", "kind": "security", "name": "Eko Shield Security", "building": 1268301921, "street": "Admiralty Way" }
 ]

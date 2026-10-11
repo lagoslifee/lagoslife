@@ -30,6 +30,8 @@ import {
   reportSchema,
   resolveReportSchema,
   roleChangeSchema,
+  hireSecuritySchema,
+  policeReportSchema,
 } from "@lagos-living/shared";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
@@ -71,6 +73,7 @@ import { createMultiplayerToken } from "./multiplayer-token.js";
 import { loadCharacter, saveAppearance } from "./profile-service.js";
 import { getCommunityStatus, visitQuietPlace, volunteerShift } from "./community-service.js";
 import { bookTable, buyWristband, getClubStatus, listTables, orderAtBar, orderBottle, setTableGuest } from "./club-service.js";
+import { dismissSecurity, getSecurityStatus, hireSecurity, policeRecords, reportRobbery } from "./police-service.js";
 import { z } from "zod";
 import {
   cancelDelivery,
@@ -437,6 +440,25 @@ export function configureRoutes(app: Express) {
   app.post("/api/clubs/:placeId/tables/:no/bottle", requirePlayer, rateLimited, guarded("Bottle could not be ordered", (req, userId) => {
     const { itemId, idempotencyKey } = tableBottleSchema.parse(req.body);
     return orderBottle(userId, String(req.params.placeId), tableNo(req), itemId, idempotencyKey);
+  }));
+
+  app.get("/api/security", requirePlayer, guarded("Security unavailable", (_req, userId) =>
+    getSecurityStatus(userId)));
+
+  app.post("/api/security/hire", requirePlayer, rateLimited, guarded("Guards could not be hired", (req, userId) => {
+    const { plan, idempotencyKey } = hireSecuritySchema.parse(req.body);
+    return hireSecurity(userId, plan, idempotencyKey);
+  }));
+
+  app.post("/api/security/dismiss", requirePlayer, rateLimited, guarded("Guards could not be dismissed", (_req, userId) =>
+    dismissSecurity(userId)));
+
+  app.get("/api/police/records", requirePlayer, guarded("Police records unavailable", (_req, userId) =>
+    policeRecords(userId)));
+
+  app.post("/api/police/report", requirePlayer, rateLimited, guarded("Report could not be filed", (req, userId) => {
+    const { userName, details } = policeReportSchema.parse(req.body);
+    return reportRobbery(userId, userName, details);
   }));
 
   app.get("/api/account/standing", requireSession, guarded("Standing unavailable", async (_req, userId) => {

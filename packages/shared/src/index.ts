@@ -61,6 +61,7 @@ export * from "./towing.js";
 export * from "./roads.js";
 export * from "./nightlife.js";
 export * from "./club-music.js";
+export * from "./police.js";
 import { worldVehicleSchema } from "./vehicles.js";
 
 export const motionStates = ["idle", "walk", "jog", "sprint", "sit", "wave", "dance", "drive"] as const;
@@ -102,6 +103,8 @@ export const networkPlayerSchema = z.object({
   vehicleId: z.string().nullable().default(null),
   /** 0 is the driver's seat; higher numbers are passenger seats. */
   vehicleSeat: z.number().int().nullable().default(null),
+  /** Hired guards travelling with this player. */
+  guards: z.number().int().min(0).max(4).default(0),
 });
 
 export const busStateSchema = z.object({

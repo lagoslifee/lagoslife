@@ -17,7 +17,9 @@ export type PlaceKind =
   | "worship"
   | "community"
   | "park"
-  | "club";
+  | "club"
+  | "police"
+  | "security";
 
 export type Place = {
   id: string;

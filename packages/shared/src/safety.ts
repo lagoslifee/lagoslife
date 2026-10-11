@@ -138,6 +138,21 @@ export const OFFENCES = {
     description: "Collided with street furniture or a building at speed.",
     fine: JUSTICE.carelessDrivingFine,
   },
+  no_papers: {
+    title: "Driving without valid papers",
+    description: "Stopped at a police checkpoint without insurance or in an unroadworthy car.",
+    fine: 5_000,
+  },
+  evading_checkpoint: {
+    title: "Evading a police checkpoint",
+    description: "Drove off when flagged down at a police checkpoint.",
+    fine: 25_000,
+  },
+  armed_robbery: {
+    title: "Armed robbery",
+    description: "Robbed another resident at gunpoint, as recorded by the city.",
+    fine: 50_000,
+  },
 } as const;
 export type OffenceId = keyof typeof OFFENCES;
 

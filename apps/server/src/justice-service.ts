@@ -50,14 +50,17 @@ async function logEvent(client: PoolClient, citation: { id: string; user_id: str
  * Issued by the simulation only. Returns null when the player already received a citation within the cooldown,
  * so a pile-up of impacts yields a single ticket.
  */
-export async function issueCitation(userId: string, offence: OffenceId, evidence: Citation["evidence"]) {
+/** Driving offences share a cooldown so one crash is one fine; police charges pass `ignoreCooldown`. */
+export async function issueCitation(userId: string, offence: OffenceId, evidence: Citation["evidence"], options: { ignoreCooldown?: boolean } = {}) {
   return withTransaction(async (client) => {
     await client.query(`SELECT pg_advisory_xact_lock(hashtext('citation:' || $1))`, [userId]);
-    const recent = await client.query(
-      `SELECT 1 FROM citation WHERE user_id = $1 AND issued_at > NOW() - make_interval(secs => $2)`,
-      [userId, JUSTICE.citationCooldownMs / 1_000],
-    );
-    if (recent.rowCount) return null;
+    if (!options.ignoreCooldown) {
+      const recent = await client.query(
+        `SELECT 1 FROM citation WHERE user_id = $1 AND issued_at > NOW() - make_interval(secs => $2)`,
+        [userId, JUSTICE.citationCooldownMs / 1_000],
+      );
+      if (recent.rowCount) return null;
+    }
     const result = await client.query<CitationRow>(
       `INSERT INTO citation (id, user_id, offence, fine, evidence, due_at)
        VALUES ($1, $2, $3, $4, $5, NOW() + make_interval(hours => $6))
@@ -65,7 +68,7 @@ export async function issueCitation(userId: string, offence: OffenceId, evidence
       [randomUUID(), userId, offence, OFFENCES[offence].fine, JSON.stringify(evidence), JUSTICE.dueHours],
     );
     const row = result.rows[0]!;
-    await logEvent(client, row, null, "issued", `${OFFENCES[offence].title} at ${evidence.speed.toFixed(1)} m/s`);
+    await logEvent(client, row, null, "issued", evidence.speed > 0 ? `${OFFENCES[offence].title} at ${evidence.speed.toFixed(1)} m/s` : OFFENCES[offence].title);
     return toCitation(row);
   });
 }

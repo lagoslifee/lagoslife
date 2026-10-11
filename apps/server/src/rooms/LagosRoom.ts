@@ -1,4 +1,12 @@
 import {
+  checkpointAnswerSchema,
+  type CheckpointStop,
+  type HoldUp,
+  holdUpSchema,
+  POLICE,
+  POLICE_CHECKPOINTS,
+  ROBBERY,
+  robberyAnswerSchema,
   boardRequestSchema,
   CHAT,
   chatSendSchema,
@@ -96,6 +104,7 @@ import { chargeRide, refundRide } from "../ride-service.js";
 import { activeRental, parkRental, returnRental, startRental, type ActiveRental } from "../bike-service.js";
 import { requestTow } from "../tow-service.js";
 import { hasWristband } from "../club-service.js";
+import { getSecurityStatus, policeWitness, resolveCheckpoint, resolveRobbery, securityEvents, startRobbery } from "../police-service.js";
 import { config } from "../config.js";
 import { TowDispatcher } from "./tow-dispatch.js";
 import "../world-footprints.js";
@@ -175,6 +184,15 @@ type Player = {
   /** Metres covered by recently accepted position updates, for the server's own speed estimate. */
   travel: Array<{ at: number; metres: number; seconds: number }>;
   kicked: boolean;
+  guards: number;
+  guardsUntil: number;
+  /** An officer has flagged this driver down and is waiting for an answer. */
+  checkpoint: (CheckpointStop & { point: [number, number] }) | null;
+  lastCheckpointAt: number;
+  /** A hold-up this player is the victim of, waiting for their answer. */
+  heldUp: { robberyId: string; robberSessionId: string; robberName: string; expiresAt: number } | null;
+  /** True while this player is holding someone up, so they can't start a second one. */
+  robbing: boolean;
 };
 
 const SPEED_WINDOW_MS = 1_500;
@@ -264,6 +282,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private onBlocksChanged = (userIds: string[]) => void this.refreshHidden(userIds);
   private onAppearance = (userId: string, appearance: CharacterAppearance) => this.updateAppearance(userId, appearance);
   private onPlotsChanged = () => this.broadcast("plots", {});
+  private onSecurityChanged = (userId: string) => void this.refreshGuards(userId);
 
   onAuth(_client: LagosClient, options: { token?: unknown }, _context: AuthContext) {
     return verifyMultiplayerToken(options.token);
@@ -276,6 +295,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     safetyEvents.on("blocksChanged", this.onBlocksChanged);
     profileEvents.on("appearance", this.onAppearance);
     buildingEvents.on("changed", this.onPlotsChanged);
+    securityEvents.on("changed", this.onSecurityChanged);
     try {
       await parkAbandonedVehicles();
       for (const vehicle of await loadStreetVehicles()) this.vehicles.set(vehicle.id, vehicle);
@@ -325,6 +345,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("vehicleSignal", (client, payload) => this.handleVehicleSignal(client, payload));
     this.onMessage("vehicleImpact", (client, payload) => void this.handleVehicleImpact(client, payload));
     this.onMessage("chat", (client, payload) => void this.handleChat(client, payload));
+    this.onMessage("checkpointAnswer", (client, payload) => this.handleCheckpointAnswer(client, payload));
+    this.onMessage("holdUp", (client, payload) => void this.handleHoldUp(client, payload));
+    this.onMessage("robberyAnswer", (client, payload) => this.handleRobberyAnswer(client, payload));
     this.onMessage("requestLooks", (client) => this.sendLooks(client));
     this.onMessage("emote", (client, payload) => {
       const player = this.players.get(client.sessionId);
@@ -343,11 +366,12 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   async onJoin(client: LagosClient) {
     const ticket = ++this.joinCounter;
     this.joinTickets.set(client.auth.userId, ticket);
-    const [suspension, mute, hidden, appearance] = await Promise.all([
+    const [suspension, mute, hidden, appearance, security] = await Promise.all([
       activeSuspension(client.auth.userId).catch(() => null),
       activeMute(client.auth.userId).catch(() => null),
       hiddenPlayers(client.auth.userId).catch(() => new Set<string>()),
       loadAppearance(client.auth.userId).catch(() => defaultAppearance),
+      getSecurityStatus(client.auth.userId).catch(() => ({ guards: 0, until: null })),
     ]);
     if (suspension) throw new Error("This account is suspended.");
     clearProgressReset(client.auth.userId);
@@ -403,6 +427,12 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       hidden,
       travel: [],
       kicked: false,
+      guards: security.guards,
+      guardsUntil: security.until ? new Date(security.until).getTime() : 0,
+      checkpoint: null,
+      lastCheckpointAt: 0,
+      heldUp: null,
+      robbing: false,
     };
     for (const [sessionId, existing] of this.players) {
       if (existing.userId === player.userId) {
@@ -470,6 +500,10 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         player.z = stop.alight[1];
         this.releaseSeat(player, "interrupted", stop.id);
       }
+      if (player.heldUp) await this.finishHoldUp(player, "timeout").catch(() => undefined);
+      if (player.robbing) {
+        for (const other of this.players.values()) if (other.heldUp?.robberSessionId === player.sessionId) await this.finishHoldUp(other, "timeout").catch(() => undefined);
+      }
       await this.endRide(player, "cancelled", "You disconnected, so the ride ended.", "system").catch(() => undefined);
       await this.parkPlayerVehicle(player).catch(() => undefined);
       for (const vehicle of this.vehicles.values()) {
@@ -488,6 +522,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     safetyEvents.off("blocksChanged", this.onBlocksChanged);
     profileEvents.off("appearance", this.onAppearance);
     buildingEvents.off("changed", this.onPlotsChanged);
+    securityEvents.off("changed", this.onSecurityChanged);
     await Promise.all(
       [...this.players.values()].map(async (player) => {
         await this.parkPlayerVehicle(player).catch(() => undefined);
@@ -592,6 +627,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       }
       if (distance > 0.05) player.heading = [(player.x - from[0]) / distance, (player.z - from[1]) / distance];
       player.driveMetres += distance;
+      if (!vehicle.npc && !vehicle.tow && !player.vehicleSeat) this.watchCheckpoints(client, player, vehicle, now);
       if (!vehicle.testDrive && !vehicle.npc && !vehicle.rental && now - player.lastVehicleSaveAt > VEHICLE_SAVE_MS) {
         const metres = player.driveMetres;
         player.driveMetres = 0;
@@ -1735,6 +1771,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (this.state.tick % 25 === 0) {
       this.checkTestDrives(now);
       this.checkRides(now);
+      this.checkPolice(now);
     }
     for (const bus of this.buses) {
       const { route } = bus;
@@ -1856,6 +1893,145 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     });
   }
 
+  private async refreshGuards(userId: string) {
+    const status = await getSecurityStatus(userId).catch(() => null);
+    if (!status) return;
+    for (const player of this.players.values()) {
+      if (player.userId !== userId) continue;
+      player.guards = status.guards;
+      player.guardsUntil = status.until ? new Date(status.until).getTime() : 0;
+    }
+  }
+
+  private policeWhere(player: Player) {
+    return { x: player.x, z: player.z, district: districtAt(player.x, player.z)?.name ?? null };
+  }
+
+  /** Flags a driver down near a checkpoint, and treats leaving the checkpoint while flagged as driving off. */
+  private watchCheckpoints(client: Client, player: Player, vehicle: RoomVehicle, now: number) {
+    if (player.checkpoint) {
+      const [cx, cz] = player.checkpoint.point;
+      if (Math.hypot(player.x - cx, player.z - cz) > POLICE.fleeDistance) void this.finishCheckpoint(player, "flee");
+      return;
+    }
+    if (now - player.lastCheckpointAt < POLICE.checkpointCooldownMs) return;
+    const checkpoint = POLICE_CHECKPOINTS.find(({ point }) => Math.hypot(player.x - point[0], player.z - point[1]) < POLICE.checkpointRadius);
+    if (!checkpoint) return;
+    player.lastCheckpointAt = now;
+    player.checkpoint = { checkpointId: checkpoint.id, name: checkpoint.name, expiresAt: now + POLICE.answerMs, point: checkpoint.point };
+    const stop: CheckpointStop = { checkpointId: checkpoint.id, name: checkpoint.name, expiresAt: player.checkpoint.expiresAt };
+    client.send("checkpoint", { ...stop, vehicleId: vehicle.id });
+  }
+
+  private handleCheckpointAnswer(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = checkpointAnswerSchema.safeParse(payload);
+    if (!player || !parsed.success || player.checkpoint?.checkpointId !== parsed.data.checkpointId) return;
+    void this.finishCheckpoint(player, parsed.data.answer);
+  }
+
+  private async finishCheckpoint(player: Player, answer: "comply" | "flee") {
+    const stop = player.checkpoint;
+    if (!stop) return;
+    player.checkpoint = null;
+    const vehicle = player.vehicleId ? this.vehicles.get(player.vehicleId) : undefined;
+    const papersCar = vehicle && !vehicle.testDrive && !vehicle.rental && vehicle.ownerUserId === player.userId ? vehicle.id : null;
+    const result = await resolveCheckpoint(player.userId, stop.checkpointId, papersCar, answer, this.policeWhere(player)).catch(() => null);
+    const client = this.clientFor(player);
+    if (!client || !result) return;
+    const fine = result.citation ? `₦${result.citation.fine.toLocaleString("en-NG")}` : "";
+    const text = {
+      cleared: "Officer: \"Your papers are in order. Safe journey.\"",
+      fined: `Officer: "${result.reason ? result.reason[0]!.toUpperCase() + result.reason.slice(1) : "Your papers aren't in order"}." Fined ${fine} for driving without valid papers. Pay it, or contest it in court, in Phone → Justice.`,
+      fled_escaped: "You drove off and lost the police. They didn't get your plate this time.",
+      fled_caught: `The police got your plate. You're charged with evading a checkpoint: ${fine}. Pay it, or contest it in court, in Phone → Justice.`,
+    }[result.outcome];
+    const tone = result.outcome === "cleared" ? "success" : result.outcome === "fled_escaped" ? "info" : "error";
+    client.send("checkpointEnd", { checkpointId: stop.checkpointId, outcome: result.outcome, text });
+    this.notify(client, { tone, text });
+  }
+
+  private onFoot(player: Player) {
+    return player.connected && player.location === "street" && !player.busId && !player.vehicleId && !player.entering;
+  }
+
+  private async handleHoldUp(client: Client, payload: unknown) {
+    const robber = this.players.get(client.sessionId);
+    const parsed = holdUpSchema.safeParse(payload);
+    if (!robber || !parsed.success || this.limited(robber.actionRate, 2)) return;
+    const victim = this.players.get(parsed.data.sessionId);
+    const fail = (text: string) => this.notify(client, { tone: "error", text });
+    if (!victim || victim === robber) return fail("There's nobody there to rob.");
+    if (!this.onFoot(robber) || !this.onFoot(victim)) return fail("You both need to be on foot in the street.");
+    if (Math.hypot(robber.x - victim.x, robber.z - victim.z) > ROBBERY.range) return fail(`Get closer to ${victim.name}.`);
+    if (robber.robbing || robber.heldUp || victim.heldUp || victim.robbing) return fail("Not now.");
+    robber.robbing = true;
+    try {
+      const robbery = await startRobbery(robber.userId, victim.userId, robber.x, robber.z);
+      if (policeWitness(robber.x, robber.z)) {
+        await resolveRobbery(robbery.id, "caught", this.policeWhere(robber));
+        robber.robbing = false;
+        this.notify(client, {
+          tone: "error",
+          text: `Officers nearby saw you pull a gun on ${victim.name}. You're charged with armed robbery: ₦50,000. Pay it, or contest it in court, in Phone → Justice.`,
+        });
+        const victimClient = this.clientFor(victim);
+        if (victimClient) this.notify(victimClient, { tone: "info", text: `${robber.name} tried to rob you, but police officers nearby stopped them.` });
+        return;
+      }
+      const expiresAt = Date.now() + ROBBERY.responseMs;
+      victim.heldUp = { robberyId: robbery.id, robberSessionId: robber.sessionId, robberName: robber.name, expiresAt };
+      robber.motion = "idle";
+      const holdUp: HoldUp = { robberyId: robbery.id, robberName: robber.name, amount: robbery.amount, expiresAt };
+      this.clientFor(victim)?.send("holdUp", holdUp);
+      this.notify(client, { tone: "info", text: `You pull a gun on ${victim.name} and demand ₦${robbery.amount.toLocaleString("en-NG")}…` });
+    } catch (error) {
+      robber.robbing = false;
+      fail(error instanceof Error ? error.message : "That didn't work.");
+    }
+  }
+
+  private handleRobberyAnswer(client: Client, payload: unknown) {
+    const victim = this.players.get(client.sessionId);
+    const parsed = robberyAnswerSchema.safeParse(payload);
+    if (!victim || !parsed.success || victim.heldUp?.robberyId !== parsed.data.robberyId) return;
+    void this.finishHoldUp(victim, parsed.data.answer);
+  }
+
+  private async finishHoldUp(victim: Player, answer: "comply" | "run" | "timeout") {
+    const holdUp = victim.heldUp;
+    if (!holdUp) return;
+    victim.heldUp = null;
+    const robber = this.players.get(holdUp.robberSessionId);
+    if (robber) robber.robbing = false;
+    const outcome = answer === "run" && Math.random() < ROBBERY.runEscapeChance ? "escaped" : "robbed";
+    const result = await resolveRobbery(holdUp.robberyId, outcome, this.policeWhere(victim)).catch(() => null);
+    if (!result) return;
+    const money = `₦${result.amount.toLocaleString("en-NG")}`;
+    const victimClient = this.clientFor(victim);
+    const robberClient = robber ? this.clientFor(robber) : undefined;
+    const victimText =
+      outcome === "escaped"
+        ? `You ran and got away from ${holdUp.robberName}. You can still report them at a police station.`
+        : `${holdUp.robberName} took ${money}${answer === "run" ? " — you tried to run but they caught you" : ""}. Report it at a police station within a day to get it back.`;
+    victimClient?.send("holdUpEnd", { robberyId: holdUp.robberyId, outcome, text: victimText });
+    if (victimClient) this.notify(victimClient, { tone: outcome === "escaped" ? "info" : "error", text: victimText });
+    if (robberClient) {
+      this.notify(robberClient, {
+        tone: outcome === "escaped" ? "info" : "success",
+        text: outcome === "escaped" ? `${victim.name} ran off.` : `${victim.name} handed over ${money}. If they report you to the police, you'll have to give it back and pay a fine.`,
+      });
+    }
+  }
+
+  private checkPolice(now: number) {
+    for (const player of this.players.values()) {
+      if (player.checkpoint && now > player.checkpoint.expiresAt) void this.finishCheckpoint(player, "comply");
+      if (player.heldUp && now > player.heldUp.expiresAt) void this.finishHoldUp(player, "timeout");
+      if (player.guards && player.guardsUntil <= now) player.guards = 0;
+    }
+  }
+
   private wirePlayer(player: Player): NetworkPlayerWire {
     const wire: NetworkPlayerWire = { sessionId: player.sessionId, name: player.name, x: player.x, z: player.z, yaw: player.yaw, motion: player.motion };
     if (!player.busId && player.location !== "street") wire.location = player.location;
@@ -1865,6 +2041,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (!player.connected) wire.connected = false;
     if (player.vehicleId) wire.vehicleId = player.vehicleId;
     if (player.vehicleSeat) wire.vehicleSeat = player.vehicleSeat;
+    if (player.guards && player.guardsUntil > Date.now()) wire.guards = player.guards;
     return wire;
   }
 

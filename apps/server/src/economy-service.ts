@@ -463,6 +463,10 @@ export async function resetTestProgress(userId: string) {
     await client.query(`DELETE FROM club_table_guest WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM club_order WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM citation WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM police_case WHERE reporter_id = $1 OR accused_id = $1`, [userId]);
+    await client.query(`DELETE FROM robbery WHERE robber_id = $1 OR victim_id = $1`, [userId]);
+    await client.query(`DELETE FROM checkpoint_stop WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM security_hire WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM furniture_placement WHERE placed_by = $1`, [userId]);
     await client.query(`DELETE FROM property_storage WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM property_guest WHERE guest_user_id = $1 OR granted_by = $1`, [userId]);

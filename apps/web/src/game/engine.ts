@@ -189,6 +189,8 @@ const PLACE_ACTIONS: Record<Place["kind"], string> = {
   community: "Community hall",
   park: "Relax",
   club: "Enter club",
+  police: "Police station",
+  security: "Hire security",
 };
 
 export class EngineDisposedError extends Error {

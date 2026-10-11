@@ -23,6 +23,8 @@ const PLACE_GLYPH: Record<PlaceKind, { glyph: string; color: string }> = {
   community: { glyph: "C", color: "#2a7a8a" },
   park: { glyph: "P", color: "#3f8a3a" },
   club: { glyph: "♪", color: "#c2185b" },
+  police: { glyph: "⛨", color: "#1f3a93" },
+  security: { glyph: "G", color: "#263238" },
 };
 
 const waterImages = new WeakMap<WorldData, HTMLCanvasElement>();

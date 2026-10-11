@@ -91,6 +91,10 @@ describe("VIP tables", () => {
   const table = CLUB_TABLES[1]!;
   const inClub = (userId: string) => setPlayerPosition(userId, ...table.spot, clubLocation(club.id));
 
+  beforeAll(async () => {
+    await pool.query(`DELETE FROM club_table_booking WHERE place_id = $1`, [club.id]);
+  });
+
   it("needs tonight's wristband", async () => {
     inClub(friend.id);
     await expect(bookTable(friend.id, club.id, table.no)).rejects.toThrow("Pay the cover");
