@@ -141,6 +141,12 @@ INSERT INTO shop_catalog (id, name, description, category, price, vendor_id) VAL
   ('souvenir:dates', 'Box of Medjool dates', 'A gift box to bring home to Lagos.', 'souvenir', 6000, 'marina-souvenirs'),
   ('souvenir:camel', 'Camel plush', 'Soft toy camel in a tiny scarf.', 'souvenir', 3500, 'marina-souvenirs'),
   ('souvenir:dhow-model', 'Wooden dhow model', 'Hand-finished model of a marina dhow.', 'souvenir', 9000, 'marina-souvenirs'),
-  ('souvenir:oud', 'Oud perfume', 'A small bottle of rich oud scent.', 'souvenir', 14000, 'marina-souvenirs')
+  ('souvenir:oud', 'Oud perfume', 'A small bottle of rich oud scent.', 'souvenir', 14000, 'marina-souvenirs'),
+  ('dubai:mixed-grill', 'Mixed grill platter', 'Lamb kofta, shish tawook and grilled halloumi with flatbread.', 'food', 8500, 'walk-grill'),
+  ('dubai:falafel-wrap', 'Falafel wrap', 'Crisp falafel, tahini and pickles to eat on The Walk.', 'food', 3000, 'walk-grill'),
+  ('dubai:lemon-mint', 'Lemon mint cooler', 'Frozen lemonade blended with fresh mint.', 'food', 2200, 'walk-grill'),
+  ('dubai:karak', 'Karak chai', 'Strong spiced milk tea, the Gulf favourite.', 'food', 1200, 'marina-dhow-cafe'),
+  ('dubai:luqaimat', 'Luqaimat', 'Sweet saffron dumplings with date syrup.', 'food', 2500, 'marina-dhow-cafe'),
+  ('dubai:camel-latte', 'Date latte', 'Espresso with date syrup and steamed milk.', 'food', 2800, 'marina-dhow-cafe')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, category = EXCLUDED.category,
   price = EXCLUDED.price, vendor_id = EXCLUDED.vendor_id, active = TRUE;

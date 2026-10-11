@@ -17,6 +17,7 @@ import {
   type TowState,
   type CheckpointStop,
   type HoldUp,
+  type TripState,
 } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
@@ -49,6 +50,8 @@ export type MultiplayerHandlers = {
   /** `replace` carries the full list (on join); otherwise one job changed. */
   tows: (tows: TowState[], replace: boolean) => void;
   police: (event: PoliceEvent) => void;
+  trip: (trip: TripState) => void;
+  photo: (photo: { spot: string; companions: string[] }) => void;
 };
 
 export class MultiplayerConnection {
@@ -121,6 +124,10 @@ export class MultiplayerConnection {
       room.onMessage("checkpointEnd", (end: { checkpointId?: unknown }) => this.handlers.police({ type: "checkpointEnd", checkpointId: String(end?.checkpointId ?? "") }));
       room.onMessage("holdUp", (holdUp: HoldUp) => typeof holdUp?.robberyId === "string" && this.handlers.police({ type: "holdUp", holdUp }));
       room.onMessage("holdUpEnd", (end: { robberyId?: unknown }) => this.handlers.police({ type: "holdUpEnd", robberyId: String(end?.robberyId ?? "") }));
+      room.onMessage("trip", (trip: TripState) => typeof trip?.stage === "string" && this.handlers.trip(trip));
+      room.onMessage("photo", (photo: { spot?: unknown; companions?: unknown }) =>
+        this.handlers.photo({ spot: String(photo?.spot ?? ""), companions: Array.isArray(photo?.companions) ? photo.companions.map(String) : [] }),
+      );
       room.onMessage("suspended", (payload: { reason?: unknown; until?: unknown }) => {
         this.closed = true;
         this.handlers.suspended({ reason: String(payload?.reason ?? ""), until: typeof payload?.until === "string" ? payload.until : null });
@@ -182,7 +189,15 @@ export class MultiplayerConnection {
       | "towCancel"
       | "checkpointAnswer"
       | "holdUp"
-      | "robberyAnswer",
+      | "robberyAnswer"
+      | "travelEnter"
+      | "travelCounter"
+      | "travelTransfer"
+      | "activityStart"
+      | "carRent"
+      | "carReturn"
+      | "photo"
+      | "requestTrip",
     payload?: unknown,
   ) {
     this.room?.send(type, payload);

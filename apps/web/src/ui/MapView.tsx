@@ -25,6 +25,19 @@ const PLACE_GLYPH: Record<PlaceKind, { glyph: string; color: string }> = {
   club: { glyph: "♪", color: "#c2185b" },
   police: { glyph: "⛨", color: "#1f3a93" },
   security: { glyph: "G", color: "#263238" },
+  airport: { glyph: "✈", color: "#0d47a1" },
+  consulate: { glyph: "V", color: "#00695c" },
+  hotel: { glyph: "H", color: "#8d6e63" },
+  restaurant: { glyph: "F", color: "#c0392b" },
+  cafe: { glyph: "☕", color: "#6d4c41" },
+  boutique: { glyph: "👗", color: "#ad1457" },
+  souvenir: { glyph: "🎁", color: "#ef6c00" },
+  lounge: { glyph: "🍸", color: "#4a148c" },
+  beach: { glyph: "🏖", color: "#f9a825" },
+  marina: { glyph: "⛵", color: "#0277bd" },
+  photo: { glyph: "📷", color: "#37474f" },
+  desert: { glyph: "🐪", color: "#bf8f3c" },
+  car_rental: { glyph: "🚗", color: "#2e7d32" },
 };
 
 const waterImages = new WeakMap<WorldData, HTMLCanvasElement>();

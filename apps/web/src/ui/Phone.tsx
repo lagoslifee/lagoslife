@@ -5,14 +5,16 @@ import { actionLabels, keyLabel, type Action, type Bindings } from "../game/cont
 import type { GameEngine, HudState } from "../game/engine";
 import { RideApp } from "./RideApp";
 import { CommunityApp } from "./CommunitySheets";
+import { TravelApp } from "./TravelApp";
 import { VehiclesApp } from "./VehicleSheets";
 import { JusticeApp, SafetyApp, type ReportTarget } from "./SafetyUI";
 
-export type PhoneApp = "home" | "map" | "ride" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
+export type PhoneApp = "home" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
 
 const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
   { id: "map", label: "Map", icon: "🗺" },
   { id: "ride", label: "Ride", icon: "🚕" },
+  { id: "travel", label: "Travel", icon: "✈" },
   { id: "transport", label: "Transport", icon: "🚌" },
   { id: "jobs", label: "Jobs", icon: "📦" },
   { id: "wallet", label: "Wallet", icon: "₦" },
@@ -100,6 +102,7 @@ export function Phone(props: Props) {
           </div>
         )}
         {app === "ride" && <RideApp engine={props.engine} ride={props.ride} properties={props.properties} onNavigate={props.onNavigate} onClose={onClose} />}
+        {app === "travel" && <TravelApp engine={props.engine} economy={props.economy} onNavigate={props.onNavigate} onRefresh={props.onRefresh} onToast={props.onToast} onClose={onClose} />}
         {app === "transport" && <TransportApp {...props} />}
         {app === "jobs" && <JobsApp {...props} />}
         {app === "wallet" && <WalletApp {...props} />}

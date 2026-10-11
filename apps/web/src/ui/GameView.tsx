@@ -1,4 +1,4 @@
-import { CLUBS, OFFENCES, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
+import { CLUBS, OFFENCES, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
@@ -13,6 +13,7 @@ import { ClubRadio } from "./ClubRadio";
 import { ClubBarSheet, ClubDoorSheet, ClubTableSheet } from "./ClubSheets";
 import { COMMUNITY_KINDS, CommunitySheet } from "./CommunitySheets";
 import { PlaceSheet } from "./Sheets";
+import { ExcursionPanel, FlightPanel, LOCAL_PHOTOS_KEY, TRAVEL_SHEET_KINDS, TravelPlaceSheet, TravelSpotSheet, loadLocalPhotos, tripHint } from "./TravelSheets";
 import { PlotSheet } from "./PlotSheet";
 import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
 import { CheckpointPrompt, HoldUpPrompt, PoliceStationSheet, SecuritySheet } from "./PoliceSheets";
@@ -77,6 +78,8 @@ export function GameView({
   const [subtitle, setSubtitle] = useState<{ text: string; kind: "speech" | "sound" } | null>(null);
   const [sheet, setSheet] = useState<Place | null>(null);
   const [plotSheet, setPlotSheet] = useState<string | null>(null);
+  const [travelSpot, setTravelSpot] = useState<{ interior: TravelInterior; spot: string } | null>(null);
+  const [trip, setTrip] = useState<TripState | null>(null);
   const [clubBar, setClubBar] = useState<Place | null>(null);
   const [clubTable, setClubTable] = useState<number | null>(null);
   const [clubTables, setClubTables] = useState<ClubTable[]>([]);
@@ -272,6 +275,12 @@ export function GameView({
             void refresh();
           }
         },
+        trip: (next) => {
+          setTrip(next);
+          setTravelSpot(null);
+          void refresh();
+        },
+        photo: (photo) => void savePhoto(photo),
         ride: (next) => {
           setRide(next);
           if (next && (next.status === "approaching" || next.status === "completed" || next.status === "cancelled")) void refresh();
@@ -379,7 +388,7 @@ export function GameView({
   }, [hud?.x, hud?.z]);
 
   const warnings = safety?.warnings ?? [];
-  const blocking = Boolean(welcomeOpen || sheet || plotSheet || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length || holdUp || robTarget);
+  const blocking = Boolean(welcomeOpen || sheet || plotSheet || travelSpot || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length || holdUp || robTarget);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -411,6 +420,7 @@ export function GameView({
     const onKey = (event: KeyboardEvent) => {
       if (event.code !== "Escape") return;
       if (robTarget) setRobTarget(null);
+      else if (travelSpot) setTravelSpot(null);
       else if (plotSheet) setPlotSheet(null);
       else if (clubBar) setClubBar(null);
       else if (clubTable) setClubTable(null);
@@ -421,7 +431,7 @@ export function GameView({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sheet, plotSheet, clubBar, clubTable, mapOpen, phone, helpOpen, robTarget]);
+  }, [sheet, plotSheet, clubBar, clubTable, mapOpen, phone, helpOpen, robTarget, travelSpot]);
 
   const moving = (hud?.speed ?? 0) > 1;
   useEffect(() => {
@@ -436,6 +446,11 @@ export function GameView({
   handlers.current.interact = (interaction) => {
     if (interaction.kind === "place") {
       setSheet(interaction.place);
+      void refresh();
+      return;
+    }
+    if (interaction.kind === "travel") {
+      setTravelSpot({ interior: interaction.interior, spot: interaction.spot });
       void refresh();
       return;
     }
@@ -578,6 +593,7 @@ export function GameView({
                 {tow.stageEndsAt && tow.stageEndsAt > now ? ` · ${Math.ceil((tow.stageEndsAt - now) / 1000)}s` : ""}
               </button>
             ))}
+            {tripHint(trip, hud.location) && <p className="nav-line" data-testid="trip-hint">✈ {tripHint(trip, hud.location)}</p>}
             <NavLine engine={engine} />
           </section>
 
@@ -624,6 +640,9 @@ export function GameView({
               {rentReminder.overdue ? "Rent overdue" : "Rent due soon"} · {rentReminder.name} · {naira(rentReminder.rent)}
             </button>
           )}
+
+          {trip?.flight && trip.stage === "boarded" && hud.location === "interior" && <FlightPanel engine={engine} trip={trip} now={now} />}
+          {trip?.excursion && hud.location === "interior" && <ExcursionPanel engine={engine} trip={trip} now={now} />}
 
           {hud.bus && (
             <section className="bus-panel" data-testid="bus-panel">
@@ -857,7 +876,32 @@ export function GameView({
       {clubBar && hud?.propertyId === clubBar.id && (
         <ClubBarSheet place={clubBar} economy={economy} onClose={() => setClubBar(null)} onRefresh={refresh} onToast={toast} />
       )}
-      {sheet && !["dealership", "mechanic", "club", "police", "security"].includes(sheet.kind) && !COMMUNITY_KINDS.has(sheet.kind) && (
+      {sheet && engine && TRAVEL_SHEET_KINDS.has(sheet.kind) && (
+        <TravelPlaceSheet
+          place={sheet}
+          engine={engine}
+          economy={economy}
+          onClose={() => setSheet(null)}
+          onRefresh={refresh}
+          onToast={toast}
+          onNavigate={(next) => setManualTarget(next)}
+          onOpenApp={(app) => { setSheet(null); setPhone(app); }}
+        />
+      )}
+      {travelSpot && engine && hud?.location === "interior" && (
+        <TravelSpotSheet
+          interior={travelSpot.interior}
+          spot={travelSpot.spot}
+          engine={engine}
+          trip={trip}
+          economy={economy}
+          onClose={() => setTravelSpot(null)}
+          onRefresh={refresh}
+          onToast={toast}
+          onNavigate={(next) => setManualTarget(next)}
+        />
+      )}
+      {sheet && !["dealership", "mechanic", "club", "police", "security"].includes(sheet.kind) && !COMMUNITY_KINDS.has(sheet.kind) && !TRAVEL_SHEET_KINDS.has(sheet.kind) && (
         <PlaceSheet
           place={sheet}
           economy={economy}
@@ -967,6 +1011,25 @@ export function GameView({
       )}
     </div>
   );
+}
+
+/** Keeps a small JPEG of each travel photo on this device; the server keeps the record. */
+async function savePhoto(photo: { spot: string; companions: string[]; image: string | null }) {
+  if (!photo.image) return;
+  try {
+    const source = new Image();
+    source.src = photo.image;
+    await source.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = 360;
+    canvas.height = Math.round((360 * source.height) / Math.max(1, source.width));
+    canvas.getContext("2d")!.drawImage(source, 0, 0, canvas.width, canvas.height);
+    const image = canvas.toDataURL("image/jpeg", 0.7);
+    const next = [{ at: Date.now(), spot: photo.spot, companions: photo.companions, image }, ...loadLocalPhotos()].slice(0, 8);
+    localStorage.setItem(LOCAL_PHOTOS_KEY, JSON.stringify(next));
+  } catch {
+    // Storage full or the frame could not be read; the server still has the photo record.
+  }
 }
 
 function placeFromListing(listing: PropertyListing): Place {

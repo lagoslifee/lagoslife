@@ -1,3 +1,4 @@
+import type { CabinClass, HotelBookingState, RoomType, TicketState, TravelStatus, VisaPlan, VisaState } from "@lagos-living/shared";
 import type { BottleItem, Citation, PoliceCase, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
@@ -156,6 +157,21 @@ export const api = {
   community: () => request<CommunityStatus>("/api/community"),
   visitQuietPlace: (placeId: string) => post<QuietVisitResult>("/api/community/visit", { placeId }),
   volunteer: (placeId: string) => post<VolunteerResult>("/api/community/volunteer", { placeId }),
+  travel: () => request<TravelStatus>("/api/travel"),
+  applyVisa: (plan: VisaPlan) => post<{ visa: VisaState; balance: number; replayed: boolean }>("/api/travel/visa", { plan, idempotencyKey: crypto.randomUUID() }),
+  buyTicket: (cabin: CabinClass) => post<{ ticket: TicketState; balance: number; replayed: boolean }>("/api/travel/ticket", { cabin, idempotencyKey: crypto.randomUUID() }),
+  cancelTicket: (ticketId: string) => post<{ refund: number; balance: number }>("/api/travel/ticket/cancel", { ticketId }),
+  inviteToTrip: (ticketId: string, userName: string) => post<{ id: string; friendName: string }>("/api/travel/invite", { ticketId, userName }),
+  answerTripInvite: (inviteId: string, accept: boolean) => post<{ status: string; balance?: number }>("/api/travel/invite/answer", { inviteId, accept, idempotencyKey: crypto.randomUUID() }),
+  bookHotel: (hotelId: string, roomType: RoomType, nights: number) =>
+    post<{ booking: HotelBookingState; balance: number }>("/api/travel/hotel/book", { hotelId, roomType, nights, idempotencyKey: crypto.randomUUID() }),
+  checkInHotel: (bookingId: string) => post<{ keyCode: string }>("/api/travel/hotel/checkin", { bookingId }),
+  endHotelStay: (bookingId: string) => post<{ refund: number; balance: number; status: string }>("/api/travel/hotel/end", { bookingId }),
+  extendHotelStay: (bookingId: string, nights: number) => post<{ balance: number }>("/api/travel/hotel/extend", { bookingId, nights, idempotencyKey: crypto.randomUUID() }),
+  hotelGuest: (bookingId: string, userName: string, invited: boolean) => post<{ name: string }>("/api/travel/hotel/guest", { bookingId, userName, invited }),
+  hotelStorage: (bookingId: string, itemId: string, direction: "in" | "out") => post("/api/travel/hotel/storage", { bookingId, itemId, direction }),
+  travelOrder: (menu: "room-service" | "rooftop", itemId: string, bookingId?: string) =>
+    post<{ balance: number; name: string }>("/api/travel/order", { menu, itemId, bookingId, idempotencyKey: crypto.randomUUID() }),
   clubStatus: (placeId: string) => request<ClubStatus>(`/api/clubs/${placeId}`),
   buyWristband: (placeId: string) => post<{ charged: number; balance: number; status: ClubStatus }>(`/api/clubs/${placeId}/wristband`),
   clubOrder: (placeId: string, itemId: string) =>

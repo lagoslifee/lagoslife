@@ -741,3 +741,38 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .police-sheet form.police-report textarea { resize: vertical; font: inherit; padding: 8px; border-radius: 8px; border: 1px solid #c9d2cf; }
 .police-records h3 { margin: 14px 0 6px; }
 .game-view.touch .police-prompt { top: 70px; }
+
+/* Travel: consulate, airports, hotels, flights */
+.travel-sheet h3, .travel-app h3 { margin: 14px 0 6px; font-size: calc(15px * var(--text-scale)); }
+.travel-card { display: grid; gap: 4px; margin: 8px 0; padding: 10px 12px; border-radius: 10px; border: 1px solid #ddd6c6; background: #fffdf7; }
+.travel-card.warn { border-color: #e7b04a; background: #fff6e0; }
+.travel-card.ok { border-color: #8cc9a6; background: #f0faf3; }
+.travel-card ul { margin: 2px 0 4px; padding-left: 18px; }
+.travel-card form input, .travel-app form input { flex: 1; min-width: 0; padding: 7px 9px; border-radius: 8px; border: 1px solid #c9d2cf; font: inherit; }
+.travel-card .row { flex-wrap: wrap; }
+.travel-flag { margin: 6px 0; padding: 6px 10px; border-radius: 8px; background: #eef1ee; font-weight: 600; font-size: calc(13px * var(--text-scale)); }
+.travel-flag.warn { background: #fff1d2; color: #6b4600; }
+.travel-flag.ok { background: #e2f5e9; color: #1c5a35; }
+.travel-steps { margin: 8px 0; padding-left: 20px; line-height: 1.6; }
+.travel-steps li.done { color: #2c7a4b; text-decoration: line-through; }
+.travel-nights { display: inline-flex; align-items: center; gap: 8px; margin: 6px 0; font-weight: 700; }
+.travel-nights select { padding: 5px 8px; border-radius: 8px; font: inherit; }
+.digital-key { display: inline-block; width: fit-content; padding: 4px 10px; border-radius: 999px; background: #17312e; color: #ffe59a; font-weight: 700; letter-spacing: .06em; }
+.cabin-options { display: grid; gap: 8px; }
+.cabin-business { border-color: #b99a4b; background: #fbf5e4; }
+.venue-list .stack { display: grid; gap: 6px; }
+table.departures { width: 100%; border-collapse: collapse; font-family: ui-monospace, monospace; background: #10201e; color: #ffd75a; border-radius: 8px; overflow: hidden; }
+table.departures td { padding: 6px 10px; border-bottom: 1px solid #23413d; }
+.flight-panel { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); width: min(420px, 94vw); padding: 10px 14px; border-radius: 12px; background: rgba(10, 24, 22, .86); color: #f5f2e8; font-size: 13px; z-index: 6; }
+.flight-panel p { margin: 3px 0; }
+.flight-panel .eyebrow { color: #ffd75a; }
+.flight-panel .row { flex-wrap: wrap; margin-top: 6px; }
+.flight-panel .secondary.active { background: #2fd3ff; color: #08201f; }
+.flight-progress { position: relative; height: 6px; margin: 6px 0; border-radius: 3px; background: rgba(255, 255, 255, .18); }
+.flight-progress i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: #2fd3ff; }
+.flight-progress span { position: absolute; top: -2px; width: 2px; height: 10px; background: #ffd75a; }
+.photo-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.photo-grid figure { margin: 0; }
+.photo-grid img, .photo-placeholder { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 8px; background: #e5e0d3; display: grid; place-items: center; font-size: 26px; }
+.photo-grid figcaption { font-size: 11px; color: #5c6a66; }
+.game-view.touch .flight-panel { top: auto; bottom: 150px; }

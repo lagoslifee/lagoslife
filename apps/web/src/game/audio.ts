@@ -165,6 +165,53 @@ export class CityAudio {
     }
   }
 
+  private cabin: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
+
+  /** Low engine rumble while seated on a flight; `level` 0 stops it. */
+  setCabinHum(level: number) {
+    const context = this.context;
+    if (level <= 0 || !context || !this.master) {
+      if (this.cabin && context) {
+        const { source, gain } = this.cabin;
+        gain.gain.setTargetAtTime(0, context.currentTime, 0.3);
+        setTimeout(() => source.stop(), 1_500);
+      }
+      this.cabin = null;
+      return;
+    }
+    if (!this.cabin) {
+      const buffer = context.createBuffer(1, context.sampleRate * 2, context.sampleRate);
+      const data = buffer.getChannelData(0);
+      let last = 0;
+      for (let index = 0; index < data.length; index += 1) {
+        last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
+        data[index] = last * 3.5;
+      }
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      const filter = context.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = 420;
+      const gain = context.createGain();
+      gain.gain.value = 0;
+      source.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.master);
+      source.start();
+      this.cabin = { source, gain };
+    }
+    this.cabin.gain.gain.setTargetAtTime(level * this.settings.ambienceVolume * 0.6, context.currentTime, 0.5);
+  }
+
+  /** The two-tone cabin chime before an announcement. */
+  chime() {
+    if (!this.context || !this.master) return;
+    const at = this.context.currentTime + 0.02;
+    this.tone(this.master, "sine", 880, 878, at, 0.5, 0.12);
+    this.tone(this.master, "sine", 659, 657, at + 0.45, 0.7, 0.12);
+  }
+
   announce(text: string) {
     if (!("speechSynthesis" in window) || this.settings.dialogueVolume <= 0) return;
     const utterance = new SpeechSynthesisUtterance(text);
