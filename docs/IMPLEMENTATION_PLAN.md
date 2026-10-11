@@ -1,6 +1,6 @@
 # Lagos Living implementation plan
 
-Last updated: 2026-10-10
+Last updated: 2026-10-11
 
 The game is built as a TypeScript npm-workspace monorepo. React/Vite owns the
 interface, Babylon.js owns rendering, Better Auth and PostgreSQL own account
@@ -179,7 +179,32 @@ neutral. In-game law (citations and appeals) and account moderation
 Nightlife: three clubs (Admiralty Lounge, Lekki; Awolowo Rooftop Club, Ikoyi;
 Eko Nights, Victoria Island) with a nightly cover, a shared dance floor, a bar
 and synthesised music (`packages/shared/src/nightlife.ts`,
-`apps/server/src/club-service.ts`, `apps/web/e2e/clubs.spec.ts`).
+`apps/server/src/club-service.ts`, `apps/web/e2e/clubs.spec.ts`). The DJ also
+plays official Nigerian music videos (Wizkid, Burna Boy, Davido, Asake, Rema,
+Olamide and others) through YouTube's embedded player, falling back to the
+synthesised set when YouTube is unavailable (`packages/shared/src/club-music.ts`).
+Each club has three VIP tables: the owner books one for the night, invites up
+to five guests, and bottles ordered from the table are carried over by a
+waiter. Club fronts have neon, a canopy, a red carpet and bouncers.
+
+Policing and security (`packages/shared/src/police.ts`,
+`apps/server/src/police-service.ts`, `apps/web/e2e/police.spec.ts`):
+
+- Four police checkpoints (Admiralty Way, Ozumba Mbadiwe, Awolowo Road, Ahmadu
+  Bello Way) with a patrol Hilux, cones and officers. They wave drivers down;
+  the car brakes to a halt, and the driver shows papers or drives off.
+- Armed robbery between residents on foot, with protections for new residents,
+  recent victims and anyone with guards. Robberies near police are charged on
+  the spot.
+- Three police stations take robbery reports, checked against the server's
+  record, which return the money and charge the robber.
+- Eko Shield Security hires out two or four guards for a day. They follow in a
+  black Hilux, walk with the player, and open the gate of the player's house.
+
+Buildings: places of worship read as a chapel (gable roof, arched windows,
+tower and spire) or a mosque (dome and minaret). Houses for sale or rent and
+finished plot houses are modern (flat roof, floor-to-ceiling glazing, timber
+cladding), and plot houses get a walled compound with a sliding gate.
 
 Still deferred:
 

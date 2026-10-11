@@ -23,6 +23,12 @@ Adebayo Court (₦30,000 upfront) straight away or to buy Okoro Terrace
 | Careless-driving citation (Island Traffic Wardens, fictional) | ₦2,500 game naira, due in 72 h. Issued for a crash at 13.9 m/s (50 km/h) or more, when the server's measured speed agrees, at most once per 10 minutes. Paid from Phone → Justice as a `fine_payment` transaction. One appeal while unpaid; overturned fines are void, upheld ones get at least 24 h to pay. Overdue fines block buying cars |
 | Club cover (Admiralty Lounge ₦2,000, Eko Nights ₦3,500, Awolowo Rooftop Club ₦5,000) | Once per club per Lagos night (6 am to 6 am, UTC+1) for a wristband; re-entry that night is free |
 | Club bar | Water ₦300 to small chops ₦2,500; raises hunger (up to +20) and energy (up to +10), served only at the bar inside |
+| VIP table (Admiralty Lounge ₦40,000, Eko Nights ₦60,000, Awolowo Rooftop Club ₦80,000) | Three tables per club, one booking each per Lagos night. The owner invites up to 5 guests by name |
+| Table bottles | Dom Pérignon ₦150,000, Clase Azul ₦120,000, Moët ₦60,000, Hennessy VS ₦45,000, sparkling grape juice ₦12,000, Chapman jug ₦8,000. Ordered by the owner or a guest from the table; a waiter carries them over |
+| Police checkpoint (Lagos Police, fictional) | On Admiralty Way, Ozumba Mbadiwe, Awolowo Road and Ahmadu Bello Way, at most one stop per 15 minutes. Showing papers is free with insurance and a car at 30% condition or more; otherwise a ₦5,000 `no_papers` citation. Driving off: 50% get away, otherwise a ₦25,000 `evading_checkpoint` citation |
+| Armed robbery (another resident) | Both on foot within 3 m. Takes 10% of the victim's balance, at most ₦20,000. The victim can run (50% chance to get away). Residents in their first hour, anyone robbed in the last 2 h, and anyone with guards can't be robbed; a robber waits 30 minutes between attempts. Within 60 m of a police station or checkpoint, officers see it and charge ₦50,000 at once |
+| Police report (Lekki Police Division, Ikoyi Police Station, Bar Beach Police Station) | Free, within 24 h. If the server's own record matches, the robber is charged ₦50,000 (`armed_robbery`) and the stolen money is returned from the robber's wallet (as much as they have) |
+| Security guards (Eko Shield Security, fictional) | Two guards ₦25,000 or four ₦45,000, for 24 h. They follow in a black Hilux, walk with you on foot, open your compound gate, and make you impossible to rob |
 | Quiet places (Ikoyi Reading Room, Muri Okunola Park, Grace Assembly, Al-Noor Mosque) | Free. +8 energy, on one 30-minute cooldown shared by all four. Identical for every venue, and optional |
 
 Bumps at 3 m/s or more cost condition (2.5 points per m/s above 2, at most 35
@@ -56,6 +62,18 @@ won't start until it is towed and repaired. A routine service is due every
   charges once. Bar orders carry a per-order idempotency key and need the
   player's live position at the bar inside that club.
 
+- A VIP table booking is unique per club, table and Lagos night, and bottle
+  orders carry a per-order idempotency key; only the owner and named guests,
+  standing at that table, can order.
+
+- Checkpoint stops, hold-ups and their outcomes are decided by the game server
+  from its own positions and timers; the client only answers. A robbery moves
+  money between two locked wallets in one transaction, keyed by robbery ID, and
+  a report is matched against the server's robbery record, so restitution is
+  paid at most once.
+- Hiring guards is keyed per confirmation and needs the player at the security
+  office's door.
+
 - Paying a citation locks the wallet and the citation row. A paid citation
   returns its earlier result instead of charging again, so a double-clicked
   Pay charges once. Fines are never deducted automatically, and a balance
@@ -64,7 +82,7 @@ won't start until it is towed and repaired. A routine service is due every
 ## Development reset
 
 On localhost in development, Phone → Help → **Reset test progress** wipes the
-signed-in player's wallet, inventory, jobs, journeys, tenancies, vehicles, community visits, club wristbands and progress,
+signed-in player's wallet, inventory, jobs, journeys, tenancies, vehicles, community visits, club wristbands, police stops, robberies, reports, security hires and progress,
 then re-grants the starting balance. The route is unavailable in production and
 for non-localhost hosts. The same restriction applies to `POST /api/dev/spawn-at`,
 which sets the next session's start to a place's kerb so far districts can be
