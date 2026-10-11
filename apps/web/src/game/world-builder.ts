@@ -710,6 +710,8 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     floors = Math.min(floors, 14);
     const landmark = landmarkFor(place);
     if (landmark === "church") floors = Math.max(floors, 2);
+    // A prayer hall reads as a mosque only if its dome clears the roofline from the street.
+    if (landmark === "mosque") floors = 2;
     const height = floors * FLOOR_HEIGHT + 0.3;
     const paint = landmark ? LANDMARK_PAINT[landmark] : PAINTS[Math.floor(hash(building.id * 7) * PAINTS.length)]!;
     const trim: Color = landmark ? LANDMARK_TRIM[landmark] : hash(building.id * 11) > 0.5 ? [0.98, 0.98, 0.97] : [0.62, 0.6, 0.57];

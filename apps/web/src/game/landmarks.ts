@@ -205,23 +205,34 @@ export function mosqueDomeAndMinaret(get: Get, fp: Footprint, a: Vec2, b: Vec2, 
   dome.box(fp.cx, crown + 0.5, fp.cz, 0.14, 1.0, 0.14, 0, 1, GOLD);
   dome.box(fp.cx, crown + 0.7, fp.cz, 0.36, 0.36, 0.36, Math.PI / 4, 1, GOLD);
 
+  // A slim round minaret with a balcony ring and a pointed green cap, standing at the far front corner.
   const [mx, mz] = farCorner(a, b, doorT, f, 1.1);
-  const shaft = 2.7;
+  const shaftR = 1.0;
   const top = height + 12;
-  walls.box(mx, top / 2, mz, shaft, top, shaft, f.yaw, 2.5, paint);
+  const ring = (r: number, y0: number, y1: number, batch: MeshBuilderBatch, tile: number, color: Color) => {
+    for (let index = 0; index < 12; index += 1) {
+      const a0 = (index / 12) * Math.PI * 2;
+      const a1 = ((index + 1) / 12) * Math.PI * 2;
+      batch.wall(mx + Math.cos(a1) * r, mz + Math.sin(a1) * r, mx + Math.cos(a0) * r, mz + Math.sin(a0) * r, y0, y1, tile, color);
+    }
+  };
+  ring(shaftR, 0, top, walls, 2.5, paint);
+  const stone: Color = [0.9, 0.88, 0.82];
   const trim = get("concrete");
-  trim.box(mx, height + 8, mz, shaft + 1.0, 0.3, shaft + 1.0, f.yaw, 1, [0.9, 0.88, 0.82]);
-  get("darkFrame").box(mx, height + 8.6, mz, shaft + 1.0, 0.06, shaft + 1.0, f.yaw);
-  const rail = (shaft + 1.0) / 2 - 0.05;
-  for (const [du, dv] of [[-rail, -rail], [rail, -rail], [rail, rail], [-rail, rail]] as const) {
-    const c = Math.cos(f.yaw);
-    const s = Math.sin(f.yaw);
-    get("darkFrame").box(mx + du * c + dv * s, height + 8.4, mz - du * s + dv * c, 0.06, 0.5, 0.06, f.yaw);
+  ring(shaftR + 0.6, height + 7.8, height + 8.1, trim, 1, stone);
+  trim.polygon(Array.from({ length: 12 }, (_, index) => [mx + Math.cos((index / 12) * Math.PI * 2) * (shaftR + 0.6), mz + Math.sin((index / 12) * Math.PI * 2) * (shaftR + 0.6)] as Vec2), height + 8.1, 1, stone);
+  ring(shaftR + 0.55, height + 8.1, height + 8.6, get("darkFrame"), 1, [0.2, 0.2, 0.2]);
+  ring(shaftR + 0.2, top, top + 0.25, trim, 1, stone);
+  const apex: V3 = [mx, top + 3.4, mz];
+  for (let index = 0; index < 12; index += 1) {
+    const a0 = (index / 12) * Math.PI * 2;
+    const a1 = ((index + 1) / 12) * Math.PI * 2;
+    const p: V3 = [mx + Math.cos(a0) * (shaftR + 0.2), top + 0.25, mz + Math.sin(a0) * (shaftR + 0.2)];
+    const q: V3 = [mx + Math.cos(a1) * (shaftR + 0.2), top + 0.25, mz + Math.sin(a1) * (shaftR + 0.2)];
+    dome.triangle(p, q, apex, outward(p, q, apex, [mx, top, mz]), [[0, 0], [1, 0], [0.5, 1]], DOME_GREEN);
   }
-  trim.box(mx, top + 0.1, mz, shaft + 0.3, 0.2, shaft + 0.3, f.yaw, 1, [0.9, 0.88, 0.82]);
-  pyramid(dome, mx, mz, f.yaw, shaft / 2, top + 0.2, 3.6, DOME_GREEN);
-  dome.box(mx, top + 4.2, mz, 0.12, 0.8, 0.12, f.yaw, 1, GOLD);
-  for (let row = 1; row <= 3; row += 1) get("glass").box(mx + f.nx * (shaft / 2 + 0.01), height + row * 2.2, mz + f.nz * (shaft / 2 + 0.01), 0.4, 1.0, 0.02, f.yaw);
+  dome.box(mx, top + 3.8, mz, 0.12, 0.8, 0.12, f.yaw, 1, GOLD);
+  for (let row = 1; row <= 3; row += 1) get("glass").box(mx + f.nx * (shaftR + 0.01), height + row * 2.2, mz + f.nz * (shaftR + 0.01), 0.35, 1.0, 0.02, f.yaw);
 }
 
 /**
