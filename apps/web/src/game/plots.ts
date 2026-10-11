@@ -12,7 +12,14 @@ import type { PlotState } from "../api";
 import { buildProgress } from "./build-progress";
 import type { Materials } from "./materials";
 
-type PlotView = { root: TransformNode; house: TransformNode; key: string; sign: { texture: DynamicTexture; text: string } };
+type PlotView = {
+  root: TransformNode;
+  house: TransformNode;
+  key: string;
+  sign: { texture: DynamicTexture; text: string };
+  /** Sliding leaf of the compound gate, present once the house is finished; `open` runs 0 (shut) to 1. */
+  gate: { leaf: TransformNode; open: number; target: number; width: number } | null;
+};
 
 const STOREY = 3;
 
@@ -70,7 +77,7 @@ export class PlotsView {
     board.parent = root;
     const house = new TransformNode(`plot house ${plot.id}`, this.scene);
     house.parent = root;
-    return { root, house, key: "", sign: { texture, text: "" } };
+    return { root, house, key: "", sign: { texture, text: "" }, gate: null };
   }
 
   private drawSign(view: PlotView, plot: Plot, title: string, line: string, colour: string) {
@@ -112,8 +119,74 @@ export class PlotsView {
       if (key === view.key) continue;
       view.key = key;
       for (const child of view.house.getChildren()) child.dispose(false, false);
-      if (construction && design && progress) this.buildHouse(view.house, plot, design, progress.stage, progress.fraction);
+      const target = view.gate?.target ?? 0;
+      view.gate = null;
+      if (construction && design && progress) {
+        this.buildHouse(view.house, plot, design, progress.stage, progress.fraction);
+        if (construction.completed) view.gate = this.buildCompound(view.house, plot, target);
+      }
     }
+  }
+
+  /** Opens or shuts a finished house's gate; it slides over a couple of seconds. */
+  setGateOpen(plotId: string, open: boolean) {
+    const gate = this.views.get(plotId)?.gate;
+    if (gate) gate.target = open ? 1 : 0;
+  }
+
+  gateOpen(plotId: string) {
+    return this.views.get(plotId)?.gate?.open ?? 0;
+  }
+
+  animate(dt: number) {
+    for (const view of this.views.values()) {
+      const gate = view.gate;
+      if (!gate || gate.open === gate.target) continue;
+      const step = dt * 0.5;
+      gate.open = gate.target > gate.open ? Math.min(gate.target, gate.open + step) : Math.max(gate.target, gate.open - step);
+      gate.leaf.position.x = gate.open * (gate.width + 0.1);
+    }
+  }
+
+  /** Boundary wall with steel railings, a lawn, a paved drive and a sliding gate at the street. */
+  private buildCompound(parent: TransformNode, plot: Plot, open: number) {
+    const m = this.materials;
+    const hw = plot.width / 2;
+    const hd = plot.depth / 2;
+    const gateWidth = Math.min(4.2, plot.width - 2);
+    const lawn = MeshBuilder.CreateGround(`plot lawn ${plot.id}`, { width: plot.width - 0.6, height: plot.depth - 0.6 }, this.scene);
+    lawn.material = m.grass;
+    lawn.position.y = 0.06;
+    lawn.parent = parent;
+    this.box(parent, "drive", [gateWidth, 0.04, 2.9], [0, 0.09, -hd + 1.5], m.pavers);
+    const wall = (name: string, length: number, x: number, z: number, alongX: boolean) => {
+      const size: [number, number, number] = alongX ? [length, 1.0, 0.25] : [0.25, 1.0, length];
+      this.box(parent, name, size, [x, 0.5, z], m.walls, true);
+      const coping: [number, number, number] = alongX ? [length + 0.1, 0.08, 0.35] : [0.35, 0.08, length + 0.1];
+      this.box(parent, `${name} coping`, coping, [x, 1.04, z], m.concrete);
+      const bars = Math.floor(length / 0.25);
+      for (let index = 0; index <= bars; index += 4) {
+        const offset = -length / 2 + (index / bars) * length;
+        this.box(parent, `${name} railing`, [0.05, 0.9, 0.05], alongX ? [x + offset, 1.5, z] : [x, 1.5, z + offset], m.gate);
+      }
+      this.box(parent, `${name} rail`, alongX ? [length, 0.05, 0.05] : [0.05, 0.05, length], [x, 1.93, z], m.gate);
+    };
+    const side = (plot.width - gateWidth) / 2;
+    wall("front wall left", side, -hw + side / 2, -hd, true);
+    wall("front wall right", side, hw - side / 2, -hd, true);
+    wall("back wall", plot.width, 0, hd, true);
+    wall("left wall", plot.depth, -hw, 0, false);
+    wall("right wall", plot.depth, hw, 0, false);
+    for (const x of [-gateWidth / 2 - 0.25, gateWidth / 2 + 0.25]) {
+      this.box(parent, "gate pillar", [0.5, 2.3, 0.5], [x, 1.15, -hd], m.walls, true);
+      this.box(parent, "gate lamp", [0.22, 0.22, 0.22], [x, 2.42, -hd], m.lamp);
+    }
+    const leaf = new TransformNode(`plot gate ${plot.id}`, this.scene);
+    leaf.parent = parent;
+    leaf.position.set(open * (gateWidth + 0.1), 0, -hd - 0.3);
+    this.box(leaf, "gate leaf", [gateWidth, 1.9, 0.07], [0, 1.0, 0], m.gate, true);
+    for (let index = 1; index < 8; index += 1) this.box(leaf, "gate slat", [0.04, 1.7, 0.1], [-gateWidth / 2 + (gateWidth * index) / 8, 1.0, 0], m.wood);
+    return { leaf, open, target: open, width: gateWidth };
   }
 
   private box(parent: TransformNode, name: string, size: [number, number, number], position: [number, number, number], material: Material, shadow = false) {
@@ -173,42 +246,62 @@ export class PlotsView {
       if (floors > 1 && wallHeight > STOREY) this.box(house, "first floor slab", [w, 0.25, d], [0, 0.3 + STOREY, 0], m.concrete);
     }
 
-    // Roof: a hipped roof for single storeys, a flat roof with a parapet for the duplex.
+    // Roof: a modern flat slab with a deep overhang and a thin dark fascia; the duplex steps its upper floor back.
     const roofing = done(2);
     if (roofing > 0.05) {
       const top = 0.3 + fullHeight;
-      if (floors > 1) {
-        this.box(house, "roof slab", [w + 0.4, 0.3 * roofing, d + 0.4], [0, top + 0.15 * roofing, 0], m.concrete, true);
-        if (roofing > 0.6) {
-          for (const [sx, sz, lx, lz] of [[0, -d / 2, w + 0.4, 0.2], [0, d / 2, w + 0.4, 0.2], [-w / 2, 0, 0.2, d], [w / 2, 0, 0.2, d]] as const) {
-            this.box(house, "parapet", [lx, 0.8, lz], [sx, top + 0.7, sz], finishing > 0.5 ? m.plaster : this.blocks);
-          }
+      const slab = 0.32 * roofing;
+      this.box(house, "roof slab", [w + 1.4, slab, d + 1.0], [0, top + slab / 2, -0.2], finishing > 0.5 ? m.plaster : m.concrete, true);
+      if (roofing > 0.6) {
+        this.box(house, "fascia", [w + 1.44, 0.12, 0.06], [0, top + slab - 0.06, -d / 2 - 0.72], m.gate);
+        for (const [sx, sz, lx, lz] of [[0, -d / 2 - 0.65, w + 1.4, 0.12], [0, d / 2 + 0.25, w + 1.4, 0.12], [-w / 2 - 0.65, -0.2, 0.12, d + 1.0], [w / 2 + 0.65, -0.2, 0.12, d + 1.0]] as const) {
+          this.box(house, "parapet", [lx, 0.45, lz], [sx, top + slab + 0.22, sz], finishing > 0.5 ? m.plaster : this.blocks);
         }
-      } else {
-        const roof = MeshBuilder.CreateCylinder("hip roof", { diameterTop: 0, diameterBottom: 1, height: 1, tessellation: 4 }, this.scene);
-        roof.rotation.y = Math.PI / 4;
-        roof.bakeCurrentTransformIntoVertices();
-        roof.scaling.set((w + 1.2) * Math.SQRT2, 2.2 * roofing, (d + 1.2) * Math.SQRT2);
-        roof.position.set(0, top + 1.1 * roofing, 0);
-        roof.material = m.roof;
-        roof.parent = house;
-        this.addShadowCaster(roof);
       }
     }
 
     // Finishing: door, windows and, for the duplex, a balcony.
+    // Finishing: tall pivot door, floor-to-ceiling glazing in dark frames, a timber-clad panel and wall lights.
     if (finishing > 0.3) {
-      this.box(house, "front door", [1.1, 2.1, 0.08], [0, 0.3 + 1.05, -d / 2 - 0.02], m.wood);
+      const front = -d / 2;
+      this.box(house, "front door", [1.1, 2.5, 0.08], [0, 0.3 + 1.25, front - 0.03], m.wood);
+      this.box(house, "door frame", [1.3, 0.1, 0.12], [0, 0.3 + 2.55, front - 0.04], m.gate);
+      for (const sx of [-0.7, 0.7]) this.box(house, "wall light", [0.14, 0.32, 0.12], [sx, 0.3 + 2.0, front - 0.08], m.lamp);
+      const pane = Math.min(2.6, (w - 1.4) / 2 - 1.0);
       for (let floor = 0; floor < floors; floor += 1) {
-        const wy = 0.3 + floor * STOREY + 1.6;
-        for (const wx of [-w / 2 + 1.8, w / 2 - 1.8]) {
-          this.box(house, "window", [1.4, 1.2, 0.06], [wx, wy, -d / 2 - 0.03], m.glass);
-          this.box(house, "window back", [1.4, 1.2, 0.06], [wx, wy, d / 2 + 0.03], m.glass);
+        const y0 = 0.3 + floor * STOREY + 0.25;
+        const tall = STOREY - 0.6;
+        for (const sign of [-1, 1]) {
+          const wx = sign * (0.55 + 0.5 + pane / 2);
+          if (floor === 0 && sign < 0) {
+            this.box(house, "timber cladding", [pane + 0.6, STOREY - 0.1, 0.06], [wx, 0.3 + STOREY / 2, front - 0.04], m.wood);
+            continue;
+          }
+          this.box(house, "glazing", [pane, tall, 0.05], [wx, y0 + tall / 2, front - 0.03], m.glass);
+          this.box(house, "glazing head", [pane + 0.12, 0.08, 0.1], [wx, y0 + tall, front - 0.05], m.gate);
+          this.box(house, "glazing sill", [pane + 0.12, 0.08, 0.1], [wx, y0, front - 0.05], m.gate);
+          this.box(house, "mullion", [0.06, tall, 0.1], [wx, y0 + tall / 2, front - 0.05], m.gate);
         }
+        for (const wx of [-w / 2 + 1.8, w / 2 - 1.8]) this.box(house, "window back", [1.8, 1.5, 0.06], [wx, 0.3 + floor * STOREY + 1.5, d / 2 + 0.03], m.glass);
+        for (const sx of [-1, 1]) this.box(house, "side window", [0.06, 1.2, 1.6], [sx * (w / 2 + 0.03), 0.3 + floor * STOREY + 1.6, 0], m.glass);
       }
       if (floors > 1 && finishing > 0.7) {
-        this.box(house, "balcony", [w * 0.5, 0.2, 1.4], [0, 0.3 + STOREY, -d / 2 - 0.7], m.concrete);
-        this.box(house, "balcony rail", [w * 0.5, 0.9, 0.06], [0, 0.3 + STOREY + 0.55, -d / 2 - 1.37], m.frame);
+        this.box(house, "balcony", [w * 0.6, 0.2, 1.6], [w * 0.15, 0.3 + STOREY, front - 0.8], m.plaster);
+        this.box(house, "balcony glass", [w * 0.6, 1.0, 0.04], [w * 0.15, 0.3 + STOREY + 0.6, front - 1.58], m.glass);
+        this.box(house, "balcony handrail", [w * 0.6, 0.05, 0.08], [w * 0.15, 0.3 + STOREY + 1.12, front - 1.58], m.chrome);
+      }
+      if (finishing > 0.9) {
+        // A car porch to one side and planters along the front.
+        const porchX = w / 2 + 1.7;
+        if (porchX + 1.7 < plot.width / 2 - 0.4) {
+          this.box(house, "car porch roof", [3.2, 0.16, 5.4], [porchX, 2.75, front + 1.4], m.plaster, true);
+          this.box(house, "car porch pad", [3.0, 0.04, 5.2], [porchX, 0.1, front + 1.4], m.pavers);
+          for (const pz of [front - 1.1, front + 3.9]) this.box(house, "car porch post", [0.12, 2.6, 0.12], [porchX + 1.45, 1.3, pz], m.gate);
+        }
+        for (const px of [-w / 2 + 0.8, w / 2 - 0.8]) {
+          this.box(house, "planter", [1.2, 0.45, 0.5], [px, 0.53, front - 1.0], m.concrete);
+          this.box(house, "shrub", [1.0, 0.5, 0.4], [px, 0.98, front - 1.0], m.bush);
+        }
       }
     }
 

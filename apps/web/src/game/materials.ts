@@ -91,12 +91,19 @@ export function createMaterials(scene: Scene, quality: Quality) {
   const awningGreen = flat(scene, "awning green", "#1d6a4c", 0.7);
   awningGreen.backFaceCulling = false;
   const vertexPaint = flat(scene, "painted metal", "#ffffff", 0.5, 0.3);
+  // Unlit white, so each strip glows in its own vertex colour.
+  const neon = new PBRMaterial("neon tube", scene);
+  neon.albedoColor = Color3.White();
+  neon.unlit = true;
+  const carpet = flat(scene, "red carpet", "#9c0f1e", 0.95);
 
   return {
     water,
     lagoon,
     lamp,
     vertexPaint,
+    neon,
+    carpet,
     plaster,
     walls,
     concrete,

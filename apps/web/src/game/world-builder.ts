@@ -17,6 +17,7 @@ import {
 } from "@lagos-living/shared";
 import { densify, hash, MeshBuilderBatch, offsetPolyline, pointAt, polylineLength, slicePolyline } from "./geometry";
 import type { Materials, Quality } from "./materials";
+import { archedWindows, churchTower, clubFront, gableRoof, LANDMARK_PAINT, LANDMARK_TRIM, landmarkFor, modernFront, mosqueDomeAndMinaret, worshipDoor } from "./landmarks";
 import { SignAtlas, type UvRect } from "./sign-atlas";
 import { findJunctions, waterSampler, type WorldArea, type WorldBuilding, type WorldData, type WorldRoad, type WorldTile } from "./street-index";
 
@@ -706,14 +707,16 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       else floors = 2 + Math.floor(seed * 1.6);
     }
     floors = Math.min(floors, 14);
+    const landmark = landmarkFor(place);
+    if (landmark === "church") floors = Math.max(floors, 2);
     const height = floors * FLOOR_HEIGHT + 0.3;
-    const paint = PAINTS[Math.floor(hash(building.id * 7) * PAINTS.length)]!;
-    const trim: Color = hash(building.id * 11) > 0.5 ? [0.98, 0.98, 0.97] : [0.62, 0.6, 0.57];
+    const paint = landmark ? LANDMARK_PAINT[landmark] : PAINTS[Math.floor(hash(building.id * 7) * PAINTS.length)]!;
+    const trim: Color = landmark ? LANDMARK_TRIM[landmark] : hash(building.id * 11) > 0.5 ? [0.98, 0.98, 0.97] : [0.62, 0.6, 0.57];
     const obb = orientedBox(ring);
     const rectangular = area / Math.max(1, obb.area) > 0.86 && ring.length <= 8;
-    const hipRoof = building.kind !== "office" && building.kind !== "apartments" && floors <= 2 && rectangular && area < 520 && seed > 0.2;
-    const parapet = hipRoof ? 0 : 0.9;
-    const frameKey = hash(building.id * 3) > 0.45 ? "frame" : "darkFrame";
+    const hipRoof = !landmark && building.kind !== "office" && building.kind !== "apartments" && floors <= 2 && rectangular && area < 520 && seed > 0.2;
+    const parapet = hipRoof || landmark === "church" ? 0 : 0.9;
+    const frameKey = landmark === "modern" || landmark === "club" ? "darkFrame" : hash(building.id * 3) > 0.45 ? "frame" : "darkFrame";
 
     if (building.kind === "roof") {
       // Canopies (fuel stations, car parks): slab on posts.
@@ -810,10 +813,15 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
         );
       }
 
+      if (landmark === "club") return;
+      if (landmark === "church" || landmark === "mosque") {
+        archedWindows((key) => base.get(cx, cz, key), a, b, height, index === doorEdge ? { t: doorT * length, half: 2.6 } : null);
+        return;
+      }
       // Windows: flush glass always; frames, sills, grilles, AC units and balconies near the camera.
       if (length < 2.4) return;
       const isDoorEdge = index === doorEdge;
-      const windowWidth = building.kind === "office" ? 1.8 : building.kind === "apartments" ? 1.4 : 1.2;
+      const windowWidth = landmark === "modern" ? 2.2 : building.kind === "office" ? 1.8 : building.kind === "apartments" ? 1.4 : 1.2;
       const spacing = building.kind === "office" ? 2.2 : 2.9;
       const count = Math.max(1, Math.floor((length - 0.8) / spacing));
       const step = length / count;
@@ -851,7 +859,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
           frames.box(wx + nx * 0.05, (sill + top) / 2, wz + nz * 0.05, 0.05, top - sill, 0.06, yawOut, 1, undefined, true);
           trims.box(wx + nx * 0.11, sill - 0.04, wz + nz * 0.11, windowWidth + 0.34, 0.08, 0.22, yawOut, 1, trim, true);
           const variant = hash(building.id * 31 + floor * 7 + column * 13);
-          if (floor === 0 && building.kind !== "office" && quality !== "low") {
+          if (floor === 0 && !landmark && building.kind !== "office" && quality !== "low") {
             const bars = detail.get(cx, cz, "gate");
             for (let bar = 1; bar < 5; bar += 1) {
               const offset = -half + (windowWidth * bar) / 5;
@@ -934,9 +942,16 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
         fascia.wall(p[0], p[2], q[0], q[2], eave - 0.22, eave, 1, trim);
       });
       fascia.polygon(corners.map((p) => [p[0], p[2]] as Vec2), eave - 0.22, 2, [0.92, 0.92, 0.9], true);
+    } else if (landmark === "church") {
+      let { ux, uz, hu, hv } = obb;
+      if (hv > hu) {
+        [hu, hv] = [hv, hu];
+        [ux, uz] = [-uz, ux];
+      }
+      gableRoof((key) => base.get(cx, cz, key), { cx: obb.cx, cz: obb.cz, ux, uz, hu, hv, height }, paint);
     } else {
       base.get(cx, cz, "concrete").polygon(ring, height, 4, [0.72, 0.7, 0.66]);
-      if (area > 60) {
+      if (area > 60 && !landmark) {
         const tanks = 1 + Math.floor(hash(building.id * 23) * (area > 400 ? 3 : 1.6));
         for (let tank = 0; tank < tanks; tank += 1) {
           const ox = (hash(building.id + tank * 3) - 0.5) * Math.min(6, obb.hu);
@@ -950,7 +965,21 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     const doorYaw = Math.atan2(doorNx, doorNz);
     const ex = (doorB[0] - doorA[0]) / doorLength;
     const ez = (doorB[1] - doorA[1]) / doorLength;
-    if (shopfront) {
+    const facade = { x: doorX, z: doorZ, nx: doorNx, nz: doorNz, ex, ez, yaw: doorYaw };
+    const landmarkGet = (key: string) => base.get(cx, cz, key);
+    if (landmark === "club") {
+      const club = CLUBS[place!.id];
+      const accentHex = club?.accent ?? "#ff2d95";
+      const accent: Color = [parseInt(accentHex.slice(1, 3), 16) / 255, parseInt(accentHex.slice(3, 5), 16) / 255, parseInt(accentHex.slice(5, 7), 16) / 255];
+      clubFront(landmarkGet, facade, { a: doorA, b: doorB }, height, accent);
+      const uv = atlas.get(place!.name, "club", `Nightclub · ${place!.street}`, accentHex);
+      const signWidth = Math.max(3, Math.min(doorLength - 0.6, 6.4));
+      const signY = 3.55 + signWidth / SignAtlas.aspect / 2 + 0.2;
+      base.get(cx, cz, "gate").box(doorX + doorNx * 0.12, signY, doorZ + doorNz * 0.12, signWidth + 0.3, signWidth / SignAtlas.aspect + 0.25, 0.16, doorYaw);
+      textQuad(base.get(cx, cz, "signs"), doorX + doorNx * 0.205, signY, doorZ + doorNz * 0.205, doorYaw, signWidth, signWidth / SignAtlas.aspect, uv);
+    } else if (landmark === "church" || landmark === "mosque") {
+      worshipDoor(landmarkGet, facade);
+    } else if (shopfront) {
       const width = Math.min(doorLength - 0.8, 9);
       const centreT = Math.max(width / 2 + 0.4, Math.min(doorLength - width / 2 - 0.4, doorT * doorLength));
       const sx = doorA[0] + ex * centreT;
@@ -1001,6 +1030,16 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       const canopy = detail.get(cx, cz, "concrete");
       canopy.box(doorX + doorNx * 0.55, 3.0, doorZ + doorNz * 0.55, doorWidth + 1.0, 0.14, 1.1, doorYaw, 1, trim);
       canopy.box(doorX + doorNx * 0.4, 0.3, doorZ + doorNz * 0.4, doorWidth + 0.8, 0.3, 0.8, doorYaw, 1, [0.7, 0.68, 0.64], true);
+      if (landmark === "modern") modernFront(landmarkGet, facade, doorLength, doorT * doorLength - doorLength / 2);
+    }
+    if (landmark === "church") churchTower(landmarkGet, doorA, doorB, doorT, facade, height, paint);
+    if (landmark === "mosque") {
+      let { ux, uz, hu, hv } = obb;
+      if (hv > hu) {
+        [hu, hv] = [hv, hu];
+        [ux, uz] = [-uz, ux];
+      }
+      mosqueDomeAndMinaret(landmarkGet, { cx: obb.cx, cz: obb.cz, ux, uz, hu, hv, height }, doorA, doorB, doorT, facade, height + parapet, paint);
     }
 
     if (place) {
@@ -1020,7 +1059,8 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
         addObstacle([px + ex * 0.7, pz + ez * 0.7], [px + ex * 0.7, pz + ez * 0.7], 0.08);
       } else if (!shopfront) {
         const uv = atlas.get(place.name, "plate", place.street);
-        textQuad(base.get(cx, cz, "signs"), doorX + ex * 1.3 + doorNx * 0.05, 2.0, doorZ + ez * 1.3 + doorNz * 0.05, doorYaw, 1.3, 1.3 / SignAtlas.aspect, uv);
+        const plateAt = landmark ? 2.6 : 1.3;
+        textQuad(base.get(cx, cz, "signs"), doorX + ex * plateAt + doorNx * 0.05, 2.0, doorZ + ez * plateAt + doorNz * 0.05, doorYaw, 1.3, 1.3 / SignAtlas.aspect, uv);
       }
       return;
     }
