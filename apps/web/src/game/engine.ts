@@ -315,6 +315,8 @@ export class GameEngine {
   private vehicleView: VehicleCameraView = localStorage.getItem("lagos-vehicle-camera") === "far" ? "far" : "chase";
   /** Unobstructed camera distance, eased back out after a wall or car pushed it in. */
   private cameraReach = 0;
+  /** Police have waved the car down: it brakes to a halt until the driver complies or floors it. */
+  private flaggedDown = false;
   private carPilot: {
     path: Vec2[];
     index: number;
@@ -390,8 +392,14 @@ export class GameEngine {
         this.callbacks.tows([...this.tows.values(), ...tows.filter((tow) => tow.stage === "cancelled")]);
       },
       police: (event) => {
-        if (event.type === "checkpoint") this.crews?.setFlagged(event.stop.checkpointId);
-        if (event.type === "checkpointEnd") this.crews?.setFlagged(null);
+        if (event.type === "checkpoint") {
+          this.crews?.setFlagged(event.stop.checkpointId);
+          this.flaggedDown = true;
+        }
+        if (event.type === "checkpointEnd") {
+          this.crews?.setFlagged(null);
+          this.flaggedDown = false;
+        }
         this.callbacks.police(event);
       },
     });
@@ -682,7 +690,14 @@ export class GameEngine {
     } else if (this.input.touchMove[0] || this.input.touchMove[1]) [steer, throttle] = this.input.touchMove;
     const pilot = this.runCarPilot(now);
     if (pilot) [throttle, steer] = pilot;
-    const handbrake = this.input.held("jump") || this.input.touchSprint;
+    if (this.flaggedDown) {
+      if (this.carPilot) {
+        this.carPilot.resolve(false);
+        this.carPilot = null;
+      }
+      throttle = car.speed > 0.5 ? -1 : car.speed < -0.5 ? 1 : 0;
+    }
+    const handbrake = this.input.held("jump") || this.input.touchSprint || (this.flaggedDown && Math.abs(car.speed) < 3);
     const topSpeed = effectiveTopSpeed(car.model, driving.condition);
     const steps = Math.max(1, Math.ceil(dt / SUBSTEP_DT));
     let impact = 0;
@@ -733,6 +748,7 @@ export class GameEngine {
     this.car = null;
     this.driving = null;
     this.pendingDrive = null;
+    this.flaggedDown = false;
     if (this.carPilot) {
       this.carPilot.resolve(false);
       this.carPilot = null;
@@ -1612,6 +1628,7 @@ export class GameEngine {
   }
 
   answerCheckpoint(checkpointId: string, answer: "comply" | "flee") {
+    this.flaggedDown = false;
     this.net.send("checkpointAnswer", { checkpointId, answer });
   }
 

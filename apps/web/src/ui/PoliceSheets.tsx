@@ -163,7 +163,7 @@ export function SecuritySheet({ place, economy, onClose, onRefresh, onToast }: S
               <li key={plan}>
                 <div>
                   <strong>{spec.label}</strong>
-                  <span>{spec.guards} guards · {hours} h</span>
+                  <span>{spec.guards} guards · {hours} h{balance < spec.price ? ` · need ${naira(spec.price - balance)} more` : ""}</span>
                 </div>
                 <div className="menu-actions">
                   <button
