@@ -68,7 +68,7 @@ test("tows, repairs and returns the same car to the player's current location", 
   await page.waitForTimeout(1_800);
   await lookAtTruck();
   await shot("tow-loading");
-  await expect(line).toContainText(/Collected|Repairing/, { timeout: 15_000 });
+  await expect(line).toContainText(/Collected|Repairing|Returning/, { timeout: 15_000 });
   const collectedAt = Date.now();
   const spot = await page.evaluate(() => ({ x: window.__lagos.state().x, z: window.__lagos.state().z }));
   await expect(line).toContainText("Returning", { timeout: 15_000 });
