@@ -42,7 +42,7 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   };
 
   const corners: Vec2[] = [[OX - HX, OZ - HZ], [OX + HX, OZ - HZ], [OX + HX, OZ + HZ], [OX - HX, OZ + HZ]];
-  get("tiles").polygon(corners, 0.02, 1.2);
+  get("tiles").polygon(corners, 0.02, 1.2, kind === "club" ? [0.16, 0.14, 0.2] : undefined);
   get("plaster").polygon(corners, HEIGHT, 3, kind === "club" ? [0.08, 0.07, 0.1] : [0.97, 0.97, 0.95], true);
   const wallColor: [number, number, number] = kind === "club" ? [0.13, 0.11, 0.17] : kind === "starter" ? [0.86, 0.9, 0.84] : [0.98, 0.95, 0.88];
   for (let index = 0; index < 4; index += 1) {
@@ -207,7 +207,10 @@ function buildClub(
   solid("darkFrame", djX, 0.55, djZ, 2.4, 1.1, 0.8);
   get("chrome").box(djX - 0.5, 1.13, djZ, 0.5, 0.05, 0.4);
   get("chrome").box(djX + 0.5, 1.13, djZ, 0.5, 0.05, 0.4);
-  for (const side of [-1, 1]) solid("rubber", djX + side * 2.0, 0.9, djZ + 0.2, 0.8, 1.8, 0.7);
+  for (const side of [-1, 1]) {
+    solid("darkFrame", djX + side * 2.0, 0.9, djZ + 0.2, 0.8, 1.8, 0.7, 0, [0.12, 0.12, 0.13]);
+    for (const [y, size] of [[1.35, 0.3], [0.7, 0.5]] as const) get("chrome").box(djX + side * 2.0, y, djZ - 0.16, size, size, 0.04, 0, 1, [0.2, 0.2, 0.22]);
+  }
 
   const [floorX, floorZ] = CLUB_LAYOUT.floor.centre;
   const [halfX, halfZ] = CLUB_LAYOUT.floor.half;
