@@ -1,4 +1,4 @@
-import { CLUBS, defaultSettings, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
+import { CLUBS, OFFENCES, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
@@ -15,6 +15,7 @@ import { COMMUNITY_KINDS, CommunitySheet } from "./CommunitySheets";
 import { PlaceSheet } from "./Sheets";
 import { PlotSheet } from "./PlotSheet";
 import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
+import { CheckpointPrompt, HoldUpPrompt, PoliceStationSheet, SecuritySheet } from "./PoliceSheets";
 import { ChatPanel, ReportDialog, WarningNotice, type ReportTarget } from "./SafetyUI";
 
 type Toast = Notice & { id: number; at: number };
@@ -79,6 +80,9 @@ export function GameView({
   const [clubBar, setClubBar] = useState<Place | null>(null);
   const [clubTable, setClubTable] = useState<number | null>(null);
   const [clubTables, setClubTables] = useState<ClubTable[]>([]);
+  const [checkpoint, setCheckpoint] = useState<CheckpointStop | null>(null);
+  const [holdUp, setHoldUp] = useState<HoldUp | null>(null);
+  const [robTarget, setRobTarget] = useState<{ sessionId: string; name: string } | null>(null);
   const [plots, setPlots] = useState<PlotState[]>([]);
   const [phone, setPhone] = useState<PhoneApp | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
@@ -259,6 +263,15 @@ export function GameView({
           towsRef.current = next.filter((tow) => tow.stage !== "cancelled");
           setTows(towsRef.current);
         },
+        police: (event) => {
+          if (event.type === "checkpoint") setCheckpoint(event.stop);
+          if (event.type === "checkpointEnd") setCheckpoint(null);
+          if (event.type === "holdUp") setHoldUp(event.holdUp);
+          if (event.type === "holdUpEnd") {
+            setHoldUp(null);
+            void refresh();
+          }
+        },
         ride: (next) => {
           setRide(next);
           if (next && (next.status === "approaching" || next.status === "completed" || next.status === "cancelled")) void refresh();
@@ -366,7 +379,7 @@ export function GameView({
   }, [hud?.x, hud?.z]);
 
   const warnings = safety?.warnings ?? [];
-  const blocking = Boolean(welcomeOpen || sheet || plotSheet || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length);
+  const blocking = Boolean(welcomeOpen || sheet || plotSheet || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length || holdUp || robTarget);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -397,7 +410,8 @@ export function GameView({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.code !== "Escape") return;
-      if (plotSheet) setPlotSheet(null);
+      if (robTarget) setRobTarget(null);
+      else if (plotSheet) setPlotSheet(null);
       else if (clubBar) setClubBar(null);
       else if (clubTable) setClubTable(null);
       else if (sheet) setSheet(null);
@@ -407,7 +421,7 @@ export function GameView({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sheet, plotSheet, clubBar, clubTable, mapOpen, phone, helpOpen]);
+  }, [sheet, plotSheet, clubBar, clubTable, mapOpen, phone, helpOpen, robTarget]);
 
   const moving = (hud?.speed ?? 0) > 1;
   useEffect(() => {
@@ -423,6 +437,10 @@ export function GameView({
     if (interaction.kind === "place") {
       setSheet(interaction.place);
       void refresh();
+      return;
+    }
+    if (interaction.kind === "holdUp") {
+      setRobTarget({ sessionId: interaction.sessionId, name: interaction.name });
       return;
     }
     if (interaction.kind === "plot") {
@@ -770,6 +788,53 @@ export function GameView({
       {sheet && COMMUNITY_KINDS.has(sheet.kind) && (
         <CommunitySheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} />
       )}
+      {sheet?.kind === "police" && (
+        <PoliceStationSheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} onJustice={() => setPhone("justice")} />
+      )}
+      {sheet?.kind === "security" && (
+        <SecuritySheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} />
+      )}
+      {checkpoint && engine && (
+        <CheckpointPrompt
+          stop={checkpoint}
+          onAnswer={(answer) => {
+            engine.answerCheckpoint(checkpoint.checkpointId, answer);
+            if (answer === "flee") toast({ tone: "info", text: "You put your foot down. Get clear of the checkpoint!" });
+            setCheckpoint(null);
+          }}
+        />
+      )}
+      {holdUp && engine && (
+        <HoldUpPrompt
+          holdUp={holdUp}
+          onAnswer={(answer) => {
+            engine.answerHoldUp(holdUp.robberyId, answer);
+            setHoldUp(null);
+          }}
+        />
+      )}
+      {robTarget && engine && (
+        <div className="sheet-backdrop" onClick={() => setRobTarget(null)}>
+          <section className="sheet" role="dialog" aria-label="Hold-up" data-testid="rob-confirm" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <p className="eyebrow">CRIME</p>
+                <h2>Rob {robTarget.name} at gunpoint?</h2>
+              </div>
+              <button className="icon-button" onClick={() => setRobTarget(null)} aria-label="Close">✕</button>
+            </header>
+            <p>
+              You'd demand {Math.round(ROBBERY.share * 100)}% of their cash (at most {naira(ROBBERY.cap)}). They can run. The city records every hold-up:
+              near a police station or checkpoint officers charge you on the spot, and if they report you within a day you pay it back plus a{" "}
+              {naira(OFFENCES.armed_robbery.fine)} fine.
+            </p>
+            <div className="row">
+              <button className="danger" data-testid="rob-go" onClick={() => { engine.holdUp(robTarget.sessionId); setRobTarget(null); }}>Pull the gun</button>
+              <button className="secondary" onClick={() => setRobTarget(null)}>Walk away</button>
+            </div>
+          </section>
+        </div>
+      )}
       {sheet?.kind === "club" && (
         <ClubDoorSheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} onEnter={() => engine?.enterProperty(sheet.id, "enter")} />
       )}
@@ -792,7 +857,7 @@ export function GameView({
       {clubBar && hud?.propertyId === clubBar.id && (
         <ClubBarSheet place={clubBar} economy={economy} onClose={() => setClubBar(null)} onRefresh={refresh} onToast={toast} />
       )}
-      {sheet && sheet.kind !== "dealership" && sheet.kind !== "mechanic" && sheet.kind !== "club" && !COMMUNITY_KINDS.has(sheet.kind) && (
+      {sheet && !["dealership", "mechanic", "club", "police", "security"].includes(sheet.kind) && !COMMUNITY_KINDS.has(sheet.kind) && (
         <PlaceSheet
           place={sheet}
           economy={economy}

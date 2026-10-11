@@ -15,6 +15,8 @@ import {
   type WorldSnapshot,
   type RideState,
   type TowState,
+  type CheckpointStop,
+  type HoldUp,
 } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
@@ -22,6 +24,12 @@ export type MultiplayerStatus =
   | { state: "connecting" }
   | { state: "connected"; sessionId: string }
   | { state: "offline"; reason: string };
+
+export type PoliceEvent =
+  | { type: "checkpoint"; stop: CheckpointStop }
+  | { type: "checkpointEnd"; checkpointId: string }
+  | { type: "holdUp"; holdUp: HoldUp }
+  | { type: "holdUpEnd"; robberyId: string };
 
 export type MultiplayerHandlers = {
   snapshot: (snapshot: WorldSnapshot, ownSessionId: string) => void;
@@ -40,6 +48,7 @@ export type MultiplayerHandlers = {
   bikeStock: (stock: Record<string, number>) => void;
   /** `replace` carries the full list (on join); otherwise one job changed. */
   tows: (tows: TowState[], replace: boolean) => void;
+  police: (event: PoliceEvent) => void;
 };
 
 export class MultiplayerConnection {
@@ -108,6 +117,10 @@ export class MultiplayerConnection {
       room.onMessage("bikeReturned", () => undefined);
       room.onMessage("tows", (tows: TowState[]) => Array.isArray(tows) && this.handlers.tows(tows, true));
       room.onMessage("tow", (tow: TowState) => typeof tow?.id === "string" && this.handlers.tows([tow], false));
+      room.onMessage("checkpoint", (stop: CheckpointStop) => typeof stop?.checkpointId === "string" && this.handlers.police({ type: "checkpoint", stop }));
+      room.onMessage("checkpointEnd", (end: { checkpointId?: unknown }) => this.handlers.police({ type: "checkpointEnd", checkpointId: String(end?.checkpointId ?? "") }));
+      room.onMessage("holdUp", (holdUp: HoldUp) => typeof holdUp?.robberyId === "string" && this.handlers.police({ type: "holdUp", holdUp }));
+      room.onMessage("holdUpEnd", (end: { robberyId?: unknown }) => this.handlers.police({ type: "holdUpEnd", robberyId: String(end?.robberyId ?? "") }));
       room.onMessage("suspended", (payload: { reason?: unknown; until?: unknown }) => {
         this.closed = true;
         this.handlers.suspended({ reason: String(payload?.reason ?? ""), until: typeof payload?.until === "string" ? payload.until : null });
@@ -165,7 +178,10 @@ export class MultiplayerConnection {
       | "rentBike"
       | "returnBike"
       | "towRequest"
-      | "towCancel",
+      | "towCancel"
+      | "checkpointAnswer"
+      | "holdUp"
+      | "robberyAnswer",
     payload?: unknown,
   ) {
     this.room?.send(type, payload);

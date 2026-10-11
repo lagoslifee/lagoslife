@@ -72,12 +72,15 @@ import {
   type RideState,
   type TowDestination,
   type TowState,
+  ROBBERY,
 } from "@lagos-living/shared";
+import { Escort, type EscortLeader } from "./escort";
+import { StreetCrews } from "./street-crews";
 import { apiUrl, authHeaders } from "../auth-client";
 import type { PlotState } from "../api";
 import { buildProgress } from "./build-progress";
 import { PlotsView } from "./plots";
-import { MultiplayerConnection, type MultiplayerStatus } from "../multiplayer";
+import { MultiplayerConnection, type MultiplayerStatus, type PoliceEvent } from "../multiplayer";
 import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, MAX_AUTO_SCALING, qualityStep } from "./adaptive-quality";
 import { CityAudio } from "./audio";
 import { appearanceFor, Avatar, AvatarFactory } from "./avatar";
@@ -140,7 +143,8 @@ export type Interaction =
   | { kind: "place"; place: Place }
   | { kind: "delivery" }
   | { kind: "interior"; spot: InteriorSpot["id"] }
-  | { kind: "plot"; plotId: string };
+  | { kind: "plot"; plotId: string }
+  | { kind: "holdUp"; sessionId: string; name: string };
 
 export type EngineCallbacks = {
   hud: (state: HudState) => void;
@@ -160,6 +164,7 @@ export type EngineCallbacks = {
   tows: (tows: TowState[]) => void;
   /** WebGL context lost/restored by the browser, or frames failing repeatedly. */
   graphics: (event: "lost" | "restored" | "failed") => void;
+  police: (event: PoliceEvent) => void;
 };
 
 type Remote = {
@@ -168,7 +173,15 @@ type Remote = {
   samples: Array<{ t: number; x: number; z: number; yaw: number; motion: MotionState; busId: string | null; vehicleId: string | null; vehicleSeat: number | null }>;
   speed: number;
   lastSeen: number;
+  name: string;
+  guards: number;
 };
+
+/** Escorts of other residents are drawn only this close. */
+const ESCORT_VISIBLE_RANGE = 150;
+/** An owner's gate opens when they come this close, or their guard opens it from this far. */
+const GATE_OPEN_RANGE = 9;
+const GATE_GUARD_RANGE = 24;
 
 /** Danfos further than this are hidden; other districts' loops are kilometres away. */
 const DANFO_VISIBLE_RANGE = 700;
@@ -222,6 +235,11 @@ export class GameEngine {
   private tracker!: StreetTracker;
   navigator!: RoadNavigator;
   private remotes = new Map<string, Remote>();
+  /** Hired escorts by session id; "self" is the player's own. */
+  private escorts = new Map<string, Escort>();
+  private ownGuards = 0;
+  private crews: StreetCrews | null = null;
+  private gatePlot: string | null = null;
   private looks = new Map<string, CharacterAppearance>();
   private appearance: CharacterAppearance = defaultAppearance;
   private buses = new Map<string, DanfoView>();
@@ -371,6 +389,11 @@ export class GameEngine {
         for (const [id, tow] of this.tows) if (tow.stage === "cancelled" || (tow.stage === "delivered" && !tows.some((entry) => entry.id === id))) this.tows.delete(id);
         this.callbacks.tows([...this.tows.values(), ...tows.filter((tow) => tow.stage === "cancelled")]);
       },
+      police: (event) => {
+        if (event.type === "checkpoint") this.crews?.setFlagged(event.stop.checkpointId);
+        if (event.type === "checkpointEnd") this.crews?.setFlagged(null);
+        this.callbacks.police(event);
+      },
     });
   }
 
@@ -501,6 +524,7 @@ export class GameEngine {
     buildServiceBay(scene, getPlace("ade-auto-works"), (x, z) => this.world.groundHeight(x, z));
     this.showroom = this.buildShowroom(this.vehicleFactory);
     this.bikeStations = new BikeStationsView(scene, this.materials, (x, z) => this.world.groundHeight(x, z), this.vehicleFactory, (meshes) => this.addCaster(meshes));
+    if (this.avatars) this.crews = new StreetCrews(scene, this.avatars, this.vehicleFactory, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
 
     this.input = new InputState(this.canvas, this.bindings);
     const start = getPlace("starter-home");
@@ -952,6 +976,17 @@ export class GameEngine {
     this.updateRemotes(now, dt);
     this.interior?.update(now * 0.001);
     this.updateWaiters(dt);
+    const leaderView = seatView && ride ? seatView : null;
+    this.updateEscorts(dt, {
+      x: leaderView ? leaderView.x : x,
+      z: leaderView ? leaderView.z : z,
+      yaw: leaderView ? leaderView.yaw : this.controller.yaw,
+      driving: Boolean(leaderView),
+      outdoors: !this.interior && !bus,
+    });
+    this.crews?.update(dt, x, z, !this.interior);
+    this.plotsView?.animate(dt);
+    this.updateGates(x, z);
     if (!this.interior) {
       this.world.stream(x, z);
       this.world.pump(this.readyFired ? 8 : 200);
@@ -1270,6 +1305,16 @@ export class GameEngine {
         }
       }
     }
+    for (const [sessionId, remote] of this.remotes) {
+      const sample = remote.samples.at(-1);
+      if (!sample || sample.busId || sample.vehicleId || !remote.avatar) continue;
+      const { x: rx, z: rz } = remote.avatar.root.position;
+      const distance = Math.hypot(rx - x, rz - z);
+      if (distance > ROBBERY.range) continue;
+      offer(distance + 1.5, { key: bind("interact"), label: `Hold up ${remote.name}`, detail: remote.guards ? "They have armed guards" : "Rob them at gunpoint", disabled: remote.guards > 0 }, () =>
+        remote.guards === 0 && this.callbacks.interact({ kind: "holdUp", sessionId, name: remote.name }),
+      );
+    }
     for (const place of PLACES) {
       const distance = Math.hypot(place.door[0] - x, place.door[1] - z);
       if (distance > INTERACTION_RANGE + (place.kind === "rental" || place.kind === "sale" ? 2 : 0)) continue;
@@ -1414,7 +1459,10 @@ export class GameEngine {
     }
     const seen = new Set<string>();
     for (const player of snapshot.players) {
-      if (player.sessionId === own) continue;
+      if (player.sessionId === own) {
+        this.ownGuards = player.guards;
+        continue;
+      }
       seen.add(player.sessionId);
       let remote = this.remotes.get(player.sessionId);
       if (!remote) {
@@ -1424,10 +1472,11 @@ export class GameEngine {
         this.overlay.appendChild(tag);
         const avatar = this.avatars?.create(`remote-${player.sessionId}`, this.looks.get(player.sessionId) ?? defaultAppearance) ?? null;
         if (avatar) avatar.onMeshes = (meshes) => this.addCaster(meshes);
-        remote = { avatar, tag, samples: [], speed: 0, lastSeen: now };
+        remote = { avatar, tag, samples: [], speed: 0, lastSeen: now, name: player.name, guards: 0 };
         this.remotes.set(player.sessionId, remote);
       }
       remote.lastSeen = now;
+      remote.guards = player.guards;
       remote.samples.push({ t: now, x: player.x, z: player.z, yaw: player.yaw, motion: player.motion, busId: player.busId, vehicleId: player.vehicleId, vehicleSeat: player.vehicleSeat });
       if (remote.samples.length > 12) remote.samples.shift();
       remote.tag.classList.toggle("away", !player.connected);
@@ -1503,6 +1552,75 @@ export class GameEngine {
         remote.avatar.update(remote.speed, b.motion, dt);
       }
     }
+  }
+
+  private updateEscorts(dt: number, own: EscortLeader) {
+    if (!this.avatars || !this.vehicleFactory) return;
+    const wanted = new Map<string, { count: number; leader: EscortLeader }>();
+    if (this.ownGuards) wanted.set("self", { count: this.ownGuards, leader: own });
+    for (const [sessionId, remote] of this.remotes) {
+      const sample = remote.samples.at(-1);
+      if (!remote.guards || !sample || !remote.avatar) continue;
+      const view = sample.vehicleId ? this.vehicles.get(sample.vehicleId)?.view : undefined;
+      const pose = view ? { x: view.x, z: view.z, yaw: view.yaw } : { x: remote.avatar.root.position.x, z: remote.avatar.root.position.z, yaw: remote.avatar.root.rotation.y };
+      if (Math.hypot(pose.x - own.x, pose.z - own.z) > ESCORT_VISIBLE_RANGE) continue;
+      wanted.set(sessionId, { count: remote.guards, leader: { ...pose, driving: Boolean(view), outdoors: !this.interior && !sample.busId } });
+    }
+    for (const [id, escort] of this.escorts) {
+      if (wanted.has(id)) continue;
+      escort.dispose();
+      this.escorts.delete(id);
+    }
+    for (const [id, { count, leader }] of wanted) {
+      let escort = this.escorts.get(id);
+      if (!escort) {
+        escort = new Escort(id, this.avatars, this.vehicleFactory, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes), count);
+        this.escorts.set(id, escort);
+      }
+      if (escort.count !== count) escort.setCount(count);
+      escort.update(dt, leader);
+    }
+  }
+
+  /** The gate of the player's own finished house opens as they arrive; with guards, one runs ahead to open it. */
+  private updateGates(x: number, z: number) {
+    if (!this.plotsView) return;
+    const escort = this.escorts.get("self");
+    let nearest: { plot: (typeof PLOTS)[number]; distance: number } | null = null;
+    if (!this.interior) {
+      for (const plot of PLOTS) {
+        const state = this.plotStates.find((entry) => entry.id === plot.id);
+        if (state?.status !== "mine" || !state.construction?.completed) continue;
+        const distance = Math.hypot(plot.gate[0] - x, plot.gate[1] - z);
+        if (distance < (escort ? GATE_GUARD_RANGE : GATE_OPEN_RANGE) && (!nearest || distance < nearest.distance)) nearest = { plot, distance };
+      }
+    }
+    if (this.gatePlot && this.gatePlot !== nearest?.plot.id) {
+      this.plotsView.setGateOpen(this.gatePlot, false);
+      escort?.sendToGate(null);
+      this.gatePlot = null;
+    }
+    if (!nearest) return;
+    const { plot } = nearest;
+    this.gatePlot = plot.id;
+    if (escort) {
+      escort.sendToGate([plot.gate[0] + plot.along[0] * 3, plot.gate[1] + plot.along[1] * 3]);
+      if (escort.atGate()) this.plotsView.setGateOpen(plot.id, true);
+    } else {
+      this.plotsView.setGateOpen(plot.id, true);
+    }
+  }
+
+  answerCheckpoint(checkpointId: string, answer: "comply" | "flee") {
+    this.net.send("checkpointAnswer", { checkpointId, answer });
+  }
+
+  holdUp(sessionId: string) {
+    this.net.send("holdUp", { sessionId });
+  }
+
+  answerHoldUp(robberyId: string, answer: "comply" | "run") {
+    this.net.send("robberyAnswer", { robberyId, answer });
   }
 
   private showBubble(message: ChatMessage) {

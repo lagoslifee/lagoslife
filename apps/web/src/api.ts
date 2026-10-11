@@ -1,4 +1,4 @@
-import type { BottleItem, Citation, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
+import type { BottleItem, Citation, PoliceCase, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -166,6 +166,13 @@ export const api = {
   removeFromTable: (placeId: string, no: number, userName: string) => post<{ guest: string; tables: ClubTable[] }>(`/api/clubs/${placeId}/tables/${no}/guests/remove`, { userName }),
   orderBottle: (placeId: string, no: number, itemId: string) =>
     post<{ replayed: boolean; item: BottleItem; balance: number; tables: ClubTable[] }>(`/api/clubs/${placeId}/tables/${no}/bottle`, { itemId, idempotencyKey: crypto.randomUUID() }),
+  security: () => request<SecurityStatus>("/api/security"),
+  hireSecurity: (plan: SecurityPlanId) =>
+    post<{ replayed: boolean; balance: number; status: SecurityStatus }>("/api/security/hire", { plan, idempotencyKey: crypto.randomUUID() }),
+  dismissSecurity: () => post<SecurityStatus>("/api/security/dismiss"),
+  policeRecords: () => request<{ robberies: RobberyRecord[]; cases: PoliceCase[] }>("/api/police/records"),
+  policeReport: (userName: string, details: string) =>
+    post<{ status: "charged" | "no_record"; accused: string; restitution: number; station: string }>("/api/police/report", { userName, details }),
   standing: () => request<{ suspension: Suspension | null }>("/api/account/standing"),
   safety: () => request<SafetyStatus>("/api/safety"),
   block: (userName: string) => post<SafetyStatus>("/api/safety/block", { userName }),
