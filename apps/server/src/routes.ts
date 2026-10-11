@@ -102,7 +102,6 @@ import {
   retrieveVehicle,
   setVehicleLock,
   serviceVehicle,
-  towVehicle,
 } from "./vehicle-service.js";
 
 type Handler = (req: Request, userId: string) => Promise<unknown>;
@@ -387,8 +386,6 @@ export function configureRoutes(app: Express) {
   app.post("/api/vehicles/:vehicleId/insure", requirePlayer, rateLimited, guarded("Cover could not be bought", (req, userId) =>
     insureVehicle(userId, String(req.params.vehicleId), vehicleActionSchema.parse(req.body).idempotencyKey)));
 
-  app.post("/api/vehicles/:vehicleId/tow", requirePlayer, rateLimited, guarded("Tow could not be booked", (req, userId) =>
-    towVehicle(userId, String(req.params.vehicleId), vehicleActionSchema.parse(req.body).idempotencyKey)));
 
   app.post("/api/vehicles/:vehicleId/garage", requirePlayer, rateLimited, guarded("Vehicle could not be garaged", (req, userId) =>
     garageVehicle(userId, String(req.params.vehicleId), garageVehicleSchema.parse(req.body).propertyId)));

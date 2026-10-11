@@ -14,6 +14,7 @@ import {
   type SelfState,
   type WorldSnapshot,
   type RideState,
+  type TowState,
 } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
@@ -37,6 +38,8 @@ export type MultiplayerHandlers = {
   plots: () => void;
   ride: (ride: RideState | null) => void;
   bikeStock: (stock: Record<string, number>) => void;
+  /** `replace` carries the full list (on join); otherwise one job changed. */
+  tows: (tows: TowState[], replace: boolean) => void;
 };
 
 export class MultiplayerConnection {
@@ -103,6 +106,8 @@ export class MultiplayerConnection {
       room.onMessage("ride", (ride: RideState | null) => this.handlers.ride(ride));
       room.onMessage("bikeStock", (stock: Record<string, number>) => this.handlers.bikeStock(stock));
       room.onMessage("bikeReturned", () => undefined);
+      room.onMessage("tows", (tows: TowState[]) => Array.isArray(tows) && this.handlers.tows(tows, true));
+      room.onMessage("tow", (tow: TowState) => typeof tow?.id === "string" && this.handlers.tows([tow], false));
       room.onMessage("suspended", (payload: { reason?: unknown; until?: unknown }) => {
         this.closed = true;
         this.handlers.suspended({ reason: String(payload?.reason ?? ""), until: typeof payload?.until === "string" ? payload.until : null });
@@ -158,7 +163,9 @@ export class MultiplayerConnection {
       | "rideArrive"
       | "rideCancel"
       | "rentBike"
-      | "returnBike",
+      | "returnBike"
+      | "towRequest"
+      | "towCancel",
     payload?: unknown,
   ) {
     this.room?.send(type, payload);

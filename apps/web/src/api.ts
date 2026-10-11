@@ -149,7 +149,6 @@ export const api = {
     post<VehicleResult>("/api/vehicles/purchase", { modelId, colour, idempotencyKey }),
   serviceVehicle: (id: string) => post<VehicleResult>(`/api/vehicles/${id}/service`, { idempotencyKey: crypto.randomUUID() }),
   insureVehicle: (id: string) => post<VehicleResult>(`/api/vehicles/${id}/insure`, { idempotencyKey: crypto.randomUUID() }),
-  towVehicle: (id: string) => post<VehicleResult>(`/api/vehicles/${id}/tow`, { idempotencyKey: crypto.randomUUID() }),
   garageVehicle: (id: string, propertyId: string) =>
     post<VehicleResult>(`/api/vehicles/${id}/garage`, { propertyId, idempotencyKey: crypto.randomUUID() }),
   lockVehicle: (id: string, locked: boolean) => post<VehicleResult>(`/api/vehicles/${id}/lock`, { locked }),

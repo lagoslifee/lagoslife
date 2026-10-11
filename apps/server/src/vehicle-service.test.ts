@@ -22,8 +22,8 @@ import {
   retrieveVehicle,
   saveDrivingVehicle,
   serviceVehicle,
-  towVehicle,
 } from "./vehicle-service.js";
+import { cancelTow, collectTow, deliverTow, mechanicDelivery, requestTow } from "./tow-service.js";
 
 const users = [0, 1, 2].map(() => ({
   id: `vehicle-user-${randomUUID()}`,
@@ -164,7 +164,15 @@ describe("vehicle ownership", () => {
     expect((await vehicleRow(vehicleId)).condition).toBe(100);
   });
 
-  it("insures weekly, refuses stacking cover, then tows for free and caps repairs at the excess", async () => {
+  it("stops minor knocks at the floor; only a severe impact disables the car", async () => {
+    await pool.query(`UPDATE player_vehicle SET condition = 20 WHERE id = $1`, [vehicleId]);
+    expect((await damageVehicle(driver.id, vehicleId, 30, 10))?.condition).toBe(VEHICLE_RULES.minorFloor);
+    expect((await damageVehicle(driver.id, vehicleId, 30, 10))?.condition).toBe(VEHICLE_RULES.minorFloor);
+    expect((await damageVehicle(driver.id, vehicleId, 30, 20, true))?.condition).toBe(0);
+    await pool.query(`UPDATE player_vehicle SET condition = 100 WHERE id = $1`, [vehicleId]);
+  });
+
+  it("insures weekly, then a tow is free and repairs are capped at the excess; the same car comes back repaired", async () => {
     await pool.query(`UPDATE wallet SET balance = 100000 WHERE user_id = $1`, [driver.id]);
     const insured = await insureVehicle(driver.id, vehicleId, randomUUID());
     expect(insured.vehicle.insured).toBe(true);
@@ -172,27 +180,47 @@ describe("vehicle ownership", () => {
     await expect(insureVehicle(driver.id, vehicleId, randomUUID())).rejects.toThrow("already active");
 
     await pool.query(`UPDATE player_vehicle SET x = 0, z = 0 WHERE id = $1`, [vehicleId]);
-    await damageVehicle(driver.id, vehicleId, 100, 20);
+    await damageVehicle(driver.id, vehicleId, 100, 20, true);
     expect(await claimVehicle(driver.id, vehicleId, "dead-engine")).toBeNull();
+    const before = await vehicleRow(vehicleId);
     const beforeTow = await balance(driver.id);
-    const tow = await towVehicle(driver.id, vehicleId, randomUUID());
-    expect(tow.charged).toBe(0);
-    expect(await balance(driver.id)).toBe(beforeTow);
-    const towed = await vehicleRow(vehicleId);
-    expect(Math.hypot(towed.x - mechanic.kerb[0], towed.z - mechanic.kerb[1])).toBeLessThan(VEHICLE_RULES.workshopRange);
-
+    const key = randomUUID();
+    const [first, replay] = await Promise.all([
+      requestTow(driver.id, vehicleId, { kind: "here" }, key),
+      requestTow(driver.id, vehicleId, { kind: "here" }, key),
+    ]);
+    expect(first.job.id).toBe(replay.job.id);
+    expect(first.job.quote.towFee).toBe(0);
+    expect(first.job.quote.repair).toBe(VEHICLE_RULES.insuredExcess);
+    expect(first.job.quote.insurer).toBe(repairCost(saloon, 0) - VEHICLE_RULES.insuredExcess);
+    expect(await balance(driver.id)).toBe(beforeTow - VEHICLE_RULES.insuredExcess);
+    await expect(requestTow(driver.id, vehicleId, { kind: "here" }, randomUUID())).rejects.toThrow("already on its way");
     setPlayerPosition(driver.id, ...mechanic.door);
-    const beforeRepair = await balance(driver.id);
-    await serviceVehicle(driver.id, vehicleId, randomUUID());
-    expect(await balance(driver.id)).toBe(beforeRepair - VEHICLE_RULES.routineServiceFee - VEHICLE_RULES.insuredExcess);
+    await expect(serviceVehicle(driver.id, vehicleId, randomUUID())).rejects.toThrow("recovery truck");
+
+    expect(await collectTow(first.job.id)).toBe(true);
+    expect((await vehicleRow(vehicleId)).status).toBe("towing");
+    expect(await cancelTow(first.job.id, driver.id, "too late")).toBeNull();
+    const spot = await mechanicDelivery(vehicleId);
+    expect(await deliverTow(first.job.id, spot, null)).toBe(vehicleId);
+    expect(await deliverTow(first.job.id, spot, null)).toBeNull();
+    const after = await vehicleRow(vehicleId);
+    expect(after.status).toBe("parked");
+    expect(after.condition).toBe(100);
+    expect([after.plate, after.colour, after.model_id, after.owner_user_id]).toEqual([before.plate, before.colour, before.model_id, before.owner_user_id]);
+    expect(Math.hypot(after.x - mechanic.kerb[0], after.z - mechanic.kerb[1])).toBeLessThan(VEHICLE_RULES.workshopRange);
+    expect(await balance(driver.id)).toBe(beforeTow - VEHICLE_RULES.insuredExcess);
   });
 
-  it("charges the tow fee when uninsured", async () => {
-    await pool.query(`UPDATE player_vehicle SET insured_until = NULL WHERE id = $1`, [vehicleId]);
+  it("charges the tow fee and full repair when uninsured, and refunds a cancelled tow", async () => {
+    await pool.query(`UPDATE player_vehicle SET insured_until = NULL, condition = 70 WHERE id = $1`, [vehicleId]);
     const before = await balance(driver.id);
-    const tow = await towVehicle(driver.id, vehicleId, randomUUID());
-    expect(tow.charged).toBe(VEHICLE_RULES.towFee);
-    expect(await balance(driver.id)).toBe(before - VEHICLE_RULES.towFee);
+    const { job } = await requestTow(driver.id, vehicleId, { kind: "here" }, randomUUID());
+    expect(job.quote.total).toBe(VEHICLE_RULES.towFee + repairCost(saloon, 70));
+    expect(await balance(driver.id)).toBe(before - job.quote.total);
+    expect(await cancelTow(job.id, driver.id, "changed my mind")).toEqual({ refunded: job.quote.total });
+    expect(await balance(driver.id)).toBe(before);
+    await pool.query(`UPDATE player_vehicle SET condition = 100 WHERE id = $1`, [vehicleId]);
   });
 
   it("garages only at a held home and brings the car back out at the door", async () => {
@@ -220,6 +248,6 @@ describe("vehicle ownership", () => {
   it("keeps other residents away from a car they do not own", async () => {
     setPlayerPosition(rival.id, ...mechanic.door);
     await expect(serviceVehicle(rival.id, vehicleId, randomUUID())).rejects.toThrow("not yours");
-    await expect(towVehicle(rival.id, vehicleId, randomUUID())).rejects.toThrow("not yours");
+    await expect(requestTow(rival.id, vehicleId, { kind: "here" }, randomUUID())).rejects.toThrow("not yours");
   });
 });

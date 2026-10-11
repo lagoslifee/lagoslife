@@ -64,6 +64,8 @@ import {
   nearestBikeStation,
   rentalUsage,
   type RideState,
+  type TowDestination,
+  type TowState,
 } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "../auth-client";
 import type { PlotState } from "../api";
@@ -77,6 +79,8 @@ import { CarController } from "./car-controller";
 import { VehicleFactory, type VehicleView } from "./vehicles";
 import { guide, type Guidance, type RoutePlan } from "./navigation";
 import { RoutePilot } from "./route-pilot";
+import { TowRig } from "./tow-rig";
+import { BAY_SIZE, buildServiceBay, serviceBay } from "./service-bay";
 import { BikeStationsView } from "./bike-stations";
 import { defaultBindings, InputState, LocomotionController, MAX_FRAME_DT, SUBSTEP_DT, type Bindings, type MoveMode } from "./controller";
 import { DanfoFactory, type DanfoView } from "./danfo";
@@ -141,6 +145,7 @@ export type EngineCallbacks = {
   suspended: (info: { reason: string; until: string | null }) => void;
   plotsChanged: () => void;
   ride: (ride: RideState | null) => void;
+  tows: (tows: TowState[]) => void;
   /** WebGL context lost/restored by the browser, or frames failing repeatedly. */
   graphics: (event: "lost" | "restored" | "failed") => void;
 };
@@ -253,11 +258,12 @@ export class GameEngine {
   private forcedInput: [number, number] | null = null;
   private readyFired = false;
   private vehicleFactory: VehicleFactory | null = null;
-  private vehicles = new Map<string, { view: VehicleView; state: WorldVehicle; tag: HTMLDivElement; driver: Avatar | null }>();
+  private vehicles = new Map<string, { view: VehicleView; state: WorldVehicle; tag: HTMLDivElement; driver: Avatar | null; rig: TowRig | null }>();
   private ride: RideState | null = null;
   private bikeStock: Record<string, number> = {};
   private bikeStations: BikeStationsView | null = null;
   private rideCar: { vehicleId: string; car: CarController; pilot: RoutePilot; stopping: boolean; sentAt: number } | null = null;
+  private tows = new Map<string, TowState>();
   private rideApproach: { rideId: string; view: VehicleView; driver: Avatar | null; path: Vec2[]; along: number[]; startAt: number; arrivesAt: number } | null = null;
   private car: CarController | null = null;
   private driving: { vehicleId: string; condition: number } | null = null;
@@ -334,6 +340,12 @@ export class GameEngine {
       ride: (ride) => this.onRide(ride),
       bikeStock: (stock) => {
         this.bikeStock = stock;
+      },
+      tows: (tows, replace) => {
+        if (replace) this.tows.clear();
+        for (const tow of tows) this.tows.set(tow.id, tow);
+        for (const [id, tow] of this.tows) if (tow.stage === "cancelled" || (tow.stage === "delivered" && !tows.some((entry) => entry.id === id))) this.tows.delete(id);
+        this.callbacks.tows([...this.tows.values(), ...tows.filter((tow) => tow.stage === "cancelled")]);
       },
     });
   }
@@ -460,6 +472,7 @@ export class GameEngine {
       this.caption("A car honks — you are blocking the road");
     };
     this.vehicleFactory = new VehicleFactory(scene, this.materials);
+    buildServiceBay(scene, getPlace("ade-auto-works"), (x, z) => this.world.groundHeight(x, z));
     this.bikeStations = new BikeStationsView(scene, this.materials, (x, z) => this.world.groundHeight(x, z), this.vehicleFactory, (meshes) => this.addCaster(meshes));
 
     this.input = new InputState(this.canvas, this.bindings);
@@ -659,22 +672,25 @@ export class GameEngine {
         entry?.view.dispose();
         entry?.tag.remove();
         entry?.driver?.dispose();
+        entry?.rig?.dispose();
         const view = this.vehicleFactory.create(state.id, state.modelId, state.colour);
         this.addCaster(view.meshes);
         const tag = document.createElement("div");
         tag.className = "world-tag vehicle-tag";
         this.overlay.appendChild(tag);
-        entry = { view, state, tag, driver: state.npc && this.avatars ? this.avatars.create(`driver ${state.id}`) : null };
+        entry = { view, state, tag, driver: state.npc && this.avatars ? this.avatars.create(`driver ${state.id}`) : null, rig: null };
         this.vehicles.set(state.id, entry);
         view.setPose(state.x, this.world.groundHeight(state.x, state.z), state.z, state.yaw);
       }
       entry.state = state;
+      if (state.tow && !entry.rig) entry.rig = new TowRig(entry.view, this.vehicleFactory);
       if (state.id !== this.driving?.vehicleId) entry.view.setLights(state.lights);
-      entry.tag.textContent = `${state.plate} · ${state.mine ? "Your car" : state.ownerName}`;
-      if (state.driverSessionId) entry.view.push(now, state.x, state.z, state.yaw);
+      entry.tag.textContent = state.tow ? `${state.ownerName}${state.tow.carrying ? ` · ${state.tow.carrying.plate}` : ""}` : `${state.plate} · ${state.mine ? "Your car" : state.ownerName}`;
+      if (state.driverSessionId || state.tow) entry.view.push(now, state.x, state.z, state.yaw);
     }
     for (const [id, entry] of this.vehicles) {
       if (seen.has(id) || id === this.driving?.vehicleId) continue;
+      entry.rig?.dispose();
       entry.view.dispose();
       entry.tag.remove();
       entry.driver?.dispose();
@@ -687,13 +703,13 @@ export class GameEngine {
     const { x: cx, z: cz } = this.controller;
     this.updateRideApproach(dt);
     this.bikeStations?.update(this.bikeStock, cx, cz, Boolean(this.interior));
-    for (const [id, { view, state, driver }] of this.vehicles) {
+    for (const [id, { view, state, driver, rig }] of this.vehicles) {
       let pose: { x: number; z: number; yaw: number } | null;
       const rideCar = this.rideCar?.vehicleId === id ? this.rideCar.car : null;
       const mine = (id === this.driving?.vehicleId && this.car) || rideCar;
       if (rideCar) pose = rideCar;
       else if (mine) pose = this.car;
-      else if (state.driverSessionId) pose = view.sample(now);
+      else if (state.driverSessionId || state.tow) pose = view.sample(now);
       else pose = state;
       if (pose) view.setPose(pose.x, this.interior ? -50 : this.world.groundHeight(pose.x, pose.z), pose.z, pose.yaw);
       view.root.setEnabled(!this.interior);
@@ -702,6 +718,7 @@ export class GameEngine {
       if (mine && car) view.animate(dt, { speed: car.speed, steer: car.steer, braking: car.braking, accel: car.accel, yawRate: car.yawRate });
       else view.track(dt);
       if (driver) this.seatDriver(driver, view, dt);
+      if (rig && state.tow) rig.update(dt, state.tow);
       view.setDetail(Math.hypot(view.x - cx, view.z - cz) < 35);
     }
   }
@@ -1038,6 +1055,20 @@ export class GameEngine {
         ? { key: bind("interact"), label: docking ? "Dock the bike & end the hire" : hired ? "Lock the bike here" : "Step out & park here", detail: docking ? dock.station.name : plate }
         : { key: "…", label: "Slow down to step out", disabled: true };
       this.interaction = () => this.exitVehicle();
+      const mechanic = getPlace("ade-auto-works");
+      const bay = serviceBay(mechanic);
+      const testCar = Boolean(this.vehicles.get(this.driving.vehicleId)?.state.testDriveEndsAt);
+      if (!hired && !testCar && Math.hypot(this.car.x - bay.x, this.car.z - bay.z) < BAY_SIZE.length) {
+        if (Math.abs(this.car.speed) < 1.5) {
+          this.prompt = { key: bind("interact"), label: "Stop in the service bay · get a repair quote", detail: `${mechanic.name} · ${this.driving.condition}% condition` };
+          this.interaction = () => {
+            this.exitVehicle();
+            setTimeout(() => this.callbacks.interact({ kind: "place", place: mechanic }), 900);
+          };
+        } else {
+          this.prompt = { key: "…", label: "Pull into the service bay and stop", detail: mechanic.name, disabled: true };
+        }
+      }
       this.secondary = { key: bind("stop"), label: "Horn" };
       return;
     }
@@ -1106,6 +1137,10 @@ export class GameEngine {
       const distance = Math.hypot(view.x - x, view.z - z);
       if (distance > VEHICLE_RULES.enterRange) continue;
       const free = view.model.seats - 1 - this.ridersIn(state.id);
+      if (state.tow) {
+        offer(distance + 1, { key: "🛻", label: state.ownerName, detail: state.mine ? "Recovering your car" : "Recovery truck at work", disabled: true }, () => undefined);
+        continue;
+      }
       if (state.npc) {
         const ride = this.ride;
         if (ride?.vehicleId === state.id && ride.status === "waiting") {
@@ -1740,6 +1775,14 @@ export class GameEngine {
     const dropoff = this.navigator.snap(destination);
     const plan = this.navigator.plan(pickup.point, dropoff.point);
     return { pickup, dropoff, plan, indoors: Boolean(this.interior), aboard: Boolean(this.self?.busId || this.driving || this.passenger) };
+  }
+
+  requestTow(vehicleId: string, destination: TowDestination) {
+    this.net.send("towRequest", { vehicleId, destination, idempotencyKey: crypto.randomUUID() });
+  }
+
+  cancelTow(towId: string) {
+    this.net.send("towCancel", { towId });
   }
 
   bookRide(destination: Vec2, label: string) {

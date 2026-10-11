@@ -32,10 +32,10 @@ const SLOT_CLEARANCE = 5;
 export const DEALERSHIP_ID = "lekki-motors";
 export const MECHANIC_ID = "ade-auto-works";
 
-const vehicleColumns = `id, owner_user_id, model_id, colour, plate, condition, odometer_m, service_odometer_m,
+export const vehicleColumns = `id, owner_user_id, model_id, colour, plate, condition, odometer_m, service_odometer_m,
   status, driver_session_id, x, z, yaw, garage_property_id, insured_until, locked`;
 
-type VehicleRow = {
+export type VehicleRow = {
   id: string;
   owner_user_id: string;
   model_id: string;
@@ -54,18 +54,18 @@ type VehicleRow = {
   locked: boolean;
 };
 
-function isInsured(row: Pick<VehicleRow, "insured_until">) {
+export function isInsured(row: Pick<VehicleRow, "insured_until">) {
   return Boolean(row.insured_until && new Date(row.insured_until).getTime() > Date.now());
 }
 
-function serviceQuote(row: VehicleRow) {
+export function serviceQuote(row: VehicleRow) {
   const model = getVehicleModel(row.model_id);
   const fullRepair = repairCost(model, Number(row.condition));
   const repair = fullRepair > 0 && isInsured(row) ? Math.min(VEHICLE_RULES.insuredExcess, fullRepair) : fullRepair;
   return { repair, fullRepair, total: VEHICLE_RULES.routineServiceFee + repair };
 }
 
-function toOwned(row: VehicleRow) {
+export function toOwned(row: VehicleRow) {
   const model = getVehicleModel(row.model_id);
   const metresSinceService = Number(row.odometer_m) - Number(row.service_odometer_m);
   const vehicle: OwnedVehicle = {
@@ -97,7 +97,7 @@ function toOwned(row: VehicleRow) {
 type Spot = Pick<Place, "name" | "door" | "kerb" | "kerbYaw">;
 
 /** Mapped places carry a kerb; listings without one fall back to their door coordinates. */
-async function propertySpot(client: PoolClient, propertyId: string): Promise<Spot> {
+export async function propertySpot(client: PoolClient, propertyId: string): Promise<Spot> {
   const place = propertyPlace(propertyId);
   if (place) return place;
   const plot = plotForHome(propertyId);
@@ -119,7 +119,7 @@ function requireAtPlace(userId: string, place: Spot, message: string) {
   if (!near) throw new EconomyError(message, 409);
 }
 
-function slotIsClear(x: number, z: number, yaw: number) {
+export function slotIsClear(x: number, z: number, yaw: number) {
   const ax = Math.sin(yaw) * 2.4;
   const az = Math.cos(yaw) * 2.4;
   return [[0, 0], [ax, az], [-ax, -az]].every(
@@ -128,7 +128,7 @@ function slotIsClear(x: number, z: number, yaw: number) {
 }
 
 /** First kerbside slot outside a place that is not occupied by another car. */
-async function freeKerbSlot(client: PoolClient, place: Spot, ignoreVehicleId = "") {
+export async function freeKerbSlot(client: PoolClient, place: Spot, ignoreVehicleId = "") {
   const nearby = await client.query(
     `SELECT x, z FROM player_vehicle
      WHERE status IN ('parked', 'driving') AND id <> $5
@@ -173,12 +173,15 @@ async function lockOwnVehicle(client: PoolClient, userId: string, vehicleId: str
   return result.rows[0]!;
 }
 
-function requireParked(row: VehicleRow) {
+async function requireParked(client: PoolClient, row: VehicleRow) {
+  if (row.status === "towing") throw new EconomyError("Ade Recovery has this car right now. It comes back once it is repaired.", 409);
+  const tow = await client.query(`SELECT 1 FROM vehicle_tow WHERE vehicle_id = $1 AND stage NOT IN ('delivered', 'cancelled')`, [row.id]);
+  if (tow.rowCount) throw new EconomyError("A recovery truck is on its way for this car.", 409);
   if (row.status === "driving") throw new EconomyError("Step out of the vehicle first.", 409);
   if (row.status === "garaged") throw new EconomyError("Take the vehicle out of the garage first.", 409);
 }
 
-async function logEvent(client: PoolClient, vehicleId: string, userId: string, kind: string, amount: number, detail: object = {}) {
+export async function logEvent(client: PoolClient, vehicleId: string, userId: string, kind: string, amount: number, detail: object = {}) {
   await client.query(
     `INSERT INTO vehicle_event (id, vehicle_id, user_id, kind, amount, detail) VALUES ($1, $2, $3, $4, $5, $6)`,
     [randomUUID(), vehicleId, userId, kind, amount, JSON.stringify(detail)],
@@ -256,7 +259,7 @@ export async function serviceVehicle(userId: string, vehicleId: string, idempote
     const wallet = await lockWalletAndReplay(client, userId, idempotencyKey);
     const row = await lockOwnVehicle(client, userId, vehicleId);
     if (wallet.replayed) return { balance: wallet.balance, replayed: true, vehicle: toOwned(row) };
-    requireParked(row);
+    await requireParked(client, row);
     if (Math.hypot(Number(row.x) - mechanic.kerb[0], Number(row.z) - mechanic.kerb[1]) > VEHICLE_RULES.workshopRange) {
       throw new EconomyError(`Park the vehicle outside ${mechanic.name} first.`, 409);
     }
@@ -306,30 +309,6 @@ export async function insureVehicle(userId: string, vehicleId: string, idempoten
   });
 }
 
-/** Tows a parked vehicle to the mechanic's kerb. Free while insured. */
-export async function towVehicle(userId: string, vehicleId: string, idempotencyKey: string) {
-  const mechanic = getPlace(MECHANIC_ID);
-  const result = await withTransaction(async (client) => {
-    const wallet = await lockWalletAndReplay(client, userId, idempotencyKey);
-    const row = await lockOwnVehicle(client, userId, vehicleId);
-    if (wallet.replayed) return { balance: wallet.balance, replayed: true, vehicle: toOwned(row) };
-    requireParked(row);
-    const fee = isInsured(row) ? 0 : VEHICLE_RULES.towFee;
-    const balance = await debitWallet(client, userId, fee, "vehicle_tow",
-      `Tow to ${mechanic.name} · ${row.plate}`, idempotencyKey, { vehicleId, insured: fee === 0 });
-    const slot = await freeKerbSlot(client, mechanic, vehicleId);
-    const updated = await client.query<VehicleRow>(
-      `UPDATE player_vehicle SET x = $2, z = $3, yaw = $4, updated_at = NOW()
-       WHERE id = $1 RETURNING ${vehicleColumns}`,
-      [vehicleId, slot.x, slot.z, slot.yaw],
-    );
-    await logEvent(client, vehicleId, userId, "tow", fee, { from: [row.x, row.z] });
-    return { balance, replayed: false, vehicle: toOwned(updated.rows[0]!), charged: fee };
-  });
-  vehicleEvents.emit("changed", vehicleId);
-  return result;
-}
-
 export async function garageVehicle(userId: string, vehicleId: string, propertyId: string) {
   const result = await withTransaction(async (client) => {
     const place = await propertySpot(client, propertyId);
@@ -340,7 +319,7 @@ export async function garageVehicle(userId: string, vehicleId: string, propertyI
     );
     if (!held.rowCount) throw new EconomyError("You can only garage a vehicle at a home you hold.", 403);
     const row = await lockOwnVehicle(client, userId, vehicleId);
-    requireParked(row);
+    await requireParked(client, row);
     const atHome =
       Math.hypot(Number(row.x) - place.kerb[0], Number(row.z) - place.kerb[1]) <= VEHICLE_RULES.garageRange ||
       Math.hypot(Number(row.x) - place.door[0], Number(row.z) - place.door[1]) <= VEHICLE_RULES.garageRange;
@@ -417,6 +396,8 @@ export type RoomVehicle = {
   testDrive?: { endsAt: number; origin: [number, number]; yaw: number; warned: boolean };
   /** Lagos Living Ride car, driven for a rider by a non-player driver; never stored. */
   npc?: boolean;
+  /** Ade Recovery truck: the car on its bed and the winch position (0 down, 1 loaded). */
+  tow?: { carrying: { modelId: string; colour: string; plate: string } | null; lift: number };
   /** Hired from a bike station; billed per minute until returned to any dock. */
   rental?: { id: string; stationId: string; startedAt: number };
 };
@@ -474,6 +455,7 @@ export async function claimVehicle(userId: string, vehicleId: string, sessionId:
   const result = await pool.query(
     `UPDATE player_vehicle SET status = 'driving', driver_session_id = $3, updated_at = NOW()
      WHERE id = $1 AND owner_user_id = $2 AND status = 'parked' AND condition > 0
+       AND NOT EXISTS (SELECT 1 FROM vehicle_tow WHERE vehicle_id = $1 AND stage NOT IN ('delivered', 'cancelled'))
      RETURNING condition`,
     [vehicleId, userId, sessionId],
   );
@@ -496,15 +478,17 @@ export async function saveDrivingVehicle(
   );
 }
 
-export async function damageVehicle(userId: string, vehicleId: string, damage: number, speed: number) {
+/** Lesser knocks stop at VEHICLE_RULES.minorFloor; only a severe impact can disable the car. */
+export async function damageVehicle(userId: string, vehicleId: string, damage: number, speed: number, severe = false) {
   return withTransaction(async (client) => {
     const result = await client.query(
-      `UPDATE player_vehicle SET condition = GREATEST(0, condition - $3), updated_at = NOW()
+      `UPDATE player_vehicle
+       SET condition = GREATEST(CASE WHEN $4 THEN 0 ELSE LEAST(condition, $5) END, condition - $3), updated_at = NOW()
        WHERE id = $1 AND owner_user_id = $2 RETURNING condition, insured_until`,
-      [vehicleId, userId, damage],
+      [vehicleId, userId, damage, severe, VEHICLE_RULES.minorFloor],
     );
     if (!result.rowCount) return null;
-    await logEvent(client, vehicleId, userId, "impact", 0, { damage, speed: Math.round(speed * 10) / 10 });
+    await logEvent(client, vehicleId, userId, "impact", 0, { damage, severe, speed: Math.round(speed * 10) / 10 });
     return { condition: Number(result.rows[0].condition), insured: isInsured(result.rows[0]) };
   });
 }

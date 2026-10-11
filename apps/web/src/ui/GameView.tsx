@@ -1,4 +1,4 @@
-import { defaultSettings, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type RideState, type SelfState, type Vec2 } from "@lagos-living/shared";
+import { defaultSettings, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
@@ -111,6 +111,8 @@ export function GameView({
   }, []);
   const [manualTarget, setManualTarget] = useState<{ point: Vec2; label: string } | null>(null);
   const [ride, setRide] = useState<RideState | null>(null);
+  const [tows, setTows] = useState<TowState[]>([]);
+  const towsRef = useRef<TowState[]>([]);
   const [visitedHome, setVisitedHome] = useState(() => localStorage.getItem("lagos-visited-home") === "1");
   const touch = useMemo(() => matchMedia("(pointer: coarse)").matches, []);
   const toastId = useRef(0);
@@ -195,7 +197,7 @@ export function GameView({
         hud: setHud,
         notice: (notice) => {
           toast(notice);
-          if (/Fare paid|stepped off|Bike unlocked|Bike docked/.test(notice.text)) void refresh();
+          if (/Fare paid|stepped off|Bike unlocked|Bike docked|Ade Recovery/.test(notice.text)) void refresh();
         },
         subtitle: (text, kind = "speech") => {
           const shown = { text, kind };
@@ -226,6 +228,18 @@ export function GameView({
           } else {
             restartGraphics("The game hit repeated errors.");
           }
+        },
+        tows: (next) => {
+          const current = towsRef.current;
+          if (next.some((tow) => current.find((entry) => entry.id === tow.id)?.stage !== tow.stage)) void refresh();
+          for (const tow of next) {
+            const before = current.find((entry) => entry.id === tow.id);
+            if (tow.stage === "delivered" && before && before.stage !== "delivered" && tow.point) {
+              setManualTarget({ point: tow.point, label: `Your ${tow.modelName}` });
+            }
+          }
+          towsRef.current = next.filter((tow) => tow.stage !== "cancelled");
+          setTows(towsRef.current);
         },
         ride: (next) => {
           setRide(next);
@@ -491,6 +505,12 @@ export function GameView({
                 🚕 {ride.status === "approaching" ? `${ride.driverName} arriving · ${ride.plate}` : ride.status === "waiting" ? `${ride.driverName} is waiting · ${ride.plate}` : `Riding with ${ride.driverName}`}
               </button>
             )}
+            {tows.filter((tow) => tow.stage !== "delivered").slice(0, 1).map((tow) => (
+              <button key={tow.id} className="ride-line" data-testid="tow-line" onClick={() => setPhone("vehicles")}>
+                🛻 {tow.stage === "loading" ? "Loading your car" : TOW_STAGE_LABEL[tow.stage]} · {tow.plate}
+                {tow.stageEndsAt && tow.stageEndsAt > now ? ` · ${Math.ceil((tow.stageEndsAt - now) / 1000)}s` : ""}
+              </button>
+            ))}
             <NavLine engine={engine} />
           </section>
 
@@ -788,6 +808,7 @@ export function GameView({
           playerName={playerName}
           engine={engine}
           ride={ride}
+          tows={tows}
         />
       )}
 

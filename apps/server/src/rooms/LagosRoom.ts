@@ -15,6 +15,9 @@ import {
   enterVehicleSchema,
   getVehicleModel,
   impactDamage,
+  impactSeverity,
+  towCancelSchema,
+  towRequestSchema,
   VEHICLE_RULES,
   vehicleImpactSchema,
   vehicleSignalSchema,
@@ -89,6 +92,9 @@ import { loadAppearance, profileEvents } from "../profile-service.js";
 import { buildingEvents } from "../building-service.js";
 import { chargeRide, refundRide } from "../ride-service.js";
 import { activeRental, parkRental, returnRental, startRental, type ActiveRental } from "../bike-service.js";
+import { requestTow } from "../tow-service.js";
+import { config } from "../config.js";
+import { TowDispatcher } from "./tow-dispatch.js";
 import "../world-footprints.js";
 
 export const LagosState = schema({
@@ -225,6 +231,30 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private joinTickets = new Map<string, number>();
   private joinCounter = 0;
   private vehicles = new Map<string, RoomVehicle>();
+  private tows = new TowDispatcher({
+    vehicles: this.vehicles,
+    owner: (userId) => {
+      const player = [...this.players.values()].find((entry) => entry.userId === userId && entry.connected);
+      return player ? { onStreet: player.location === "street" && !player.busId && !player.vehicleId, x: player.x, z: player.z } : null;
+    },
+    send: (userId, type, payload) => {
+      for (const player of this.players.values()) if (player.userId === userId) this.clientFor(player)?.send(type, payload);
+    },
+    notify: (userId, notice) => {
+      for (const player of this.players.values()) {
+        const client = player.userId === userId ? this.clientFor(player) : undefined;
+        if (client) this.notify(client, notice);
+      }
+    },
+    clearOccupants: async (vehicleId) => {
+      const driver = [...this.players.values()].find((player) => player.vehicleId === vehicleId && (player.vehicleSeat ?? 0) === 0);
+      const client = driver ? this.clientFor(driver) : undefined;
+      if (client) await this.handleExitVehicle(client, true);
+      this.ejectPassengers(vehicleId);
+    },
+    personNear: (x, z, radius) =>
+      [...this.players.values()].some((player) => player.location === "street" && !player.busId && Math.hypot(player.x - x, player.z - z) < radius),
+  });
   private onVehicleChanged = (vehicleId: string) => void this.refreshVehicle(vehicleId);
   private onVehicleOwnerReset = (userId: string) => this.dropOwnerVehicles(userId);
   private onSanctioned = (userId: string, kind: string, reason: string, endsAt: number | null) => this.applySanction(userId, kind, reason, endsAt);
@@ -249,6 +279,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     } catch (error) {
       console.error("Could not load street vehicles", error);
     }
+    await this.tows.load().catch((error) => console.error("Could not resume tow jobs", error));
     this.buses = ROUTES.flatMap((route) => {
       const length = routeLength(route);
       const count = Math.max(3, Math.round(length / 1_400));
@@ -286,6 +317,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("rideArrive", (client) => void this.handleRideArrive(client));
     this.onMessage("rideCancel", (client, payload) => void this.handleRideCancel(client, payload));
     this.onMessage("testDrive", (client, payload) => this.handleTestDrive(client, payload));
+    this.onMessage("towRequest", (client, payload) => void this.handleTowRequest(client, payload));
+    this.onMessage("towCancel", (client, payload) => void this.handleTowCancel(client, payload));
     this.onMessage("vehicleSignal", (client, payload) => this.handleVehicleSignal(client, payload));
     this.onMessage("vehicleImpact", (client, payload) => void this.handleVehicleImpact(client, payload));
     this.onMessage("chat", (client, payload) => void this.handleChat(client, payload));
@@ -386,6 +419,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.sendLook(player, client.sessionId);
     this.sendSelf(client, player, saved ? "Welcome back — progress restored." : "Welcome to Lekki Phase 1.");
     client.send("bikeStock", Object.fromEntries(this.bikeStock));
+    client.send("tows", this.tows.states(player.userId));
     const rental = await activeRental(player.userId).catch(() => null);
     if (rental && this.players.get(client.sessionId) === player) this.placeRentalBike(player, rental);
   }
@@ -1332,7 +1366,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (Math.hypot(player.x - vehicle.x, player.z - vehicle.z) > VEHICLE_RULES.enterRange + 1) {
       return this.notify(client, { tone: "error", text: "Walk up to the car door." });
     }
+    if (vehicle.tow) return this.notify(client, { tone: "error", text: "That is an Ade Recovery truck." });
     if (vehicle.npc) return this.notify(client, { tone: "error", text: "That is a Lagos Living Ride car. Book your own from Phone → Ride." });
+    if (this.tows.busy(vehicle.id)) return this.notify(client, { tone: "error", text: "Ade Recovery is collecting this car. Phone → Vehicles shows its progress." });
     if (vehicle.testDrive && !owner) return this.notify(client, { tone: "error", text: "That is someone's dealer test car." });
     if (vehicle.rental) {
       if (!owner) return this.notify(client, { tone: "error", text: "That bike is hired by another resident." });
@@ -1452,23 +1488,60 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     player.lastImpactAt = now;
     const model = getVehicleModel(vehicle.modelId);
     const speed = Math.min(parsed.data.speed, model.topSpeed * 1.3);
-    const damage = impactDamage(speed);
+    const damage = impactDamage(speed, config.VEHICLE_DAMAGE_MULTIPLIER);
+    const severe = impactSeverity(speed) === "severe";
     this.considerCitation(client, player, speed);
     if (damage <= 0) return;
-    const result = await damageVehicle(player.userId, vehicle.id, damage, speed).catch(() => null);
+    const before = vehicle.condition;
+    const result = await damageVehicle(player.userId, vehicle.id, damage, speed, severe).catch(() => null);
     if (!result) return;
     vehicle.condition = result.condition;
-    client.send("vehicleStatus", { vehicleId: vehicle.id, condition: vehicle.condition, damage });
+    client.send("vehicleStatus", { vehicleId: vehicle.id, condition: vehicle.condition, damage: before - result.condition, severe });
+    const crossed = (line: number) => result.condition < line && before >= line;
     if (result.condition <= 0) {
       this.notify(client, {
         tone: "error",
         text: result.insured
-          ? "The engine has died. Your cover includes a free tow: Phone → Vehicles."
-          : "The engine has died. Book a tow to Ade Auto Works from Phone → Vehicles.",
+          ? "Severe crash: the engine has died. Your cover pays for the tow: Phone → Vehicles → Tow & repair."
+          : "Severe crash: the engine has died. Phone → Vehicles → Tow & repair sends Ade Recovery.",
       });
-    } else if (result.condition < VEHICLE_RULES.limpCondition && result.condition + damage >= VEHICLE_RULES.limpCondition) {
-      this.notify(client, { tone: "error", text: "Warning light: limp mode. Top speed is reduced until it is repaired." });
+    } else if (crossed(VEHICLE_RULES.limpCondition)) {
+      this.notify(client, { tone: "error", text: `Warning light: limp mode at ${result.condition}%. Top speed is reduced until it is repaired at Ade Auto Works.` });
+    } else if (crossed(VEHICLE_RULES.warnCondition)) {
+      this.notify(client, { tone: "info", text: `Check-engine light: ${result.condition}% condition. Still drivable — get it repaired at Ade Auto Works or via Phone → Vehicles.` });
     }
+  }
+
+  private async handleTowRequest(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = towRequestSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
+    const { vehicleId, destination, idempotencyKey } = parsed.data;
+    const car = this.vehicles.get(vehicleId);
+    if (car && (car.testDrive || car.rental || car.npc)) return this.notify(client, { tone: "error", text: "Only cars you own can be towed." });
+    if (player.vehicleId === vehicleId) await this.handleExitVehicle(client, true);
+    try {
+      const { job } = await requestTow(player.userId, vehicleId, destination, idempotencyKey);
+      if (!this.vehicles.has(vehicleId) && !job.collectedAt) await this.refreshVehicle(vehicleId);
+      this.tows.start(job);
+      this.notify(client, {
+        tone: "success",
+        text: `Ade Recovery is on the way for ${job.vehicle.plate}. Paid ${job.quote.total ? `₦${job.quote.total.toLocaleString("en-NG")}` : "nothing"}${job.quote.insurer ? ` (cover paid ₦${job.quote.insurer.toLocaleString("en-NG")})` : ""}.`,
+      });
+    } catch (error) {
+      const message = error instanceof EconomyError ? error.message : "The tow could not be booked. Try again.";
+      if (!(error instanceof EconomyError)) console.error("Tow request failed", error);
+      this.notify(client, { tone: "error", text: message });
+    }
+  }
+
+  private async handleTowCancel(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = towCancelSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
+    const result = await this.tows.cancel(player.userId, parsed.data.towId).catch(() => null);
+    if (result === "late") return this.notify(client, { tone: "error", text: "The car is already on the truck, so the job can't be cancelled now." });
+    if (result) this.notify(client, { tone: "info", text: `Ade Recovery cancelled.${result.refunded ? ` ₦${result.refunded.toLocaleString("en-NG")} refunded.` : ""}` });
   }
 
   /** Speed measured by the server from accepted updates over the last moment, so a client cannot talk it down. */
@@ -1637,6 +1710,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         testDriveEndsAt: vehicle.testDrive?.endsAt ?? null,
         rentalStartedAt: vehicle.rental?.startedAt ?? null,
         npc: Boolean(vehicle.npc),
+        tow: vehicle.tow ? { carrying: vehicle.tow.carrying, lift: vehicle.tow.lift } : null,
         ownerName: vehicle.ownerName,
         mine: !vehicle.npc && vehicle.ownerUserId === viewer.userId,
       });
@@ -1648,6 +1722,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const seconds = dt / 1_000;
     const now = Date.now();
     this.state.tick = (this.state.tick + 1) >>> 0;
+    this.tows.tick(seconds, now);
     if (this.state.tick % 25 === 0) {
       this.checkTestDrives(now);
       this.checkRides(now);

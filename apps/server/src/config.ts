@@ -43,6 +43,8 @@ const configSchema = z
     GUEST_MODE: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
     /** Address clients use to reach this process directly (host[:port][/path]) when several processes run. */
     PUBLIC_ADDRESS: z.string().optional(),
+    /** Scales collision damage (1 = original tuning). */
+    VEHICLE_DAMAGE_MULTIPLIER: z.coerce.number().min(0).max(2).default(0.25),
   })
   .superRefine((value, context) => {
     if (value.NODE_ENV !== "production") return;

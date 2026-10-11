@@ -258,9 +258,17 @@ export const VEHICLE_RULES = {
   insuranceRate: 0.03,
   /** Repair cost per condition point as a share of the purchase price. */
   repairRatePerPoint: 0.0015,
-  impactMinSpeed: 3,
+  /** Contacts slower than this (about 16 km/h) are scrapes: parking taps and kerb brushes do no damage. */
+  impactMinSpeed: 4.5,
   impactDamagePerMps: 2.5,
   impactMaxDamage: 35,
+  /** Scales every collision; 1 is the original tuning. The server can override it with VEHICLE_DAMAGE_MULTIPLIER. */
+  damageMultiplier: 0.25,
+  /** Impacts from this speed (about 58 km/h) are severe: the only kind that can take a car below `minorFloor`. */
+  severeImpactSpeed: 16,
+  minorFloor: 15,
+  /** The engine warning light comes on below this condition. */
+  warnCondition: 50,
 } as const;
 
 export function effectiveTopSpeed(model: VehicleModel, condition: number) {
@@ -277,9 +285,22 @@ export function insurancePremium(model: VehicleModel) {
   return Math.round((model.price * VEHICLE_RULES.insuranceRate) / 50) * 50;
 }
 
-export function impactDamage(speed: number) {
-  if (speed < VEHICLE_RULES.impactMinSpeed) return 0;
-  return Math.min(VEHICLE_RULES.impactMaxDamage, Math.round((speed - VEHICLE_RULES.impactMinSpeed + 1) * VEHICLE_RULES.impactDamagePerMps));
+/** Condition lost in one impact (one per impact, never per frame). */
+export function impactDamage(speed: number, multiplier: number = VEHICLE_RULES.damageMultiplier) {
+  if (speed < VEHICLE_RULES.impactMinSpeed || multiplier <= 0) return 0;
+  const base = Math.min(VEHICLE_RULES.impactMaxDamage, (speed - VEHICLE_RULES.impactMinSpeed + 1) * VEHICLE_RULES.impactDamagePerMps);
+  return Math.max(1, Math.round(base * multiplier));
+}
+
+export function impactSeverity(speed: number): "none" | "minor" | "severe" {
+  if (speed < VEHICLE_RULES.impactMinSpeed) return "none";
+  return speed >= VEHICLE_RULES.severeImpactSpeed ? "severe" : "minor";
+}
+
+/** Condition after an impact: lesser knocks never take a car below `minorFloor`, so it stays drivable. */
+export function conditionAfterImpact(condition: number, damage: number, severe: boolean) {
+  const floor = severe ? 0 : Math.min(condition, VEHICLE_RULES.minorFloor);
+  return Math.max(floor, condition - damage);
 }
 
 /** Kerbside parking slots fan out from the kerb point along the lane: 0, +7, -7, +14, ... */
@@ -288,7 +309,7 @@ export function kerbSlot(kerb: readonly [number, number], kerbYaw: number, index
   return [kerb[0] + Math.sin(kerbYaw) * step, kerb[1] + Math.cos(kerbYaw) * step];
 }
 
-export const vehicleStatuses = ["parked", "garaged", "driving"] as const;
+export const vehicleStatuses = ["parked", "garaged", "driving", "towing"] as const;
 export type VehicleStatus = (typeof vehicleStatuses)[number];
 
 export type OwnedVehicle = {
@@ -327,6 +348,11 @@ export const worldVehicleSchema = z.object({
   rentalStartedAt: z.number().nullable().default(null),
   /** Driven by a non-player driver (Lagos Living Ride). */
   npc: z.boolean().default(false),
+  /** Recovery truck: the car on its bed (if loaded) and how far the winch has raised it (0–1). */
+  tow: z
+    .object({ carrying: z.object({ modelId: z.string(), colour: z.string(), plate: z.string() }).nullable(), lift: z.number().min(0).max(1) })
+    .nullable()
+    .default(null),
   ownerName: z.string(),
   /** Per viewer: true when the receiving player owns this vehicle. */
   mine: z.boolean(),

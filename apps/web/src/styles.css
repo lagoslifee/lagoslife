@@ -250,6 +250,18 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .vehicle-card { padding: 12px; border-radius: 12px; background: #fffdf8; border: 1px solid #e0ddd2; }
 .vehicle-card .row.wrap { margin-top: 8px; }
 .vehicle-card .secondary, .vehicle-card .primary { padding: 7px 10px; font-size: 12px; }
+.tow-request, .tow-progress { margin-top: 10px; padding: 10px; border-radius: 10px; background: #fff6dc; border: 1px solid #f0d58a; }
+.tow-quote { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; margin: 8px 0; font-size: 13px; }
+.tow-quote dd { margin: 0; text-align: right; }
+.tow-destination { border: 0; padding: 0; margin: 6px 0; display: grid; gap: 6px; font-size: 13px; }
+.tow-destination legend { font-weight: 700; margin-bottom: 4px; }
+.tow-destination label { display: flex; gap: 8px; align-items: flex-start; text-align: left; font-weight: 500; }
+.tow-destination input[type="radio"] { width: auto; flex: none; margin: 3px 0 0; min-height: 0; }
+.tow-destination label span { display: block; }
+.tow-progress ol { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; padding: 0; margin: 0 0 6px; font-size: 11px; }
+.tow-progress li { padding: 3px 7px; border-radius: 999px; background: #eee9da; color: #776f5c; }
+.tow-progress li.done { background: #d9ecd3; color: #2c5a26; }
+.tow-progress li.now { background: #f2b705; color: #1d1a10; font-weight: 700; }
 .paint-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,.3); vertical-align: -1px; }
 .preview-banner { position: absolute; left: 50%; top: 120px; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; padding: 10px 14px; border-radius: 12px; }
 .preview-banner strong, .preview-banner span { display: block; }

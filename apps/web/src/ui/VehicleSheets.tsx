@@ -5,13 +5,18 @@ import {
   vehicleCategoryLabels,
   VEHICLE_RULES,
   vehicleModelById,
+  TOW_STAGE_LABEL,
   type Notice,
+  type TowDestination,
+  type TowStage,
+  type TowState,
   type Place,
   type Vec2,
 } from "@lagos-living/shared";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PropertyListing } from "../api";
 import { VehiclePreview } from "./VehiclePreview";
+import type { GameEngine } from "../game/engine";
 
 const kmh = (metresPerSecond: number) => Math.round(metresPerSecond * 3.6);
 const km = (metres: number) => `${(metres / 1000).toFixed(1)} km`;
@@ -197,15 +202,10 @@ export function MechanicSheet({ place, vehicles, onClose, onRefresh, onToast }: 
                     <span className="muted small">In your garage</span>
                   ) : vehicle.status === "driving" ? (
                     <span className="muted small">Park it outside first</span>
+                  ) : vehicle.status === "towing" ? (
+                    <span className="muted small">With Ade Recovery</span>
                   ) : (
-                    <button
-                      className="secondary"
-                      disabled={busy}
-                      onClick={() => void run(async () => {
-                        const result = await api.towVehicle(vehicle.id);
-                        return result.charged ? `Towed here for ${naira(result.charged)}.` : "Towed here free under your cover.";
-                      })}
-                    >{vehicle.insured ? "Tow it here (free)" : `Tow it here ${naira(VEHICLE_RULES.towFee)}`}</button>
+                    <span className="muted small">Drive it into the bay outside, or Phone → Vehicles → Tow &amp; repair</span>
                   )}
                 </div>
               </li>
@@ -218,6 +218,8 @@ export function MechanicSheet({ place, vehicles, onClose, onRefresh, onToast }: 
 }
 
 type AppProps = {
+  engine: GameEngine | null;
+  tows: TowState[];
   vehicles: MyVehicle[];
   properties: PropertyListing[];
   position: Vec2 | null;
@@ -228,8 +230,9 @@ type AppProps = {
   onClose: () => void;
 };
 
-export function VehiclesApp({ vehicles, properties, position, drivingId, onNavigate, onRefresh, onToast, onClose }: AppProps) {
+export function VehiclesApp({ engine, tows, vehicles, properties, position, drivingId, onNavigate, onRefresh, onToast, onClose }: AppProps) {
   const { busy, run } = useRunner(onToast, onRefresh);
+  const [towing, setTowing] = useState<string | null>(null);
   const homes = properties.filter((listing) => listing.isMine);
   if (!vehicles.length) {
     return (
@@ -257,7 +260,7 @@ export function VehiclesApp({ vehicles, properties, position, drivingId, onNavig
               </div>
               <ConditionBar value={vehicle.condition} />
               <p className="muted small">
-                {driving ? "You are driving it" : vehicle.status === "garaged" ? `In the garage at ${garage?.name ?? "your home"}` : distance !== null ? `Parked ${distance} m away` : "Parked"}
+                {driving ? "You are driving it" : vehicle.status === "towing" ? "With Ade Recovery" : vehicle.status === "garaged" ? `In the garage at ${garage?.name ?? "your home"}` : distance !== null ? `Parked ${distance} m away` : "Parked"}
                 {" · "}{km(vehicle.odometerMetres)}{vehicle.serviceDue ? " · service due" : ""}
                 {model ? ` · top ${kmh(model.topSpeed)} km/h` : ""}
               </p>
@@ -278,11 +281,10 @@ export function VehiclesApp({ vehicles, properties, position, drivingId, onNavig
                     return `${vehicle.plate} insured for ${VEHICLE_RULES.insuranceDays} days.`;
                   })}>Insure 7 days · {naira(vehicle.premium)}</button>
                 )}
-                {vehicle.status === "parked" && !driving && (
-                  <button className="secondary" disabled={busy} onClick={() => void run(async () => {
-                    const result = await api.towVehicle(vehicle.id);
-                    return result.charged ? `Towed to Ade Auto Works for ${naira(result.charged)}.` : "Towed to Ade Auto Works free under your cover.";
-                  })}>Tow to mechanic · {vehicle.insured ? "free" : naira(VEHICLE_RULES.towFee)}</button>
+                {model?.body !== "bicycle" && vehicle.status !== "garaged" && vehicle.status !== "towing" && !tows.some((tow) => tow.vehicleId === vehicle.id && tow.stage !== "delivered") && (
+                  <button className="secondary" aria-expanded={towing === vehicle.id} onClick={() => setTowing(towing === vehicle.id ? null : vehicle.id)}>
+                    🛻 Tow &amp; repair
+                  </button>
                 )}
                 {vehicle.status === "parked" && !driving && nearHome && (
                   <button className="secondary" disabled={busy} onClick={() => void run(async () => {
@@ -297,11 +299,103 @@ export function VehiclesApp({ vehicles, properties, position, drivingId, onNavig
                   })}>Take it out</button>
                 )}
               </div>
+              {tows.filter((tow) => tow.vehicleId === vehicle.id).map((tow) => (
+                <TowProgress key={tow.id} tow={tow} onCancel={() => engine?.cancelTow(tow.id)} onNavigate={(point) => { onNavigate({ point, label: `Your ${vehicle.modelName}` }); onClose(); }} />
+              ))}
+              {towing === vehicle.id && (
+                <TowRequest
+                  vehicle={vehicle}
+                  homes={homes}
+                  disabled={!engine}
+                  onCancel={() => setTowing(null)}
+                  onConfirm={(destination) => {
+                    engine?.requestTow(vehicle.id, destination);
+                    setTowing(null);
+                  }}
+                />
+              )}
             </li>
           );
         })}
       </ul>
-      <p className="muted small">Drive: W/S accelerate and brake, A/D steer, Space handbrake, E to step out, Q horn, L lights. On a phone, use the steering pad and pedals. Collisions reduce condition. Unlocked vehicles let other players ride along, but only you can drive.</p>
+      <p className="muted small">Collisions only count above walking pace; parking taps and kerb scrapes are free. Minor knocks never stop the car, a check-engine light comes on below {VEHICLE_RULES.warnCondition}%, and only a severe crash can disable it. Drive: W/S accelerate and brake, A/D steer, Space handbrake, E to step out, Q horn, L lights. On a phone, use the steering pad and pedals. Collisions reduce condition. Unlocked vehicles let other players ride along, but only you can drive.</p>
+    </div>
+  );
+}
+
+const TOW_STEPS: TowStage[] = ["requested", "arriving", "collected", "repairing", "returning", "delivered"];
+
+function TowRequest({ vehicle, homes, disabled, onCancel, onConfirm }: {
+  vehicle: MyVehicle;
+  homes: PropertyListing[];
+  disabled: boolean;
+  onCancel: () => void;
+  onConfirm: (destination: TowDestination) => void;
+}) {
+  const [choice, setChoice] = useState<string>(homes[0] ? `home:${homes[0].id}` : "here");
+  const towFee = vehicle.insured ? 0 : VEHICLE_RULES.towFee;
+  const { repair, fullRepair } = vehicle.serviceQuote;
+  const total = towFee + repair;
+  return (
+    <div className="tow-request" data-testid="tow-request">
+      <p className="small"><strong>Ade Recovery</strong> collects {vehicle.plate}, repairs it to 100% and brings the same car back about {10} seconds after collection.</p>
+      <dl className="tow-quote">
+        <dt>Repairs</dt><dd>{naira(fullRepair)}</dd>
+        {vehicle.insured && fullRepair > repair && (<><dt>Your cover pays</dt><dd>−{naira(fullRepair - repair)}</dd></>)}
+        <dt>Tow</dt><dd>{towFee ? naira(towFee) : "Free with cover"}</dd>
+        <dt><strong>You pay now</strong></dt><dd><strong>{naira(total)}</strong></dd>
+      </dl>
+      <fieldset className="tow-destination">
+        <legend>Where should we return your car?</legend>
+        {homes.map((home) => (
+          <label key={home.id}>
+            <input type="radio" name={`tow-${vehicle.id}`} checked={choice === `home:${home.id}`} onChange={() => setChoice(`home:${home.id}`)} />
+            Home · {home.name}
+          </label>
+        ))}
+        <label>
+          <input type="radio" name={`tow-${vehicle.id}`} checked={choice === "here"} onChange={() => setChoice("here")} />
+          My current location <span className="muted small">(a safe roadside spot near you when it is ready)</span>
+        </label>
+      </fieldset>
+      <div className="row wrap">
+        <button className="primary" disabled={disabled} onClick={() => onConfirm(choice === "here" ? { kind: "here" } : { kind: "home", propertyId: choice.slice(5) })}>
+          Send the truck · {naira(total)}
+        </button>
+        <button className="secondary" onClick={onCancel}>Not now</button>
+      </div>
+    </div>
+  );
+}
+
+function TowProgress({ tow, onCancel, onNavigate }: { tow: TowState; onCancel: () => void; onNavigate: (point: Vec2) => void }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(timer);
+  }, []);
+  const step = tow.stage === "loading" ? 1 : TOW_STEPS.indexOf(tow.stage);
+  const left = tow.stageEndsAt ? Math.max(0, Math.ceil((tow.stageEndsAt - now) / 1000)) : null;
+  const cancellable = tow.stage === "requested" || tow.stage === "arriving";
+  return (
+    <div className="tow-progress" data-testid={`tow-${tow.stage}`}>
+      <ol>
+        {TOW_STEPS.map((stage, index) => (
+          <li key={stage} className={index < step ? "done" : index === step ? "now" : ""}>{TOW_STAGE_LABEL[stage]}</li>
+        ))}
+      </ol>
+      <p className="small">
+        {tow.stage === "loading" ? "Winching your car onto the truck…" : TOW_STAGE_LABEL[tow.stage]}
+        {left !== null && tow.stage !== "delivered" ? ` · ${tow.stage === "arriving" ? "about " : ""}${left}s` : ""}
+        {` · to ${tow.destinationLabel}`}
+      </p>
+      {tow.message && <p className="small muted">{tow.message}</p>}
+      <div className="row wrap">
+        {tow.point && (tow.stage === "delivered" || tow.stage === "arriving" || tow.stage === "loading") && (
+          <button className="secondary" onClick={() => onNavigate(tow.point!)}>{tow.stage === "delivered" ? "Show me where it is" : "Show the pickup"}</button>
+        )}
+        {cancellable && <button className="secondary" onClick={onCancel}>Cancel (full refund)</button>}
+      </div>
     </div>
   );
 }

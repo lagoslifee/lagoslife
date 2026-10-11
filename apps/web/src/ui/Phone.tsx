@@ -1,4 +1,4 @@
-import { BIKE_RENTAL, nearestStop, ROUTES, type RideState, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
+import { BIKE_RENTAL, nearestStop, ROUTES, type RideState, type TowState, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import { api, naira, type EconomyState, type InteriorState, type MyVehicle, type PropertyListing } from "../api";
 import { actionLabels, keyLabel, type Action, type Bindings } from "../game/controller";
@@ -56,6 +56,7 @@ type Props = {
   playerName: string;
   engine: GameEngine | null;
   ride: RideState | null;
+  tows: TowState[];
 };
 
 function days(iso: string | null) {
@@ -105,6 +106,8 @@ export function Phone(props: Props) {
         {app === "property" && <PropertyApp {...props} />}
         {app === "vehicles" && (
           <VehiclesApp
+            engine={props.engine}
+            tows={props.tows}
             vehicles={props.vehicles}
             properties={props.properties}
             position={props.hud ? [props.hud.x, props.hud.z] : null}
