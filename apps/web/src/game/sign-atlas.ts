@@ -7,11 +7,13 @@ export type SignStyle = "street" | "shop" | "rent" | "sale" | "bus" | "plate" | 
 
 export type UvRect = { u0: number; v0: number; u1: number; v1: number };
 
-const SIZE = 2048;
+/** A busy district streams in 60–90 distinct signs at once, so the atlas holds twice that. */
+const WIDTH = 2048;
+const HEIGHT = 4096;
 const SLOT_W = 512;
 const SLOT_H = 96;
-const COLUMNS = SIZE / SLOT_W;
-const ROWS = Math.floor(SIZE / SLOT_H);
+const COLUMNS = WIDTH / SLOT_W;
+const ROWS = Math.floor(HEIGHT / SLOT_H);
 
 const palettes: Record<SignStyle, { bg: string; fg: string; border?: string; font: string }> = {
   street: { bg: "#0d5b3b", fg: "#ffffff", border: "#ffffff", font: "600 40px Inter, Arial, sans-serif" },
@@ -32,15 +34,18 @@ export class SignAtlas {
   readonly texture: DynamicTexture;
   readonly material: PBRMaterial;
   private next = 0;
-  private cache = new Map<string, UvRect>();
+  private free: number[] = [];
+  /** Signs with no owner are pinned; owned signs give their slot back once every owner has released them. */
+  private cache = new Map<string, { rect: UvRect; slot: number; owners: Set<string> | null }>();
+  private owned = new Map<string, Set<string>>();
   private ctx: CanvasRenderingContext2D;
 
   constructor(scene: Scene) {
-    this.texture = new DynamicTexture("sign atlas", { width: SIZE, height: SIZE }, scene, true);
+    this.texture = new DynamicTexture("sign atlas", { width: WIDTH, height: HEIGHT }, scene, true);
     this.texture.hasAlpha = false;
     this.ctx = this.texture.getContext() as unknown as CanvasRenderingContext2D;
     this.ctx.fillStyle = "#808080";
-    this.ctx.fillRect(0, 0, SIZE, SIZE);
+    this.ctx.fillRect(0, 0, WIDTH, HEIGHT);
     this.material = new PBRMaterial("signs", scene);
     this.material.albedoTexture = this.texture;
     this.material.emissiveTexture = this.texture;
@@ -50,13 +55,25 @@ export class SignAtlas {
     this.material.environmentIntensity = 0.5;
   }
 
-  /** Returns UVs for a text sign, drawing it on first use. */
-  get(text: string, style: SignStyle, sub?: string, color?: string): UvRect {
+  /** Slots in use, out of the atlas's capacity. */
+  usage() {
+    return { used: this.cache.size, capacity: COLUMNS * ROWS };
+  }
+
+  /** Returns UVs for a text sign, drawing it on first use. Pass an owner (a world tile) to free the slot when it releases. */
+  get(text: string, style: SignStyle, sub?: string, color?: string, owner?: string): UvRect {
     const key = `${style}|${text}|${sub ?? ""}|${color ?? ""}`;
     const cached = this.cache.get(key);
-    if (cached) return cached;
-    if (this.next >= COLUMNS * ROWS) return this.cache.values().next().value!;
-    const slot = this.next++;
+    if (cached) {
+      if (!owner) cached.owners = null;
+      else if (cached.owners) this.own(key, cached.owners, owner);
+      return cached.rect;
+    }
+    const slot = this.free.pop() ?? (this.next < COLUMNS * ROWS ? this.next++ : -1);
+    if (slot < 0) {
+      console.warn(`Sign atlas full; "${text}" reuses another sign`);
+      return this.cache.values().next().value!.rect;
+    }
     const x = (slot % COLUMNS) * SLOT_W;
     const y = Math.floor(slot / COLUMNS) * SLOT_H;
     const palette = palettes[style];
@@ -91,13 +108,37 @@ export class SignAtlas {
     // Inset half a texel so neighbouring slots never bleed under mipmapping.
     const inset = 2;
     const rect = {
-      u0: (x + inset) / SIZE,
-      u1: (x + SLOT_W - inset) / SIZE,
-      v0: 1 - (y + SLOT_H - inset) / SIZE,
-      v1: 1 - (y + inset) / SIZE,
+      u0: (x + inset) / WIDTH,
+      u1: (x + SLOT_W - inset) / WIDTH,
+      v0: 1 - (y + SLOT_H - inset) / HEIGHT,
+      v1: 1 - (y + inset) / HEIGHT,
     };
-    this.cache.set(key, rect);
+    const owners = owner ? new Set<string>() : null;
+    this.cache.set(key, { rect, slot, owners });
+    if (owners) this.own(key, owners, owner!);
     return rect;
+  }
+
+  /** Gives back every sign only this owner was using, so later signs can be drawn into those slots. */
+  release(owner: string) {
+    const keys = this.owned.get(owner);
+    if (!keys) return;
+    this.owned.delete(owner);
+    for (const key of keys) {
+      const entry = this.cache.get(key);
+      if (!entry?.owners) continue;
+      entry.owners.delete(owner);
+      if (entry.owners.size) continue;
+      this.cache.delete(key);
+      this.free.push(entry.slot);
+    }
+  }
+
+  private own(key: string, owners: Set<string>, owner: string) {
+    owners.add(owner);
+    let keys = this.owned.get(owner);
+    if (!keys) this.owned.set(owner, (keys = new Set()));
+    keys.add(key);
   }
 
   static aspect = SLOT_W / SLOT_H;

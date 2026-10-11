@@ -18,7 +18,7 @@ import {
 import { densify, hash, MeshBuilderBatch, offsetPolyline, pointAt, polylineLength, slicePolyline } from "./geometry";
 import type { Materials, Quality } from "./materials";
 import { archedWindows, churchTower, clubFront, gableRoof, LANDMARK_PAINT, LANDMARK_TRIM, landmarkFor, modernFront, mosqueDomeAndMinaret, worshipDoor } from "./landmarks";
-import { SignAtlas, type UvRect } from "./sign-atlas";
+import { SignAtlas, type SignStyle, type UvRect } from "./sign-atlas";
 import { findJunctions, waterSampler, type WorldArea, type WorldBuilding, type WorldData, type WorldRoad, type WorldTile } from "./street-index";
 
 type Color = [number, number, number];
@@ -464,6 +464,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
   const lights: Array<[number, number, number]> = [];
   const tankInstances: Array<[number, number, number]> = [];
   const placeSigns: BuiltWorld["placeSigns"] = [];
+  const signUv = (text: string, style: SignStyle, sub?: string, color?: string) => atlas.get(text, style, sub, color, key);
 
   // Land: full cells merge into row strips; shoreline cells use marching squares on the water samples.
   {
@@ -972,7 +973,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       const accentHex = club?.accent ?? "#ff2d95";
       const accent: Color = [parseInt(accentHex.slice(1, 3), 16) / 255, parseInt(accentHex.slice(3, 5), 16) / 255, parseInt(accentHex.slice(5, 7), 16) / 255];
       clubFront(landmarkGet, facade, { a: doorA, b: doorB }, height, accent);
-      const uv = atlas.get(place!.name, "club", `Nightclub · ${place!.street}`, accentHex);
+      const uv = signUv(place!.name, "club", `Nightclub · ${place!.street}`, accentHex);
       const signWidth = Math.max(3, Math.min(doorLength - 0.6, 6.4));
       const signY = 3.55 + signWidth / SignAtlas.aspect / 2 + 0.2;
       base.get(cx, cz, "gate").box(doorX + doorNx * 0.12, signY, doorZ + doorNz * 0.12, signWidth + 0.3, signWidth / SignAtlas.aspect + 0.25, 0.16, doorYaw);
@@ -1000,7 +1001,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       const name = place?.name ?? SHOP_NAMES[Math.floor(hash(building.id * 37) * SHOP_NAMES.length)]!;
       const club = place?.kind === "club" ? CLUBS[place.id] : undefined;
       const signColor = club?.accent ?? SHOP_COLORS[Math.floor(hash(building.id * 19) * SHOP_COLORS.length)]!;
-      const uv = club ? atlas.get(name, "club", `Nightclub · ${place!.street}`, signColor) : atlas.get(name, "shop", place ? place.street : undefined, signColor);
+      const uv = club ? signUv(name, "club", `Nightclub · ${place!.street}`, signColor) : signUv(name, "shop", place ? place.street : undefined, signColor);
       const signWidth = Math.min(width, 5.6);
       base.get(cx, cz, "concrete").box(sx + doorNx * 0.12, 3.75, sz + doorNz * 0.12, signWidth + 0.3, signWidth / SignAtlas.aspect + 0.25, 0.16, doorYaw, 1, [0.2, 0.2, 0.2], true);
       textQuad(base.get(cx, cz, "signs"), sx + doorNx * 0.205, 3.75, sz + doorNz * 0.205, doorYaw, signWidth, signWidth / SignAtlas.aspect, uv);
@@ -1046,7 +1047,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       placeSigns.push({ placeId: place.id, point: place.door });
       if (place.kind === "rental" || place.kind === "sale") {
         const style = place.kind === "rental" ? "rent" : "sale";
-        const uv = atlas.get(place.kind === "rental" ? "FOR RENT" : "FOR SALE", style, place.name);
+        const uv = signUv(place.kind === "rental" ? "FOR RENT" : "FOR SALE", style, place.name);
         const px = place.door[0] + doorNx * 0.6 + ex * 1.8;
         const pz = place.door[1] + doorNz * 0.6 + ez * 1.8;
         const posts = base.get(cx, cz, "pole");
@@ -1058,7 +1059,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
         addObstacle([px - ex * 0.7, pz - ez * 0.7], [px - ex * 0.7, pz - ez * 0.7], 0.08);
         addObstacle([px + ex * 0.7, pz + ez * 0.7], [px + ex * 0.7, pz + ez * 0.7], 0.08);
       } else if (!shopfront) {
-        const uv = atlas.get(place.name, "plate", place.street);
+        const uv = signUv(place.name, "plate", place.street);
         const plateAt = landmark ? 2.6 : 1.3;
         textQuad(base.get(cx, cz, "signs"), doorX + ex * plateAt + doorNx * 0.05, 2.0, doorZ + ez * plateAt + doorNz * 0.05, doorYaw, 1.3, 1.3 / SignAtlas.aspect, uv);
       }
@@ -1170,7 +1171,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       const dir = dirs[index]!;
       const y = 3.0 - index * 0.36;
       const yawAlong = Math.atan2(dir[0], dir[1]);
-      const uv = atlas.get(road.name!, "street", districtAt(px, pz)?.name ?? "Lagos");
+      const uv = signUv(road.name!, "street", districtAt(px, pz)?.name ?? "Lagos");
       const width = 1.7;
       const height = width / SignAtlas.aspect * 1.25;
       const cxBlade = px + dir[0] * (width / 2 - 0.1);
@@ -1197,7 +1198,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     posts.box(bx - rx * 0.8, 1.1, bz - rz * 0.8, 0.08, 2.2, 0.08, yaw);
     posts.box(bx + rx * 0.8, 1.1, bz + rz * 0.8, 0.08, 2.2, 0.08, yaw);
     base.get(bx, bz, "signGreen").box(bx, 1.9, bz, 1.9, 0.5, 0.05, yaw);
-    const uv = atlas.get(place.name, "plate", place.street);
+    const uv = signUv(place.name, "plate", place.street);
     textQuad(base.get(bx, bz, "signs"), bx + fx * 0.03, 1.9, bz + fz * 0.03, yaw, 1.8, 1.8 / SignAtlas.aspect, uv);
     textQuad(base.get(bx, bz, "signs"), bx - fx * 0.03, 1.9, bz - fz * 0.03, yaw + Math.PI, 1.8, 1.8 / SignAtlas.aspect, uv);
     addObstacle([bx - rx * 0.8, bz - rz * 0.8], [bx - rx * 0.8, bz - rz * 0.8], 0.08);
@@ -1236,14 +1237,14 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     base.get(sx, sz, "roof").box(sx, 2.65, sz, 4.1, 0.08, 1.7, yaw, 2, [0.24, 0.36, 0.6]);
     base.get(sx, sz, "glass").box(sx + rx * 0.62, 1.45, sz + rz * 0.62, 3.4, 1.7, 0.04, yaw);
     base.get(sx, sz, "wood").box(sx + rx * 0.3, 0.48, sz + rz * 0.3, 3.0, 0.07, 0.42, yaw);
-    const routeUv = atlas.get(`${route.routeNumber} · ${route.routeName}`, "bus", `Fare ₦${route.fare} · ${stopLabel(stop.name)}`);
+    const routeUv = signUv(`${route.routeNumber} · ${route.routeName}`, "bus", `Fare ₦${route.fare} · ${stopLabel(stop.name)}`);
     textQuad(base.get(sx, sz, "signs"), sx - rx * 0.86, 2.35, sz - rz * 0.86, yaw, 3.2, 3.2 / SignAtlas.aspect, routeUv);
     base.get(sx, sz, "paintYellow").box(sx - rx * 0.86 + rx * 0.02, 2.35, sz - rz * 0.86 + rz * 0.02, 3.3, 3.3 / SignAtlas.aspect + 0.08, 0.03, yaw);
     const flagX = stop.pole[0];
     const flagZ = stop.pole[1];
     base.get(flagX, flagZ, "pole").box(flagX, 1.5, flagZ, 0.07, 3.0, 0.07);
     addObstacle([flagX, flagZ], [flagX, flagZ], 0.08);
-    const flagUv = atlas.get(`BUS STOP · ${route.routeNumber}`, "bus", stopLabel(stop.name));
+    const flagUv = signUv(`BUS STOP · ${route.routeNumber}`, "bus", stopLabel(stop.name));
     const flagYaw = heading + Math.PI;
     textQuad(base.get(flagX, flagZ, "signs"), flagX + rx * 0.45 + hx * 0.03, 2.75, flagZ + rz * 0.45 + hz * 0.03, heading, 0.9, 0.9 / SignAtlas.aspect * 1.6, flagUv);
     textQuad(base.get(flagX, flagZ, "signs"), flagX + rx * 0.45 - hx * 0.03, 2.75, flagZ + rz * 0.45 - hz * 0.03, flagYaw, 0.9, 0.9 / SignAtlas.aspect * 1.6, flagUv);
@@ -1445,6 +1446,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       if (tileDistance(key, x, z) <= loadRadius + TILE * 0.75) continue;
       for (const mesh of tile.meshes) mesh.dispose();
       for (const chunk of tile.detailChunks) for (const mesh of chunk.meshes ?? []) mesh.dispose();
+      atlas.release(key);
       loaded.delete(key);
       released = true;
     }

@@ -2405,6 +2405,7 @@ export class GameEngine {
         meshes: this.scene.meshes.length,
         geometries: this.scene.geometries.length,
         frames: this.engine.frameId,
+        signs: this.atlas.usage(),
       }),
       quality: () => ({ step: this.adaptive.level, scaling: this.engine.getHardwareScalingLevel(), shadows: this.sun.shadowEnabled, viewDistance: this.camera.maxZ, fogDensity: this.scene.fogDensity }),
       meshesNamed: (prefix: string) =>
