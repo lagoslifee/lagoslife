@@ -114,7 +114,7 @@ function setup(route: TransitRoute = lekki, stopIndex = 1) {
       sessionId: client.sessionId,
       userId: client.auth.userId,
       name,
-      appearance: { skinTone: "rich", hairstyle: "low-fade", outfit: "island-casual", accessory: "none" },
+      appearance: { body: "male", skinTone: "rich", hairstyle: "low-fade", outfit: "island-casual", accessory: "none" },
       looksRequestedAt: 0,
       x: door.x,
       z: door.z,
@@ -684,7 +684,7 @@ describe("LagosRoom appearance", () => {
     const { room, join, player } = setup();
     const ada = join("ada");
     const tunde = join("tunde");
-    Object.assign(player(tunde), { appearance: { skinTone: "deep", hairstyle: "locs", outfit: "ankara-day", accessory: "cap" } });
+    Object.assign(player(tunde), { appearance: { body: "male", skinTone: "deep", hairstyle: "locs", outfit: "ankara-day", accessory: "cap" } });
     room.sendLooks(ada);
     room.sendLooks(ada);
     const sent = looks(ada, "looks");
@@ -692,7 +692,7 @@ describe("LagosRoom appearance", () => {
     expect(sent[0]).toEqual(
       expect.arrayContaining([
         { sessionId: "s-ada", appearance: expect.objectContaining({ skinTone: "rich" }) },
-        { sessionId: "s-tunde", appearance: { skinTone: "deep", hairstyle: "locs", outfit: "ankara-day", accessory: "cap" } },
+        { sessionId: "s-tunde", appearance: { body: "male", skinTone: "deep", hairstyle: "locs", outfit: "ankara-day", accessory: "cap" } },
       ]),
     );
   });

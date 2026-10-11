@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Optimises Meshy source GLBs (assets-source/, not committed) into the
-// versioned browser assets under apps/web/public/assets/.
+// versioned browser assets under apps/web/public/assets/. Residents are built
+// by build-residents.mjs instead.
 import { NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import {
@@ -20,11 +21,6 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 
 const jobs = [
-  {
-    input: "assets-source/meshy/resident-avatar-animated.glb",
-    output: "apps/web/public/assets/characters/resident-v1.glb",
-    texture: 1024,
-  },
   {
     input: "assets-source/meshy/danfo-shell.glb",
     output: "apps/web/public/assets/vehicles/danfo-shell-v1.glb",

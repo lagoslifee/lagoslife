@@ -5,151 +5,212 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Axis } from "@babylonjs/core/Maths/math.axis";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Quaternion } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
 import {
-  accessories,
   defaultAppearance,
-  hairstyles,
   MOVEMENT,
-  outfits,
   skinTones,
   type CharacterAppearance,
   type MotionState,
 } from "@lagos-living/shared";
-import { ResidentAppearancePlugin } from "./appearance";
-import { dressHead, headAnchor } from "./avatar-style";
+import { GarmentPlugin, HAIR_COLOUR, OUTFITS, skinTint, type Accessory, type Body, type Hairstyle } from "./appearance";
+import { dressHead, HEAD_UNIT, headAnchor } from "./avatar-style";
 
 /**
- * Ground speed (m/s) at which each in-place clip's planted foot stays still,
- * measured from the rig with scripts/assets/measure-gait.mjs.
+ * Ground speed (m/s) at which each in-place clip's feet keep pace with the ground, from the foot travel
+ * printed by scripts/assets/measure-gait.mjs (span over the contact share of the cycle).
  */
-export const CLIP_STRIDE_SPEED = { walk: 0.73, jog: 4.35, sprint: 6.1 };
+export const CLIP_STRIDE_SPEED = { walk: 1.0, jog: 3.9, sprint: 6.8 };
 
-const CLIPS = {
-  idle: "Idle",
-  walk: "Casual_Walk",
-  jog: "Run_02",
-  sprint: "RunFast",
-  sit: "Chair_Sit_Idle_M",
-  wave: "Big_Wave_Hello",
-  dance: "Boom_Dance",
-} as const;
+const CLIPS = ["idle", "walk", "jog", "sprint", "sit", "dance", "talk", "drive"] as const;
+type ClipKey = (typeof CLIPS)[number] | "wave";
 
-type ClipKey = keyof typeof CLIPS;
+/** Hairstyles that ship as meshes in the resident GLBs; the rest are built in code (avatar-style.ts). */
+const MESH_HAIR = new Set<string>(["low-fade", "parted", "buns", "long"]);
 
-/** A stable, varied look for residents the game populates (walkers, danfo crews), from a small integer seed. */
+const BODY_FILES: Record<Body, string> = {
+  male: "/assets/characters/resident-male-v2.glb",
+  female: "/assets/characters/resident-female-v2.glb",
+};
+
+const FEMALE_HAIR: Hairstyle[] = ["buns", "long", "braids", "twists", "afro", "low-fade", "locs"];
+const MALE_HAIR: Hairstyle[] = ["low-fade", "parted", "twists", "afro", "locs", "low-fade"];
+const FEMALE_OUTFITS = ["ankara-dress", "office-skirt", "athleisure", "ankara-day", "island-casual", "office-smart", "ankara-dress"] as const;
+const MALE_OUTFITS = ["island-casual", "office-smart", "ankara-day", "athleisure", "senator-kaftan"] as const;
+
+/** A stable, varied look for residents the game populates (walkers, danfo crews, drivers), from a small integer seed. */
 export function appearanceFor(seed: number): CharacterAppearance {
-  const pick = <T,>(options: readonly T[], salt: number) => options[Math.abs(Math.imul(seed + 1, 2654435761) ^ salt) % options.length]!;
+  const pick = <T,>(options: readonly T[], salt: number) => options[(Math.imul((seed + 1) * 7919 + salt, 2654435761) >>> 13) % options.length]!;
+  const body: Body = pick(["male", "female"] as const, 0x7e1);
+  const accessories: Accessory[] = body === "female" ? ["headwrap", "glasses", "none"] : ["beard", "cap", "glasses", "beard"];
   return {
+    body,
     skinTone: pick(skinTones, 0x51),
-    hairstyle: pick(hairstyles, 0x2f1),
-    outfit: pick(outfits, 0x9a3),
+    hairstyle: pick(body === "female" ? FEMALE_HAIR : MALE_HAIR, 0x2f1),
+    outfit: pick(body === "female" ? FEMALE_OUTFITS : MALE_OUTFITS, 0x9a3),
     accessory: seed % 3 === 0 ? pick(accessories, 0x4c7) : "none",
   };
 }
 
 export class AvatarFactory {
-  private constructor(private readonly container: AssetContainer, private readonly scene: Scene) {}
+  private constructor(private readonly containers: Record<Body, AssetContainer>, readonly scene: Scene) {}
 
   static async load(scene: Scene) {
-    const container = await LoadAssetContainerAsync("/assets/characters/resident-v1.glb", scene);
-    return new AvatarFactory(container, scene);
+    const [male, female] = await Promise.all([LoadAssetContainerAsync(BODY_FILES.male, scene), LoadAssetContainerAsync(BODY_FILES.female, scene)]);
+    return new AvatarFactory({ male, female }, scene);
   }
 
   create(name: string, appearance: CharacterAppearance = defaultAppearance) {
-    const entries = this.container.instantiateModelsToScene((source) => `${name}:${source}`, true, { doNotInstantiate: true });
     const root = new TransformNode(`avatar ${name}`, this.scene);
-    for (const node of entries.rootNodes) node.parent = root;
-    const meshes = root.getChildMeshes(false) as AbstractMesh[];
-    const plugins: ResidentAppearancePlugin[] = [];
+    return new Avatar(this, name, root, appearance);
+  }
+
+  /** One body instance under `root`, with its own skeleton, clips and materials. */
+  instantiate(name: string, root: TransformNode, appearance: CharacterAppearance) {
+    const entries = this.containers[appearance.body].instantiateModelsToScene((source) => `${name}:${source}`, true, { doNotInstantiate: true });
+    const holder = new TransformNode(`${name} ${appearance.body}`, this.scene);
+    holder.parent = root;
+    for (const node of entries.rootNodes) node.parent = holder;
+    const meshes = holder.getChildMeshes(false) as AbstractMesh[];
+    const part = (suffix: string) => meshes.find((mesh) => mesh.name.endsWith(`:${suffix}`) || mesh.name === suffix) ?? null;
+    const skeleton = entries.skeletons[0];
+    const joint = (suffix: string) => skeleton?.bones.find((bone) => bone.name === suffix || bone.name.endsWith(`:${suffix}`));
+    const body = part("Body");
+    const brows = part("Brows");
+    const outfit = part("Outfit");
+    const skirt = part("Skirt");
+    const garments: GarmentPlugin[] = [];
+    for (const mesh of [outfit, skirt]) if (mesh?.material instanceof PBRMaterial) garments.push(new GarmentPlugin(mesh.material, appearance));
+    const hair = new Map<string, AbstractMesh>();
     for (const mesh of meshes) {
-      if (mesh.material instanceof PBRMaterial) plugins.push(new ResidentAppearancePlugin(mesh.material, appearance));
-    }
-    const joint = (suffix: string) => entries.skeletons[0]?.bones.find((bone) => bone.name === suffix || bone.name.endsWith(`:${suffix}`));
-    const head = joint("Head");
-    const top = joint("head_end");
-    const leftShoulder = joint("LeftShoulder");
-    const rightShoulder = joint("RightShoulder");
-    const skinned = meshes.find((mesh) => mesh.skeleton);
-    const anchor =
-      head && top && leftShoulder && rightShoulder && skinned ? headAnchor(this.scene, name, skinned, { head, top, leftShoulder, rightShoulder }) : null;
-    if (anchor) dressHead(this.scene, anchor, appearance);
-    for (const mesh of meshes) {
+      const match = mesh.name.match(/Hair_([a-z-]+)$/);
+      if (match) hair.set(match[1]!, mesh);
       mesh.isPickable = false;
       mesh.alwaysSelectAsActiveMesh = false;
     }
+    const head = joint("Head");
+    const left = joint("clavicle_l");
+    const right = joint("clavicle_r");
+    const anchor = head && left && right && body ? headAnchor(this.scene, name, body, { head, leftShoulder: left, rightShoulder: right }, HEAD_UNIT[appearance.body]) : null;
     const groups = {} as Record<ClipKey, AnimationGroup | undefined>;
-    for (const [key, clip] of Object.entries(CLIPS) as Array<[ClipKey, string]>) {
-      groups[key] = entries.animationGroups.find((group) => group.name.endsWith(clip));
-    }
+    for (const key of CLIPS) groups[key] = entries.animationGroups.find((group) => group.name === `${name}:${key}` || group.name.endsWith(key));
     const node = (suffix: string) => joint(suffix)?.getTransformNode() ?? null;
     const limbs: Limbs = {
-      leftUp: node("LeftUpLeg"),
-      leftLow: node("LeftLeg"),
-      rightUp: node("RightUpLeg"),
-      rightLow: node("RightLeg"),
-      leftArm: node("LeftArm"),
-      rightArm: node("RightArm"),
+      leftUp: node("thigh_l"),
+      leftLow: node("calf_l"),
+      rightUp: node("thigh_r"),
+      rightLow: node("calf_r"),
+      leftArm: node("upperarm_l"),
+      rightArm: node("upperarm_r"),
+      rightFore: node("lowerarm_r"),
     };
-    return new Avatar(root, meshes, groups, entries.animationGroups, plugins, anchor, appearance, limbs);
+    return { holder, meshes, body, brows, skirt, garments, hair, anchor, groups, all: entries.animationGroups, limbs };
   }
 }
 
-type Limbs = Record<"leftUp" | "leftLow" | "rightUp" | "rightLow" | "leftArm" | "rightArm", TransformNode | null>;
+type Limbs = Record<"leftUp" | "leftLow" | "rightUp" | "rightLow" | "leftArm" | "rightArm" | "rightFore", TransformNode | null>;
+type Instance = ReturnType<AvatarFactory["instantiate"]>;
 
 const flex = new Quaternion();
-/** Bends a joint about its local flexion axis, on top of the pose the clips set this frame. */
-function bend(joint: TransformNode | null, angle: number) {
+/** Rotates a joint about one of its local axes, on top of the pose the clips set this frame. */
+function bend(joint: TransformNode | null, angle: number, axis = Axis.X) {
   if (!joint?.rotationQuaternion) return;
-  Quaternion.RotationAxisToRef(Axis.X, angle, flex);
+  Quaternion.RotationAxisToRef(axis, angle, flex);
   joint.rotationQuaternion.multiplyInPlace(flex);
 }
 
 export class Avatar {
-  private weights: Record<ClipKey, number> = { idle: 1, walk: 0, jog: 0, sprint: 0, sit: 0, wave: 0, dance: 0 };
+  private weights: Record<ClipKey, number> = { idle: 1, walk: 0, jog: 0, sprint: 0, sit: 0, wave: 0, dance: 0, talk: 0, drive: 0 };
   private started = false;
+  private instance: Instance;
+  private current: CharacterAppearance;
+  private visible = true;
+  private waveTime = 0;
+  /** Receives the meshes of each body instance, e.g. to register shadow casters again after a body change. */
+  private meshListener: ((meshes: AbstractMesh[]) => void) | null = null;
 
   constructor(
+    private readonly factory: AvatarFactory,
+    private readonly name: string,
     readonly root: TransformNode,
-    readonly meshes: AbstractMesh[],
-    private readonly groups: Record<ClipKey, AnimationGroup | undefined>,
-    private readonly all: AnimationGroup[],
-    private readonly plugins: ResidentAppearancePlugin[],
-    private readonly anchor: TransformNode | null,
-    private current: CharacterAppearance,
-    private readonly limbs: Limbs | null = null,
+    appearance: CharacterAppearance,
   ) {
-    for (const group of all) group.stop();
+    this.current = appearance;
+    this.instance = factory.instantiate(name, root, appearance);
+    this.dress();
   }
 
   get appearance() {
     return this.current;
   }
 
+  get meshes() {
+    return this.instance.meshes;
+  }
+
+  set onMeshes(listener: ((meshes: AbstractMesh[]) => void) | null) {
+    this.meshListener = listener;
+    listener?.(this.instance.meshes);
+  }
+
   setAppearance(appearance: CharacterAppearance) {
-    const headChanged = appearance.hairstyle !== this.current.hairstyle || appearance.accessory !== this.current.accessory;
+    const rebuild = appearance.body !== this.current.body;
     this.current = appearance;
-    for (const plugin of this.plugins) plugin.set(appearance);
-    if (headChanged && this.anchor) dressHead(this.anchor.getScene(), this.anchor, appearance);
+    if (rebuild) {
+      this.disposeInstance();
+      this.instance = this.factory.instantiate(this.name, this.root, appearance);
+      this.started = false;
+      this.meshListener?.(this.instance.meshes);
+    }
+    this.dress();
+    this.setVisible(this.visible);
+  }
+
+  /** Applies skin tone, garments, hair and accessories to the current body instance. */
+  private dress() {
+    const appearance = this.current;
+    const { body, brows, skirt, garments, hair, anchor } = this.instance;
+    if (body?.material instanceof PBRMaterial) body.material.albedoColor = skinTint(appearance);
+    for (const plugin of garments) plugin.set(appearance);
+    skirt?.setEnabled(OUTFITS[appearance.outfit].skirt !== null);
+    const bulky = appearance.hairstyle === "afro" || appearance.hairstyle === "twists" || appearance.hairstyle === "buns";
+    const showHair = appearance.accessory === "headwrap" ? false : !(appearance.accessory === "cap" && bulky);
+    const hairColour = Color3.FromHexString(HAIR_COLOUR).toLinearSpace().scale(1 / 0.27);
+    if (brows?.material instanceof PBRMaterial) brows.material.albedoColor = hairColour;
+    for (const [style, mesh] of hair) {
+      const on = (style === appearance.hairstyle && showHair && MESH_HAIR.has(style)) || (style === "beard" && appearance.accessory === "beard");
+      mesh.setEnabled(on);
+      if (on && mesh.material instanceof PBRMaterial) mesh.material.albedoColor = hairColour;
+    }
+    if (anchor) {
+      const styles: Array<Hairstyle | Accessory> = [];
+      if (showHair && !MESH_HAIR.has(appearance.hairstyle)) styles.push(appearance.hairstyle);
+      if (appearance.accessory !== "beard" && appearance.accessory !== "none") styles.push(appearance.accessory);
+      dressHead(anchor.getScene(), anchor, appearance, styles);
+    }
   }
 
   private start() {
     if (this.started) return;
     this.started = true;
-    for (const [key, group] of Object.entries(this.groups) as Array<[ClipKey, AnimationGroup | undefined]>) {
+    for (const group of this.instance.all) group.stop();
+    for (const [key, group] of Object.entries(this.instance.groups) as Array<[ClipKey, AnimationGroup | undefined]>) {
       if (!group) continue;
       group.start(true, 1);
-      group.setWeightForAllAnimatables(key === "idle" ? 1 : 0);
+      group.setWeightForAllAnimatables(this.weights[key] ?? 0);
     }
   }
 
   /** Blends locomotion by ground speed so stride matches movement; emotes override. */
   update(speed: number, motion: MotionState, dt: number) {
     this.start();
-    const target: Record<ClipKey, number> = { idle: 0, walk: 0, jog: 0, sprint: 0, sit: 0, wave: 0, dance: 0 };
-    if (motion === "sit" || motion === "wave" || motion === "dance") {
+    const target: Record<ClipKey, number> = { idle: 0, walk: 0, jog: 0, sprint: 0, sit: 0, wave: 0, dance: 0, talk: 0, drive: 0 };
+    if (motion === "sit" || motion === "dance" || motion === "drive") {
       target[motion] = 1;
+    } else if (motion === "wave") {
+      target.idle = 1;
     } else if (speed < 0.08) {
       target.idle = 1;
     } else if (speed <= MOVEMENT.walkSpeed) {
@@ -167,14 +228,24 @@ export class Avatar {
     }
     const blend = 1 - Math.exp(-dt * 14);
     for (const key of Object.keys(target) as ClipKey[]) {
-      const group = this.groups[key];
-      if (!group) continue;
       this.weights[key] += (target[key] - this.weights[key]) * blend;
+      const group = this.instance.groups[key];
+      if (!group) continue;
       group.setWeightForAllAnimatables(this.weights[key]);
       if (key === "walk" || key === "jog" || key === "sprint") {
         group.speedRatio = Math.max(0.35, Math.min(2.4, Math.max(speed, 0.3) / CLIP_STRIDE_SPEED[key]));
       }
     }
+    if (motion === "wave") this.wave(dt);
+    else this.waveTime = 0;
+  }
+
+  /** The animation library has no wave, so the right arm is raised and the forearm swings on top of idle. */
+  private wave(dt: number) {
+    this.waveTime += dt;
+    const lift = Math.min(1, this.waveTime * 4);
+    bend(this.instance.limbs.rightArm, -1.9 * lift, Axis.Z);
+    bend(this.instance.limbs.rightFore, (-0.9 + Math.sin(this.waveTime * 9) * 0.45) * lift, Axis.Z);
   }
 
   /**
@@ -182,8 +253,7 @@ export class Avatar {
    * apart, arms reaching forward to the handlebars. Call after update() each frame while riding a bicycle.
    */
   pedal(phase: number) {
-    const limbs = this.limbs;
-    if (!limbs) return;
+    const limbs = this.instance.limbs;
     for (const [up, low, offset] of [[limbs.leftUp, limbs.leftLow, 0], [limbs.rightUp, limbs.rightLow, Math.PI]] as const) {
       const crank = phase + offset;
       // Thigh lifts with the pedal at the top; the knee opens on the downstroke.
@@ -195,13 +265,18 @@ export class Avatar {
   }
 
   setVisible(visible: boolean) {
-    for (const mesh of this.meshes) mesh.isVisible = visible;
-    for (const mesh of this.anchor?.getChildMeshes(true) ?? []) mesh.isVisible = visible;
+    this.visible = visible;
+    this.instance.holder.setEnabled(visible);
+  }
+
+  private disposeInstance() {
+    for (const group of this.instance.all) group.dispose();
+    this.instance.anchor?.dispose();
+    this.instance.holder.dispose(false, true);
   }
 
   dispose() {
-    for (const group of this.all) group.dispose();
-    this.anchor?.dispose();
+    this.disposeInstance();
     this.root.dispose(false, true);
   }
 }

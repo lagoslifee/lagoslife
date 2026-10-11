@@ -25,7 +25,7 @@ describe("character appearance", () => {
   });
 
   it("saves a look, reads it back and tells the live room", async () => {
-    const look: CharacterAppearance = { skinTone: "golden", hairstyle: "locs", outfit: "athleisure", accessory: "cap" };
+    const look: CharacterAppearance = { body: "female", skinTone: "golden", hairstyle: "locs", outfit: "athleisure", accessory: "cap" };
     const heard: Array<[string, CharacterAppearance]> = [];
     const listener = (userId: string, appearance: CharacterAppearance) => heard.push([userId, appearance]);
     profileEvents.on("appearance", listener);

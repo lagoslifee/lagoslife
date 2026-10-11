@@ -465,7 +465,7 @@ export class GameEngine {
     this.assertLive();
     if (this.avatars) {
       this.player = this.avatars.create("player", this.appearance);
-      this.addCaster(this.player.meshes);
+      this.player.onMeshes = (meshes) => this.addCaster(meshes);
     } else {
       this.playerFallback = MeshBuilder.CreateCapsule("player", { height: 1.76, radius: 0.3 }, scene);
     }
@@ -879,8 +879,9 @@ export class GameEngine {
       this.player.root.position.set(seat.x, this.world.groundHeight(seat.x, seat.z) + seatView.seatHeight(), seat.z);
       this.player.root.rotation.y = seat.yaw;
       this.player.root.setEnabled(true);
-      this.player.update(0, "sit", dt);
-      if (seatView.model.body === "bicycle" && ride.seat === 0) this.player.pedal(seatView.crank);
+      const bike = seatView.model.body === "bicycle";
+      this.player.update(0, ride.seat === 0 && !bike ? "drive" : "sit", dt);
+      if (bike && ride.seat === 0) this.player.pedal(seatView.crank);
     } else if (this.player) {
       this.player.root.position.set(x, this.groundY + this.controller.hop, z);
       this.player.root.rotation.y = this.controller.yaw;
@@ -1378,7 +1379,7 @@ export class GameEngine {
         tag.textContent = player.name;
         this.overlay.appendChild(tag);
         const avatar = this.avatars?.create(`remote-${player.sessionId}`, this.looks.get(player.sessionId) ?? defaultAppearance) ?? null;
-        if (avatar) this.addCaster(avatar.meshes);
+        if (avatar) avatar.onMeshes = (meshes) => this.addCaster(meshes);
         remote = { avatar, tag, samples: [], speed: 0, lastSeen: now };
         this.remotes.set(player.sessionId, remote);
       }
@@ -1447,8 +1448,10 @@ export class GameEngine {
         remote.avatar.root.position.set(seat.x, this.world.groundHeight(seat.x, seat.z) + seatView.seatHeight(), seat.z);
         remote.avatar.root.rotation.y = seat.yaw;
         remote.avatar.root.setEnabled(true);
-        remote.avatar.update(0, "sit", dt);
-        if (seatView.model.body === "bicycle" && (b.vehicleSeat ?? 0) === 0) remote.avatar.pedal(seatView.crank);
+        const bike = seatView.model.body === "bicycle";
+        const driver = (b.vehicleSeat ?? 0) === 0;
+        remote.avatar.update(0, driver && !bike ? "drive" : "sit", dt);
+        if (bike && driver) remote.avatar.pedal(seatView.crank);
       } else if (remote.avatar) {
         remote.avatar.root.position.set(x, this.interior ? 0.02 : this.world.groundHeight(x, z), z);
         remote.avatar.root.rotation.y = a.yaw + dyaw * t;
@@ -2157,6 +2160,7 @@ export class GameEngine {
             return { name: mesh.name, enabled: mesh.isEnabled(), visible: mesh.isVisible, centre: box.centerWorld.asArray(), size: box.extendSizeWorld.asArray() };
           }),
       appearance: () => this.player?.appearance ?? null,
+      emote: (emote: "wave" | "dance" | "sit" | "none") => this.playEmote(emote),
       remoteAppearances: () =>
         Object.fromEntries([...this.remotes].map(([sessionId, remote]) => [remote.tag.textContent ?? sessionId, remote.avatar?.appearance ?? null])),
     };

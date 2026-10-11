@@ -38,13 +38,15 @@ test("registers, enters Lekki, and persists character appearance across sign-in"
   await openSettings(page);
   await page.getByRole("button", { name: "Customise character" }).click();
   await expect(page.getByTestId("character-preview")).toHaveAttribute("data-state", "ready", { timeout: 60_000 });
+  await page.getByRole("combobox", { name: "Body", exact: true }).selectOption("female");
   await page.getByLabel("Skin tone").selectOption("deep");
   await page.getByLabel("Hair").selectOption("braids");
   await page.getByLabel("Outfit").selectOption("ankara-day");
   await page.getByLabel("Accessory").selectOption("glasses");
   await expect(page.getByTestId("character-preview")).toContainText("Ankara print shirt");
+  await expect(page.getByTestId("character-preview")).toHaveAttribute("data-state", "ready");
   await page.getByRole("button", { name: "Save character" }).click();
-  const saved = { skinTone: "deep", hairstyle: "braids", outfit: "ankara-day", accessory: "glasses" };
+  const saved = { body: "female", skinTone: "deep", hairstyle: "braids", outfit: "ankara-day", accessory: "glasses" };
   await expect.poll(() => page.evaluate(() => window.__lagos.appearance())).toEqual(saved);
   const head = await page.evaluate(() => window.__lagos.meshesNamed("player head style"));
   expect(head.map(({ name }) => name).sort()).toEqual(["player head style braids", "player head style glasses"]);
@@ -58,6 +60,7 @@ test("registers, enters Lekki, and persists character appearance across sign-in"
   await waitForGame(page);
   await openSettings(page);
   await page.getByRole("button", { name: "Customise character" }).click();
+  await expect(page.getByRole("combobox", { name: "Body", exact: true })).toHaveValue("female");
   await expect(page.getByLabel("Skin tone")).toHaveValue("deep");
   await expect(page.getByLabel("Hair")).toHaveValue("braids");
   await expect(page.getByLabel("Outfit")).toHaveValue("ankara-day");
@@ -83,7 +86,7 @@ test("two residents see each other online and moving", async ({ browser }) => {
     const after = await first.evaluate(() => window.__lagos.state());
     expect(Math.hypot(after.x - before.x, after.z - before.z)).toBeGreaterThan(1);
 
-    const look = { skinTone: "light", hairstyle: "afro", outfit: "athleisure", accessory: "cap" };
+    const look = { body: "female", skinTone: "light", hairstyle: "buns", outfit: "ankara-dress", accessory: "headwrap" };
     const status = await second.evaluate(
       async (appearance) =>
         (await fetch("http://localhost:2567/api/character", { method: "PUT", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ appearance }) })).status,

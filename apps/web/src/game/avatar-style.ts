@@ -10,22 +10,25 @@ import type { Bone } from "@babylonjs/core/Bones/bone";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import type { CharacterAppearance } from "@lagos-living/shared";
-import type { Accessory, Hairstyle } from "./appearance";
+import type { Accessory, Body, Hairstyle } from "./appearance";
 
 /**
- * Hairstyles and accessories are built in "head units": the origin is the Head joint, +Y points to the
- * `head_end` joint at distance 1, and +Z points out of the face.
+ * Hairstyles and accessories are built in "head units": the origin is the Head joint, +Y is up, 1 unit is the
+ * height from the Head joint to the crown, and +Z points out of the face. Values come from the head and eye
+ * vertices measured by scripts/assets/build-residents.mjs.
  */
-/** Cranium of resident-v1, measured from its head vertices; the eyes sit near y 0.5 and the nose tip at z 0.3. */
-const SKULL = { centre: new Vector3(0, 0.72, -0.24), radius: 0.4 };
-const EYES = { y: 0.52, z: 0.26, apart: 0.15 };
+export const HEAD_UNIT: Record<Body, number> = { male: 0.21, female: 0.217 };
+const HEADS: Record<Body, { skull: { centre: Vector3; radius: number }; eyes: { y: number; z: number; apart: number } }> = {
+  male: { skull: { centre: new Vector3(0, 0.56, 0.04), radius: 0.46 }, eyes: { y: 0.47, z: 0.5, apart: 0.16 } },
+  female: { skull: { centre: new Vector3(0, 0.57, -0.02), radius: 0.46 }, eyes: { y: 0.49, z: 0.44, apart: 0.16 } },
+};
 
-type Templates = Partial<Record<Hairstyle | Accessory, Mesh | null>>;
+type Templates = Partial<Record<string, Mesh | null>>;
 const templates = new WeakMap<Scene, Templates>();
 
 function material(scene: Scene, name: string, hex: string, roughness: number) {
   const result = new PBRMaterial(`style ${name}`, scene);
-  result.albedoColor = Color3.FromHexString(hex);
+  result.albedoColor = Color3.FromHexString(hex).toLinearSpace();
   result.metallic = 0;
   result.roughness = roughness;
   return result;
@@ -65,9 +68,10 @@ function onScalp(point: Vector3) {
   return point.y > -0.2 && !(point.z > 0.55 && point.y < 0.45);
 }
 
-function build(scene: Scene, style: Hairstyle | Accessory): Mesh | null {
+function build(scene: Scene, body: Body, style: Hairstyle | Accessory): Mesh | null {
   const hair = () => material(scene, "hair", "#17120f", 0.85);
-  const { centre, radius } = SKULL;
+  const { centre, radius } = HEADS[body].skull;
+  const EYES = HEADS[body].eyes;
   switch (style) {
     case "afro": {
       const mesh = CreateSphere("afro", { diameter: radius * 2.6, segments: 14 }, scene);
@@ -115,7 +119,7 @@ function build(scene: Scene, style: Hairstyle | Accessory): Mesh | null {
       const arms = [-1, 1].map((side) => {
         const arm = CreateCylinder("arm", { height: 0.42, diameter: 0.025, tessellation: 6 }, scene);
         arm.rotation.x = Math.PI / 2;
-        arm.position = new Vector3(side * 0.33, y + 0.02, z - 0.2);
+        arm.position = new Vector3(side * 0.4, y + 0.02, z - 0.22);
         return arm;
       });
       const parts = [...lenses, bridge, ...arms];
@@ -135,17 +139,21 @@ function build(scene: Scene, style: Hairstyle | Accessory): Mesh | null {
       return merged(parts, "cap");
     }
     case "headwrap": {
-      const fabric = material(scene, "headwrap", "#d4572a", 0.8);
-      const wrap = CreateSphere("wrap", { diameter: radius * 2.4, segments: 14 }, scene);
-      wrap.scaling = new Vector3(1, 0.9, 1.1);
-      wrap.position = centre.add(new Vector3(0, 0.22, -0.08));
-      const band = CreateTorus("band", { diameter: radius * 2.25, thickness: 0.12, tessellation: 24 }, scene);
-      band.scaling = new Vector3(1, 1, 1.12);
-      band.rotation.x = -0.3;
-      band.position = centre.add(new Vector3(0, 0.08, -0.04));
-      const knot = CreateSphere("knot", { diameter: 0.3, segments: 8 }, scene);
-      knot.position = centre.add(new Vector3(0, 0.56, 0.14));
-      const parts = [wrap, band, knot];
+      const fabric = material(scene, "headwrap", "#b3261c", 0.6);
+      const wrap = CreateSphere("wrap", { diameter: radius * 2.2, segments: 16 }, scene);
+      wrap.scaling = new Vector3(1, 0.95, 1.12);
+      wrap.position = centre.add(new Vector3(0, 0.34, -0.1));
+      const band = CreateTorus("band", { diameter: radius * 2.12, thickness: 0.14, tessellation: 28 }, scene);
+      band.scaling = new Vector3(1, 1, 1.14);
+      band.rotation.x = -0.35;
+      band.position = centre.add(new Vector3(0, 0.2, -0.04));
+      const fan = CreateSphere("fan", { diameter: radius * 1.5, segments: 10 }, scene);
+      fan.scaling = new Vector3(1.5, 0.55, 0.7);
+      fan.rotation.x = 0.5;
+      fan.position = centre.add(new Vector3(0, 0.72, -0.25));
+      const knot = CreateSphere("knot", { diameter: 0.28, segments: 8 }, scene);
+      knot.position = centre.add(new Vector3(0, 0.52, 0.36));
+      const parts = [wrap, band, fan, knot];
       parts.forEach((part) => (part.material = fabric));
       return merged(parts, "headwrap");
     }
@@ -154,26 +162,30 @@ function build(scene: Scene, style: Hairstyle | Accessory): Mesh | null {
   }
 }
 
-function template(scene: Scene, style: Hairstyle | Accessory) {
+function template(scene: Scene, body: Body, style: Hairstyle | Accessory) {
   let cache = templates.get(scene);
   if (!cache) templates.set(scene, (cache = {}));
-  if (!(style in cache)) cache[style] = build(scene, style);
-  return cache[style] ?? null;
+  const key = `${body}:${style}`;
+  if (!(key in cache)) cache[key] = build(scene, body, style);
+  return cache[key] ?? null;
 }
 
 /**
- * Head frame at the bind pose: up runs from the Head to the head_end bone, right along the shoulders. It is
- * attached to the Head bone in skinning space (bone final matrix × mesh world), where the body is drawn.
+ * Head frame at the bind pose: up is the avatar's up, right runs along the shoulders, and `unit` metres is one
+ * head unit. It is attached to the Head bone in skinning space (bone final matrix × mesh world).
  */
-export function headAnchor(scene: Scene, name: string, mesh: AbstractMesh, bones: { head: Bone; top: Bone; leftShoulder: Bone; rightShoulder: Bone }) {
+export function headAnchor(scene: Scene, name: string, mesh: AbstractMesh, bones: { head: Bone; leftShoulder: Bone; rightShoulder: Bone }, unit: number) {
   mesh.computeWorldMatrix(true);
+  bones.head.getSkeleton().returnToRest();
   bones.head.getSkeleton().prepare(true);
   const worldOf = (bone: Bone) => bone.getFinalMatrix().multiply(mesh.getWorldMatrix());
   const headWorld = worldOf(bones.head);
   const origin = headWorld.getTranslation();
-  const upVector = worldOf(bones.top).getTranslation().subtract(origin);
-  const size = upVector.length();
-  const up = upVector.normalize();
+  let top: { getWorldMatrix(): Matrix; parent: unknown } = mesh;
+  while (top.parent) top = top.parent as typeof top;
+  const rootUp = Vector3.TransformNormal(Vector3.Up(), top.getWorldMatrix());
+  const up = rootUp.normalizeToNew();
+  const size = unit * rootUp.length();
   const across = worldOf(bones.rightShoulder).getTranslation().subtract(worldOf(bones.leftShoulder).getTranslation());
   const forward = Vector3.Cross(across, up).normalize();
   const right = Vector3.Cross(up, forward).normalize();
@@ -189,14 +201,10 @@ export function headAnchor(scene: Scene, name: string, mesh: AbstractMesh, bones
 }
 
 /** Replaces the hairstyle and accessory meshes under a head anchor. */
-export function dressHead(scene: Scene, anchor: TransformNode, appearance: CharacterAppearance) {
+export function dressHead(scene: Scene, anchor: TransformNode, appearance: CharacterAppearance, styles: Array<Hairstyle | Accessory>) {
   for (const child of anchor.getChildMeshes(true)) child.dispose();
-  const covered = appearance.accessory === "cap" || appearance.accessory === "headwrap";
-  const styles: Array<Hairstyle | Accessory> = [];
-  if (!(covered && (appearance.hairstyle === "afro" || appearance.hairstyle === "twists"))) styles.push(appearance.hairstyle);
-  styles.push(appearance.accessory);
   for (const style of styles) {
-    const source = template(scene, style);
+    const source = template(scene, appearance.body, style);
     if (!source) continue;
     const mesh = source.clone(`${anchor.name} ${style}`, anchor)!;
     mesh.setEnabled(true);

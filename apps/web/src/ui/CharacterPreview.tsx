@@ -9,7 +9,7 @@ import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imagePro
 import { Scene } from "@babylonjs/core/scene";
 import type { CharacterAppearance } from "@lagos-living/shared";
 import { useEffect, useRef, useState } from "react";
-import { OUTFIT_COLOURS } from "../game/appearance";
+import { OUTFITS } from "../game/wardrobe";
 import { AvatarFactory, type Avatar } from "../game/avatar";
 
 /** Live 3D preview of the resident with the chosen look, using the same recolouring as the street. */
@@ -44,6 +44,18 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
     camera.wheelDeltaPercentage = 0.01;
     camera.panningSensibility = 0;
     camera.attachControl(canvas, true);
+    if (import.meta.env.DEV) {
+      (window as unknown as { __previewView?: (alpha: number, beta: number, radius: number, y: number) => void }).__previewView = (alpha, beta, radius, y) => {
+        camera.minZ = 0.05;
+        camera.lowerRadiusLimit = 0.2;
+        camera.lowerBetaLimit = 0.05;
+        camera.upperBetaLimit = 3;
+        camera.setTarget(new Vector3(0, y, 0));
+        camera.alpha = alpha;
+        camera.beta = beta;
+        camera.radius = radius;
+      };
+    }
     const sky = new HemisphericLight("preview sky", new Vector3(0, 1, 0), scene);
     sky.intensity = 0.75;
     sky.groundColor = new Color3(0.35, 0.3, 0.26);
@@ -86,7 +98,7 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
       <canvas ref={canvasRef} aria-label="3D preview of your resident" />
       {state === "loading" && <p className="preview-status">Loading your resident…</p>}
       {state === "failed" && <p className="preview-status">The 3D preview could not load on this device. Your choices still save.</p>}
-      <p className="preview-caption">{OUTFIT_COLOURS[appearance.outfit].label}</p>
+      <p className="preview-caption">{OUTFITS[appearance.outfit].label}</p>
       <small>Drag to turn · scroll to zoom</small>
     </div>
   );

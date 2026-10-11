@@ -30,7 +30,7 @@ type LagosHooks = {
   remoteAppearances(): Record<string, Appearance | null>;
   meshesNamed(prefix: string): Array<{ name: string; enabled: boolean; visible: boolean; centre: number[]; size: number[] }>;
 };
-type Appearance = { skinTone: string; hairstyle: string; outfit: string; accessory: string };
+type Appearance = { body: string; skinTone: string; hairstyle: string; outfit: string; accessory: string };
 declare global {
   interface Window {
     __lagos: LagosHooks;

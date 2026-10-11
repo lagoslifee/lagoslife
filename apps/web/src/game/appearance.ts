@@ -3,162 +3,142 @@ import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer";
 import type { Material } from "@babylonjs/core/Materials/material";
 import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase";
 import type { MaterialDefines } from "@babylonjs/core/Materials/materialDefines";
-import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { Scene } from "@babylonjs/core/scene";
-import type { CharacterAppearance, accessories, hairstyles, outfits, skinTones } from "@lagos-living/shared";
+import type { CharacterAppearance } from "@lagos-living/shared";
+import { OUTFITS, SKIN_TONE_COLOURS, type Body, type Fabric } from "./wardrobe";
 
-type SkinTone = (typeof skinTones)[number];
-type Outfit = (typeof outfits)[number];
-export type Hairstyle = (typeof hairstyles)[number];
-export type Accessory = (typeof accessories)[number];
+export { ACCESSORY_LABELS, BODY_LABELS, HAIR_COLOUR, HAIR_LABELS, OUTFITS, SKIN_TONE_COLOURS } from "./wardrobe";
+export type { Accessory, Body, Hairstyle } from "./wardrobe";
 
 /**
- * Mean sRGB colour of each region of the resident texture, printed by scripts/assets/build-resident-regions.mjs.
- * Recolouring scales each texel relative to these, so shading, folds and facial detail survive.
+ * Mean sRGB colour of the face skin in each body texture, printed by scripts/assets/build-residents.mjs.
+ * The skin tint is the ratio of the chosen tone to this, so pores, lips and shading survive.
  */
-const SOURCE = {
-  skin: [130, 76, 51],
-  top: [126, 97, 80],
-  bottom: [15, 27, 39],
-  shoes: [229, 225, 222],
-} as const;
-
-export const SKIN_TONE_COLOURS: Record<SkinTone, string> = {
-  deep: "#4f2d1b",
-  rich: "#82502f",
-  warm: "#9b6643",
-  golden: "#b4845b",
-  light: "#cf9f7c",
+const SOURCE_SKIN: Record<Body, readonly [number, number, number]> = {
+  male: [152, 105, 75],
+  female: [161, 113, 80],
 };
 
-/** `null` keeps the generated garment as it is (the ankara shirt, navy trousers and white trainers). */
-export const OUTFIT_COLOURS: Record<Outfit, { top: string | null; bottom: string | null; shoes: string | null; label: string }> = {
-  "island-casual": { top: "#efe8d8", bottom: "#b49a74", shoes: null, label: "Linen shirt, chinos" },
-  "office-smart": { top: "#cfdff0", bottom: "#2d3139", shoes: "#4b2d1d", label: "Pale blue shirt, charcoal trousers" },
-  "ankara-day": { top: null, bottom: null, shoes: null, label: "Ankara print shirt" },
-  athleisure: { top: "#167a49", bottom: "#2a2a2e", shoes: "#f4f4f2", label: "Green jersey, joggers" },
-};
+const linear = (hex: string) => Color3.FromHexString(hex).toLinearSpace();
 
-const linear = (rgb: readonly number[]) => rgb.map((value) => (value / 255) ** 2.2);
-const luminance = ([r, g, b]: number[]) => 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+/** Multiplier for the body texture that turns its skin into the chosen tone. */
+export function skinTint(appearance: CharacterAppearance) {
+  const target = linear(SKIN_TONE_COLOURS[appearance.skinTone]);
+  const source = SOURCE_SKIN[appearance.body].map((value) => (value / 255) ** 2.2);
+  return new Color3(target.r / source[0]!, target.g / source[1]!, target.b / source[2]!);
+}
 
-/** Per-avatar shader inputs: linear-space colours, with the source region's luminance in `w` (0 = leave as is). */
-export type AppearanceUniforms = { skin: Color3; top: [number, number, number, number]; bottom: [number, number, number, number]; shoes: [number, number, number, number] };
+/** Garment ids baked into COLOR_0.r (id / 10) by scripts/assets/build-residents.mjs. */
+const GARMENT_IDS = ["top", "sleeve", "trousers", "shoes", "skirt"] as const;
+type Garment = (typeof GARMENT_IDS)[number];
+type Slot = { base: [number, number, number, number]; print: [number, number, number, number]; accent: Color3 };
 
-export function appearanceUniforms(appearance: CharacterAppearance): AppearanceUniforms {
-  const sourceSkin = linear(SOURCE.skin);
-  const targetSkin = linear(Color3.FromHexString(SKIN_TONE_COLOURS[appearance.skinTone]).asArray().map((value) => value * 255));
-  const garment = (hex: string | null, source: readonly number[]): [number, number, number, number] => {
-    if (!hex) return [0, 0, 0, 0];
-    const target = linear(Color3.FromHexString(hex).asArray().map((value) => value * 255));
-    return [target[0]!, target[1]!, target[2]!, luminance(linear(source))];
-  };
-  const outfit = OUTFIT_COLOURS[appearance.outfit];
+const HIDDEN: Slot = { base: [0, 0, 0, 0], print: [0, 0, 0, 0], accent: new Color3() };
+
+function slot(fabric: Fabric | null): Slot {
+  if (!fabric) return HIDDEN;
+  const base = linear(fabric.colour);
+  const print = fabric.print ? linear(fabric.print.colour) : base;
+  return { base: [base.r, base.g, base.b, fabric.print ? 2 : 1], print: [print.r, print.g, print.b, 9], accent: fabric.print ? linear(fabric.print.accent) : base };
+}
+
+export function garmentSlots(appearance: CharacterAppearance): Record<Garment, Slot> {
+  const outfit = OUTFITS[appearance.outfit];
+  const shoes = linear(outfit.shoes);
   return {
-    skin: new Color3(targetSkin[0]! / sourceSkin[0]!, targetSkin[1]! / sourceSkin[1]!, targetSkin[2]! / sourceSkin[2]!),
-    top: garment(outfit.top, SOURCE.top),
-    bottom: garment(outfit.bottom, SOURCE.bottom),
-    shoes: garment(outfit.shoes, SOURCE.shoes),
+    top: slot(outfit.top),
+    sleeve: outfit.longSleeves ? slot(outfit.top) : HIDDEN,
+    trousers: slot(outfit.trousers),
+    shoes: { base: [shoes.r, shoes.g, shoes.b, 1], print: [0, 0, 0, 0], accent: shoes },
+    skirt: slot(outfit.skirt),
   };
 }
 
-const regionTextures = new WeakMap<Scene, Texture>();
-
-/** UV-space region ids (R) and skin weight (G); nearest sampling so ids never blend at chart edges. */
-function regionTexture(scene: Scene) {
-  let texture = regionTextures.get(scene);
-  if (!texture) {
-    texture = new Texture("/assets/characters/resident-v1-regions.png", scene, true, false, Texture.NEAREST_SAMPLINGMODE);
-    texture.wrapU = Texture.CLAMP_ADDRESSMODE;
-    texture.wrapV = Texture.CLAMP_ADDRESSMODE;
-    regionTextures.set(scene, texture);
-  }
-  return texture;
-}
-
-/** Recolours skin and garments of the resident material in the shader, without per-appearance textures. */
-export class ResidentAppearancePlugin extends MaterialPluginBase {
-  static readonly NAME = "LagosResidentAppearance";
-  private readonly regions: Texture;
-  uniforms: AppearanceUniforms;
+/** Colours, prints and hides the generated garments per avatar in the shader, from one shared mesh. */
+export class GarmentPlugin extends MaterialPluginBase {
+  static readonly NAME = "LagosGarments";
+  slots: Record<Garment, Slot>;
 
   constructor(material: Material, appearance: CharacterAppearance) {
-    super(material, ResidentAppearancePlugin.NAME, 200, { LAGOS_APPEARANCE: false }, true, true);
-    this.regions = regionTexture(material.getScene());
-    this.uniforms = appearanceUniforms(appearance);
+    super(material, GarmentPlugin.NAME, 200, { LAGOS_GARMENTS: false }, true, true);
+    this.slots = garmentSlots(appearance);
   }
 
   set(appearance: CharacterAppearance) {
-    this.uniforms = appearanceUniforms(appearance);
+    this.slots = garmentSlots(appearance);
   }
 
   override getClassName() {
-    return "ResidentAppearancePlugin";
+    return "GarmentPlugin";
   }
 
   override prepareDefines(defines: MaterialDefines) {
-    defines.LAGOS_APPEARANCE = true;
+    defines.LAGOS_GARMENTS = true;
   }
 
   override isReadyForSubMesh(_defines: MaterialDefines, _scene: Scene, _engine: AbstractEngine, _subMesh: SubMesh) {
-    return this.regions.isReady();
-  }
-
-  override getSamplers(samplers: string[]) {
-    samplers.push("lagosRegionSampler");
-  }
-
-  override getActiveTextures(activeTextures: import("@babylonjs/core/Materials/Textures/baseTexture").BaseTexture[]) {
-    activeTextures.push(this.regions);
+    return true;
   }
 
   override getUniforms() {
+    const ubo = GARMENT_IDS.flatMap((id) => [
+      { name: `lagos_${id}`, size: 4, type: "vec4" },
+      { name: `lagos_${id}Print`, size: 4, type: "vec4" },
+      { name: `lagos_${id}Accent`, size: 3, type: "vec3" },
+    ]);
     return {
-      ubo: [
-        { name: "lagosSkin", size: 3, type: "vec3" },
-        { name: "lagosTop", size: 4, type: "vec4" },
-        { name: "lagosBottom", size: 4, type: "vec4" },
-        { name: "lagosShoes", size: 4, type: "vec4" },
-      ],
-      fragment: `#ifdef LAGOS_APPEARANCE
-uniform vec3 lagosSkin;
-uniform vec4 lagosTop;
-uniform vec4 lagosBottom;
-uniform vec4 lagosShoes;
+      ubo,
+      fragment: `#ifdef LAGOS_GARMENTS
+${GARMENT_IDS.map((id) => `uniform vec4 lagos_${id};\nuniform vec4 lagos_${id}Print;\nuniform vec3 lagos_${id}Accent;`).join("\n")}
 #endif`,
     };
   }
 
   override bindForSubMesh(uniformBuffer: UniformBuffer) {
-    const { skin, top, bottom, shoes } = this.uniforms;
-    uniformBuffer.updateColor3("lagosSkin", skin);
-    uniformBuffer.updateFloat4("lagosTop", ...top);
-    uniformBuffer.updateFloat4("lagosBottom", ...bottom);
-    uniformBuffer.updateFloat4("lagosShoes", ...shoes);
-    uniformBuffer.setTexture("lagosRegionSampler", this.regions);
+    for (const id of GARMENT_IDS) {
+      const { base, print, accent } = this.slots[id];
+      uniformBuffer.updateFloat4(`lagos_${id}`, ...base);
+      uniformBuffer.updateFloat4(`lagos_${id}Print`, ...print);
+      uniformBuffer.updateColor3(`lagos_${id}Accent`, accent);
+    }
   }
 
   override getCustomCode(shaderType: string) {
     if (shaderType !== "fragment") return null;
+    const pick = GARMENT_IDS.map(
+      (id, index) => `${index ? "else " : ""}if (lagosId == ${index + 1}.0) { lagosBase = lagos_${id}; lagosPrint = lagos_${id}Print; lagosAccent = lagos_${id}Accent; }`,
+    ).join("\n");
     return {
-      CUSTOM_FRAGMENT_DEFINITIONS: `#ifdef LAGOS_APPEARANCE
-uniform sampler2D lagosRegionSampler;
-vec3 lagosGarment(vec3 albedo, vec4 target) {
-  if (target.w <= 0.0) return albedo;
-  float shade = clamp(pow(max(dot(albedo, vec3(0.2126, 0.7152, 0.0722)), 1e-4) / target.w, 0.3), 0.55, 1.3);
-  return target.rgb * shade;
+      CUSTOM_FRAGMENT_DEFINITIONS: `#ifdef LAGOS_GARMENTS
+float lagosMotif(vec2 uv, float scale) {
+  vec2 cell = fract(uv * scale) - 0.5;
+  float d = length(cell);
+  float ring = smoothstep(0.31, 0.28, d) - smoothstep(0.22, 0.19, d);
+  float diamond = abs(cell.x) + abs(cell.y);
+  float frame = step(0.44, diamond) * step(diamond, 0.5);
+  return clamp(ring + frame, 0.0, 1.0);
+}
+float lagosDot(vec2 uv, float scale) {
+  return smoothstep(0.11, 0.08, length(fract(uv * scale) - 0.5));
 }
 #endif`,
-      CUSTOM_FRAGMENT_UPDATE_ALPHA: `#ifdef LAGOS_APPEARANCE
-#ifdef ALBEDO
-vec4 lagosRegion = texture2D(lagosRegionSampler, vAlbedoUV + uvOffset);
-float lagosId = floor(lagosRegion.r * 255.0 + 0.5);
-if (lagosId == 1.0) surfaceAlbedo = mix(surfaceAlbedo, surfaceAlbedo * lagosSkin, lagosRegion.g);
-else if (lagosId == 2.0) surfaceAlbedo = lagosGarment(surfaceAlbedo, lagosTop);
-else if (lagosId == 3.0) surfaceAlbedo = lagosGarment(surfaceAlbedo, lagosBottom);
-else if (lagosId == 4.0) surfaceAlbedo = lagosGarment(surfaceAlbedo, lagosShoes);
+      CUSTOM_FRAGMENT_UPDATE_ALPHA: `#ifdef LAGOS_GARMENTS
+#if defined(VERTEXCOLOR) && defined(ALBEDO)
+float lagosId = floor(vColor.r * 10.0 + 0.5);
+vec4 lagosBase = vec4(0.0);
+vec4 lagosPrint = vec4(0.0);
+vec3 lagosAccent = vec3(0.0);
+${pick}
+if (lagosBase.w < 0.5) discard;
+float lagosWeave = texture2D(albedoSampler, vAlbedoUV * 28.0).r;
+vec3 lagosCloth = lagosBase.rgb;
+if (lagosBase.w > 1.5) {
+  lagosCloth = mix(lagosCloth, lagosPrint.rgb, lagosMotif(vAlbedoUV, lagosPrint.w));
+  lagosCloth = mix(lagosCloth, lagosAccent, lagosDot(vAlbedoUV, lagosPrint.w));
+}
+surfaceAlbedo = lagosCloth * lagosWeave * lagosWeave;
 #endif
 #endif`,
     };

@@ -1,11 +1,14 @@
 import { z } from "zod";
 
+export const bodies = ["male", "female"] as const;
 export const skinTones = ["deep", "rich", "warm", "golden", "light"] as const;
-export const hairstyles = ["low-fade", "twists", "braids", "afro", "locs"] as const;
-export const outfits = ["island-casual", "office-smart", "ankara-day", "athleisure"] as const;
-export const accessories = ["none", "glasses", "cap", "headwrap"] as const;
+export const hairstyles = ["low-fade", "twists", "braids", "afro", "locs", "parted", "buns", "long"] as const;
+export const outfits = ["island-casual", "office-smart", "ankara-day", "athleisure", "ankara-dress", "office-skirt", "senator-kaftan"] as const;
+export const accessories = ["none", "glasses", "cap", "headwrap", "beard"] as const;
 
+/** Profiles saved before the body choice existed keep the male body they were shown with. */
 export const characterAppearanceSchema = z.object({
+  body: z.enum(bodies).default("male"),
   skinTone: z.enum(skinTones),
   hairstyle: z.enum(hairstyles),
   outfit: z.enum(outfits),
@@ -15,6 +18,7 @@ export const characterAppearanceSchema = z.object({
 export type CharacterAppearance = z.infer<typeof characterAppearanceSchema>;
 
 export const defaultAppearance: CharacterAppearance = {
+  body: "male",
   skinTone: "rich",
   hairstyle: "low-fade",
   outfit: "island-casual",

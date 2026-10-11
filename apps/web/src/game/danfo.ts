@@ -152,7 +152,7 @@ export class DanfoView {
     if (!animate) return;
     const open = this.state.doorOpen;
     this.door.setEnabled(open);
-    this.driver?.update(0, "sit", dt);
+    this.driver?.update(0, "drive", dt);
     if (this.conductor) {
       if (open) {
         this.conductor.root.position.set(DANFO_HALF.width + 0.45, 0, 0.35);

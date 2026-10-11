@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const file = process.argv[2] ?? path.join(root, "apps/web/public/assets/characters/resident-v1.glb");
+const file = process.argv[2] ?? path.join(root, "apps/web/public/assets/characters/resident-male-v2.glb");
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 const document = await io.read(file);
 const graph = document.getRoot();
@@ -74,8 +74,8 @@ for (const animation of graph.listAnimations()) {
     const parent = parents.get(node);
     return parent ? multiply(world(parent, time), matrix) : matrix;
   };
-  const hips = byName("Hips");
-  const feet = ["LeftFoot", "RightFoot"].map(byName).filter(Boolean);
+  const hips = byName("Hips") ?? byName("pelvis");
+  const feet = (byName("LeftFoot") ? ["LeftFoot", "RightFoot"] : ["foot_l", "foot_r"]).map(byName).filter(Boolean);
   const steps = 120;
   const rel = feet.map(() => []);
   const hipPath = [];
@@ -102,7 +102,8 @@ for (const animation of graph.listAnimations()) {
     contact.sort((a, b) => a - b);
     return contact.length ? contact[Math.floor(contact.length / 2)] : 0;
   });
+  const spans = rel.map((pathPoints) => Math.max(...pathPoints.map((p) => p[2])) - Math.min(...pathPoints.map((p) => p[2])));
   console.log(
-    `${animation.getName().padEnd(28)} duration ${duration.toFixed(2)}s  root travel ${rootTravel.toFixed(2)}m  contact speed L ${speeds[0]?.toFixed(2)} R ${speeds[1]?.toFixed(2)} m/s`,
+    `${animation.getName().padEnd(28)} duration ${duration.toFixed(2)}s  root travel ${rootTravel.toFixed(2)}m  contact speed L ${speeds[0]?.toFixed(2)} R ${speeds[1]?.toFixed(2)} m/s  foot span ${spans.map((s) => s.toFixed(2)).join("/")} m`,
   );
 }
