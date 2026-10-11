@@ -41,6 +41,7 @@ import {
   MOVEMENT,
   PLACES,
   propertyTitle,
+  CLUBS,
   resolveBuildingCollision,
   getRoute,
   STOPS,
@@ -183,6 +184,7 @@ const PLACE_ACTIONS: Record<Place["kind"], string> = {
   worship: "Visit",
   community: "Community hall",
   park: "Relax",
+  club: "Enter club",
 };
 
 export class EngineDisposedError extends Error {
@@ -939,6 +941,7 @@ export class GameEngine {
     }
 
     this.updateRemotes(now, dt);
+    this.interior?.update(now * 0.001);
     if (!this.interior) {
       this.world.stream(x, z);
       this.world.pump(this.readyFired ? 8 : 200);
@@ -1557,6 +1560,7 @@ export class GameEngine {
     if (leavingInterior) {
       this.interior?.dispose();
       this.interior = null;
+      this.audio.setClub(null);
     }
     if (enteringInterior) void this.loadInterior(self);
     const seat = self.vehicleSeat ?? 0;
@@ -1583,7 +1587,8 @@ export class GameEngine {
   }
 
   private async loadInterior(self: SelfState) {
-    const kind: InteriorKind = self.location.startsWith("starter:") ? "starter" : self.previewOnly ? "preview" : "home";
+    const club = self.location.startsWith("club:") && self.propertyId ? CLUBS[self.propertyId] : undefined;
+    const kind: InteriorKind = club ? "club" : self.location.startsWith("starter:") ? "starter" : self.previewOnly ? "preview" : "home";
     const title = self.propertyId ? propertyTitle(self.propertyId) : "Home";
     let placements: Placement[] = [];
     if (kind === "home" && self.propertyId) {
@@ -1593,7 +1598,8 @@ export class GameEngine {
     }
     if (this.self?.location !== self.location) return;
     this.interior?.dispose();
-    this.interior = buildInterior(this.scene, this.materials, this.atlas, kind, title, placements);
+    this.interior = buildInterior(this.scene, this.materials, this.atlas, kind, title, placements, club);
+    this.audio.setClub(club ?? null);
   }
 
   async refreshInterior() {

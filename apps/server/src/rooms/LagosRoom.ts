@@ -39,6 +39,8 @@ import {
   type RideState,
   type WorldVehicle,
   getPlace,
+  CLUBS,
+  clubLocation,
   INTERIOR_HALF,
   INTERIOR_ORIGIN,
   INTERIOR_SPAWN,
@@ -93,6 +95,7 @@ import { buildingEvents } from "../building-service.js";
 import { chargeRide, refundRide } from "../ride-service.js";
 import { activeRental, parkRental, returnRental, startRental, type ActiveRental } from "../bike-service.js";
 import { requestTow } from "../tow-service.js";
+import { hasWristband } from "../club-service.js";
 import { config } from "../config.js";
 import { TowDispatcher } from "./tow-dispatch.js";
 import "../world-footprints.js";
@@ -732,7 +735,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (player.location !== "street" || player.busId) return;
     if (player.vehicleId) return this.notify(client, { tone: "info", text: "Park and step out of your car first." });
     const { propertyId, mode } = parsed.data;
-    const place = propertyId === "starter-home" ? getPlace("starter-home") : (propertyPlace(propertyId) ?? builtHomePlace(propertyId));
+    const club = CLUBS[propertyId] ? getPlace(propertyId) : null;
+    const place = club ?? (propertyId === "starter-home" ? getPlace("starter-home") : (propertyPlace(propertyId) ?? builtHomePlace(propertyId)));
     if (!place) return this.notify(client, { tone: "error", text: "That home is not on the map." });
     if (Math.hypot(player.x - place.door[0], player.z - place.door[1]) > 4.5) {
       return this.notify(client, { tone: "error", text: `Walk up to the door of ${place.name}.` });
@@ -740,7 +744,12 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     let location: string;
     let previewOnly = false;
     try {
-      if (propertyId === "starter-home") {
+      if (club) {
+        if (!(await hasWristband(player.userId, propertyId))) {
+          return this.notify(client, { tone: "error", text: `Pay the cover at the door of ${club.name} first.` });
+        }
+        location = clubLocation(propertyId);
+      } else if (propertyId === "starter-home") {
         location = `starter:${player.userId}`;
       } else if (mode === "preview") {
         if (!(await isPropertyAvailable(propertyId))) {
@@ -769,7 +778,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     player.lastAcceptedAt = Date.now();
     setPlayerPosition(player.userId, player.x, player.z, location);
     void this.persist(player).catch(() => undefined);
-    if (!previewOnly && propertyId !== "starter-home") void markProgress(pool, player.userId, "visited_home").catch(() => undefined);
+    if (!previewOnly && !club && propertyId !== "starter-home") void markProgress(pool, player.userId, "visited_home").catch(() => undefined);
     this.sendSelf(client, player, previewOnly ? "preview" : "entered");
   }
 

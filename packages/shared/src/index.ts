@@ -59,6 +59,7 @@ export * from "./rides.js";
 export * from "./rentals.js";
 export * from "./towing.js";
 export * from "./roads.js";
+export * from "./nightlife.js";
 import { worldVehicleSchema } from "./vehicles.js";
 
 export const motionStates = ["idle", "walk", "jog", "sprint", "sit", "wave", "dance", "drive"] as const;

@@ -4,6 +4,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Scene } from "@babylonjs/core/scene";
 import {
+  CLUBS,
   districtAt,
   insideBuilding,
   PLACES,
@@ -763,7 +764,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     const doorX = doorA[0] + (doorB[0] - doorA[0]) * doorT;
     const doorZ = doorA[1] + (doorB[1] - doorA[1]) * doorT;
     const frontRoad = roads.nearest(doorX + doorNx * 2, doorZ + doorNz * 2);
-    const commercialKinds = new Set(["shop", "food", "furniture", "job", "dealership", "mechanic"]);
+    const commercialKinds = new Set(["shop", "food", "furniture", "job", "dealership", "mechanic", "club"]);
     const onMainRoad = frontRoad && (frontRoad.road.kind === "primary" || frontRoad.road.kind === "tertiary" || frontRoad.road.kind === "primary_link") && frontRoad.distance < 32;
     const shopfront =
       (place && commercialKinds.has(place.kind)) ||
@@ -968,8 +969,9 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       }
       mullions.box(sx + doorNx * 0.08, 3.08, sz + doorNz * 0.08, width + 0.2, 0.26, 0.2, doorYaw, 1, undefined, true);
       const name = place?.name ?? SHOP_NAMES[Math.floor(hash(building.id * 37) * SHOP_NAMES.length)]!;
-      const signColor = SHOP_COLORS[Math.floor(hash(building.id * 19) * SHOP_COLORS.length)]!;
-      const uv = atlas.get(name, "shop", place ? place.street : undefined, signColor);
+      const club = place?.kind === "club" ? CLUBS[place.id] : undefined;
+      const signColor = club?.accent ?? SHOP_COLORS[Math.floor(hash(building.id * 19) * SHOP_COLORS.length)]!;
+      const uv = club ? atlas.get(name, "club", `Nightclub · ${place!.street}`, signColor) : atlas.get(name, "shop", place ? place.street : undefined, signColor);
       const signWidth = Math.min(width, 5.6);
       base.get(cx, cz, "concrete").box(sx + doorNx * 0.12, 3.75, sz + doorNz * 0.12, signWidth + 0.3, signWidth / SignAtlas.aspect + 0.25, 0.16, doorYaw, 1, [0.2, 0.2, 0.2], true);
       textQuad(base.get(cx, cz, "signs"), sx + doorNx * 0.205, 3.75, sz + doorNz * 0.205, doorYaw, signWidth, signWidth / SignAtlas.aspect, uv);

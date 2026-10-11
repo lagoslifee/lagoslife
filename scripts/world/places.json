@@ -15,5 +15,8 @@
   { "id": "grace-assembly", "kind": "worship", "name": "Grace Assembly Chapel", "building": 529444310, "street": "Awolowo Road" },
   { "id": "al-noor-mosque", "kind": "worship", "name": "Al-Noor Mosque", "building": 544005105, "street": "Akin Adesola Street" },
   { "id": "island-community-hall", "kind": "community", "name": "Island Community Hall", "building": 1530941546, "street": "Adeola Odeku Street" },
-  { "id": "muri-okunola-park", "kind": "park", "name": "Muri Okunola Park", "area": 224073907, "street": "Akin Adesola Street" }
+  { "id": "muri-okunola-park", "kind": "park", "name": "Muri Okunola Park", "area": 224073907, "street": "Akin Adesola Street" },
+  { "id": "admiralty-lounge", "kind": "club", "name": "Admiralty Lounge", "building": 1270253733, "street": "Admiralty Way" },
+  { "id": "awolowo-rooftop", "kind": "club", "name": "Awolowo Rooftop Club", "building": 625645017, "street": "Awolowo Road" },
+  { "id": "eko-nights", "kind": "club", "name": "Eko Nights", "building": 626132127, "street": "Adeola Odeku Street" }
 ]

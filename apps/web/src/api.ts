@@ -1,4 +1,4 @@
-import type { Citation, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
+import type { Citation, ClubMenuItem, ClubStatus, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -156,6 +156,10 @@ export const api = {
   community: () => request<CommunityStatus>("/api/community"),
   visitQuietPlace: (placeId: string) => post<QuietVisitResult>("/api/community/visit", { placeId }),
   volunteer: (placeId: string) => post<VolunteerResult>("/api/community/volunteer", { placeId }),
+  clubStatus: (placeId: string) => request<ClubStatus>(`/api/clubs/${placeId}`),
+  buyWristband: (placeId: string) => post<{ charged: number; balance: number; status: ClubStatus }>(`/api/clubs/${placeId}/wristband`),
+  clubOrder: (placeId: string, itemId: string) =>
+    post<{ replayed: boolean; item: ClubMenuItem; balance: number; needs: { hunger: number; energy: number } }>(`/api/clubs/${placeId}/order`, { itemId, idempotencyKey: crypto.randomUUID() }),
   standing: () => request<{ suspension: Suspension | null }>("/api/account/standing"),
   safety: () => request<SafetyStatus>("/api/safety"),
   block: (userName: string) => post<SafetyStatus>("/api/safety/block", { userName }),

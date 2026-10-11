@@ -1,5 +1,6 @@
 import {
   acquirePropertySchema,
+  clubOrderSchema,
   communityVisitSchema,
   completeJobRequestSchema,
   defaultAppearance,
@@ -67,6 +68,7 @@ import {
 import { createMultiplayerToken } from "./multiplayer-token.js";
 import { loadCharacter, saveAppearance } from "./profile-service.js";
 import { getCommunityStatus, visitQuietPlace, volunteerShift } from "./community-service.js";
+import { buyWristband, getClubStatus, orderAtBar } from "./club-service.js";
 import { z } from "zod";
 import {
   cancelDelivery,
@@ -404,6 +406,17 @@ export function configureRoutes(app: Express) {
 
   app.post("/api/community/volunteer", requirePlayer, rateLimited, guarded("Volunteer shift could not be recorded", (req, userId) =>
     volunteerShift(userId, communityVisitSchema.parse(req.body).placeId)));
+
+  app.get("/api/clubs/:placeId", requirePlayer, guarded("Club unavailable", (req, userId) =>
+    getClubStatus(userId, String(req.params.placeId))));
+
+  app.post("/api/clubs/:placeId/wristband", requirePlayer, rateLimited, guarded("Entry could not be paid", (req, userId) =>
+    buyWristband(userId, String(req.params.placeId))));
+
+  app.post("/api/clubs/:placeId/order", requirePlayer, rateLimited, guarded("Order could not be placed", (req, userId) => {
+    const { itemId, idempotencyKey } = clubOrderSchema.parse(req.body);
+    return orderAtBar(userId, String(req.params.placeId), itemId, idempotencyKey);
+  }));
 
   app.get("/api/account/standing", requireSession, guarded("Standing unavailable", async (_req, userId) => {
     const suspension = await activeSuspension(userId);

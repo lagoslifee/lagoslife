@@ -12,6 +12,8 @@ export class CityAudio {
   private traffic: BiquadFilterNode | null = null;
   private settings: PlayerSettings;
   private nextHorn = 0;
+  private wantedClub: { bpm: number } | null = null;
+  private club: { bpm: number; gain: GainNode; nextStep: number; step: number } | null = null;
 
   constructor(settings: PlayerSettings) {
     this.settings = settings;
@@ -52,6 +54,7 @@ export class CityAudio {
     this.traffic.connect(this.ambience);
     noise.start();
     this.apply(this.settings);
+    if (this.wantedClub) this.setClub(this.wantedClub);
   }
 
   apply(settings: PlayerSettings) {
@@ -61,8 +64,76 @@ export class CityAudio {
     this.ambience.gain.value = settings.ambienceVolume * 0.5;
   }
 
+  /** Starts a synthesised four-on-the-floor groove for the club the player is in, or stops it with null. */
+  setClub(club: { bpm: number } | null) {
+    this.wantedClub = club;
+    if (this.club) {
+      const { gain } = this.club;
+      gain.gain.setTargetAtTime(0, this.context!.currentTime, 0.2);
+      setTimeout(() => gain.disconnect(), 1500);
+      this.club = null;
+    }
+    if (!club || !this.context || !this.master) return;
+    const gain = this.context.createGain();
+    gain.gain.value = 0.5;
+    gain.connect(this.master);
+    this.club = { bpm: club.bpm, gain, nextStep: this.context.currentTime + 0.1, step: 0 };
+  }
+
+  private scheduleClub() {
+    const context = this.context;
+    const club = this.club;
+    if (!context || !club) return;
+    const sixteenth = 60 / club.bpm / 4;
+    const bass = [55, 55, 65.4, 49];
+    while (club.nextStep < context.currentTime + 0.25) {
+      const at = club.nextStep;
+      const step = club.step % 16;
+      if (step % 4 === 0) this.tone(club.gain, "sine", 120, 45, at, 0.22, 0.9);
+      if (step % 4 === 2) this.noiseHit(club.gain, at, 0.05, 0.18);
+      if (step === 3 || step === 6 || step === 11 || step === 14) this.tone(club.gain, "triangle", 330, 300, at, 0.08, 0.12);
+      if (step % 8 === 0 || step === 10) this.tone(club.gain, "sawtooth", bass[Math.floor(club.step / 16) % 4]!, bass[Math.floor(club.step / 16) % 4]!, at, sixteenth * 3, 0.16);
+      club.nextStep += sixteenth;
+      club.step += 1;
+    }
+  }
+
+  private tone(out: AudioNode, type: OscillatorType, from: number, to: number, at: number, length: number, volume: number) {
+    const context = this.context!;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(from, at);
+    oscillator.frequency.exponentialRampToValueAtTime(to, at + length);
+    gain.gain.setValueAtTime(volume, at);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + length);
+    oscillator.connect(gain);
+    gain.connect(out);
+    oscillator.start(at);
+    oscillator.stop(at + length + 0.02);
+  }
+
+  private noiseHit(out: AudioNode, at: number, length: number, volume: number) {
+    const context = this.context!;
+    const buffer = context.createBuffer(1, Math.ceil(context.sampleRate * length), context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < data.length; index += 1) data[index] = (Math.random() * 2 - 1) * (1 - index / data.length);
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    const filter = context.createBiquadFilter();
+    filter.type = "highpass";
+    filter.frequency.value = 6000;
+    const gain = context.createGain();
+    gain.gain.value = volume;
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(out);
+    source.start(at);
+  }
+
   /** Called each frame with how busy the surroundings are (0 indoors, 1 on Admiralty Way). */
   update(now: number, busyness: number) {
+    this.scheduleClub();
     if (!this.context || !this.traffic || !this.ambience) return;
     this.traffic.frequency.value = 220 + busyness * 520;
     this.ambience.gain.value = this.settings.ambienceVolume * (0.12 + busyness * 0.45);

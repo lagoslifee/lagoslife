@@ -9,6 +9,7 @@ import { FullMap, Minimap } from "./MapView";
 import { currentObjective, housingPath, type HousingPath } from "./objectives";
 import { Welcome } from "./Welcome";
 import { Phone, type PhoneApp } from "./Phone";
+import { ClubBarSheet, ClubDoorSheet } from "./ClubSheets";
 import { COMMUNITY_KINDS, CommunitySheet } from "./CommunitySheets";
 import { PlaceSheet } from "./Sheets";
 import { PlotSheet } from "./PlotSheet";
@@ -74,6 +75,7 @@ export function GameView({
   const [subtitle, setSubtitle] = useState<{ text: string; kind: "speech" | "sound" } | null>(null);
   const [sheet, setSheet] = useState<Place | null>(null);
   const [plotSheet, setPlotSheet] = useState<string | null>(null);
+  const [clubBar, setClubBar] = useState<Place | null>(null);
   const [plots, setPlots] = useState<PlotState[]>([]);
   const [phone, setPhone] = useState<PhoneApp | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
@@ -380,6 +382,7 @@ export function GameView({
     const onKey = (event: KeyboardEvent) => {
       if (event.code !== "Escape") return;
       if (plotSheet) setPlotSheet(null);
+      else if (clubBar) setClubBar(null);
       else if (sheet) setSheet(null);
       else if (mapOpen) setMapOpen(false);
       else if (phone) setPhone(null);
@@ -387,7 +390,7 @@ export function GameView({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sheet, plotSheet, mapOpen, phone, helpOpen]);
+  }, [sheet, plotSheet, clubBar, mapOpen, phone, helpOpen]);
 
   const moving = (hud?.speed ?? 0) > 1;
   useEffect(() => {
@@ -439,6 +442,11 @@ export function GameView({
         .catch((error: Error) => toast({ tone: "error", text: error.message }));
     } else if (interaction.spot === "storage") {
       setPhone("property");
+    } else if (interaction.spot === "bar" && propertyId) {
+      const place = propertyPlace(propertyId);
+      if (place?.kind === "club") setClubBar(place);
+    } else if (interaction.spot === "dance") {
+      engine?.playEmote("dance");
     }
   };
 
@@ -721,7 +729,13 @@ export function GameView({
       {sheet && COMMUNITY_KINDS.has(sheet.kind) && (
         <CommunitySheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} />
       )}
-      {sheet && sheet.kind !== "dealership" && sheet.kind !== "mechanic" && !COMMUNITY_KINDS.has(sheet.kind) && (
+      {sheet?.kind === "club" && (
+        <ClubDoorSheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} onEnter={() => engine?.enterProperty(sheet.id, "enter")} />
+      )}
+      {clubBar && hud?.propertyId === clubBar.id && (
+        <ClubBarSheet place={clubBar} economy={economy} onClose={() => setClubBar(null)} onRefresh={refresh} onToast={toast} />
+      )}
+      {sheet && sheet.kind !== "dealership" && sheet.kind !== "mechanic" && sheet.kind !== "club" && !COMMUNITY_KINDS.has(sheet.kind) && (
         <PlaceSheet
           place={sheet}
           economy={economy}

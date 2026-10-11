@@ -3,7 +3,7 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { Scene } from "@babylonjs/core/scene";
 
-export type SignStyle = "street" | "shop" | "rent" | "sale" | "bus" | "plate" | "danfo";
+export type SignStyle = "street" | "shop" | "rent" | "sale" | "bus" | "plate" | "danfo" | "club";
 
 export type UvRect = { u0: number; v0: number; u1: number; v1: number };
 
@@ -21,6 +21,7 @@ const palettes: Record<SignStyle, { bg: string; fg: string; border?: string; fon
   bus: { bg: "#f2c230", fg: "#1a1a1a", font: "800 38px Inter, Arial, sans-serif" },
   plate: { bg: "#1f2422", fg: "#f4e9c9", font: "700 36px Inter, Arial, sans-serif" },
   danfo: { bg: "#151515", fg: "#ffcf3a", font: "800 42px Inter, Arial, sans-serif" },
+  club: { bg: "#14091f", fg: "#ffffff", border: "#ffffff", font: "italic 900 46px Inter, Arial, sans-serif" },
 };
 
 /**
