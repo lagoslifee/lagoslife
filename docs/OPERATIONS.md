@@ -263,6 +263,50 @@ docker compose -f docker-compose.prod.yml --env-file .env.production \
   exec -T postgres pg_restore -U lagos -d restore_check < backup.dump
 ```
 
+Rotating backups without Docker (keeps the newest 48 by default, `KEEP=` to change):
+
+```bash
+DATABASE_URL=postgresql://... scripts/ops/backup.sh          # one backup into ./backups
+DATABASE_URL=postgresql://... scripts/ops/backup.sh 3600     # every hour, in tmux
+```
+
+## Crashes, restarts and recovery
+
+- **Health.** `GET /api/health` answers while the process is up. `GET /api/health/deep` also pings the database
+  (503 if it does not answer within 3 s) and reports instances, players, uptime, memory and errors since start.
+- **Server crash log.** Uncaught exceptions and unhandled promise rejections are appended as JSON lines to
+  `apps/server/logs/server.log` (`LOG_DIR` to change; rotated at 5 MB). An uncaught exception exits the process on
+  purpose, because its state is unknown after one; a rejected promise is logged and the server keeps running.
+- **Browser reports.** Clients post errors, WebGL context loss and recovery, disconnects (with close code and whether
+  the phone was offline or backgrounded), sustained frame rates under 15 fps, and "previous session ended without
+  closing" (a likely tab kill) to `POST /api/diagnostics`. They land in `apps/server/logs/client.log`, limited to
+  30 reports per address per 10 minutes. Nothing personal beyond the account id and browser user agent is stored.
+- **Controlled restarts.** Run the server under `scripts/ops/supervise.sh <command>`: it restarts after any exit and
+  backs off up to 60 s if the process dies on start-up. Restarts are logged to `logs/supervisor.log`.
+- **What a restart does not lose or repeat.** Money, tickets, bookings, rides, tows and purchases are written in single
+  database transactions keyed by an idempotency key, so a request is either fully saved or not at all, and a client
+  retry after a restart returns the original result instead of charging again. Positions are saved every few seconds and
+  on leave, never on browser-close events. On rejoin, players are put back on their saved trip stage (in the air,
+  at the arrival airport, in the hotel); a flight that landed while they were away puts them at the arrival airport.
+  In-progress tows and rides are reloaded from the database. What *is* lost: the last few seconds of walking, NPC and
+  traffic positions, and an unfinished boarding window (passengers who had boarded keep their seat and land normally).
+- **Restore after a bad deploy or data loss.** Stop the server, restore the newest good dump into a scratch database,
+  check it, then restore over the live one:
+
+  ```bash
+  createdb restore_check && pg_restore --no-owner -d restore_check backups/lagos-<time>.dump
+  psql restore_check -c "select count(*) from player_profile"      # sanity check
+  dropdb lagos_living && createdb lagos_living && pg_restore --no-owner -d lagos_living backups/lagos-<time>.dump
+  ```
+
+### Testing tunnel (Cursor VM + Netlify)
+
+The test server is reached through a Cloudflare *quick* tunnel, which Cloudflare can drop at any time; the address
+then stops working ("Could not enter Lagos" / guest session failed). `scripts/ops/tunnel-watchdog.sh <web-origin>`,
+run in tmux, notices within about three minutes, starts a new tunnel, restarts the server with the new address and
+pushes `netlify.toml` to `main`, after which Netlify rebuilds in about a minute. A named Cloudflare tunnel or the
+Render server (`render.yaml`) avoids this entirely.
+
 ## Secrets
 
 - `.env`, `.env.*` (except `.env.production.example`) and `apps/server/.env`
