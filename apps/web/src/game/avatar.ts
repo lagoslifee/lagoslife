@@ -54,6 +54,13 @@ export function appearanceFor(seed: number): CharacterAppearance {
   };
 }
 
+/** Lagos Living Ride drivers wear the yellow-and-black company uniform and cap; the face and body vary by ride. */
+export function taxiDriverLook(rideKey: string): CharacterAppearance {
+  let seed = 0;
+  for (let index = 0; index < rideKey.length; index += 1) seed = (Math.imul(seed, 31) + rideKey.charCodeAt(index)) >>> 0;
+  return { ...appearanceFor(seed % 10_000), outfit: "taxi-uniform", accessory: "cap" };
+}
+
 export class AvatarFactory {
   private constructor(private readonly containers: Record<Body, AssetContainer>, readonly scene: Scene) {}
 

@@ -64,6 +64,7 @@ import {
   type SelfState,
   type Vec2,
   RIDE,
+  rideFare,
   TOW,
   walkable,
   BIKE_RENTAL,
@@ -84,7 +85,8 @@ import { PlotsView } from "./plots";
 import { MultiplayerConnection, type MultiplayerStatus, type PoliceEvent } from "../multiplayer";
 import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, MAX_AUTO_SCALING, qualityStep } from "./adaptive-quality";
 import { CityAudio } from "./audio";
-import { appearanceFor, Avatar, AvatarFactory } from "./avatar";
+import { appearanceFor, Avatar, AvatarFactory, taxiDriverLook } from "./avatar";
+import { addTaxiLivery } from "./taxi-livery";
 import { CarController } from "./car-controller";
 import { VehicleFactory, type VehicleView } from "./vehicles";
 import { guide, type Guidance, type RoutePlan } from "./navigation";
@@ -318,6 +320,7 @@ export class GameEngine {
   private cameraReach = 0;
   /** Police have waved the car down: it brakes to a halt until the driver complies or floors it. */
   private flaggedDown = false;
+  private transfer: { el: HTMLDivElement; shownAt: number; arrivedAt: number | null } | null = null;
   private carPilot: {
     path: Vec2[];
     index: number;
@@ -778,7 +781,9 @@ export class GameEngine {
         const tag = document.createElement("div");
         tag.className = "world-tag vehicle-tag";
         this.overlay.appendChild(tag);
-        entry = { view, state, tag, driver: state.npc && this.avatars ? this.avatars.create(`driver ${state.id}`) : null, rig: null };
+        const taxi = state.id.startsWith("ride-");
+        if (taxi) addTaxiLivery(view);
+        entry = { view, state, tag, driver: state.npc && this.avatars ? this.avatars.create(`driver ${state.id}`, taxi ? taxiDriverLook(state.id) : undefined) : null, rig: null };
         this.vehicles.set(state.id, entry);
         view.setPose(state.x, this.world.groundHeight(state.x, state.z), state.z, state.yaw);
       }
@@ -1012,7 +1017,7 @@ export class GameEngine {
     this.updateGates(x, z);
     if (!this.interior) {
       this.world.stream(x, z);
-      this.world.pump(this.readyFired ? 8 : 200);
+      this.world.pump(!this.readyFired ? 200 : this.transfer ? 40 : 8);
       this.life?.update(dt, [x, z], [...this.buses.values()], now * 0.001);
       this.world.updateDetail(this.camera.position.x, this.camera.position.z);
     }
@@ -1024,6 +1029,7 @@ export class GameEngine {
       this.updateInteractions(bus);
     }
     this.updateWaypoint(now);
+    this.updateTransfer(now);
     this.updateTags();
     const busy = this.interior ? 0 : Math.max(0, 1 - (this.world.roads.nearest(x, z, (road) => road.kind === "primary")?.distance ?? 200) / 90);
     this.audio.update(now, busy);
@@ -1706,6 +1712,7 @@ export class GameEngine {
   private onSelf(self: SelfState) {
     const previous = this.self;
     this.self = self;
+    if (this.transfer && !this.transfer.arrivedAt && (self.reason === "teleported" || self.reason === "parked" || self.reason === "travelled")) this.transfer.arrivedAt = performance.now();
     if (self.reason === "alighted" && previous?.busId) this.justAlighted = { busId: previous.busId, at: performance.now() };
     const enteringInterior = self.location !== "street" && (!previous || previous.location !== self.location);
     const leavingInterior = self.location === "street" && this.interior;
@@ -1730,7 +1737,7 @@ export class GameEngine {
     }
     if (!self.busId) {
       this.controller.teleport(self.x, self.z);
-      if (self.reason === "alighted" || self.reason === "exited" || self.reason === "recovered" || self.reason === "parked" || !previous) this.snapCamera();
+      if (self.reason === "alighted" || self.reason === "exited" || self.reason === "recovered" || self.reason === "parked" || self.reason === "teleported" || !previous) this.snapCamera();
     }
     if (self.reason === "entered" || self.reason === "preview") {
       this.cameraYaw = 0;
@@ -2078,6 +2085,22 @@ export class GameEngine {
     return { pickup, dropoff, plan, indoors: Boolean(this.interior), aboard: Boolean(this.self?.busId || this.driving || this.passenger) };
   }
 
+  /** Fare, trip length and any reason a ride to `destination` cannot be booked from here. */
+  rideOffer(destination: Vec2, label: string) {
+    const result = this.rideQuote(destination);
+    const straight = Math.hypot(result.dropoff.point[0] - result.pickup.point[0], result.dropoff.point[1] - result.pickup.point[1]);
+    let problem: string | null = null;
+    if (result.indoors) problem = "You're indoors. Step out to the street first: the driver arrives about 10 seconds after you book from the kerb, and the timer only starts then.";
+    else if (result.aboard) problem = "Get out of your current vehicle before booking.";
+    else if (result.pickup.distance > RIDE.pickupRange) problem = `You are ${Math.round(result.pickup.distance)} m from the nearest road. Walk to a street so the driver can reach you.`;
+    else if (!result.plan.reachable) problem = `No road connects here with ${label}. Try the danfo, or walk.`;
+    else if (result.dropoff.distance > 400) problem = `${label} is ${Math.round(result.dropoff.distance)} m from any road, so a car cannot get there.`;
+    else if (straight < RIDE.minMetres) problem = `${label} is a short walk away (${Math.round(straight)} m).`;
+    else if (straight > RIDE.maxMetres) problem = `${label} is outside the service area.`;
+    const metres = Math.min(straight * RIDE.maxRoadFactor, Math.max(straight, result.plan.metres));
+    return { ...result, problem, metres, fare: rideFare(metres), tripSeconds: metres / (RIDE.driverSpeed * 0.75), walkAfter: result.dropoff.distance };
+  }
+
   requestTow(vehicleId: string, destination: TowDestination) {
     this.net.send("towRequest", { vehicleId, destination, idempotencyKey: crypto.randomUUID() });
   }
@@ -2086,7 +2109,7 @@ export class GameEngine {
     this.net.send("towCancel", { towId });
   }
 
-  bookRide(destination: Vec2, label: string) {
+  bookRide(destination: Vec2, label: string, express = false) {
     const quote = this.rideQuote(destination);
     // Park on the kerb side of the road, not the centre line.
     const side = 2.6;
@@ -2099,8 +2122,41 @@ export class GameEngine {
       destination,
       label,
       roadMetres: Math.round(quote.plan.metres),
+      express,
       idempotencyKey: crypto.randomUUID(),
     });
+    if (express) this.beginTransfer(label);
+  }
+
+  /** Skips the rest of the current ride: the screen fades while the rider is placed at the drop-off. */
+  skipRide() {
+    if (!this.ride || !["approaching", "waiting", "riding"].includes(this.ride.status)) return;
+    this.net.send("rideSkip");
+    this.beginTransfer(this.ride.label);
+  }
+
+  private beginTransfer(label: string) {
+    this.transfer?.el.remove();
+    const el = document.createElement("div");
+    el.className = "transfer-veil";
+    el.setAttribute("data-testid", "transfer-veil");
+    el.innerHTML = `<span class="transfer-car" aria-hidden="true">🚕</span><strong></strong><small>Lagos Living Ride express</small>`;
+    el.querySelector("strong")!.textContent = `Heading to ${label}…`;
+    this.overlay.appendChild(el);
+    this.transfer = { el, shownAt: performance.now(), arrivedAt: null };
+  }
+
+  /** Lifts the veil once the player has been moved and the tiles around them are built, or gives up after a few seconds. */
+  private updateTransfer(now: number) {
+    const transfer = this.transfer;
+    if (!transfer) return;
+    const age = now - transfer.shownAt;
+    const settled = transfer.arrivedAt !== null && (this.interior || this.world.pendingNear() === 0) && age > 900;
+    const timedOut = transfer.arrivedAt === null ? age > 6_000 : now - transfer.arrivedAt > 6_000;
+    if (!settled && !timedOut) return;
+    this.transfer = null;
+    transfer.el.classList.add("leaving");
+    setTimeout(() => transfer.el.remove(), 400);
   }
 
   /** Cancels before boarding, or asks the driver to pull over and end the trip early. */
@@ -2152,9 +2208,10 @@ export class GameEngine {
     const along = [0];
     for (let index = 1; index < path.length; index += 1) along.push(along[index - 1]! + Math.hypot(path[index]![0] - path[index - 1]![0], path[index]![1] - path[index - 1]![1]));
     const view = this.vehicleFactory.create(`ride-approach-${ride.id}`, ride.modelId, ride.colour);
+    addTaxiLivery(view);
     this.addCaster(view.meshes);
     view.setLights(true);
-    this.rideApproach = { rideId: ride.id, view, driver: this.avatars ? this.avatars.create(`approach driver ${ride.id}`) : null, path, along, startAt: Date.now(), arrivesAt: ride.arrivesAt };
+    this.rideApproach = { rideId: ride.id, view, driver: this.avatars ? this.avatars.create(`approach driver ${ride.id}`, taxiDriverLook(`ride-${ride.id}`)) : null, path, along, startAt: Date.now(), arrivesAt: ride.arrivesAt };
   }
 
   private updateRideApproach(dt: number) {
@@ -2196,7 +2253,7 @@ export class GameEngine {
       const car = new CarController(view.model);
       car.place(view.x, view.z, view.yaw);
       const plan = this.navigator.plan([view.x, view.z], ride.dropoff);
-      this.rideCar = { vehicleId: passenger.vehicleId, car, pilot: new RoutePilot(plan.points.slice(1), now, RIDE.driverSpeed), stopping: false, sentAt: 0 };
+      this.rideCar = { vehicleId: passenger.vehicleId, car, pilot: new RoutePilot(plan.points.slice(1), now, RIDE.driverSpeed, RIDE.laneOffset), stopping: false, sentAt: 0 };
     }
     const ridden = this.rideCar;
     const { car } = ridden;

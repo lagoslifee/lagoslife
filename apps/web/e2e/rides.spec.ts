@@ -100,6 +100,41 @@ test("books a Lagos Living Ride, boards, arrives, and gets a full refund for a q
   expect(errors).toEqual([]);
 });
 
+/** Express ride: the far side of town in a few seconds, charged once, with no car left behind. */
+test("takes an express ride across town in under five seconds", async ({ page }) => {
+  test.setTimeout(5 * 60_000);
+  await useLowGraphics(page);
+  await page.goto("/");
+  await waitForGame(page);
+  await resetProgress(page);
+  await page.reload();
+  await waitForGame(page);
+  const places = (await page.evaluate(() => window.__lagos.places())) as Place[];
+  const dealer = places.find((p) => p.id === "lekki-motors")!;
+  const mosque = places.find((p) => p.id === "al-noor-mosque")!;
+  await walk(page, dealer.kerb);
+  const before = (await apiGet<Economy>(page, "/api/economy")).balance;
+  const phone = page.getByRole("dialog", { name: "Phone" });
+  await page.getByRole("button", { name: "Open phone" }).click();
+  await phone.getByRole("button", { name: /Ride/ }).click();
+  await phone.getByTestId("ride-search").fill(mosque.name);
+  await phone.getByRole("button", { name: new RegExp(mosque.name) }).first().click();
+  await expect(phone.getByTestId("ride-quote")).toContainText("Fare");
+  const started = Date.now();
+  await phone.getByTestId("ride-express").click();
+  const done = await until(async () => {
+    const ride = await page.evaluate(() => window.__lagos.ride());
+    return ride?.status === "completed" ? ride : null;
+  }, 5_000, "express arrival");
+  const me = await state(page);
+  expect(Math.hypot(me.x - done.dropoff[0], me.z - done.dropoff[1])).toBeLessThan(45);
+  await expect(page.getByTestId("transfer-veil")).toHaveCount(0, { timeout: 8_000 });
+  console.log(`express arrival after ${Date.now() - started} ms`);
+  expect((await apiGet<Economy>(page, "/api/economy")).balance).toBe(before - done.fare);
+  expect((await page.evaluate(() => window.__lagos.vehicles())).some((v) => v.id.startsWith("ride-"))).toBe(false);
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/ride-express-arrived.png` });
+});
+
 /** Phone navigation: next-turn line on a real road route. */
 test("shows next-turn guidance on the road route", async ({ page }) => {
   test.setTimeout(4 * 60_000);

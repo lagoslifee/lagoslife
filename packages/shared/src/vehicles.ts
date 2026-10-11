@@ -282,7 +282,24 @@ const realModels: VehicleModel[] = REAL_CATALOGUE.filter((car) => REAL_VEHICLE_A
 
 const ASSETS: Record<string, VehicleAsset> = { ...VEHICLE_ASSETS, ...REAL_VEHICLE_ASSETS };
 
-export const VEHICLE_MODELS: VehicleModel[] = [...CATALOGUE, ...realModels].map((model) => {
+/**
+ * The catalogue figures are real-world-ish; the map is a compact Lagos, so motor vehicles run faster than life to
+ * keep any cross-town drive to a few minutes. Bicycles stay at their natural pace.
+ */
+export const SPEED_SCALE = { topSpeed: 2, acceleration: 1.8, braking: 1.35 } as const;
+
+function scaled(model: VehicleModel): VehicleModel {
+  if (model.body === "bicycle") return model;
+  return {
+    ...model,
+    topSpeed: model.topSpeed * SPEED_SCALE.topSpeed,
+    acceleration: model.acceleration * SPEED_SCALE.acceleration,
+    braking: model.braking * SPEED_SCALE.braking,
+  };
+}
+
+export const VEHICLE_MODELS: VehicleModel[] = [...CATALOGUE, ...realModels].map((base) => {
+  const model = scaled(base);
   const asset = ASSETS[model.id];
   if (!asset) return model;
   const { length, width, height, wheelbase, wheelRadius } = asset;

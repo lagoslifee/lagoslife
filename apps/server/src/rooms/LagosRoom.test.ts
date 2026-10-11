@@ -337,7 +337,7 @@ describe("LagosRoom driving", () => {
     const { room, ada, player } = withCar(20);
     vehicles.claimVehicle.mockResolvedValueOnce({ condition: 20 });
     await room.handleEnterVehicle(ada, { vehicleId: "car-1" });
-    drive(room, ada, 1, 18, 1);
+    drive(room, ada, 1, 36, 1);
     expect(player(ada).x).toBeCloseTo(parked.x);
   });
 

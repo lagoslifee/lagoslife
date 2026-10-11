@@ -31,7 +31,7 @@ describe("CarController", () => {
   it("brakes to a stop without rolling backwards, then reverses slowly", () => {
     const car = new CarController(saloon);
     car.speed = 15;
-    run(car, 15 / saloon.braking + 0.3, { throttle: -1, steer: 0 });
+    run(car, 15 / saloon.braking + 0.12, { throttle: -1, steer: 0 });
     expect(car.speed).toBeLessThanOrEqual(0);
     expect(car.speed).toBeGreaterThan(-1);
     run(car, 4, { throttle: -1, steer: 0 });

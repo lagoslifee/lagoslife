@@ -175,6 +175,7 @@ export class MultiplayerConnection {
       | "rideBoard"
       | "rideArrive"
       | "rideCancel"
+      | "rideSkip"
       | "rentBike"
       | "returnBike"
       | "towRequest"

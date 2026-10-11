@@ -143,7 +143,7 @@ export class AmbientLife {
       car.length = length;
       car.s = s;
       car.direction = road.oneway ? 1 : hash(Math.round(seed * 91)) > 0.5 ? 1 : -1;
-      car.cruise = road.kind === "primary" ? 11 : road.kind === "tertiary" ? 9 : 6.5;
+      car.cruise = road.kind === "primary" ? 21 : road.kind === "tertiary" ? 16 : 11;
       car.lane = road.kind === "primary" ? -1.9 : road.oneway ? 0 : Math.min(1.7, road.width / 4);
       car.speed = car.cruise * 0.6;
       return;
@@ -218,12 +218,13 @@ export class AmbientLife {
         return forward > 1 && forward < reach && lateral < width;
       };
       let target = car.cruise;
-      if (blockedBy(player[0], player[1], 1.7, 10)) target = 0;
-      for (const bus of buses) if (blockedBy(bus.root.position.x, bus.root.position.z, 2.0, 12)) target = 0;
+      const gap = car.speed * 0.9;
+      if (blockedBy(player[0], player[1], 1.7, 10 + gap)) target = 0;
+      for (const bus of buses) if (blockedBy(bus.root.position.x, bus.root.position.z, 2.0, 12 + gap)) target = 0;
       for (const other of this.cars) {
-        if (other !== car && blockedBy(other.view.x, other.view.z, 1.6, 7 + other.view.model.length / 2 + car.view.model.length / 2)) target = Math.min(target, 0);
+        if (other !== car && blockedBy(other.view.x, other.view.z, 1.6, 7 + gap + other.view.model.length / 2 + car.view.model.length / 2)) target = Math.min(target, 0);
       }
-      const accel = target > car.speed ? 2.5 : 7;
+      const accel = target > car.speed ? 4 : 9;
       car.speed += Math.max(-accel * dt, Math.min(accel * dt, target - car.speed));
       if (car.speed < 0.2 && target === 0) {
         car.stoppedFor += dt;

@@ -582,6 +582,7 @@ export function FullMap({
           }}>Centre on me</button>
           <button className="secondary" onClick={() => onNavigate(null)}>Clear route</button>
         </div>
+        <ExpressOffer engine={engine} onClose={onClose} />
         <ul className="map-legend">
           <li><i className="lg-b" /> Bus stop ({ROUTES.map((route) => route.routeNumber).join(", ")} · ₦{ROUTES[0]!.fare})</li>
           <li><i className="lg-route" /> Danfo route</li>
@@ -589,6 +590,38 @@ export function FullMap({
         </ul>
         <p className="attribution">Street names and geometry: {data.attribution}. Unnamed roads stay unnamed.</p>
       </div>
+    </div>
+  );
+}
+
+/** Under-five-second option: an express taxi to the current map pin, for the normal ride fare. */
+function ExpressOffer({ engine, onClose }: { engine: GameEngine; onClose: () => void }) {
+  const [, refresh] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => refresh((tick) => tick + 1), 700);
+    return () => clearInterval(timer);
+  }, []);
+  const pin = engine.currentWaypoint();
+  const pose = engine.pose();
+  const key = pin ? `${pin.label}|${pin.point.join()}|${Math.round(pose.x / 25)}|${Math.round(pose.z / 25)}|${pose.indoors}` : "";
+  const offer = useMemo(() => (pin ? engine.rideOffer(pin.point, pin.label) : null), [key]);
+  if (!pin || !offer) return <p className="muted small">Pick a place to set a route. You can then take an express taxi there in about 3 seconds.</p>;
+  return (
+    <div className="map-express" data-testid="map-express">
+      {offer.problem ? (
+        <p className="muted small">{offer.problem}</p>
+      ) : (
+        <button
+          className="primary"
+          data-testid="map-express-go"
+          onClick={() => {
+            engine.bookRide(pin.point, pin.label, true);
+            onClose();
+          }}
+        >
+          Express taxi to {pin.label} · ₦{offer.fare.toLocaleString("en-NG")} · 3 s
+        </button>
+      )}
     </div>
   );
 }

@@ -21,8 +21,15 @@ export const RIDE = {
   /** Driver waits this long at the pickup, then cancels with the no-show fee. */
   waitSeconds: 180,
   noShowFee: 300,
-  driverSpeed: 9,
+  /** Top cruising speed on straights (about 108 km/h); the driver slows for corners and the stop. */
+  driverSpeed: 30,
+  /** Drivers keep to the right-hand lane, this far right of the road's centreline. */
+  laneOffset: 1.8,
   modelId: "tokunbo-saloon",
+  /** Lagos taxi yellow, with a roof sign and a chequered stripe. */
+  colour: "#f2c230",
+  /** Skipping ahead puts the rider at the drop-off after this short transfer. */
+  skipSeconds: 3,
   boardRange: 7,
   /** Drop-off counts as arrived within this distance of the destination's road point. */
   arriveRange: 40,
@@ -42,6 +49,8 @@ export const rideBookSchema = z.object({
   destination: point,
   label: z.string().min(1).max(80),
   roadMetres: z.number().finite().min(0).max(60_000),
+  /** Express: same fare, but the rider is taken straight to the drop-off instead of riding along. */
+  express: z.boolean().default(false),
   idempotencyKey: z.uuid(),
 });
 export const rideCancelSchema = z.object({ reason: z.enum(["rider", "stuck"]).default("rider") });
