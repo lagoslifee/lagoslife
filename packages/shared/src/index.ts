@@ -3,7 +3,26 @@ import { z } from "zod";
 export const bodies = ["male", "female"] as const;
 export const skinTones = ["deep", "rich", "warm", "golden", "light"] as const;
 export const hairstyles = ["low-fade", "twists", "braids", "afro", "locs", "parted", "buns", "long"] as const;
-export const outfits = ["island-casual", "office-smart", "ankara-day", "athleisure", "ankara-dress", "office-skirt", "senator-kaftan"] as const;
+export const outfits = [
+  "island-casual",
+  "office-smart",
+  "ankara-day",
+  "athleisure",
+  "ankara-dress",
+  "office-skirt",
+  "senator-kaftan",
+  "taxi-uniform",
+  "kandura",
+  "abaya",
+  "resort-linen",
+  "beach-day",
+] as const;
+export type OutfitId = (typeof outfits)[number];
+/** Anyone can pick these in the character studio. */
+export const starterOutfits = ["island-casual", "office-smart", "ankara-day", "athleisure", "ankara-dress", "office-skirt", "senator-kaftan"] as const satisfies readonly OutfitId[];
+/** Sold in shops; wearable once owned (inventory item `outfit:<id>`). */
+export const shopOutfits = ["kandura", "abaya", "resort-linen", "beach-day"] as const satisfies readonly OutfitId[];
+export const isStarterOutfit = (outfit: string) => (starterOutfits as readonly string[]).includes(outfit);
 export const accessories = ["none", "glasses", "cap", "headwrap", "beard"] as const;
 
 /** Profiles saved before the body choice existed keep the male body they were shown with. */
@@ -62,6 +81,7 @@ export * from "./roads.js";
 export * from "./nightlife.js";
 export * from "./club-music.js";
 export * from "./police.js";
+export * from "./travel.js";
 import { worldVehicleSchema } from "./vehicles.js";
 
 export const motionStates = ["idle", "walk", "jog", "sprint", "sit", "wave", "dance", "drive"] as const;

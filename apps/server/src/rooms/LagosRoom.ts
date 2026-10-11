@@ -70,7 +70,50 @@ import {
   type SelfState,
   type NetworkPlayerWire,
   type WorldSnapshotWire,
+  travelEnterSchema,
+  travelCounterSchema,
+  travelTransferSchema,
+  activityBookSchema,
+  carRentSchema,
+  photoSchema,
+  TRAVEL,
+  TRAVEL_PLACES,
+  CONSULATE_NAME,
+  CABINS,
+  ACTIVITIES,
+  CAR_RENTAL,
+  hotelById,
+  hotelRoom,
+  travelSpot,
+  travelSpawn,
+  travelInteriorOf,
+  TRAVEL_LAYOUTS,
+  seatPoint,
+  seatLabel,
+  cabinSeats,
+  legRoute,
+  emptyTrip,
+  excursionSeat,
+  regionOf,
+  placeById,
+  type Leg,
+  type TripState,
+  type ActivityId,
+  type CabinClass,
+  type Place,
 } from "@lagos-living/shared";
+import {
+  advanceLeg,
+  tripRecord,
+  clearImmigration,
+  hotelAccess,
+  payActivity,
+  rentCar,
+  endCarRental,
+  liveCarRental,
+  recordPhoto,
+  travelEvents,
+} from "../travel-service.js";
 import { Client, Room, type AuthContext } from "@colyseus/core";
 import { schema, t, type SchemaType } from "@colyseus/schema";
 import { randomInt, randomUUID } from "node:crypto";
@@ -118,7 +161,7 @@ type LagosClient = Client & { auth: MultiplayerIdentity };
 
 export const BUS_CAPACITY = 14;
 const RIDE_DRIVERS = ["Tunde", "Chioma", "Emeka", "Aisha", "Segun", "Ngozi", "Ibrahim", "Folake", "Kelechi", "Bisi"];
-const RIDE_COLOURS = ["#d9d9d6", "#f2f2ee", "#101418", "#5b6770"];
+const DUBAI_DRIVERS = ["Rashid", "Imran", "Joseph", "Faisal", "Anil", "Omar", "Samuel", "Yusuf"];
 const BUS_CRUISE = 12.5;
 const BUS_ACCEL = 1.8;
 const BUS_BRAKE = 2.4;
@@ -193,7 +236,26 @@ type Player = {
   heldUp: { robberyId: string; robberSessionId: string; robberName: string; expiresAt: number } | null;
   /** True while this player is holding someone up, so they can't start a second one. */
   robbing: boolean;
+  trip: TripState;
 };
+
+type Flight = {
+  id: string;
+  leg: Leg;
+  departAt: number;
+  arriveAt: number;
+  seats: Map<string, { seat: string; cabin: CabinClass; partyId: string | null; name: string }>;
+};
+
+type Excursion = {
+  id: string;
+  activity: ActivityId;
+  startsAt: number;
+  endsAt: number;
+  riders: number;
+};
+
+const PHOTO_PLACES = new Set(["marina-photo-point", "ain-dubai-view", "jbr-beach", "marina-dhow-pier", "desert-camp"]);
 
 const SPEED_WINDOW_MS = 1_500;
 
@@ -252,6 +314,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private joinTickets = new Map<string, number>();
   private joinCounter = 0;
   private vehicles = new Map<string, RoomVehicle>();
+  private flights = new Map<string, Flight>();
+  private excursions = new Map<string, Excursion>();
   private tows = new TowDispatcher({
     vehicles: this.vehicles,
     owner: (userId) => {
@@ -283,6 +347,11 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private onAppearance = (userId: string, appearance: CharacterAppearance) => this.updateAppearance(userId, appearance);
   private onPlotsChanged = () => this.broadcast("plots", {});
   private onSecurityChanged = (userId: string) => void this.refreshGuards(userId);
+  private onTravelInvite = (userId: string, from: string) => {
+    const player = this.playerByUser(userId);
+    const client = player ? this.clientFor(player) : undefined;
+    if (client) this.notify(client, { tone: "info", text: `${from} invited you on their Dubai trip. Accept in Phone → Travel; you only pay if you accept.` });
+  };
 
   onAuth(_client: LagosClient, options: { token?: unknown }, _context: AuthContext) {
     return verifyMultiplayerToken(options.token);
@@ -296,6 +365,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     profileEvents.on("appearance", this.onAppearance);
     buildingEvents.on("changed", this.onPlotsChanged);
     securityEvents.on("changed", this.onSecurityChanged);
+    travelEvents.on("invite", this.onTravelInvite);
     try {
       await parkAbandonedVehicles();
       for (const vehicle of await loadStreetVehicles()) this.vehicles.set(vehicle.id, vehicle);
@@ -339,6 +409,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("rideBoard", (client) => this.handleRideBoard(client));
     this.onMessage("rideArrive", (client) => void this.handleRideArrive(client));
     this.onMessage("rideCancel", (client, payload) => void this.handleRideCancel(client, payload));
+    this.onMessage("rideSkip", (client) => void this.handleRideSkip(client));
     this.onMessage("testDrive", (client, payload) => this.handleTestDrive(client, payload));
     this.onMessage("towRequest", (client, payload) => void this.handleTowRequest(client, payload));
     this.onMessage("towCancel", (client, payload) => void this.handleTowCancel(client, payload));
@@ -349,6 +420,17 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("holdUp", (client, payload) => void this.handleHoldUp(client, payload));
     this.onMessage("robberyAnswer", (client, payload) => this.handleRobberyAnswer(client, payload));
     this.onMessage("requestLooks", (client) => this.sendLooks(client));
+    this.onMessage("travelEnter", (client, payload) => void this.handleTravelEnter(client, payload));
+    this.onMessage("travelCounter", (client, payload) => void this.handleTravelCounter(client, payload));
+    this.onMessage("travelTransfer", (client, payload) => this.handleTravelTransfer(client, payload));
+    this.onMessage("activityStart", (client, payload) => void this.handleActivityStart(client, payload));
+    this.onMessage("carRent", (client, payload) => void this.handleCarRent(client, payload));
+    this.onMessage("carReturn", (client) => void this.handleCarReturn(client));
+    this.onMessage("photo", (client, payload) => void this.handlePhoto(client, payload));
+    this.onMessage("requestTrip", (client) => {
+      const player = this.players.get(client.sessionId);
+      if (player) this.sendTrip(player);
+    });
     this.onMessage("emote", (client, payload) => {
       const player = this.players.get(client.sessionId);
       const parsed = emoteRequestSchema.safeParse(payload);
@@ -433,6 +515,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       lastCheckpointAt: 0,
       heldUp: null,
       robbing: false,
+      trip: emptyTrip(),
     };
     for (const [sessionId, existing] of this.players) {
       if (existing.userId === player.userId) {
@@ -449,12 +532,18 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     }
     this.players.set(client.sessionId, player);
     setPlayerPosition(player.userId, player.x, player.z, player.location);
+    const resumed = await this.resumeTravel(player).catch(() => undefined);
+    if (this.players.get(client.sessionId) !== player) return;
     this.sendLook(player, client.sessionId);
-    this.sendSelf(client, player, saved ? "Welcome back — progress restored." : "Welcome to Lekki Phase 1.");
+    this.sendTrip(player);
+    this.sendSelf(client, player, resumed ?? (saved ? "Welcome back — progress restored." : "Welcome to Lekki Phase 1."));
     client.send("bikeStock", Object.fromEntries(this.bikeStock));
     client.send("tows", this.tows.states(player.userId));
     const rental = await activeRental(player.userId).catch(() => null);
     if (rental && this.players.get(client.sessionId) === player) this.placeRentalBike(player, rental);
+    const hire = await liveCarRental(player.userId).catch(() => null);
+    const desk = placeById.get(TRAVEL_PLACES.carRental);
+    if (hire && desk && this.players.get(client.sessionId) === player) this.placeHireCar(player, hire.id, hire.modelId, hire.endsAt, desk);
   }
 
   /** Everyone's current look, asked for by a client once its message handlers are registered. */
@@ -490,7 +579,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       await this.allowReconnection(client, 25);
       player.connected = true;
       player.lastAcceptedAt = Date.now();
-      this.sendSelf(client, player, player.busId ? "Reconnected — you are still aboard." : "Reconnected.");
+      this.sendTrip(player);
+      this.sendSelf(client, player, player.busId ? "Reconnected — you are still aboard." : player.location.startsWith("flight:") ? "Reconnected — you're still on your flight." : "Reconnected.");
     } catch {
       if (this.players.get(client.sessionId) !== player) return;
       if (player.busId) {
@@ -523,6 +613,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     profileEvents.off("appearance", this.onAppearance);
     buildingEvents.off("changed", this.onPlotsChanged);
     securityEvents.off("changed", this.onSecurityChanged);
+    travelEvents.off("invite", this.onTravelInvite);
     await Promise.all(
       [...this.players.values()].map(async (player) => {
         await this.parkPlayerVehicle(player).catch(() => undefined);
@@ -584,6 +675,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (player.busId) return;
     if (player.entering) return;
     if (player.vehicleSeat && player.ride?.status !== "riding") return;
+    if (player.location.startsWith("flight:") || player.location.startsWith("excursion:")) return;
     const now = Date.now();
     const elapsed = Math.min(1.5, Math.max(0.03, (now - player.lastAcceptedAt) / 1_000));
     const vehicle = player.vehicleId ? this.vehicles.get(player.vehicleId) : undefined;
@@ -593,9 +685,11 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const allowed = topSpeed * 1.35 * elapsed + 0.75;
     const distance = Math.hypot(parsed.data.x - player.x, parsed.data.z - player.z);
     const inInterior = player.location !== "street";
+    const travelKind = inInterior ? travelInteriorOf(player.location) : null;
+    const half = travelKind ? TRAVEL_LAYOUTS[travelKind].half : INTERIOR_HALF;
     const valid = inInterior
-      ? Math.abs(parsed.data.x - INTERIOR_ORIGIN[0]) <= INTERIOR_HALF[0] &&
-        Math.abs(parsed.data.z - INTERIOR_ORIGIN[1]) <= INTERIOR_HALF[1]
+      ? Math.abs(parsed.data.x - INTERIOR_ORIGIN[0]) <= half[0] &&
+        Math.abs(parsed.data.z - INTERIOR_ORIGIN[1]) <= half[1]
       : walkable(parsed.data.x, parsed.data.z);
     if (distance > allowed || !valid) {
       client.send("correction", { x: player.x, z: player.z, yaw: player.yaw, sequence: parsed.data.sequence });
@@ -628,7 +722,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       if (distance > 0.05) player.heading = [(player.x - from[0]) / distance, (player.z - from[1]) / distance];
       player.driveMetres += distance;
       if (!vehicle.npc && !vehicle.tow && !player.vehicleSeat) this.watchCheckpoints(client, player, vehicle, now);
-      if (!vehicle.testDrive && !vehicle.npc && !vehicle.rental && now - player.lastVehicleSaveAt > VEHICLE_SAVE_MS) {
+      if (!vehicle.testDrive && !vehicle.npc && !vehicle.rental && !vehicle.hire && now - player.lastVehicleSaveAt > VEHICLE_SAVE_MS) {
         const metres = player.driveMetres;
         player.driveMetres = 0;
         player.lastVehicleSaveAt = now;
@@ -821,6 +915,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private handleExitProperty(client: Client) {
     const player = this.players.get(client.sessionId);
     if (!player || player.location === "street") return;
+    const blocked = this.travelExitBlock(player);
+    if (blocked) return this.notify(client, { tone: "info", text: blocked });
+    const wasTravel = travelInteriorOf(player.location) !== null;
     player.location = "street";
     player.previewOnly = false;
     player.propertyId = null;
@@ -828,6 +925,10 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     player.lastAcceptedAt = Date.now();
     setPlayerPosition(player.userId, player.x, player.z, "street");
     void this.persist(player).catch(() => undefined);
+    if (wasTravel) {
+      player.trip = emptyTrip();
+      this.sendTrip(player);
+    }
     this.sendSelf(client, player, "exited");
   }
 
@@ -938,7 +1039,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       this.vehicles.delete(vehicleId);
       return vehicle;
     }
-    if (vehicle.rental) return vehicle;
+    if (vehicle.rental || vehicle.hire) return vehicle;
     await saveDrivingVehicle(vehicleId, vehicle, metres, true);
     return vehicle;
   }
@@ -1124,6 +1225,10 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (!walkable(dropoff[0], dropoff[1], 0.5) || Math.hypot(dropoff[0] - destination[0], dropoff[1] - destination[1]) > 400) {
       return fail(`No road reaches ${label}. Pick a place on the map near a street.`);
     }
+    const region = regionOf(pickup[0], pickup[1]);
+    if (region !== regionOf(dropoff[0], dropoff[1])) {
+      return fail(region === "dubai" ? `${label} is back in Lagos. Fly home from Dubai International (DXB).` : `${label} is in Dubai. Fly there from the Lagos airport terminal.`);
+    }
     const straight = Math.hypot(dropoff[0] - pickup[0], dropoff[1] - pickup[1]);
     if (straight < RIDE.minMetres) return fail(`${label} is a short walk from here.`);
     if (straight > RIDE.maxMetres) return fail(`${label} is outside the Lagos Living Ride service area.`);
@@ -1139,9 +1244,11 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       dropoff,
       label,
       fare,
-      driverName: RIDE_DRIVERS[randomInt(RIDE_DRIVERS.length)]!,
-      plate: `LLR ${100 + randomInt(900)} ${String.fromCharCode(65 + randomInt(26))}${String.fromCharCode(65 + randomInt(26))}`,
-      colour: RIDE_COLOURS[randomInt(RIDE_COLOURS.length)]!,
+      driverName: region === "dubai" ? DUBAI_DRIVERS[randomInt(DUBAI_DRIVERS.length)]! : RIDE_DRIVERS[randomInt(RIDE_DRIVERS.length)]!,
+      plate: region === "dubai"
+        ? `DXB ${String.fromCharCode(65 + randomInt(26))} ${10000 + randomInt(90000)}`
+        : `LLR ${100 + randomInt(900)} ${String.fromCharCode(65 + randomInt(26))}${String.fromCharCode(65 + randomInt(26))}`,
+      colour: RIDE.colour,
       modelId: RIDE.modelId,
       vehicleId: null,
       bookedAt: now,
@@ -1153,6 +1260,11 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const ride = player.ride;
     try {
       const balance = await chargeRide(player.userId, fare, label, idempotencyKey);
+      if (parsed.data.express) {
+        this.notify(client, { tone: "success", text: `Express ride booked: ₦${fare.toLocaleString("en-NG")} paid, balance ₦${balance.toLocaleString("en-NG")}.` });
+        await this.skipRide(player);
+        return;
+      }
       this.notify(client, { tone: "success", text: `Ride booked: ${ride.driverName} is on the way. Fare ₦${fare.toLocaleString("en-NG")} paid, balance ₦${balance.toLocaleString("en-NG")}.` });
       this.sendRide(player);
     } catch (error) {
@@ -1192,6 +1304,49 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       return this.notify(client, { tone: "error", text: "Not there yet." });
     }
     await this.endRide(player, "completed", `Arrived at ${ride.label}. Thanks for riding with Lagos Living Ride!`, "arrived");
+  }
+
+  private async handleRideSkip(client: Client) {
+    const player = this.players.get(client.sessionId);
+    if (!player || this.limited(player.actionRate, 4)) return;
+    await this.skipRide(player);
+  }
+
+  /**
+   * Takes the rider straight to the drop-off: the fare is already paid and nothing is refunded. The ride car
+   * goes away with the ride, so no vehicle is left behind or duplicated.
+   */
+  private async skipRide(player: Player) {
+    const ride = player.ride;
+    const client = this.clientFor(player);
+    if (!ride || !(ride.status === "approaching" || ride.status === "waiting" || ride.status === "riding")) return;
+    if (player.checkpoint || player.heldUp) {
+      if (client) this.notify(client, { tone: "error", text: "Deal with the situation here first." });
+      return;
+    }
+    const vehicle = ride.vehicleId ? this.vehicles.get(ride.vehicleId) : undefined;
+    const aboard = Boolean(vehicle && player.vehicleId === vehicle.id);
+    if (!aboard && (player.location !== "street" || player.busId || player.vehicleId)) {
+      if (client) this.notify(client, { tone: "error", text: "Step out onto the street first." });
+      return;
+    }
+    const [x, z] = ride.dropoff;
+    const now = Date.now();
+    if (vehicle && aboard) {
+      vehicle.x = x;
+      vehicle.z = z;
+    } else if (vehicle) {
+      this.vehicles.delete(vehicle.id);
+      ride.vehicleId = null;
+    }
+    [player.x, player.z] = [x, z];
+    player.lastAcceptedAt = now;
+    await this.endRide(player, "completed", `Arrived at ${ride.label}. Thanks for riding with Lagos Living Ride!`, "arrived");
+    if (!aboard) {
+      setPlayerPosition(player.userId, player.x, player.z, "street");
+      const latest = this.clientFor(player);
+      if (latest) this.sendSelf(latest, player, "teleported");
+    }
   }
 
   private async handleRideCancel(client: Client, payload: unknown) {
@@ -1419,6 +1574,10 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       if (!owner) return this.notify(client, { tone: "error", text: "That bike is hired by another resident." });
       if (vehicle.driverSessionId) return;
       return this.mountVehicle(client, player, vehicle, "Back on your hired bike. The meter is still running.");
+    }
+    if (vehicle.hire && owner && parsed.data.seat !== "passenger") {
+      if (vehicle.driverSessionId) return;
+      return this.mountVehicle(client, player, vehicle, "Back in your Dubai hire car.");
     }
     if (!owner && vehicle.locked) {
       return this.notify(client, { tone: "error", text: `This vehicle belongs to ${vehicle.ownerName}. It is locked.` });
@@ -1768,10 +1927,13 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const now = Date.now();
     this.state.tick = (this.state.tick + 1) >>> 0;
     this.tows.tick(seconds, now);
+    if (this.state.tick % 5 === 0 && this.flights.size) this.checkFlights(now);
     if (this.state.tick % 25 === 0) {
       this.checkTestDrives(now);
       this.checkRides(now);
       this.checkPolice(now);
+      this.checkExcursions(now);
+      this.checkHires(now);
     }
     for (const bus of this.buses) {
       const { route } = bus;
@@ -2022,6 +2184,469 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         text: outcome === "escaped" ? `${victim.name} ran off.` : `${victim.name} handed over ${money}. If they report you to the police, you'll have to give it back and pay a fine.`,
       });
     }
+  }
+
+
+  /* ---------- Travel: consulate, airports, flights, Dubai ---------- */
+
+  private sendTrip(player: Player) {
+    const client = this.clientFor(player);
+    if (client) client.send("trip", player.trip);
+  }
+
+  private playerByUser(userId: string) {
+    for (const player of this.players.values()) if (player.userId === userId) return player;
+    return null;
+  }
+
+  /** Puts a player into a travel interior (or seat) and tells them, trip state first so the right room is built. */
+  private moveInside(client: Client | undefined, player: Player, location: string, spawn: [number, number], returnPoint: [number, number], propertyId: string | null, previewOnly = false) {
+    player.returnPoint = [...returnPoint];
+    player.location = location;
+    player.previewOnly = previewOnly;
+    player.propertyId = propertyId;
+    [player.x, player.z] = spawn;
+    player.yaw = 0;
+    player.motion = location.startsWith("flight:") || location.startsWith("excursion:") ? "sit" : "idle";
+    player.lastAcceptedAt = Date.now();
+    setPlayerPosition(player.userId, player.x, player.z, location);
+    void this.persist(player).catch(() => undefined);
+    this.sendTrip(player);
+    if (client) this.sendSelf(client, player, previewOnly ? "preview" : "entered");
+  }
+
+  private travelExitBlock(player: Player) {
+    if (player.location.startsWith("flight:")) return "You're in the air. Sit back — you'll land in a moment, or press Skip flight.";
+    if (player.location.startsWith("excursion:")) return "The trip finishes in a few seconds.";
+    if (player.location === "airport:dxb" && player.trip.stage === "arrived" && !player.trip.immigrationDone) {
+      return "Pass immigration first: the desks are in the middle of the arrivals hall.";
+    }
+    return null;
+  }
+
+  private async handleTravelEnter(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = travelEnterSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
+    if (player.location !== "street" || player.busId) return;
+    const fail = (text: string) => this.notify(client, { tone: "error", text });
+    if (player.vehicleId) return fail("Park and step out first.");
+    const near = (placeId: string, range = 6) => {
+      const place = placeById.get(placeId);
+      return place && Math.hypot(player.x - place.door[0], player.z - place.door[1]) <= range ? place : null;
+    };
+    const { target } = parsed.data;
+    if (target === "consulate") {
+      const place = near(TRAVEL_PLACES.consulate);
+      if (!place) return fail(`Walk up to the door of the ${CONSULATE_NAME}.`);
+      player.trip = emptyTrip();
+      return this.moveInside(client, player, "consulate", travelSpawn("consulate"), place.door, place.id);
+    }
+    if (target === "rooftop") {
+      const place = near(TRAVEL_PLACES.rooftop, 8);
+      if (!place) return fail("Walk up to the Skyline rooftop lift lobby.");
+      player.trip = emptyTrip();
+      return this.moveInside(client, player, "rooftop", travelSpawn("rooftop"), place.door, place.id);
+    }
+    if (target === "airport") {
+      const lagos = near(TRAVEL_PLACES.lagosAirport, 8);
+      const dubai = lagos ? null : near(TRAVEL_PLACES.dubaiAirport, 8);
+      const place = lagos ?? dubai;
+      if (!place) return fail("Walk up to the terminal entrance.");
+      const record = await tripRecord(player.userId).catch(() => null);
+      if (player.location !== "street" || player.vehicleId) return;
+      const kind = lagos ? "airport-los" : "airport-dxb";
+      const exit = travelSpot(kind, "exit")!;
+      player.trip = { ...emptyTrip(), stage: "airport", ticketId: record?.ticketId ?? null, leg: lagos ? "outbound" : "return", immigrationDone: record?.immigrationDone ?? false };
+      return this.moveInside(client, player, lagos ? "airport:los" : "airport:dxb", [exit[0], exit[1] + 1.2], place.door, place.id);
+    }
+    const hotelId = parsed.data.hotelId ?? "";
+    const hotel = hotelById.get(hotelId);
+    const place = hotel ? near(hotelId, 8) : null;
+    if (!hotel || !place) return fail("Walk up to the hotel entrance.");
+    if (parsed.data.previewRoom) {
+      if (!hotelRoom(hotelId, parsed.data.previewRoom)) return fail("That room type isn't offered here.");
+      player.trip = { ...emptyTrip(), room: { hotelId, roomType: parsed.data.previewRoom, bookingId: null } };
+      return this.moveInside(client, player, `hotel:preview:${hotelId}:${player.userId}`, travelSpawn("hotel"), place.door, hotelId, true);
+    }
+    const bookingId = parsed.data.bookingId ?? "";
+    const access = bookingId ? await hotelAccess(player.userId, bookingId).catch(() => null) : null;
+    if (!access || access.hotelId !== hotelId) return fail("You need a booking here, or an invitation from a guest, to go up to a room.");
+    if (!access.checkedIn) return fail(access.owner ? "Check in at reception first to get your digital key." : "Your host hasn't checked in yet.");
+    if (player.location !== "street" || player.vehicleId) return;
+    player.trip = { ...emptyTrip(), room: { hotelId, roomType: access.roomType, bookingId } };
+    this.moveInside(client, player, `hotel:${bookingId}`, travelSpawn("hotel"), place.door, hotelId);
+  }
+
+  private async handleTravelCounter(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = travelCounterSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 4) || player.entering) return;
+    const fail = (text: string) => this.notify(client, { tone: "error", text });
+    const kind = travelInteriorOf(player.location);
+    const at = (spot: string) => {
+      const point = kind ? travelSpot(kind, spot) : null;
+      return Boolean(point && Math.hypot(player.x - point[0], player.z - point[1]) <= TRAVEL.counterRange + 0.4);
+    };
+    const action = parsed.data.action;
+    if (action === "skip") {
+      const flight = player.location.startsWith("flight:") ? this.flights.get(player.location.slice(7)) : undefined;
+      if (flight) await this.landPlayer(player, flight, true);
+      return;
+    }
+    if (kind !== "airport-los" && kind !== "airport-dxb") return;
+    const leg: Leg = kind === "airport-los" ? "outbound" : "return";
+    player.entering = true;
+    try {
+      if (action === "checkin") {
+        if (!at("checkin")) return fail("Walk up to the check-in counter.");
+        const result = await advanceLeg(player.userId, leg, "checked_in");
+        player.trip.ticketId = result.ticketId;
+        player.trip.leg = leg;
+        this.notify(client, { tone: "success", text: `Checked in for ${legRoute(leg).code} ${legRoute(leg).label} · ${CABINS[result.cabin].name} · ${seatLabel(result.seat)}. Bag tagged. Head to the gate.` });
+        this.sendTrip(player);
+      } else if (action === "lounge") {
+        if (!at("lounge")) return fail("Walk into the lounge.");
+        const record = await tripRecord(player.userId);
+        if (record?.cabin !== "business") return fail("The lounge is for Business tickets. Economy passengers can relax at the gate.");
+        this.notify(client, { tone: "success", text: "Welcome to the Business lounge. Help yourself to coffee, pastries and fresh juice while you wait." });
+      } else if (action === "board") {
+        if (!at("gate")) return fail("Walk up to the gate desk.");
+        await this.boardFlight(client, player, leg);
+      } else if (action === "immigration") {
+        if (kind !== "airport-dxb" || !at("immigration")) return fail("Walk up to an immigration desk.");
+        if (player.trip.stage !== "arrived") return fail("Immigration is for arriving passengers.");
+        const result = await clearImmigration(player.userId);
+        player.trip.immigrationDone = true;
+        const left = result.visitsLeft === null ? "" : ` · ${result.visitsLeft} visa visit${result.visitsLeft === 1 ? "" : "s"} left`;
+        this.notify(client, { tone: "success", text: `Welcome to Dubai! Passport stamped (game roleplay)${left}. Collect your bag at the belt, then head out to the pickup area.` });
+        this.sendTrip(player);
+      } else if (action === "baggage") {
+        if (kind !== "airport-dxb" || !at("baggage")) return fail("Walk up to the baggage belt.");
+        if (!player.trip.immigrationDone) return fail("Clear immigration before baggage reclaim.");
+        player.trip.bagCollected = true;
+        this.notify(client, { tone: "success", text: "Got your bag. Taxis, hire cars and hotel shuttles are outside the pickup doors." });
+        this.sendTrip(player);
+      }
+    } catch (error) {
+      fail(error instanceof EconomyError ? error.message : "The desk couldn't help right now. Try again.");
+    } finally {
+      player.entering = false;
+    }
+  }
+
+  private async boardFlight(client: Client, player: Player, leg: Leg) {
+    const record = await tripRecord(player.userId);
+    if (!record) throw new EconomyError("You don't have a ticket. Buy one at the ticket desk or in Phone → Travel.", 409);
+    const now = Date.now();
+    const party = record.partyId;
+    let flight = [...this.flights.values()].find((entry) => entry.leg === leg && entry.departAt > now + 1_500 && [...entry.seats.values()].some((seat) => seat.partyId === party));
+    flight ??= [...this.flights.values()].find((entry) => entry.leg === leg && entry.departAt > now + 1_500);
+    if (!flight) {
+      const departAt = now + TRAVEL.boardingSeconds * 1_000;
+      flight = { id: randomUUID(), leg, departAt, arriveAt: departAt + TRAVEL.flightSeconds * 1_000, seats: new Map() };
+      this.flights.set(flight.id, flight);
+    }
+    const taken = new Set([...flight.seats.entries()].filter(([userId]) => userId !== player.userId).map(([, entry]) => entry.seat));
+    const seat = !taken.has(record.seat) ? record.seat : cabinSeats(record.cabin).find((candidate) => !taken.has(candidate)) ?? record.seat;
+    await advanceLeg(player.userId, leg, "boarded", { id: flight.id, seat, departAt: flight.departAt, arriveAt: flight.arriveAt });
+    if (!player.location.startsWith("airport:")) return;
+    flight.seats.set(player.userId, { seat, cabin: record.cabin, partyId: party, name: player.name });
+    await this.endHire(player);
+    this.seatInFlight(client, player, flight, record.ticketId);
+    const route = legRoute(leg);
+    this.notify(client, { tone: "success", text: `Welcome aboard ${route.code} to ${leg === "outbound" ? "Dubai" : "Lagos"}. ${seatLabel(seat)}, ${CABINS[record.cabin].name}. Doors close in ${Math.max(1, Math.round((flight.departAt - now) / 1000))} s.` });
+    this.refreshFlightCompanions(flight);
+  }
+
+  private seatInFlight(client: Client | undefined, player: Player, flight: Flight, ticketId: string) {
+    const entry = flight.seats.get(player.userId)!;
+    const destination = placeById.get(flight.leg === "outbound" ? TRAVEL_PLACES.dubaiAirport : TRAVEL_PLACES.lagosAirport);
+    const route = legRoute(flight.leg);
+    player.trip = {
+      ...emptyTrip(),
+      stage: "boarded",
+      ticketId,
+      leg: flight.leg,
+      immigrationDone: player.trip.immigrationDone,
+      flight: { id: flight.id, code: route.code, label: route.label, cabin: entry.cabin, seat: entry.seat, departAt: flight.departAt, arriveAt: flight.arriveAt, companions: [] },
+    };
+    this.moveInside(client, player, `flight:${flight.id}`, seatPoint(entry.seat), destination?.door ?? getPlace("starter-home").door, null);
+  }
+
+  private refreshFlightCompanions(flight: Flight) {
+    for (const [userId, entry] of flight.seats) {
+      const player = this.playerByUser(userId);
+      if (!player?.trip.flight || player.trip.flight.id !== flight.id) continue;
+      player.trip.flight.companions = [...flight.seats.entries()].filter(([other, mate]) => other !== userId && mate.partyId === entry.partyId).map(([, mate]) => mate.name);
+      this.sendTrip(player);
+    }
+  }
+
+  /** Lands one passenger: at the flight's arrival time for everyone, or early when they skip. */
+  private async landPlayer(player: Player, flight: Flight, skipped = false) {
+    if (skipped) {
+      flight.seats.delete(player.userId);
+      await advanceLeg(player.userId, flight.leg, "flown").catch(() => undefined);
+    }
+    if (player.location !== `flight:${flight.id}`) return;
+    const outbound = flight.leg === "outbound";
+    const kind = outbound ? "airport-dxb" : "airport-los";
+    const place = placeById.get(outbound ? TRAVEL_PLACES.dubaiAirport : TRAVEL_PLACES.lagosAirport);
+    const spawn = outbound ? travelSpawn(kind) : travelSpot(kind, "gate")!;
+    const ticketId = player.trip.ticketId;
+    player.trip = { ...emptyTrip(), stage: outbound ? "arrived" : "airport", ticketId: outbound ? ticketId : null, leg: flight.leg, immigrationDone: !outbound };
+    const client = this.clientFor(player);
+    this.moveInside(client, player, outbound ? "airport:dxb" : "airport:los", outbound ? spawn : [spawn[0], spawn[1] - 1.5], place?.door ?? getPlace("starter-home").door, place?.id ?? null);
+    if (client) {
+      this.notify(client, outbound
+        ? { tone: "success", text: "Welcome to Dubai! Follow the signs: immigration, baggage, then the pickup area outside.", announcement: "Ladies and gentlemen, welcome to Dubai." }
+        : { tone: "success", text: "Welcome home to Lagos! Your home, cars and belongings are just as you left them.", announcement: "Welcome to Lagos." });
+    }
+    if (skipped) this.refreshFlightCompanions(flight);
+  }
+
+  private checkFlights(now: number) {
+    for (const [id, flight] of this.flights) {
+      if (now < flight.arriveAt) continue;
+      this.flights.delete(id);
+      for (const userId of flight.seats.keys()) {
+        const player = this.playerByUser(userId);
+        void advanceLeg(userId, flight.leg, "flown")
+          .catch(() => undefined)
+          .then(() => (player ? this.landPlayer(player, flight) : undefined));
+      }
+    }
+  }
+
+  /** On join: back into the same flight if it is still in the air, or into the arrivals hall if it landed meanwhile. */
+  private async resumeTravel(player: Player) {
+    const record = await tripRecord(player.userId).catch(() => null);
+    if (!record) return;
+    const now = Date.now();
+    const flown = record.flight && (record.flight.leg === "outbound" ? record.outbound : record.return) === "boarded" ? record.flight : null;
+    if (flown && flown.arriveAt > now) {
+      let flight = this.flights.get(flown.id);
+      if (!flight) {
+        flight = { id: flown.id, leg: flown.leg, departAt: flown.departAt, arriveAt: flown.arriveAt, seats: new Map() };
+        this.flights.set(flight.id, flight);
+      }
+      flight.seats.set(player.userId, { seat: flown.seat, cabin: record.cabin, partyId: record.partyId, name: player.name });
+      this.seatInFlight(undefined, player, flight, record.ticketId);
+      return "Reconnected — you're still on your flight.";
+    }
+    if (flown) await advanceLeg(player.userId, flown.leg, "flown").catch(() => undefined);
+    const landedIn = flown?.leg ?? (record.outbound === "flown" && !record.immigrationDone ? "outbound" : null);
+    if (landedIn === "outbound" && !record.immigrationDone) {
+      const place = placeById.get(TRAVEL_PLACES.dubaiAirport);
+      player.trip = { ...emptyTrip(), stage: "arrived", ticketId: record.ticketId, leg: "outbound" };
+      this.moveInside(undefined, player, "airport:dxb", travelSpawn("airport-dxb"), place?.door ?? player.returnPoint, place?.id ?? null);
+      return "Your flight landed while you were away. Welcome to Dubai — immigration is ahead.";
+    }
+    if (landedIn === "return") {
+      const place = placeById.get(TRAVEL_PLACES.lagosAirport);
+      player.trip = { ...emptyTrip(), stage: "airport", leg: "return", immigrationDone: true };
+      this.moveInside(undefined, player, "airport:los", travelSpot("airport-los", "gate")!, place?.door ?? player.returnPoint, place?.id ?? null);
+      return "Your flight landed while you were away. Welcome home to Lagos.";
+    }
+    return;
+  }
+
+  private async handleActivityStart(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = activityBookSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 4) || player.entering) return;
+    const fail = (text: string) => this.notify(client, { tone: "error", text });
+    if (player.location !== "street" || player.busId || player.vehicleId) return fail("Step out onto the street first.");
+    const { activity } = parsed.data;
+    const details = ACTIVITIES[activity];
+    const desks = activity === "desert-safari" ? [TRAVEL_PLACES.pier, TRAVEL_PLACES.desertCamp] : [TRAVEL_PLACES.pier];
+    const desk = desks.map((id) => placeById.get(id)).find((place) => place && Math.hypot(player.x - place.door[0], player.z - place.door[1]) <= 18);
+    if (!desk) return fail(`Book the ${details.name} at the Marina tours desk by the dhow pier.`);
+    player.entering = true;
+    try {
+      await payActivity(player.userId, activity, parsed.data.idempotencyKey);
+    } catch (error) {
+      return fail(error instanceof EconomyError && error.message.includes("Insufficient") ? `You need ₦${details.price.toLocaleString("en-NG")} for the ${details.name}.` : error instanceof EconomyError ? error.message : "The tour desk couldn't book that right now.");
+    } finally {
+      player.entering = false;
+    }
+    if (player.location !== "street" || player.vehicleId) return;
+    const now = Date.now();
+    let group = [...this.excursions.values()].find((entry) => entry.activity === activity && entry.startsAt > now);
+    if (!group) {
+      const startsAt = now + 4_000;
+      group = { id: randomUUID().slice(0, 8), activity, startsAt, endsAt: startsAt + details.seconds * 1_000, riders: 0 };
+      this.excursions.set(group.id, group);
+    }
+    const seatIndex = group.riders++;
+    const kind = activity === "dhow-cruise" ? "dhow" : "safari";
+    const seat = excursionSeat(kind, seatIndex);
+    const camp = placeById.get(TRAVEL_PLACES.desertCamp);
+    const pier = placeById.get(TRAVEL_PLACES.pier)!;
+    const back = activity === "desert-safari" && camp && walkable(camp.kerb[0], camp.kerb[1]) ? camp.kerb : pier.kerb;
+    player.trip = { ...emptyTrip(), excursion: { activity, startsAt: group.startsAt, endsAt: group.endsAt } };
+    this.moveInside(client, player, `excursion:${activity}:${group.id}`, seat.point, back, desk.id);
+    player.yaw = seat.yaw;
+    this.notify(client, { tone: "success", text: `${details.name} booked · ₦${details.price.toLocaleString("en-NG")}. ${activity === "dhow-cruise" ? "All aboard — we cast off in a few seconds." : "Hop in — the 4×4 is heading for the dunes."}` });
+  }
+
+  private checkExcursions(now: number) {
+    for (const [id, group] of this.excursions) if (now > group.endsAt + 5_000) this.excursions.delete(id);
+    for (const player of this.players.values()) {
+      const excursion = player.trip?.excursion;
+      if (!excursion || !player.location.startsWith("excursion:") || now < excursion.endsAt) continue;
+      const desert = excursion.activity === "desert-safari";
+      player.trip = emptyTrip();
+      player.location = "street";
+      player.propertyId = null;
+      player.motion = "idle";
+      [player.x, player.z] = player.returnPoint;
+      player.lastAcceptedAt = now;
+      setPlayerPosition(player.userId, player.x, player.z, "street");
+      void this.persist(player).catch(() => undefined);
+      const client = this.clientFor(player);
+      this.sendTrip(player);
+      if (!client) continue;
+      this.sendSelf(client, player, "exited");
+      this.notify(client, { tone: "success", text: desert ? "Welcome to the desert camp! Take photos by the camels, then ride the 4×4 back to the Marina from the camp." : "Back at the pier. Hope you enjoyed the cruise!" });
+    }
+  }
+
+  private handleTravelTransfer(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = travelTransferSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
+    if (player.location !== "street" || player.vehicleId || player.busId) return this.notify(client, { tone: "error", text: "Step out onto the street first." });
+    const camp = placeById.get(TRAVEL_PLACES.desertCamp);
+    const pier = placeById.get(TRAVEL_PLACES.pier);
+    if (!camp || !pier || Math.hypot(player.x - camp.door[0], player.z - camp.door[1]) > 40) return this.notify(client, { tone: "error", text: "The 4×4 back to the Marina leaves from the desert camp." });
+    [player.x, player.z] = pier.kerb;
+    player.lastAcceptedAt = Date.now();
+    setPlayerPosition(player.userId, player.x, player.z, "street");
+    void this.persist(player).catch(() => undefined);
+    this.sendSelf(client, player, "teleported");
+    this.notify(client, { tone: "success", text: "Back at the Marina." });
+  }
+
+  private async handlePhoto(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = photoSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 2)) return;
+    const spot = parsed.data.spot;
+    let valid = false;
+    if (player.location === "street") {
+      const place = placeById.get(spot);
+      valid = Boolean(place && PHOTO_PLACES.has(place.id) && Math.hypot(player.x - place.door[0], player.z - place.door[1]) <= 25);
+    } else {
+      valid = spot === player.location.split(":")[0];
+    }
+    if (!valid) return this.notify(client, { tone: "error", text: "Find a photo spot first: the Marina photo point, Ain Dubai view, JBR beach, the dhow pier, the desert camp or the rooftop." });
+    const companions = [...this.players.values()]
+      .filter((other) => other !== player && other.location === player.location && Math.hypot(other.x - player.x, other.z - player.z) <= 10)
+      .map((other) => other.name);
+    await recordPhoto(player.userId, spot, companions).catch(() => undefined);
+    client.send("photo", { spot, companions });
+    this.notify(client, { tone: "success", text: companions.length ? `Group photo with ${companions.join(", ")} saved to Phone → Travel.` : "Photo saved to Phone → Travel." });
+    for (const other of this.players.values()) {
+      if (other !== player && companions.includes(other.name)) {
+        const otherClient = this.clientFor(other);
+        if (otherClient) this.notify(otherClient, { tone: "info", text: `${player.name} took a group photo with you.` });
+      }
+    }
+  }
+
+  private async handleCarRent(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = carRentSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 4) || player.entering) return;
+    const fail = (text: string) => this.notify(client, { tone: "error", text });
+    if (player.location !== "street" || player.busId || player.vehicleId) return fail("Step out onto the street first.");
+    const desk = placeById.get(TRAVEL_PLACES.carRental);
+    if (!desk || Math.hypot(player.x - desk.door[0], player.z - desk.door[1]) > CAR_RENTAL.range) return fail("Hire cars are collected at the Dubai car hire desk.");
+    const model = vehicleModelById.get(parsed.data.modelId);
+    if (!model) return fail("That car isn't on the fleet.");
+    player.entering = true;
+    let hire: Awaited<ReturnType<typeof rentCar>>;
+    try {
+      hire = await rentCar(player.userId, model.id, parsed.data.hours, parsed.data.idempotencyKey);
+    } catch (error) {
+      return fail(error instanceof EconomyError ? (error.message.includes("Insufficient") ? "You don't have enough for that hire." : error.message) : "The desk couldn't hire you a car right now.");
+    } finally {
+      player.entering = false;
+    }
+    if (player.location !== "street" || player.vehicleId) return;
+    const vehicle = this.placeHireCar(player, hire.id, model.id, hire.endsAt, desk);
+    this.mountVehicle(client, player, vehicle, `${model.name} hired for ${parsed.data.hours} h. Return it at any time from Phone → Travel; it is collected automatically when the hire ends.`);
+  }
+
+  private placeHireCar(player: Player, hireId: string, modelId: string, endsAt: number, desk: Place) {
+    const id = `carhire-${hireId}`;
+    const existing = this.vehicles.get(id);
+    if (existing) return existing;
+    let spot: [number, number] = desk.kerb;
+    for (let index = 0; index < 12; index += 1) {
+      const candidate = kerbSlot(desk.kerb, desk.kerbYaw, index);
+      if ([...this.vehicles.values()].every((vehicle) => Math.hypot(vehicle.x - candidate[0], vehicle.z - candidate[1]) > 6)) {
+        spot = candidate;
+        break;
+      }
+    }
+    const model = getVehicleModel(modelId);
+    const vehicle: RoomVehicle = {
+      id,
+      ownerUserId: player.userId,
+      ownerName: `Dubai car hire · ${player.name}`,
+      modelId,
+      colour: model.colours[0]!,
+      plate: `DXB ${hireId.slice(0, 5).toUpperCase()}`,
+      condition: 100,
+      x: spot[0],
+      z: spot[1],
+      yaw: desk.kerbYaw,
+      driverSessionId: null,
+      lights: false,
+      locked: true,
+      hire: { id: hireId, endsAt },
+    };
+    this.vehicles.set(id, vehicle);
+    return vehicle;
+  }
+
+  private removeHireCar(vehicle: RoomVehicle) {
+    for (const player of this.players.values()) {
+      if (player.vehicleId !== vehicle.id || (player.vehicleSeat ?? 0) > 0) continue;
+      [player.x, player.z] = this.exitPoint(vehicle, 0);
+      player.vehicleId = null;
+      player.vehicleSeat = null;
+      player.motion = "idle";
+      player.lastAcceptedAt = Date.now();
+      setPlayerPosition(player.userId, player.x, player.z, "street");
+      const client = this.clientFor(player);
+      if (client) {
+        this.sendSelf(client, player, "parked");
+        this.notify(client, { tone: "info", text: "Your Dubai hire car has been returned." });
+      }
+    }
+    this.ejectPassengers(vehicle.id);
+    this.vehicles.delete(vehicle.id);
+  }
+
+  private async endHire(player: Player) {
+    const vehicle = [...this.vehicles.values()].find((entry) => entry.hire && entry.ownerUserId === player.userId);
+    if (!vehicle) return;
+    this.removeHireCar(vehicle);
+    await endCarRental(player.userId).catch(() => undefined);
+  }
+
+  private async handleCarReturn(client: Client) {
+    const player = this.players.get(client.sessionId);
+    if (!player || this.limited(player.actionRate, 4)) return;
+    await this.endHire(player);
+  }
+
+  private checkHires(now: number) {
+    for (const vehicle of [...this.vehicles.values()]) if (vehicle.hire && vehicle.hire.endsAt <= now) this.removeHireCar(vehicle);
   }
 
   private checkPolice(now: number) {

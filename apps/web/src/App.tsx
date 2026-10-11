@@ -3,9 +3,12 @@ import {
   bodies,
   defaultAppearance,
   hairstyles,
+  isStarterOutfit,
   outfits,
   skinTones,
+  starterOutfits,
   type CharacterAppearance,
+  type OutfitId,
 } from "@lagos-living/shared";
 import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 import { ACCESSORY_LABELS, BODY_LABELS, HAIR_LABELS, OUTFITS } from "./game/wardrobe";
@@ -196,6 +199,13 @@ function CharacterCreator({
 }) {
   const [appearance, setAppearance] = useState(initial);
   const [saving, setSaving] = useState(false);
+  const [wearable, setWearable] = useState<readonly OutfitId[]>(() => (isStarterOutfit(initial.outfit) ? starterOutfits : [...starterOutfits, initial.outfit]));
+  useEffect(() => {
+    void fetch(`${apiUrl}/api/wardrobe`, { credentials: "include", headers: authHeaders() })
+      .then((response) => (response.ok ? (response.json() as Promise<{ outfits: OutfitId[] }>) : null))
+      .then((body) => body && setWearable(body.outfits))
+      .catch(() => undefined);
+  }, []);
 
   async function save() {
     setSaving(true);
@@ -213,7 +223,7 @@ function CharacterCreator({
     ["Body", "body", bodies, BODY_LABELS],
     ["Skin tone", "skinTone", skinTones, null],
     ["Hair", "hairstyle", hairstyles, HAIR_LABELS],
-    ["Outfit", "outfit", outfits, Object.fromEntries(outfits.map((outfit) => [outfit, OUTFITS[outfit].label]))],
+    ["Outfit", "outfit", wearable, Object.fromEntries(outfits.map((outfit) => [outfit, OUTFITS[outfit].label]))],
     ["Accessory", "accessory", accessories, ACCESSORY_LABELS],
   ] as const;
 

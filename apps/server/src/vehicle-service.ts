@@ -400,6 +400,8 @@ export type RoomVehicle = {
   tow?: { carrying: { modelId: string; colour: string; plate: string } | null; lift: number };
   /** Hired from a bike station; billed per minute until returned to any dock. */
   rental?: { id: string; stationId: string; startedAt: number };
+  /** Dubai hire car: lives only in the room and is collected when the hire ends. */
+  hire?: { id: string; endsAt: number };
 };
 
 const roomColumns = `vehicle.id, vehicle.owner_user_id, vehicle.model_id, vehicle.colour, vehicle.plate,

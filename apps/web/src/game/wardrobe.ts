@@ -42,6 +42,11 @@ export const OUTFITS: Record<
   },
   "office-skirt": { label: "Blouse, navy skirt", top: { colour: "#f4efe9" }, longSleeves: true, trousers: null, skirt: { colour: "#273449" }, shoes: "#1c1c1e" },
   "senator-kaftan": { label: "Senator kaftan", top: { colour: "#e9e1cf" }, longSleeves: true, trousers: { colour: "#e9e1cf" }, skirt: { colour: "#e9e1cf" }, shoes: "#4b2d1d" },
+  "taxi-uniform": { label: "Taxi driver's shirt", top: { colour: "#f2c230", print: { colour: "#1a1a1a", accent: "#f2c230" } }, longSleeves: false, trousers: { colour: "#1b1c20" }, skirt: null, shoes: "#111111" },
+  kandura: { label: "White kandura", top: { colour: "#f7f6f1" }, longSleeves: true, trousers: { colour: "#f7f6f1" }, skirt: { colour: "#f7f6f1" }, shoes: "#8a6a48" },
+  abaya: { label: "Black abaya", top: { colour: "#16151a" }, longSleeves: true, trousers: null, skirt: { colour: "#16151a" }, shoes: "#2a2224" },
+  "resort-linen": { label: "Resort linen, white trousers", top: { colour: "#9fd3cf" }, longSleeves: false, trousers: { colour: "#f4f1ea" }, skirt: null, shoes: "#c9a36a" },
+  "beach-day": { label: "Beach shirt, swim shorts", top: { colour: "#ff7a5c", print: { colour: "#ffd166", accent: "#118ab2" } }, longSleeves: false, trousers: { colour: "#118ab2" }, skirt: null, shoes: "#f4f4f2" },
 };
 
 export const BODY_LABELS: Record<Body, string> = { male: "Male", female: "Female" };

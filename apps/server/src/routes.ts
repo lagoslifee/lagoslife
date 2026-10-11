@@ -15,6 +15,17 @@ import {
   placeFurnitureSchema,
   purchaseRequestSchema,
   saveCharacterSchema,
+  visaApplySchema,
+  ticketBuySchema,
+  ticketCancelSchema,
+  travelInviteSchema,
+  inviteAnswerSchema,
+  hotelBookSchema,
+  hotelBookingSchema,
+  hotelExtendSchema,
+  hotelGuestSchema,
+  hotelStoreSchema,
+  travelOrderSchema,
   garageVehicleSchema,
   vehicleLockSchema,
   purchaseVehicleSchema,
@@ -71,10 +82,26 @@ import {
   unblockPlayer,
 } from "./safety-service.js";
 import { createMultiplayerToken } from "./multiplayer-token.js";
-import { loadCharacter, saveAppearance } from "./profile-service.js";
+import { loadCharacter, saveAppearance, wardrobe } from "./profile-service.js";
 import { getCommunityStatus, visitQuietPlace, volunteerShift } from "./community-service.js";
 import { bookTable, buyWristband, getClubStatus, listTables, orderAtBar, orderBottle, setTableGuest } from "./club-service.js";
 import { dismissSecurity, getSecurityStatus, hireSecurity, policeRecords, reportRobbery } from "./police-service.js";
+import {
+  answerInvite,
+  applyVisa,
+  bookHotel,
+  buyTicket,
+  cancelTicket,
+  checkInHotel,
+  endHotelStay,
+  extendHotelStay,
+  inviteFriend,
+  moveStorage as moveHotelStorage,
+  orderTravelFood,
+  setHotelGuest,
+  travelEvents,
+  travelStatus,
+} from "./travel-service.js";
 import { z } from "zod";
 import {
   cancelDelivery,
@@ -297,8 +324,55 @@ export function configureRoutes(app: Express) {
 
   app.get("/api/character", requirePlayer, guarded("Character unavailable", (_req, userId) => loadCharacter(userId)));
 
+  app.get("/api/wardrobe", requirePlayer, guarded("Wardrobe unavailable", (_req, userId) => wardrobe(userId)));
   app.put("/api/character", requirePlayer, rateLimited, guarded("Character could not be saved", (req, userId) =>
     saveAppearance(userId, saveCharacterSchema.parse(req.body).appearance)));
+
+  app.get("/api/travel", requirePlayer, guarded("Travel unavailable", (_req, userId) => travelStatus(userId)));
+  app.post("/api/travel/visa", requirePlayer, rateLimited, guarded("Visa application failed", (req, userId) => {
+    const body = visaApplySchema.parse(req.body);
+    return applyVisa(userId, body.plan, body.idempotencyKey);
+  }));
+  app.post("/api/travel/ticket", requirePlayer, rateLimited, guarded("Ticket could not be bought", (req, userId) => {
+    const body = ticketBuySchema.parse(req.body);
+    return buyTicket(userId, body.cabin, body.idempotencyKey);
+  }));
+  app.post("/api/travel/ticket/cancel", requirePlayer, rateLimited, guarded("Ticket could not be cancelled", (req, userId) =>
+    cancelTicket(userId, ticketCancelSchema.parse(req.body).ticketId)));
+  app.post("/api/travel/invite", requirePlayer, rateLimited, guarded("Invitation failed", async (req, userId) => {
+    const body = travelInviteSchema.parse(req.body);
+    const result = await inviteFriend(userId, body.ticketId, body.userName);
+    travelEvents.emit("invite", result.friendId, (req as AuthenticatedRequest).player.name);
+    return result;
+  }));
+  app.post("/api/travel/invite/answer", requirePlayer, rateLimited, guarded("Invitation could not be answered", (req, userId) => {
+    const body = inviteAnswerSchema.parse(req.body);
+    return answerInvite(userId, body.inviteId, body.accept, body.idempotencyKey);
+  }));
+  app.post("/api/travel/hotel/book", requirePlayer, rateLimited, guarded("Booking failed", (req, userId) => {
+    const body = hotelBookSchema.parse(req.body);
+    return bookHotel(userId, body.hotelId, body.roomType, body.nights, body.idempotencyKey);
+  }));
+  app.post("/api/travel/hotel/checkin", requirePlayer, rateLimited, guarded("Check-in failed", (req, userId) =>
+    checkInHotel(userId, hotelBookingSchema.parse(req.body).bookingId)));
+  app.post("/api/travel/hotel/end", requirePlayer, rateLimited, guarded("Checkout failed", (req, userId) =>
+    endHotelStay(userId, hotelBookingSchema.parse(req.body).bookingId)));
+  app.post("/api/travel/hotel/extend", requirePlayer, rateLimited, guarded("Extension failed", (req, userId) => {
+    const body = hotelExtendSchema.parse(req.body);
+    return extendHotelStay(userId, body.bookingId, body.nights, body.idempotencyKey);
+  }));
+  app.post("/api/travel/hotel/guest", requirePlayer, rateLimited, guarded("Guest list unchanged", (req, userId) => {
+    const body = hotelGuestSchema.parse(req.body);
+    return setHotelGuest(userId, body.bookingId, body.userName, body.invited);
+  }));
+  app.post("/api/travel/hotel/storage", requirePlayer, rateLimited, guarded("Safe unavailable", (req, userId) => {
+    const body = hotelStoreSchema.parse(req.body);
+    return moveHotelStorage(userId, body.bookingId, body.itemId, body.direction);
+  }));
+  app.post("/api/travel/order", requirePlayer, rateLimited, guarded("Order failed", (req, userId) => {
+    const body = travelOrderSchema.parse(req.body);
+    return orderTravelFood(userId, body.menu, body.itemId, body.bookingId, body.idempotencyKey);
+  }));
 
   app.get("/api/economy", requirePlayer, async (req, res) => {
     const { userId } = (req as AuthenticatedRequest).player;

@@ -1,4 +1,4 @@
-import { accessories, characterAppearanceSchema, defaultAppearance, hairstyles, outfits, readAppearance, skinTones } from "@lagos-living/shared";
+import { accessories, characterAppearanceSchema, defaultAppearance, hairstyles, outfits, readAppearance, skinTones, starterOutfits } from "@lagos-living/shared";
 import { describe, expect, it } from "vitest";
 import { garmentSlots, OUTFITS, SKIN_TONE_COLOURS, skinTint } from "./appearance";
 import { appearanceFor } from "./avatar";
@@ -44,7 +44,7 @@ describe("populated residents", () => {
     expect(women).toBeLessThan(55);
     expect(new Set(looks.map((look) => look.skinTone)).size).toBe(skinTones.length);
     expect(new Set(looks.map((look) => look.hairstyle)).size).toBe(hairstyles.length);
-    expect(new Set(looks.map((look) => look.outfit)).size).toBe(outfits.length);
+    expect(new Set(looks.map((look) => look.outfit)).size).toBe(starterOutfits.length);
     expect(new Set(looks.map((look) => look.accessory)).size).toBe(accessories.length);
   });
 });
