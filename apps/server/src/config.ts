@@ -47,6 +47,8 @@ const configSchema = z
     PUBLIC_ADDRESS: z.string().optional(),
     /** Scales collision damage (1 = original tuning). */
     VEHICLE_DAMAGE_MULTIPLIER: z.coerce.number().min(0).max(2).default(0.25),
+    /** Where crash and client diagnostic logs are written (JSON lines, rotated at 5 MB). */
+    LOG_DIR: z.string().default("logs"),
   })
   .superRefine((value, context) => {
     if (value.NODE_ENV !== "production") return;

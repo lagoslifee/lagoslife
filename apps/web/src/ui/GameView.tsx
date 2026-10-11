@@ -1,6 +1,7 @@
 import { CLUBS, OFFENCES, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
+import { noteFps, report, setReportedQuality } from "../diagnostics";
 import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
 import { describeTurn, turnArrow } from "../game/navigation";
 import { EngineDisposedError, GameEngine, VEHICLE_VIEW_LABEL, type HudState, type Interaction } from "../game/engine";
@@ -100,6 +101,7 @@ export function GameView({
   const [settings, setSettings] = useState<PlayerSettings>(defaultSettings);
   const [bindings, setBindings] = useState<Bindings>(loadBindings);
   const [quality, setQuality] = useState<Quality>(loadQuality);
+  useEffect(() => setReportedQuality(quality), [quality]);
   const [restarts, setRestarts] = useState(0);
   const restartsRef = useRef(0);
   const [graphicsPaused, setGraphicsPaused] = useState(false);
@@ -230,7 +232,10 @@ export function GameView({
       canvas,
       overlay,
       {
-        hud: setHud,
+        hud: (next) => {
+          setHud(next);
+          noteFps(next.fps);
+        },
         notice: (notice) => {
           toast(notice);
           if (/Fare paid|stepped off|Bike unlocked|Bike docked|Ade Recovery/.test(notice.text)) void refresh();
@@ -254,6 +259,7 @@ export function GameView({
         suspended: (info) => suspendedRef.current(info),
         plotsChanged: () => void refreshPlots(),
         graphics: (event) => {
+          report(event === "restored" ? "context-restored" : "context-lost", event, { detail: { quality } });
           if (event === "restored") {
             clearTimeout(lostTimer.current);
             setGraphicsPaused(false);

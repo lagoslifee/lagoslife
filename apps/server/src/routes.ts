@@ -51,8 +51,10 @@ import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
 import { auth } from "./auth.js";
 import { acquirePlot, buildingEvents, listPlots, payNextStage, releasePlotsOf, renewPlotLease, startConstruction } from "./building-service.js";
+import { matchMaker } from "@colyseus/core";
 import { config } from "./config.js";
 import { pool } from "./database.js";
+import { clientReportSchema, processHealth, recordClientReport } from "./diagnostics.js";
 import { getPlayerPosition, markProgressReset } from "./player-presence.js";
 import { withinRate } from "./request-rate.js";
 import {
@@ -248,6 +250,40 @@ export function configureRoutes(app: Express) {
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", service: "lagos-living-server" });
+  });
+
+  /** For the supervisor and uptime checks: 503 when the database does not answer within 3 s. */
+  app.get("/api/health/deep", async (_req, res) => {
+    const began = Date.now();
+    const database = await Promise.race([
+      pool.query("SELECT 1").then(() => "ok" as const),
+      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 3_000).unref()),
+    ]).catch(() => "down" as const);
+    const rooms = await matchMaker.query({ name: "lagos" }).catch(() => []);
+    res.status(database === "ok" ? 200 : 503).json({
+      status: database === "ok" ? "ok" : "degraded",
+      database,
+      databaseMs: Date.now() - began,
+      instances: rooms.length,
+      players: rooms.reduce((sum, room) => sum + room.clients, 0),
+      ...processHealth(),
+    });
+  });
+
+  /** Crash and performance reports from browsers; anonymous allowed, limited per address. */
+  app.post("/api/diagnostics", async (req, res) => {
+    const parsed = clientReportSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid report" });
+      return;
+    }
+    if (!(await withinRate(`diag:${req.ip ?? "unknown"}`, 30, 600_000).catch(() => false))) {
+      res.status(429).json({ error: "Too many reports" });
+      return;
+    }
+    const session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) }).catch(() => null);
+    recordClientReport(parsed.data, session?.user.id ?? null);
+    res.status(204).end();
   });
 
   app.post("/api/dev/sign-in", devOnly, async (req, res) => {

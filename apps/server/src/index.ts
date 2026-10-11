@@ -5,12 +5,15 @@ import express from "express";
 import { buildingEvents, refreshPlotFootprints, releaseIdleGuestPlots } from "./building-service.js";
 import { bridgeEmitter, joinCluster } from "./cluster.js";
 import { config } from "./config.js";
+import { installCrashHandlers } from "./diagnostics.js";
 import { profileEvents } from "./profile-service.js";
 import { LagosRoom } from "./rooms/LagosRoom.js";
 import { configureRoutes } from "./routes.js";
 import { purgeExpiredRates } from "./request-rate.js";
 import { purgeExpiredChat, safetyEvents } from "./safety-service.js";
 import { vehicleEvents } from "./vehicle-events.js";
+
+installCrashHandlers();
 
 const presence = config.REDIS_URL ? new RedisPresence(config.REDIS_URL) : undefined;
 if (presence) {

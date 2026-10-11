@@ -1,4 +1,5 @@
 import { Client, type Room } from "@colyseus/sdk";
+import { report } from "./diagnostics";
 import {
   chatMessageSchema,
   type ChatMessage,
@@ -61,13 +62,27 @@ export class MultiplayerConnection {
   private closed = false;
   private retry: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(private readonly handlers: MultiplayerHandlers) {}
+  private connecting = false;
+
+  constructor(private readonly handlers: MultiplayerHandlers) {
+    window.addEventListener("online", this.resume);
+    document.addEventListener("visibilitychange", this.resume);
+  }
+
+  /** After a screen lock, app switch or dropped signal, rejoin at once instead of waiting for the retry timer. */
+  private readonly resume = () => {
+    if (this.closed || this.room || this.connecting || document.hidden || !navigator.onLine) return;
+    clearTimeout(this.retry);
+    void this.connect();
+  };
 
   get sessionId() {
     return this.room?.sessionId ?? null;
   }
 
   async connect() {
+    if (this.connecting) return;
+    this.connecting = true;
     this.handlers.status({ state: "connecting" });
     try {
       const response = await fetch(`${apiUrl}/api/multiplayer-token`, { method: "POST", credentials: "include", headers: authHeaders() });
@@ -141,9 +156,10 @@ export class MultiplayerConnection {
         this.room = undefined;
         this.handlers.status({ state: "offline", reason: "You are playing in another tab or window. Reload this page to play here." });
       });
-      room.onLeave(() => {
+      room.onLeave((code) => {
         if (this.closed) return;
         this.room = undefined;
+        report("disconnect", `Room closed (${code})`, { detail: { code, online: navigator.onLine, hidden: document.hidden } });
         this.handlers.status({ state: "offline", reason: "Connection lost — reconnecting…" });
         this.retry = setTimeout(() => void this.connect(), 3000);
       });
@@ -153,6 +169,8 @@ export class MultiplayerConnection {
       if (this.closed) return;
       this.handlers.status({ state: "offline", reason: error instanceof Error ? error.message : "Multiplayer unavailable" });
       this.retry = setTimeout(() => void this.connect(), 4000);
+    } finally {
+      this.connecting = false;
     }
   }
 
@@ -211,6 +229,8 @@ export class MultiplayerConnection {
   async disconnect() {
     this.closed = true;
     clearTimeout(this.retry);
+    window.removeEventListener("online", this.resume);
+    document.removeEventListener("visibilitychange", this.resume);
     const room = this.room;
     this.room = undefined;
     if (room) await room.leave();
