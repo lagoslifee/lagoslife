@@ -94,6 +94,11 @@ import { buildWorld, type BuiltWorld } from "./world-builder";
 
 export type Prompt = { key: string; label: string; detail?: string | undefined; disabled?: boolean };
 
+export type VehicleCameraView = "chase" | "far";
+const VEHICLE_VIEWS: VehicleCameraView[] = ["chase", "far"];
+export const VEHICLE_VIEW_LABEL: Record<VehicleCameraView, string> = { chase: "Chase camera", far: "Far chase camera" };
+const RECENTRE_IDLE_MS = 2_500;
+
 export type HudState = {
   network: MultiplayerStatus["state"];
   networkReason?: string | undefined;
@@ -108,6 +113,7 @@ export type HudState = {
   prompt: Prompt | null;
   secondaryPrompt: Prompt | null;
   bus: { id: string; routeNumber: string; routeName: string; seat: number | null; nextStop: string; atStop: string | null; stopRequested: boolean; occupied: number; capacity: number } | null;
+  vehicleCamera: VehicleCameraView | null;
   vehicle: { id: string; name: string; plate: string; kmh: number; topKmh: number; condition: number; limp: boolean; reversing: boolean; bicycle: boolean; lights: boolean; seats: number; testDriveLeft: number | null; hire: { minutes: number; cost: number; dockName: string | null } | null } | null;
   passenger: { owner: string; model: string } | null;
   speed: number;
@@ -273,6 +279,10 @@ export class GameEngine {
   private lastContactAt = 0;
   private lastImpactSentAt = 0;
   private lastLookAt = 0;
+  /** Vehicle camera the player picked (kept between trips). */
+  private vehicleView: VehicleCameraView = localStorage.getItem("lagos-vehicle-camera") === "far" ? "far" : "chase";
+  /** Unobstructed camera distance, eased back out after a wall or car pushed it in. */
+  private cameraReach = 0;
   private carPilot: {
     path: Vec2[];
     index: number;
@@ -625,6 +635,7 @@ export class GameEngine {
     this.controller.yaw = car.yaw;
     if (this.input.consume("stop")) this.honk();
     if (this.input.consume("lights")) this.toggleLights();
+    if (this.input.consume("camera")) this.cycleCamera();
     if (this.input.consume("interact")) {
       if (Math.abs(car.speed) < 2) this.exitVehicle();
       else this.callbacks.notice({ tone: "info", text: "Slow down to step out." });
@@ -853,6 +864,8 @@ export class GameEngine {
       this.input.consume("stop");
     }
 
+    // Vehicles move first, so seated avatars and the camera use this frame's pose rather than trailing a frame behind.
+    this.updateVehicles(now, dt);
     const { x, z } = this.controller;
     const targetGround = this.interior ? 0.02 : this.world.groundHeight(x, z);
     this.groundY += (targetGround - this.groundY) * Math.min(1, dt * 12);
@@ -894,7 +907,6 @@ export class GameEngine {
     }
 
     this.updateRemotes(now, dt);
-    this.updateVehicles(now, dt);
     if (!this.interior) {
       this.world.stream(x, z);
       this.world.pump(this.readyFired ? 8 : 200);
@@ -976,26 +988,44 @@ export class GameEngine {
     this.cameraYaw = best;
   }
 
+  cycleCamera() {
+    const next = VEHICLE_VIEWS[(VEHICLE_VIEWS.indexOf(this.vehicleView) + 1) % VEHICLE_VIEWS.length]!;
+    this.vehicleView = next;
+    localStorage.setItem("lagos-vehicle-camera", next);
+    this.cameraReach = 0;
+    if (this.car || this.passenger) this.caption(VEHICLE_VIEW_LABEL[next]);
+    return next;
+  }
+
+  /**
+   * The one camera controller. Each mode (on foot, driving or riding, danfo, indoors) only chooses a
+   * target and distance; yaw and pitch belong to the player, apart from an optional gentle drift back
+   * behind a moving vehicle once they stop looking around. Enter/exit set the yaw once, elsewhere.
+   */
   private updateCamera(dt: number, bus: DanfoView | null) {
     const rideView = !this.driving && this.passenger ? this.vehicles.get(this.passenger.vehicleId)?.view : undefined;
     const car = this.driving && this.car ? this.car : rideView ? { x: rideView.x, z: rideView.z, yaw: rideView.yaw, speed: rideView.speed, model: rideView.model } : null;
+    const view = car ? this.vehicleView : null;
+    const restPitch = view === "far" ? 0.34 : 0.26;
+    const idle = performance.now() - this.lastLookAt;
+    if (car && this.settings.cameraRecentre !== false && idle > RECENTRE_IDLE_MS && Math.abs(car.speed) > 3) {
+      const ramp = Math.min(1, (idle - RECENTRE_IDLE_MS) / 1_500);
+      let delta = car.yaw - this.cameraYaw;
+      delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+      this.cameraYaw += delta * Math.min(1, dt * 1.8 * ramp);
+      this.cameraPitch += (restPitch - this.cameraPitch) * Math.min(1, dt * 1.2 * ramp);
+    }
+    const cosPitch = Math.cos(this.cameraPitch);
+    const dir = new Vector3(Math.sin(this.cameraYaw) * cosPitch, Math.sin(this.cameraPitch), Math.cos(this.cameraYaw) * cosPitch);
     const target = bus
       ? new Vector3(bus.root.position.x, 2.1, bus.root.position.z)
       : car
         ? new Vector3(car.x, this.groundY + Math.max(1.2, car.model.height * 0.9), car.z)
         : new Vector3(this.controller.x, this.groundY + 1.55, this.controller.z);
-    if (car && performance.now() - this.lastLookAt > 1200 && Math.abs(car.speed) > 1) {
-      let delta = car.yaw - this.cameraYaw;
-      delta = Math.atan2(Math.sin(delta), Math.cos(delta));
-      this.cameraYaw += delta * Math.min(1, dt * (car.speed > 0 ? 3 : 1.5));
-      this.cameraPitch += (0.26 - this.cameraPitch) * Math.min(1, dt * 1.5);
-    }
     const lag = 1 - Math.exp(-dt * (car ? 12 : 20));
     this.cameraTarget.addInPlace(target.subtract(this.cameraTarget).scale(lag));
-    const chase = car ? car.model.length * 1.15 + 2.6 + Math.abs(car.speed) * 0.08 : 8.5;
+    const chase = car ? (car.model.length * 1.15 + 2.6 + Math.abs(car.speed) * 0.08) * (view === "far" ? 1.6 : 1) : 8.5;
     const distance = bus || car ? Math.max(this.cameraDistance, chase) : this.interior ? Math.min(this.cameraDistance, 3.6) : this.cameraDistance;
-    const cosPitch = Math.cos(this.cameraPitch);
-    const dir = new Vector3(Math.sin(this.cameraYaw) * cosPitch, Math.sin(this.cameraPitch), Math.cos(this.cameraYaw) * cosPitch);
     let allowed = distance;
     if (this.interior) {
       const [ox, oz] = INTERIOR_ORIGIN;
@@ -1022,7 +1052,10 @@ export class GameEngine {
         }
       }
     }
-    const position = this.cameraTarget.subtract(dir.scale(allowed));
+    // Pull in at once (never through a wall) but ease back out, so passing posts and parked cars don't make it pump.
+    this.cameraReach = allowed < this.cameraReach || this.cameraReach <= 0 ? allowed : Math.min(allowed, this.cameraReach + dt * 5);
+    // Positive pitch lifts the camera above the target, looking down (matching the obstruction probe above).
+    const position = this.cameraTarget.add(new Vector3(-dir.x, dir.y, -dir.z).scale(this.cameraReach));
     position.y = Math.max(position.y, (this.interior ? 0.3 : this.groundY + 0.35));
     if (this.interior) position.y = Math.min(position.y, 2.45);
     this.cameraPosition.copyFrom(position);
@@ -1256,6 +1289,7 @@ export class GameEngine {
           }
         : null,
       vehicle: this.car && this.driving ? this.vehicleHud(this.car, this.driving) : null,
+      vehicleCamera: (this.car && this.driving) || this.passenger ? this.vehicleView : null,
       passenger: (() => {
         const entry = this.passenger ? this.vehicles.get(this.passenger.vehicleId) : undefined;
         return entry ? { owner: entry.state.ownerName, model: entry.view.model.name } : null;
@@ -1494,11 +1528,13 @@ export class GameEngine {
     const seat = self.vehicleSeat ?? 0;
     if (self.vehicleId && seat === 0 && self.vehicleId !== this.driving?.vehicleId) this.startDriving(self.vehicleId);
     if ((!self.vehicleId || seat > 0) && (this.driving || this.pendingDrive)) this.stopDriving();
+    const boarding = Boolean(self.vehicleId && seat > 0 && this.passenger?.vehicleId !== self.vehicleId);
     this.passenger = self.vehicleId && seat > 0 ? { vehicleId: self.vehicleId, seat } : null;
     if (this.rideCar && this.passenger?.vehicleId !== this.rideCar.vehicleId) this.rideCar = null;
-    if (this.passenger) {
+    if (boarding && this.passenger) {
       const view = this.vehicles.get(this.passenger.vehicleId)?.view;
       if (view) this.cameraYaw = view.yaw;
+      this.cameraPitch = 0.26;
     }
     if (!self.busId) {
       this.controller.teleport(self.x, self.z);
@@ -2030,6 +2066,23 @@ export class GameEngine {
         if (distance !== undefined) this.cameraDistance = distance;
       },
       key: (code: string, down: boolean) => this.input.simulate(code, down),
+      look: (dx: number, dy = 0) => {
+        this.input.lookDX += dx;
+        this.input.lookDY += dy;
+      },
+      camera: () => {
+        const look = this.camera.getTarget().subtract(this.camera.position);
+        return { yaw: this.cameraYaw, pitch: this.cameraPitch, view: this.vehicleView, x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z, ground: this.groundY, lookYaw: Math.atan2(look.x, look.z) };
+      },
+      cycleCamera: () => this.cycleCamera(),
+      /** Rendered distance between the player's avatar and their seat in the vehicle (null when not seated). */
+      seatOffset: () => {
+        const ride = this.driving ? { vehicleId: this.driving.vehicleId, seat: 0 } : this.passenger;
+        const view = ride ? this.vehicles.get(ride.vehicleId)?.view : undefined;
+        if (!view || !this.player) return null;
+        const seat = view.seat(ride!.seat);
+        return Math.hypot(this.player.root.position.x - seat.x, this.player.root.position.z - seat.z);
+      },
       walkTo: (x: number, z: number, sprint = false, timeoutMs = 120_000) =>
         new Promise<boolean>((resolve) => {
           const path = this.navigator.route([this.controller.x, this.controller.z], [x, z]).slice(1);

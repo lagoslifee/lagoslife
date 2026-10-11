@@ -13,7 +13,8 @@ export type Action =
   | "map"
   | "help"
   | "jump"
-  | "lights";
+  | "lights"
+  | "camera";
 
 export type Bindings = Record<Action, string>;
 
@@ -31,6 +32,7 @@ export const defaultBindings: Bindings = {
   help: "KeyH",
   jump: "Space",
   lights: "KeyL",
+  camera: "KeyV",
 };
 
 export const actionLabels: Record<Action, string> = {
@@ -47,6 +49,7 @@ export const actionLabels: Record<Action, string> = {
   help: "Controls help",
   jump: "Hop / handbrake",
   lights: "Vehicle lights",
+  camera: "Switch vehicle camera",
 };
 
 export function keyLabel(code: string) {

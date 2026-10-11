@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
 import { describeTurn, turnArrow } from "../game/navigation";
-import { EngineDisposedError, GameEngine, type HudState, type Interaction } from "../game/engine";
+import { EngineDisposedError, GameEngine, VEHICLE_VIEW_LABEL, type HudState, type Interaction } from "../game/engine";
 import type { Quality } from "../game/materials";
 import { FullMap, Minimap } from "./MapView";
 import { currentObjective, housingPath, type HousingPath } from "./objectives";
@@ -595,10 +595,16 @@ export function GameView({
                     : `Condition ${hud.vehicle.condition}%${hud.vehicle.limp ? ` · LIMP MODE (max ${hud.vehicle.topKmh} km/h)` : ""}`}
                 </p>
                 <p className="muted small">
-                  <kbd>{keyLabel(bindings.forward)}</kbd>/<kbd>{keyLabel(bindings.back)}</kbd> drive · <kbd>{keyLabel(bindings.left)}</kbd>/<kbd>{keyLabel(bindings.right)}</kbd> steer · <kbd>{keyLabel(bindings.jump)}</kbd> handbrake · <kbd>{keyLabel(bindings.stop)}</kbd> horn · <kbd>{keyLabel(bindings.lights)}</kbd> lights
+                  <kbd>{keyLabel(bindings.forward)}</kbd>/<kbd>{keyLabel(bindings.back)}</kbd> drive · <kbd>{keyLabel(bindings.left)}</kbd>/<kbd>{keyLabel(bindings.right)}</kbd> steer · <kbd>{keyLabel(bindings.jump)}</kbd> handbrake · <kbd>{keyLabel(bindings.stop)}</kbd> horn · <kbd>{keyLabel(bindings.lights)}</kbd> lights · <kbd>{keyLabel(bindings.camera)}</kbd> camera
                 </p>
               </div>
             </section>
+          )}
+
+          {hud.vehicleCamera && (
+            <button className="camera-switch" data-testid="camera-switch" onClick={() => engine.cycleCamera()} aria-label={`Camera: ${VEHICLE_VIEW_LABEL[hud.vehicleCamera]}. Switch view`}>
+              🎥 <span>{hud.vehicleCamera === "far" ? "Far" : "Chase"}</span>
+            </button>
           )}
 
           {previewListing && (

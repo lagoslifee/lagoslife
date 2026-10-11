@@ -697,3 +697,6 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .callout.warn { border-color: rgba(255, 140, 110, .5); color: #ffc7b8; }
 .ride-app .field { display: grid; gap: 4px; margin-top: 8px; font-size: 12px; color: #c9c3b6; }
 .ride-app .field input { width: 100%; padding: 9px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, .18); background: rgba(0, 0, 0, .3); color: inherit; font-size: 15px; }
+
+.camera-switch { position: absolute; right: 16px; bottom: 260px; z-index: 6; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.25); background: rgba(16, 22, 26, 0.82); color: #fff; font-weight: 700; }
+.touch .camera-switch { bottom: auto; top: 140px; right: 12px; min-height: 44px; }

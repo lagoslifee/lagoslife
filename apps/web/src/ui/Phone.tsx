@@ -451,6 +451,7 @@ function SettingsApp({ settings, onSettings, bindings, onBindings, quality, onQu
       <h3>Controls</h3>
       {slider("mouseSensitivity", "Camera sensitivity", 0.2, 3, 0.1)}
       {toggle("invertY", "Invert camera Y")}
+      {toggle("cameraRecentre", "Camera drifts back behind your vehicle")}
       <ul className="bindings">
         {(Object.keys(actionLabels) as Action[]).map((action) => (
           <li key={action}>

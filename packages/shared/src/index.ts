@@ -188,6 +188,8 @@ export const settingsSchema = z.object({
   graphics: z.enum(["low", "medium", "high"]),
   autoGraphics: z.boolean().default(true),
   needsEnabled: z.boolean(),
+  /** Drift the camera back behind a moving vehicle after the player stops looking around. */
+  cameraRecentre: z.boolean().default(true),
 });
 export type PlayerSettings = z.infer<typeof settingsSchema>;
 export const defaultSettings: PlayerSettings = {
@@ -198,6 +200,7 @@ export const defaultSettings: PlayerSettings = {
   dialogueVolume: 0.9,
   subtitles: true,
   cameraShake: false,
+  cameraRecentre: true,
   textScale: 1,
   graphics: "medium",
   autoGraphics: true,
