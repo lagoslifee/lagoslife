@@ -29,6 +29,10 @@ Adebayo Court (₦30,000 upfront) straight away or to buy Okoro Terrace
 | Armed robbery (another resident) | Both on foot within 3 m. Takes 10% of the victim's balance, at most ₦20,000. The victim can run (50% chance to get away). Residents in their first hour, anyone robbed in the last 2 h, and anyone with guards can't be robbed; a robber waits 30 minutes between attempts. Within 60 m of a police station or checkpoint, officers see it and charge ₦50,000 at once |
 | Police report (Lekki Police Division, Ikoyi Police Station, Bar Beach Police Station) | Free, within 24 h. If the server's own record matches, the robber is charged ₦50,000 (`armed_robbery`) and the stolen money is returned from the robber's wallet (as much as they have) |
 | Security guards (Eko Shield Security, fictional) | Two guards ₦25,000 or four ₦45,000, for 24 h. They follow in a black Hilux, walk with you on foot, open your compound gate, and make you impossible to rob |
+| Dubai tourist visa (Dubai Travel Consular Office — Game Roleplay, fictional) | 14-day single visit ₦20,000 or 30-day three visits ₦45,000. Fixed fee, about 8 s of processing, never randomly refused. One visit is used at Dubai immigration, once per trip |
+| Lagos ⇄ Dubai return ticket (fictional airline) | Economy ₦95,000, Business ₦280,000 (wider seat, lounge, hot meal). Full refund within 10 minutes of buying, then 90% back until boarding, no refund after. Friends invited to the trip pay their own fare only when they accept |
+| Dubai hotels (fictional) | Marina Sands Inn ₦6,000–₦11,000, JBR Palm Suites ₦15,000–₦26,000, Marina Crown Hotel ₦40,000–₦90,000 per night. One night is 2 real hours, paid up front, so nothing is charged while offline. Full refund before check-in; checkout refunds whole unused nights. Safe contents return to the inventory when the stay ends |
+| Dubai food, tours and hire | Room service ₦1,200–₦7,500, rooftop ₦3,000–₦18,000, Marina dhow cruise ₦12,000, desert safari ₦25,000, hire cars ₦15,000–₦35,000 per hour (up to 3 h). Boutique outfits ₦12,000–₦22,000 unlock the outfit everywhere, souvenirs ₦3,500–₦14,000 |
 | Quiet places (Ikoyi Reading Room, Muri Okunola Park, Grace Assembly, Al-Noor Mosque) | Free. +8 energy, on one 30-minute cooldown shared by all four. Identical for every venue, and optional |
 
 Bumps at 3 m/s or more cost condition (2.5 points per m/s above 2, at most 35
@@ -78,6 +82,13 @@ won't start until it is towed and repaired. A routine service is due every
   returns its earlier result instead of charging again, so a double-clicked
   Pay charges once. Fines are never deducted automatically, and a balance
   can't go negative to cover one.
+
+- Visas, tickets, invitations, hotel bookings and extensions, room service,
+  tours and car hire each carry a per-request idempotency key, so a repeated or
+  double-clicked request charges once. Ticket cancellation and checkout lock the
+  booking row, so a refund is paid once. Flights run on the game server's clock;
+  reconnecting mid-flight puts the player back in the same seat without a new
+  flight or charge.
 
 ## Development reset
 
