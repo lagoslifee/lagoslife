@@ -1,5 +1,5 @@
 import type { Scene } from "@babylonjs/core/scene";
-import { getPlace, getVehicleModel, POLICE_CHECKPOINTS, STOPS, VEHICLE_MODELS, type Vec2 } from "@lagos-living/shared";
+import { districtAt, getPlace, getVehicleModel, POLICE_CHECKPOINTS, STOPS, VEHICLE_MODELS, type Vec2 } from "@lagos-living/shared";
 import { appearanceFor, type Avatar, type AvatarFactory } from "./avatar";
 import type { DanfoView } from "./danfo";
 import { densify, hash, pointAt, polylineLength } from "./geometry";
@@ -23,7 +23,12 @@ type Car = {
   /** Police checkpoint this car has already been waved through, and how long it has waited at the current one. */
   checked: string | null;
   checkWait: number;
+  /** Ikoyi cars only drive Ikoyi's roads, and hide while the player is nowhere near Ikoyi. */
+  ikoyi?: boolean;
 };
+
+/** A car left at the kerb, half on the pavement the way Lagos parks. */
+type Parked = { view: VehicleView; ikoyi: boolean; x: number; z: number; yaw: number; placed: boolean };
 
 /** Cars crawl within this distance of a police checkpoint and stop briefly at the officers' line. */
 const CHECKPOINT_ZONE = 30;
@@ -52,6 +57,14 @@ const TRAFFIC_MIX = [
   "rolls-royce-cullinan", "bmw-m4", "porsche-911", "bentley-continental-gt", "toyota-camry", "lagoon-pickup", "lexus-rx350", "honda-accord",
 ].filter((id) => VEHICLE_MODELS.some((model) => model.id === id));
 
+/** Old money and new money: what drives (and parks) on Ikoyi's streets. */
+const IKOYI_MIX = ["mercedes-g63", "mclaren-720s", "lamborghini-urus", "ferrari-f8", "rolls-royce-cullinan", "lamborghini-huracan", "range-rover", "bentley-continental-gt"]
+  .filter((id) => VEHICLE_MODELS.some((model) => model.id === id));
+
+export function ikoyiModels(quality: Quality) {
+  return IKOYI_MIX.slice(0, quality === "low" ? 4 : quality === "medium" ? 6 : 8);
+}
+
 /** Distinct street models per quality: each modelled car costs a download and several megabytes of GPU textures. */
 export function trafficModels(quality: Quality) {
   const distinct = [...new Set(TRAFFIC_MIX)];
@@ -67,6 +80,10 @@ export class AmbientLife {
   private statics: Array<{ avatar: Avatar; x: number; z: number; motion: "idle" | "sit" | "wave" }> = [];
   private roads: WorldRoad[];
   private sidewalkRoads: WorldRoad[];
+  private ikoyiRoads: WorldRoad[];
+  private parked: Parked[] = [];
+  /** Where kerbside parking was last laid out; it is redone after the player moves on. */
+  private parkedAround: Vec2 | null = null;
   honks = 0;
   onHonk: (() => void) | null = null;
   /** Where the first cars are placed before the player's position is known. */
@@ -82,6 +99,7 @@ export class AmbientLife {
   ) {
     this.roads = roads.filter((road) => ["primary", "tertiary", "unclassified", "residential"].includes(road.kind) && polylineLength(road.points) > 120);
     this.sidewalkRoads = roads.filter((road) => ["primary", "tertiary", "unclassified", "residential"].includes(road.kind) && polylineLength(road.points) > 60);
+    this.ikoyiRoads = this.sidewalkRoads.filter((road) => road.points.some((point) => districtAt(point[0], point[1])?.id === "ikoyi"));
     this.home = getPlace("starter-home").door;
     const carCount = quality === "low" ? 10 : quality === "medium" ? 20 : 28;
     const walkerCount = avatars ? (quality === "low" ? 5 : quality === "medium" ? 10 : 16) : 0;
@@ -95,6 +113,35 @@ export class AmbientLife {
       this.spawnCar(car, index * 7.31, null);
       this.cars.push(car);
     }
+    // Supercars and kerbside parking join once their models have downloaded, so none appear as stand-in boxes.
+    const luxury = ikoyiModels(quality);
+    const everyday = mix.slice(0, 4);
+    void Promise.all([...luxury, ...everyday].map((id) => vehicles.ensure(id))).then(() => {
+      if (this.disposed) return;
+      const paint = (modelId: string, index: number) => {
+        const colours = getVehicleModel(modelId).colours;
+        return colours[Math.floor(hash(index * 29 + 3) * colours.length)]!;
+      };
+      const drivers = quality === "low" ? 5 : quality === "medium" ? 8 : 10;
+      for (let index = 0; index < drivers && this.ikoyiRoads.length; index += 1) {
+        const modelId = luxury[index % luxury.length]!;
+        const view = vehicles.create(`ikoyi-${index}`, modelId, paint(modelId, index));
+        view.setDetail(false);
+        const car: Car = { view, road: this.ikoyiRoads[0]!, points: [], length: 0, s: 0, direction: 1, speed: 0, cruise: 8, lane: 1.9, stoppedFor: 0, yaw: 0, checked: null, checkWait: 0, ikoyi: true };
+        this.spawnCar(car, 500 + index * 5.17, null);
+        this.cars.push(car);
+      }
+      const kerbside = quality === "low" ? 6 : quality === "medium" ? 10 : 14;
+      for (let index = 0; index < kerbside; index += 1) {
+        const ikoyi = index % 2 === 0;
+        const modelId = ikoyi ? luxury[(index / 2) % luxury.length]! : everyday[index % everyday.length]!;
+        const view = vehicles.create(`parked-${index}`, modelId, paint(modelId, 100 + index));
+        view.setDetail(false);
+        view.root.setEnabled(false);
+        this.parked.push({ view, ikoyi, x: 0, z: 0, yaw: 0, placed: false });
+      }
+      this.parkedAround = null;
+    });
     for (let index = 0; index < walkerCount; index += 1) {
       const avatar = avatars!.create(`walker-${index}`, appearanceFor(index));
       const walker: Walker = { avatar, points: [], length: 0, s: 0, direction: 1, lateral: 0, speed: 1.3, x: 0, z: 0, yaw: 0 };
@@ -134,10 +181,21 @@ export class AmbientLife {
     }
   }
 
+  private disposed = false;
+
   private spawnCar(car: Car, seed: number, player: Vec2 | null) {
     const centre = player ?? this.home;
-    const near = centre ? this.roads.filter((road) => road.points.some((point) => Math.hypot(point[0] - centre[0], point[1] - centre[1]) < 260)) : this.roads;
-    const pool = near.length ? near : this.roads;
+    const roads = car.ikoyi ? this.ikoyiRoads : this.roads;
+    const near = centre ? roads.filter((road) => road.points.some((point) => Math.hypot(point[0] - centre[0], point[1] - centre[1]) < 260)) : roads;
+    if (car.ikoyi) {
+      // Away from Ikoyi these cars wait out of sight instead of driving somewhere they don't belong.
+      car.view.root.setEnabled(near.length > 0);
+      if (!near.length) {
+        car.points = [];
+        return;
+      }
+    }
+    const pool = near.length ? near : roads;
     for (let attempt = 0; attempt < 12; attempt += 1) {
       const road = pool[Math.floor(hash(Math.round(seed * 1000) + attempt * 17) * pool.length)]!;
       const points = densify(road.points, 4);
@@ -186,22 +244,63 @@ export class AmbientLife {
     }
   }
 
+  /**
+   * Lays kerbside parking out along streets near the player: Ikoyi slots get the supercars, everywhere else the
+   * everyday cars. Slots sit on the pavement edge, clear of both the traffic lane and the walkers' line.
+   */
+  private parkAround(player: Vec2) {
+    this.parkedAround = player;
+    const slots: Array<{ x: number; z: number; yaw: number; ikoyi: boolean }> = [];
+    const near = this.sidewalkRoads.filter((road) => road.kind !== "primary" && road.points.some((point) => Math.hypot(point[0] - player[0], point[1] - player[1]) < 180));
+    for (const road of near) {
+      const points = densify(road.points, 4);
+      const length = polylineLength(points);
+      for (let s = 12; s < length - 12; s += 23) {
+        const key = Math.round(points[0]![0] * 7 + points[0]![1] * 13 + s);
+        if (hash(key) > 0.32) continue;
+        const p = pointAt(points, s);
+        const side = hash(key + 5) > 0.5 ? 1 : -1;
+        const lateral = side * (road.width / 2 + 0.25);
+        const x = p.x + p.dz * lateral;
+        const z = p.z - p.dx * lateral;
+        if (Math.hypot(x - player[0], z - player[1]) > 150 || Math.hypot(x - player[0], z - player[1]) < 6) continue;
+        if (slots.some((slot) => Math.hypot(slot.x - x, slot.z - z) < 7)) continue;
+        slots.push({ x, z, yaw: Math.atan2(p.dx, p.dz) + (hash(key + 9) > 0.5 ? Math.PI : 0), ikoyi: districtAt(x, z)?.id === "ikoyi" });
+      }
+    }
+    slots.sort((a, b) => Math.hypot(a.x - player[0], a.z - player[1]) - Math.hypot(b.x - player[0], b.z - player[1]));
+    const free = [...slots];
+    for (const car of this.parked) {
+      const index = free.findIndex((slot) => slot.ikoyi === car.ikoyi);
+      car.placed = index >= 0;
+      car.view.root.setEnabled(car.placed);
+      if (!car.placed) continue;
+      const slot = free.splice(index, 1)[0]!;
+      car.x = slot.x;
+      car.z = slot.z;
+      car.yaw = slot.yaw;
+      car.view.setPose(slot.x, 0.05, slot.z, slot.yaw);
+      car.view.animate(0, { speed: 0, steer: 0, braking: false, accel: 0, yawRate: 0 });
+    }
+  }
+
   /** Whether a point is inside (or within `margin` of) an ambient car's body. */
   carAt(x: number, y: number, z: number, margin = 0.25) {
-    return this.cars.some((car) => {
-      const { model } = car.view;
+    const inside = (view: VehicleView, yaw: number) => {
+      const { model } = view;
       if (y > model.height + margin) return false;
-      const dx = x - car.view.x;
-      const dz = z - car.view.z;
-      const forward = dx * Math.sin(car.yaw) + dz * Math.cos(car.yaw);
-      const lateral = dx * Math.cos(car.yaw) - dz * Math.sin(car.yaw);
+      const dx = x - view.x;
+      const dz = z - view.z;
+      const forward = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+      const lateral = dx * Math.cos(yaw) - dz * Math.sin(yaw);
       return Math.abs(forward) < model.length / 2 + margin && Math.abs(lateral) < model.width / 2 + margin;
-    });
+    };
+    return this.cars.some((car) => car.points.length > 0 && inside(car.view, car.yaw)) || this.parked.some((car) => car.placed && inside(car.view, car.yaw));
   }
 
   /** Dev-only: where each car's lane will be after `seconds` at cruise speed, for tests that need to meet one. */
   lanesAhead(seconds: number) {
-    return this.cars.map((car) => {
+    return this.cars.filter((car) => car.points.length > 0).map((car) => {
       const s = Math.max(0, Math.min(car.length, car.s + car.cruise * car.direction * seconds));
       const p = pointAt(car.points, s);
       const dirX = p.dx * car.direction;
@@ -211,7 +310,18 @@ export class AmbientLife {
   }
 
   update(dt: number, player: Vec2, buses: DanfoView[], seed: number) {
+    if (this.parked.length && (!this.parkedAround || Math.hypot(player[0] - this.parkedAround[0], player[1] - this.parkedAround[1]) > 110)) this.parkAround(player);
     for (const car of this.cars) {
+      if (!car.points.length) {
+        // A parked-away Ikoyi car checks every few seconds whether the player has come to Ikoyi.
+        car.stoppedFor += dt;
+        if (car.stoppedFor > 3) {
+          car.stoppedFor = 0;
+          this.spawnCar(car, seed + car.view.root.uniqueId * 0.19 + car.s, player);
+          car.s += 1;
+        }
+        continue;
+      }
       const p = pointAt(car.points, car.s);
       const dirX = p.dx * car.direction;
       const dirZ = p.dz * car.direction;
@@ -228,8 +338,11 @@ export class AmbientLife {
       const gap = car.speed * 0.9;
       if (blockedBy(player[0], player[1], 1.7, 10 + gap)) target = 0;
       for (const bus of buses) if (blockedBy(bus.root.position.x, bus.root.position.z, 2.0, 12 + gap)) target = 0;
+      for (const parked of this.parked) {
+        if (parked.placed && blockedBy(parked.x, parked.z, 1.5, 6 + gap)) target = Math.min(target, 0);
+      }
       for (const other of this.cars) {
-        if (other !== car && blockedBy(other.view.x, other.view.z, 1.6, 7 + gap + other.view.model.length / 2 + car.view.model.length / 2)) target = Math.min(target, 0);
+        if (other !== car && other.points.length > 0 && blockedBy(other.view.x, other.view.z, 1.6, 7 + gap + other.view.model.length / 2 + car.view.model.length / 2)) target = Math.min(target, 0);
       }
       for (const checkpoint of POLICE_CHECKPOINTS) {
         const dx = checkpoint.point[0] - x;
@@ -292,8 +405,16 @@ export class AmbientLife {
         walker.s = Math.max(0, Math.min(walker.length, walker.s));
       }
       const p = pointAt(walker.points, walker.s);
-      const x = p.x + p.dz * walker.lateral;
-      const z = p.z - p.dx * walker.lateral;
+      let lateral = walker.lateral;
+      for (const parked of this.parked) {
+        if (!parked.placed) continue;
+        const bx = p.x + p.dz * lateral;
+        const bz = p.z - p.dx * lateral;
+        // Step out around a car parked on the pavement.
+        if (Math.hypot(bx - parked.x, bz - parked.z) < 3.4) lateral += Math.sign(lateral) * 1.1;
+      }
+      const x = p.x + p.dz * lateral;
+      const z = p.z - p.dx * lateral;
       const tooFar = Math.hypot(x - player[0], z - player[1]) > 170;
       if (tooFar) {
         this.spawnWalker(walker, seed + walker.s * 0.01 + walker.avatar.root.uniqueId, player);
@@ -324,6 +445,8 @@ export class AmbientLife {
   }
 
   dispose() {
+    this.disposed = true;
+    for (const car of this.parked) car.view.dispose();
     for (const car of this.cars) car.view.dispose();
     for (const walker of this.walkers) walker.avatar.dispose();
     for (const npc of this.statics) npc.avatar.dispose();
