@@ -30,6 +30,8 @@ export const TRAVEL_PLACES = {
   carRental: "dubai-car-rental",
   boutique: "marina-boutique",
   souvenirs: "marina-souvenirs",
+  tourism: "marina-tourism-centre",
+  club: "pearl-club-dubai",
 } as const;
 
 export const cabinClasses = ["economy", "business"] as const;
@@ -161,7 +163,11 @@ export const RENTAL_CARS = [
   { modelId: "porsche-911", perHour: 25_000 },
   { modelId: "lamborghini-urus", perHour: 35_000 },
 ] as const;
-export const CAR_RENTAL = { maxHours: 3, range: 30 } as const;
+/** Hire by the hour (up to `maxHours`) or by the day (24 h each, up to `maxDays`); a day costs `dayRateHours` hours. */
+export const CAR_RENTAL = { maxHours: 3, maxDays: 7, dayRateHours: 8, range: 30 } as const;
+export const isRentalPeriod = (hours: number) => Number.isInteger(hours) && hours >= 1 && (hours <= CAR_RENTAL.maxHours || (hours % 24 === 0 && hours / 24 <= CAR_RENTAL.maxDays));
+export const rentalPrice = (perHour: number, hours: number) => (hours >= 24 ? perHour * CAR_RENTAL.dayRateHours * (hours / 24) : perHour * hours);
+export const rentalPeriodLabel = (hours: number) => (hours >= 24 ? `${hours / 24} day${hours === 24 ? "" : "s"}` : `${hours} h`);
 
 /** Items sold in Dubai. Outfit items unlock the matching wardrobe outfit everywhere, including back in Lagos. */
 export const TRAVEL_SHOP = [
@@ -382,7 +388,7 @@ export const hotelGuestSchema = z.object({ bookingId: z.string().min(1).max(80),
 export const hotelStoreSchema = z.object({ bookingId: z.string().min(1).max(80), itemId: z.string().min(1).max(80), direction: z.enum(["in", "out"]) });
 export const travelOrderSchema = z.object({ menu: z.enum(["room-service", "rooftop"]), itemId: z.string().min(1).max(40), bookingId: z.string().max(80).optional(), idempotencyKey: key });
 export const activityBookSchema = z.object({ activity: z.enum(activityIds), idempotencyKey: key });
-export const carRentSchema = z.object({ modelId: z.string().min(1).max(60), hours: z.number().int().min(1).max(CAR_RENTAL.maxHours), idempotencyKey: key });
+export const carRentSchema = z.object({ modelId: z.string().min(1).max(60), hours: z.number().int().refine(isRentalPeriod, "Hire by the hour (1–3) or by whole days."), idempotencyKey: key });
 export const photoSchema = z.object({ spot: z.string().min(1).max(60) });
 
 /** Room messages. */

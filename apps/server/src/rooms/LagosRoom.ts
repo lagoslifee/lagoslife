@@ -82,6 +82,7 @@ import {
   CABINS,
   ACTIVITIES,
   CAR_RENTAL,
+  rentalPeriodLabel,
   hotelById,
   hotelRoom,
   travelSpot,
@@ -2449,7 +2450,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         return place ? at(place) : "The airport is not on the map.";
       }
       const [x, z] = this.standingAt(player);
-      const clubs = PLACES.filter((place) => (region === "dubai" ? place.kind === "lounge" : place.kind === "club") && regionOf(place.door[0], place.door[1]) === region);
+      const clubs = PLACES.filter((place) => place.kind === "club" && regionOf(place.door[0], place.door[1]) === region);
       const nearest = clubs.sort((a, b) => Math.hypot(a.door[0] - x, a.door[1] - z) - Math.hypot(b.door[0] - x, b.door[1] - z))[0];
       return nearest ? at(nearest) : "There is no club in this city yet.";
     }
@@ -3007,9 +3008,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (player.location !== "street" || player.busId || player.vehicleId) return fail("Step out onto the street first.");
     const { activity } = parsed.data;
     const details = ACTIVITIES[activity];
-    const desks = activity === "desert-safari" ? [TRAVEL_PLACES.pier, TRAVEL_PLACES.desertCamp] : [TRAVEL_PLACES.pier];
+    const desks = activity === "desert-safari" ? [TRAVEL_PLACES.tourism, TRAVEL_PLACES.pier, TRAVEL_PLACES.desertCamp] : [TRAVEL_PLACES.tourism, TRAVEL_PLACES.pier];
     const desk = desks.map((id) => placeById.get(id)).find((place) => place && placeDistance(place, player.x, player.z) <= 18);
-    if (!desk) return fail(`Book the ${details.name} at the Marina tours desk by the dhow pier.`);
+    if (!desk) return fail(`Book the ${details.name} at the Dubai Marina Tourism Centre on The Walk, or the tours desk by the dhow pier.`);
     player.entering = true;
     try {
       await payActivity(player.userId, activity, parsed.data.idempotencyKey);
@@ -3031,7 +3032,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const seat = excursionSeat(kind, seatIndex);
     const camp = placeById.get(TRAVEL_PLACES.desertCamp);
     const pier = placeById.get(TRAVEL_PLACES.pier)!;
-    const back = activity === "desert-safari" && camp && walkable(camp.kerb[0], camp.kerb[1]) ? camp.kerb : pier.kerb;
+    const back = desk.id === TRAVEL_PLACES.tourism ? desk.kerb : activity === "desert-safari" && camp && walkable(camp.kerb[0], camp.kerb[1]) ? camp.kerb : pier.kerb;
     player.trip = { ...emptyTrip(), excursion: { activity, startsAt: group.startsAt, endsAt: group.endsAt } };
     this.moveInside(client, player, `excursion:${activity}:${group.id}`, seat.point, back, desk.id);
     player.yaw = seat.yaw;
@@ -3124,7 +3125,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     }
     if (player.location !== "street" || player.vehicleId) return;
     const vehicle = this.placeHireCar(player, hire.id, model.id, hire.endsAt, desk);
-    this.mountVehicle(client, player, vehicle, `${model.name} hired for ${parsed.data.hours} h. Return it at any time from Phone → Travel; it is collected automatically when the hire ends.`);
+    this.mountVehicle(client, player, vehicle, `${model.name} hired for ${rentalPeriodLabel(parsed.data.hours)}. The agent hands you the keys. Return it at any time from Phone → Travel; it is collected automatically when the hire ends.`);
   }
 
   private placeHireCar(player: Player, hireId: string, modelId: string, endsAt: number, desk: Place) {

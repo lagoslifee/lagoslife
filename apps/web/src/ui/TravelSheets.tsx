@@ -1,5 +1,7 @@
 import {
   PLACES,
+  rentalPeriodLabel,
+  rentalPrice,
   ACTIVITIES,
   CABINS,
   CAR_RENTAL,
@@ -36,7 +38,7 @@ import { api, naira, type EconomyState } from "../api";
 import type { GameEngine } from "../game/engine";
 
 /** Street places that open a travel sheet instead of the generic shop or listing sheet. */
-export const TRAVEL_SHEET_KINDS = new Set<string>(["airport", "consulate", "hotel", "lounge", "marina", "desert", "photo", "beach", "car_rental"]);
+export const TRAVEL_SHEET_KINDS = new Set<string>(["airport", "consulate", "hotel", "lounge", "marina", "desert", "photo", "beach", "car_rental", "tourism"]);
 
 export const LOCAL_PHOTOS_KEY = "lagos-travel-photos";
 export type LocalPhoto = { at: number; spot: string; companions: string[]; image: string };
@@ -239,6 +241,7 @@ export function TravelPlaceSheet({
                 <button className="secondary" onClick={() => { onOpenApp("ride"); }}>🚕 Taxi to the Marina</button>
               )}
               <button className="secondary" onClick={() => { navigateTo(TRAVEL_PLACES.carRental, onNavigate); onClose(); }}>🚗 Car hire desk</button>
+              <button className="secondary" onClick={() => { const centre = PLACES.find((entry) => entry.id === TRAVEL_PLACES.tourism); if (centre) { engine.bookRide(centre.kerb, centre.name); onOpenApp("ride"); } }}>ℹ️ Things to do: Tourism Centre</button>
             </div>
           </>
         )}
@@ -285,6 +288,52 @@ export function TravelPlaceSheet({
           {photoButton}
           {desert && <button className="secondary" onClick={() => go(() => engine.backToMarina())}>4×4 back to the Marina</button>}
         </div>
+      </Sheet>
+    );
+  }
+
+  if (place.kind === "tourism") {
+    const taxi = (id: string) => {
+      const target = PLACES.find((entry) => entry.id === id);
+      if (!target) return;
+      engine.bookRide(target.kerb, target.name);
+      onOpenApp("ride");
+    };
+    const things: Array<{ id: string; icon: string; title: string; blurb: string; activity?: ActivityId }> = [
+      { id: TRAVEL_PLACES.desertCamp, icon: "🏜️", title: ACTIVITIES["desert-safari"].name, blurb: `${ACTIVITIES["desert-safari"].blurb} The 4×4 picks you up here.`, activity: "desert-safari" },
+      { id: TRAVEL_PLACES.pier, icon: "⛵", title: ACTIVITIES["dhow-cruise"].name, blurb: ACTIVITIES["dhow-cruise"].blurb, activity: "dhow-cruise" },
+      { id: TRAVEL_PLACES.club, icon: "🪩", title: "Pearl Club Dubai", blurb: "Late-night club on The Walk: wristband at the door, bottle service at VIP tables." },
+      { id: TRAVEL_PLACES.rooftop, icon: "🍸", title: "Skyline Rooftop Lounge", blurb: "Cocktails and dinner on the 48th floor over the marina." },
+      { id: TRAVEL_PLACES.carRental, icon: "🚗", title: "Hire a car", blurb: "G-Wagon, Range Rover, 911 or Urus, by the hour or by the day." },
+      { id: "jbr-beach", icon: "🏖️", title: "JBR Beach", blurb: "Free public beach with the Ain Dubai wheel offshore." },
+      { id: TRAVEL_PLACES.boutique, icon: "👗", title: "Shopping", blurb: "Kanduras, abayas and resort wear at Marina Thread Boutique; souvenirs next door." },
+    ];
+    return (
+      <Sheet eyebrow="VISITOR INFORMATION · FICTIONAL" title={place.name} onClose={onClose} testId="tourism-sheet">
+        <p className="muted">The staff at the desk can book tours on the spot. Everything else is a short taxi ride away.</p>
+        <ul className="venue-list">
+          {things.map((thing) => {
+            const activity = thing.activity ? ACTIVITIES[thing.activity] : null;
+            return (
+              <li key={thing.id}>
+                <div>
+                  <strong>{thing.icon} {thing.title}</strong>
+                  <span>{thing.blurb}{activity ? ` About ${activity.seconds} s · ${naira(activity.price)}` : ""}</span>
+                </div>
+                <div className="row">
+                  {thing.activity && activity ? (
+                    <button className="primary small-button" disabled={busy || balance < activity.price} onClick={() => go(() => engine.startActivity(thing.activity!))} data-testid={`tourism-book-${thing.activity}`}>
+                      {balance < activity.price ? "Not enough" : "Book here"}
+                    </button>
+                  ) : (
+                    <button className="primary small-button" onClick={() => taxi(thing.id)}>🚕 Taxi</button>
+                  )}
+                  <button className="secondary small-button" onClick={() => { navigateTo(thing.id, onNavigate); onClose(); }}>Directions</button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       </Sheet>
     );
   }
@@ -376,9 +425,10 @@ function CarHireSheet({ place, engine, status, balance, busy, run, onClose }: { 
       ) : (
         <>
           <label className="travel-nights">
-            Hours
-            <select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
-              {Array.from({ length: CAR_RENTAL.maxHours }, (_, index) => index + 1).map((count) => <option key={count} value={count}>{count}</option>)}
+            Hire for
+            <select value={hours} onChange={(event) => setHours(Number(event.target.value))} data-testid="hire-period">
+              {Array.from({ length: CAR_RENTAL.maxHours }, (_, index) => index + 1).map((count) => <option key={count} value={count}>{rentalPeriodLabel(count)}</option>)}
+              {Array.from({ length: CAR_RENTAL.maxDays }, (_, index) => (index + 1) * 24).map((count) => <option key={count} value={count}>{rentalPeriodLabel(count)} (day rate)</option>)}
             </select>
           </label>
           <ul className="venue-list">
@@ -386,13 +436,13 @@ function CarHireSheet({ place, engine, status, balance, busy, run, onClose }: { 
               <li key={car.modelId}>
                 <div>
                   <strong>{modelName(car.modelId)}</strong>
-                  <span>{naira(car.perHour)}/hour · {naira(car.perHour * hours)} for {hours} h</span>
+                  <span>{naira(car.perHour)}/hour · {naira(car.perHour * CAR_RENTAL.dayRateHours)}/day · {naira(rentalPrice(car.perHour, hours))} for {rentalPeriodLabel(hours)}</span>
                 </div>
-                <button className="primary small-button" disabled={busy || balance < car.perHour * hours} onClick={() => void run(async () => {
+                <button className="primary small-button" disabled={busy || balance < rentalPrice(car.perHour, hours)} onClick={() => void run(async () => {
                   engine.rentCar(car.modelId, hours);
                   onClose();
                   return null;
-                })}>{balance < car.perHour * hours ? "Not enough" : "Hire"}</button>
+                })}>{balance < rentalPrice(car.perHour, hours) ? "Not enough" : "Hire"}</button>
               </li>
             ))}
           </ul>

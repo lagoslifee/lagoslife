@@ -3,6 +3,9 @@ import {
   CABINS,
   cabinSeats,
   CAR_RENTAL,
+  isRentalPeriod,
+  rentalPeriodLabel,
+  rentalPrice,
   hotelById,
   hotelRoom,
   INTERIOR_ORIGIN,
@@ -633,7 +636,7 @@ export async function payActivity(userId: string, activity: ActivityId, idempote
 export async function rentCar(userId: string, modelId: string, hours: number, idempotencyKey: string) {
   const offer = RENTAL_CARS.find((car) => car.modelId === modelId);
   if (!offer) throw new EconomyError("That car isn't available for hire.", 404);
-  if (hours > CAR_RENTAL.maxHours) throw new EconomyError(`Hire for up to ${CAR_RENTAL.maxHours} hours.`, 409);
+  if (!isRentalPeriod(hours)) throw new EconomyError(`Hire for 1–${CAR_RENTAL.maxHours} hours or 1–${CAR_RENTAL.maxDays} days.`, 409);
   return withTransaction(async (client) => {
     await lockWallet(client, userId);
     const replay = await client.query(`SELECT id, ends_at FROM travel_activity WHERE user_id = $1 AND idempotency_key = $2`, [userId, idempotencyKey]);
@@ -641,9 +644,9 @@ export async function rentCar(userId: string, modelId: string, hours: number, id
     const live = await client.query(`SELECT 1 FROM travel_activity WHERE user_id = $1 AND activity = 'car-rental' AND ends_at > NOW()`, [userId]);
     if (live.rowCount) throw new EconomyError("You already have a hire car. Return it first.", 409);
     const id = randomUUID();
-    const price = offer.perHour * hours;
+    const price = rentalPrice(offer.perHour, hours);
     const endsAt = Date.now() + hours * HOUR;
-    const balance = await debitWallet(client, userId, price, "car_rental", `Dubai car hire · ${hours} h`, `car-rental:${idempotencyKey}`, { modelId, hours });
+    const balance = await debitWallet(client, userId, price, "car_rental", `Dubai car hire · ${rentalPeriodLabel(hours)}`, `car-rental:${idempotencyKey}`, { modelId, hours });
     await client.query(
       `INSERT INTO travel_activity (id, user_id, activity, price, model_id, ends_at, idempotency_key) VALUES ($1, $2, 'car-rental', $3, $4, $5, $6)`,
       [id, userId, price, modelId, new Date(endsAt), idempotencyKey],

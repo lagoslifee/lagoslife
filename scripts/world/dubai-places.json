@@ -8,6 +8,8 @@
   { "id": "marina-dhow-cafe", "kind": "cafe", "name": "Marina Dhow Café", "building": 195819892, "street": "Marina Walk", "kerbStreet": "King Salman bin Abdulaziz Al Saud Street" },
   { "id": "marina-boutique", "kind": "boutique", "name": "Marina Thread Boutique", "building": 200915107, "street": "Al Marsa Street" },
   { "id": "marina-souvenirs", "kind": "souvenir", "name": "Dune & Pearl Souvenirs", "building": 532586694, "street": "Al Mamsha Street" },
+  { "id": "pearl-club-dubai", "kind": "club", "name": "Pearl Club Dubai", "building": 279536861, "street": "Al Mamsha Street" },
+  { "id": "marina-tourism-centre", "kind": "tourism", "name": "Dubai Marina Tourism Centre", "building": 522996800, "street": "Al Mamsha Street" },
   { "id": "skyline-rooftop", "kind": "lounge", "name": "Skyline Rooftop Lounge", "building": 186351092, "street": "Al Marsa Street" },
   { "id": "jbr-beach", "kind": "beach", "name": "JBR Beach", "area": 320162564, "at": { "x": -5190, "z": -7925 }, "look": { "x": -5300, "z": -7860 }, "street": "The Walk at Jumeirah Beach Residence", "kerbStreet": null },
   { "id": "marina-dhow-pier", "kind": "marina", "name": "Marina Dhow Pier", "at": { "lat": 25.077920, "lon": 55.140089 }, "look": { "lat": 25.07792, "lon": 55.139306 }, "street": "Marina Walk", "kerbStreet": null },

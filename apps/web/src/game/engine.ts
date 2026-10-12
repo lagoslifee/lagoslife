@@ -248,6 +248,7 @@ const PLACE_ACTIONS: Record<Place["kind"], string> = {
   photo: "Take a photo",
   desert: "Desert camp",
   car_rental: "Hire a car",
+  tourism: "Things to do in Dubai",
 };
 
 /** Lines the crew say on a 60-second flight, keyed by phase. */

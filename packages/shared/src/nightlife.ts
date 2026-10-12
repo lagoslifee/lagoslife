@@ -23,6 +23,7 @@ export type Club = {
 export const CLUBS: Record<string, Club> = {
   "admiralty-lounge": { id: "admiralty-lounge", cover: 2_000, tablePrice: 40_000, tagline: "Amapiano and Afrobeats on the Lekki strip.", dj: "DJ Tobi", accent: "#8a3cff", bpm: 112 },
   "awolowo-rooftop": { id: "awolowo-rooftop", cover: 5_000, tablePrice: 80_000, tagline: "Ikoyi's dressy rooftop. Highlife, Afro-house and city lights.", dj: "DJ Amaka", accent: "#ff9d1c", bpm: 120 },
+  "pearl-club-dubai": { id: "pearl-club-dubai", cover: 10_000, tablePrice: 150_000, tagline: "Dubai Marina's late-night club on The Walk. Afro-house, R&B and bottle service.", dj: "DJ Rania", accent: "#d4af37", bpm: 118 },
   "eko-nights": { id: "eko-nights", cover: 3_500, tablePrice: 60_000, tagline: "Victoria Island's loudest dance floor. Open till dawn.", dj: "DJ Kemi", accent: "#ff2d7a", bpm: 105 },
 };
 

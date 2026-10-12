@@ -104,7 +104,7 @@ const DUBAI_SHOP_NAMES = [
 ];
 const DUBAI_SHOP_COLORS = ["#f7f3ea", "#e6eef2", "#f3e6cf", "#eef3ea"];
 const DUBAI_BLUE = "#1d4f91";
-const DUBAI_COMMERCIAL = new Set(["restaurant", "cafe", "boutique", "souvenir", "car_rental", "lounge"]);
+const DUBAI_COMMERCIAL = new Set(["restaurant", "cafe", "boutique", "souvenir", "car_rental", "lounge", "tourism"]);
 const DESERT = DUBAI_DISTRICTS.find((district) => district.id === "dubai-desert")?.rect ?? null;
 /** Map features that are not buildings (the observation wheel on Bluewaters). */
 type WorldFeature = { kind: string; point: Vec2; yaw: number; span: number; height: number };
