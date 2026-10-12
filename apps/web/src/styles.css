@@ -1114,3 +1114,12 @@ button.wide { width: 100%; margin: 6px 0; }
 .repair-parts small { color: #116c60; font-weight: 700; }
 .repair-start { width: 100%; }
 .repair-log { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 4px; color: #6a7773; font-size: calc(12px * var(--text-scale)); }
+
+.trip-chooser { position: absolute; left: 50%; bottom: calc(150px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 30; width: min(440px, calc(100vw - 24px)); padding: 10px; border-radius: 16px; color: #fff; background: rgba(24, 16, 36, .92); border: 1px solid rgba(255, 255, 255, .16); box-shadow: 0 10px 30px rgba(0, 0, 0, .35); pointer-events: auto; }
+.trip-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.trip-head strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip-close { min-height: 32px; width: 32px; padding: 0; border-radius: 999px; background: rgba(255, 255, 255, .12); color: #fff; border: 0; }
+.trip-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.trip-options button { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 56px; padding: 6px 4px; font-size: 13px; line-height: 1.2; }
+.trip-options small { font-size: 11px; opacity: .75; font-weight: 400; }
+.trip-note { margin: 8px 0 0; font-size: 12px; opacity: .8; }

@@ -28,6 +28,7 @@ import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
 import { CheckpointPrompt, HoldUpPrompt, PoliceStationSheet, SecuritySheet } from "./PoliceSheets";
 import { GymSheet } from "./GymSheet";
 import { EstateApp } from "./EstateApp";
+import { TripChooser, type TripTarget } from "./TripChooser";
 import { ChatPanel, ReportDialog, WarningNotice, type ReportTarget } from "./SafetyUI";
 
 type Toast = Notice & { id: number; at: number };
@@ -157,6 +158,16 @@ export function GameView({
     setRestarts(restartsRef.current);
   }, []);
   const [manualTarget, setManualTarget] = useState<{ point: Vec2; label: string } | null>(null);
+  const [tripTo, setTripTo] = useState<TripTarget | null>(null);
+  /** "Go to" from an app or the map asks how to travel; at the wheel it just draws the route. */
+  const chooseTrip = (next: TripTarget | null) => {
+    if (!next || !engine || engine.drivingVehicleId() !== null) {
+      setTripTo(null);
+      setManualTarget(next);
+      return;
+    }
+    setTripTo(next);
+  };
   /** The guide's step only draws a route once the player asks for it, so it never pulls them away from where they are heading. */
   const [routedObjective, setRoutedObjective] = useState<string | null>(null);
   const [arrival, setArrival] = useState<{ label: string; at: number } | null>(null);
@@ -899,7 +910,7 @@ export function GameView({
           </section>
 
           {inDubai && !guideHidden && !airportGuide && hud.location !== "bus" && !(hud.location === "interior" && (trip?.flight || trip?.excursion)) && (
-            <DubaiGuide engine={engine} here={[hud.x, hud.z]} onNavigate={(next) => setManualTarget(next)} />
+            <DubaiGuide engine={engine} here={[hud.x, hud.z]} onNavigate={chooseTrip} />
           )}
           {objective && !guideHidden && sheet?.kind !== "dealership" && !(hud.location === "interior" && (trip?.flight || trip?.excursion)) && (
             <section className={`objective ${guideOpen ? "open" : "collapsed"}`} data-testid="objective">
@@ -1140,7 +1151,7 @@ export function GameView({
               </div>
               <button className="icon-button" onClick={() => setSheet(null)} aria-label="Close">✕</button>
             </header>
-            <EstateApp properties={properties} plots={plots} here={hud ? [hud.x, hud.z] : null} onRefresh={refresh} onToast={toast} onNavigate={setManualTarget} onClose={() => setSheet(null)} />
+            <EstateApp properties={properties} plots={plots} here={hud ? [hud.x, hud.z] : null} onRefresh={refresh} onToast={toast} onNavigate={chooseTrip} onClose={() => setSheet(null)} />
           </section>
         </div>
       )}
@@ -1277,6 +1288,9 @@ export function GameView({
           })}
         </div>
       )}
+      {tripTo && engine && (
+        <TripChooser engine={engine} target={tripTo} onRoute={(next) => setManualTarget(next)} onCab={() => setPhone("ride")} onClose={() => setTripTo(null)} />
+      )}
       {holding && engine && inClub && (
         <div className="held-chip" data-testid="held-item">
           <span>{holding.food ? "🍢" : "🥤"} {holding.name}{holding.left ? ` · ${holding.left} left` : " · finished"}</span>
@@ -1292,7 +1306,7 @@ export function GameView({
           onClose={() => setSheet(null)}
           onRefresh={refresh}
           onToast={toast}
-          onNavigate={(next) => setManualTarget(next)}
+          onNavigate={chooseTrip}
           onOpenApp={(app) => { setSheet(null); setPhone(app); }}
         />
       )}
@@ -1306,7 +1320,7 @@ export function GameView({
           onClose={() => setTravelSpot(null)}
           onRefresh={refresh}
           onToast={toast}
-          onNavigate={(next) => setManualTarget(next)}
+          onNavigate={chooseTrip}
         />
       )}
       {sheet && !["dealership", "mechanic", "club", "police", "security", "gym", "estate"].includes(sheet.kind) && !COMMUNITY_KINDS.has(sheet.kind) && !TRAVEL_SHEET_KINDS.has(sheet.kind) && (
@@ -1385,7 +1399,7 @@ export function GameView({
             sessionStorage.removeItem("lagos-quality-session");
             location.reload();
           }}
-          onNavigate={(next) => setManualTarget(next)}
+          onNavigate={chooseTrip}
           onOpenMap={() => { setPhone(null); setMapOpen(true); }}
           onRefresh={refresh}
           onToast={toast}
