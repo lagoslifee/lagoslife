@@ -1038,3 +1038,5 @@ button.wide { width: 100%; margin: 6px 0; }
 .business-emoji { font-size: 26px; line-height: 1; }
 .business-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .business-actions input { flex: 1; min-width: 120px; }
+.dubai-tour { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 12.5px; color: #9fe8ff; }
+.dubai-tour-start { width: 100%; }

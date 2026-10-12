@@ -789,7 +789,7 @@ export function GameView({
           </section>
 
           {inDubai && !guideHidden && !airportGuide && hud.location !== "bus" && !(hud.location === "interior" && (trip?.flight || trip?.excursion)) && (
-            <DubaiGuide here={[hud.x, hud.z]} onNavigate={(next) => setManualTarget(next)} />
+            <DubaiGuide engine={engine} here={[hud.x, hud.z]} onNavigate={(next) => setManualTarget(next)} />
           )}
           {objective && !guideHidden && sheet?.kind !== "dealership" && !(hud.location === "interior" && (trip?.flight || trip?.excursion)) && (
             <section className={`objective ${guideOpen ? "open" : "collapsed"}`} data-testid="objective">

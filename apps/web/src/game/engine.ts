@@ -104,6 +104,7 @@ import {
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
 import { EntranceMarkers, type EntranceCandidate } from "./entrance-markers";
+import { TourGuide, tourStops } from "./tour-guide";
 import { HomeStaffView, type StaffPost } from "./home-staff-view";
 import { PartyLights } from "./party-lights";
 import { Escort, type EscortLeader } from "./escort";
@@ -368,6 +369,7 @@ export class GameEngine {
   private entrances: EntranceMarkers | null = null;
   /** The desk the HUD wants the player to walk to next inside a terminal or other travel interior. */
   private indoorGuide: { spot: string; label: string } | null = null;
+  private tour: TourGuide | null = null;
   private guideLine: Mesh | null = null;
   private homeStaff: HomeStaffView | null = null;
   private staffPosts: StaffPost[] = [];
@@ -1273,7 +1275,14 @@ export class GameEngine {
     this.partyLights?.update(now * 0.001);
     const guideSpot = this.interior && !seatedTravel && this.indoorGuide ? this.interior.spots.find((spot) => spot.id === this.indoorGuide!.spot) : undefined;
     const indoorTarget = guideSpot && guideSpot.id !== "exit" ? { key: guideSpot.id, point: guideSpot.point, name: this.indoorGuide!.label, title: "NEXT STEP" } : null;
-    this.entrances?.update(dt, [x, z], !this.interior && !bus && !seatedTravel, () => this.entranceCandidates(), this.interior && !seatedTravel ? (this.interior.spots.find((spot) => spot.id === "exit")?.point ?? null) : null, this.interior ? indoorTarget : this.waypointDoor);
+    if (this.tour && !this.interior && this.playerRegion() !== "dubai") this.endTour();
+    if (this.tour) {
+      this.tour.update(dt, [x, z], !this.interior && !bus);
+      if (this.tour.done) this.endTour();
+    }
+    const tourStop = this.tour?.stop;
+    const outdoorTarget = this.waypointDoor ?? (tourStop ? { key: `tour:${tourStop.id}`, point: tourStop.point, name: tourStop.name, title: "TOUR STOP" } : null);
+    this.entrances?.update(dt, [x, z], !this.interior && !bus && !seatedTravel, () => this.entranceCandidates(), this.interior && !seatedTravel ? (this.interior.spots.find((spot) => spot.id === "exit")?.point ?? null) : null, this.interior ? indoorTarget : outdoorTarget);
     this.updateGuideLine([x, z], guideSpot?.point ?? null);
     this.spotters?.update(dt, now, this.spottedCar(x, z), [x, z], !this.interior && !bus);
     this.updateTout(dt, now, x, z);
@@ -2824,6 +2833,35 @@ export class GameEngine {
     return this.navigator.plan(from, to);
   }
 
+  /** Starts the free Dubai Marina walking tour with a guide beside the player; only on the street in Dubai. */
+  startTour() {
+    if (!this.avatars || this.interior || this.playerRegion() !== "dubai") return false;
+    this.endTour();
+    this.tour = new TourGuide(
+      this.avatars,
+      tourStops(),
+      [this.controller.x, this.controller.z],
+      (x, z) => this.world.groundHeight(x, z),
+      (from, to) => this.navigator.plan(from, to).points,
+      (text) => this.callbacks.notice({ tone: "info", text }),
+    );
+    this.callbacks.notice({ tone: "info", text: "🧭 Aisha is your guide. Follow her around the Marina; she waits if you fall behind." });
+    return true;
+  }
+
+  endTour() {
+    this.tour?.dispose();
+    this.tour = null;
+  }
+
+  tourState() {
+    const tour = this.tour;
+    const stop = tour?.stop;
+    if (!tour) return null;
+    const [gx, gz] = tour.position;
+    return { stop: stop?.name ?? null, index: tour.progress.index, total: tour.progress.total, guideMetres: Math.round(Math.hypot(gx - this.controller.x, gz - this.controller.z)) };
+  }
+
   /** Which travel interior the player is standing in (terminal, hotel, deck…), or null on the street and at home. */
   travelKind() {
     return this.self && this.interior ? travelInteriorOf(this.self.location) : null;
@@ -3579,6 +3617,7 @@ export class GameEngine {
   }
 
   async dispose() {
+    this.endTour();
     this.disposed = true;
     window.removeEventListener("resize", this.resize);
     await this.net.disconnect().catch(() => undefined);
