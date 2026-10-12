@@ -183,10 +183,12 @@ export async function bookTable(userId: string, placeId: string, no: number) {
     }
     const own = await client.query(`SELECT table_no FROM club_table_booking WHERE owner_user_id = $1 AND place_id = $2 AND lagos_night = $3::date`, [userId, placeId, night]);
     if (own.rowCount) throw new EconomyError(`You already have table ${own.rows[0].table_no} tonight.`, 409);
-    const balance = await debitWallet(client, userId, club.tablePrice, "club_table", `VIP table ${no} · ${place.name}`, `club-table:${userId}:${placeId}:${night}`, { placeId, table: no });
+    // A released table can be booked again the same night, so the charge is keyed to this booking.
+    const bookingId = randomUUID();
+    const balance = await debitWallet(client, userId, club.tablePrice, "club_table", `VIP table ${no} · ${place.name}`, `club-table:${bookingId}`, { placeId, table: no });
     await client.query(
       `INSERT INTO club_table_booking (id, place_id, lagos_night, table_no, owner_user_id, price) VALUES ($1, $2, $3::date, $4, $5, $6)`,
-      [randomUUID(), placeId, night, no, userId, club.tablePrice],
+      [bookingId, placeId, night, no, userId, club.tablePrice],
     );
     return { charged: club.tablePrice, balance, tables: await listTables(userId, placeId, client) };
   });

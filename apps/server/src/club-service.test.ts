@@ -145,4 +145,15 @@ describe("VIP tables", () => {
     inClub(friend.id);
     expect((await bookTable(friend.id, club.id, table.no)).charged).toBe(CLUBS["eko-nights"]!.tablePrice);
   });
+
+  it("lets a resident whose table was released book again the same night", async () => {
+    const now = Date.now();
+    setPlayerPosition(friend.id, ...club.door);
+    await releaseAbandonedTables(now);
+    await releaseAbandonedTables(now + TABLE_ABSENCE_MS + 1_000);
+    inClub(friend.id);
+    const before = await balance(friend.id);
+    expect((await bookTable(friend.id, club.id, table.no)).charged).toBe(CLUBS["eko-nights"]!.tablePrice);
+    expect(await balance(friend.id)).toBe(before - CLUBS["eko-nights"]!.tablePrice);
+  });
 });
