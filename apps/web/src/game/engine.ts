@@ -423,6 +423,8 @@ export class GameEngine {
   private flightPhaseShown: FlightPhase | null = null;
   /** Outside camera during the take-off and landing shots; null otherwise. */
   private flightShot: { eye: Vector3; look: Vector3 } | null = null;
+  /** Test builds only: a fixed camera anywhere in the world, used to capture the sign-up page's city previews. */
+  private cinemaShot: { eye: Vector3; look: Vector3 } | null = null;
   private flightShotCaption: "takeoff" | "landing" | null = null;
   private crew: Array<{ avatar: Avatar; z: number; dir: number; served: boolean }> = [];
   private trolley: TransformNode | null = null;
@@ -1409,10 +1411,11 @@ export class GameEngine {
 
     this.updateFlight(dt);
     if (this.showcase) this.updateShowcaseCamera(dt);
-    else if (this.flightShot) {
-      this.camera.fov = 0.62;
-      this.camera.position.copyFrom(this.flightShot.eye);
-      this.camera.setTarget(this.flightShot.look);
+    else if (this.flightShot ?? this.cinemaShot) {
+      const shot = (this.flightShot ?? this.cinemaShot)!;
+      this.camera.fov = this.flightShot ? 0.62 : 0.85;
+      this.camera.position.copyFrom(shot.eye);
+      this.camera.setTarget(shot.look);
     } else {
       this.camera.fov = 0.95;
       this.updateCamera(dt, bus);
@@ -4016,6 +4019,12 @@ export class GameEngine {
         cameraYaw: this.cameraYaw,
       }),
       buses: () => [...this.buses.values()].map((bus) => ({ ...bus.state, cx: bus.root.position.x, cz: bus.root.position.z })),
+      cinema: (shot: { eye: [number, number, number]; look: [number, number, number] } | null) => {
+        this.cinemaShot = shot ? { eye: Vector3.FromArray(shot.eye), look: Vector3.FromArray(shot.look) } : null;
+        this.streamProbe = shot ? { x: shot.look[0], z: shot.look[2], vx: 0, vz: 0, at: performance.now(), costs: [], bare: 0 } : null;
+        if (shot) this.setSettings({ ...this.settings, autoGraphics: false });
+      },
+      ground: (x: number, z: number) => this.world.groundHeight(x, z),
       setCamera: (yaw: number, pitch?: number, distance?: number) => {
         this.cameraYaw = yaw;
         if (pitch !== undefined) this.cameraPitch = pitch;

@@ -16,6 +16,7 @@ import {
 } from "@lagos-living/shared";
 import { FormEvent, lazy, Suspense, useEffect, useRef, useState } from "react";
 import { LifeGoalsDialog } from "./ui/LifeGoals";
+import { CityReel } from "./ui/CityReel";
 import { ACCESSORY_LABELS, HAIR_COLOURS, HAIR_LABELS, OUTFITS, SKIN_TONE_COLOURS } from "./game/wardrobe";
 import { apiConfigured, apiUrl, authClient, authHeaders, guestMode, sessionToken, signOut, startGuestSession } from "./auth-client";
 
@@ -199,6 +200,7 @@ function AuthScreen() {
           <ul className="feature-chips">
             <li>🏡 Build your home</li><li>🚗 Real cars</li><li>💼 Run a business</li><li>🍾 VIP nights</li><li>✈️ Fly to Dubai</li>
           </ul>
+          <CityReel />
         </div>
         <div className="lagoon-line" />
       </section>
