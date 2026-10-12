@@ -125,6 +125,7 @@ export * from "./travel.js";
 export * from "./fast-travel.js";
 export * from "./finance.js";
 export * from "./gigs.js";
+export * from "./generator-repair.js";
 export * from "./home-services.js";
 export * from "./business.js";
 export * from "./gym.js";

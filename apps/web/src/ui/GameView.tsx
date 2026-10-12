@@ -11,6 +11,7 @@ import { currentObjective, housingPath, type HousingPath } from "./objectives";
 import { Welcome } from "./Welcome";
 import { DailyBonusPopup } from "./FinanceApps";
 import { Phone, type PhoneApp } from "./Phone";
+import { RepairPanel } from "./RepairPanel";
 import { RideAskCard, TravelPromptCard } from "./GoApp";
 import type { RideAsk } from "../multiplayer";
 import { AgberoPrompt } from "./AgberoPrompt";
@@ -203,6 +204,7 @@ export function GameView({
 
   const [gig, setGig] = useState<ActiveGig | null>(null);
   const [gigNow, setGigNow] = useState(Date.now());
+  const [repairOpen, setRepairOpen] = useState(false);
   const refresh = useCallback(async () => {
     try {
       const [nextEconomy, nextProperties, nextVehicles] = await Promise.all([api.economy(), api.properties(), api.vehicles(), refreshPlots()]);
@@ -496,27 +498,35 @@ export function GameView({
     engine?.setGigTarget({ point: place.door, title: gig.title, place: place.name });
   }, [engine, gig?.runId, gig?.status]);
 
-  const gigEndsAt = gig?.status === "working" && gig.startedWorkAt ? new Date(gig.startedWorkAt).getTime() + gig.workSeconds * 1000 : null;
+  const repairPlace = gig?.handsOn && gig.status === "working" ? gig.placeId : null;
+  useEffect(() => {
+    engine?.setRepairSite(repairPlace, gig?.repair?.running ?? false);
+    if (!repairPlace) setRepairOpen(false);
+  }, [engine, repairPlace, gig?.repair?.running]);
+
+  const finishGig = useCallback(() => {
+    api.completeGig()
+      .then((result) => {
+        toast({ tone: "success", text: `${result.title} done! +${naira(result.reward)} · balance ${naira(result.balance)}` });
+        setGig(null);
+        return refresh();
+      })
+      .catch((error: Error) => {
+        toast({ tone: "error", text: error.message });
+        api.gigs().then((status) => setGig(status.active)).catch(() => undefined);
+      });
+  }, [refresh, toast]);
+
+  const gigEndsAt = !gig?.handsOn && gig?.status === "working" && gig.startedWorkAt ? new Date(gig.startedWorkAt).getTime() + gig.workSeconds * 1000 : null;
   useEffect(() => {
     if (!gigEndsAt) return;
     const tick = window.setInterval(() => setGigNow(Date.now()), 500);
-    const finish = window.setTimeout(() => {
-      api.completeGig()
-        .then((result) => {
-          toast({ tone: "success", text: `${result.title} done! +${naira(result.reward)} · balance ${naira(result.balance)}` });
-          setGig(null);
-          return refresh();
-        })
-        .catch((error: Error) => {
-          toast({ tone: "error", text: error.message });
-          api.gigs().then((status) => setGig(status.active)).catch(() => undefined);
-        });
-    }, Math.max(0, gigEndsAt - Date.now()) + 600);
+    const finish = window.setTimeout(finishGig, Math.max(0, gigEndsAt - Date.now()) + 600);
     return () => {
       window.clearInterval(tick);
       window.clearTimeout(finish);
     };
-  }, [gigEndsAt, refresh, toast]);
+  }, [gigEndsAt, finishGig]);
 
   useEffect(() => {
     const job = economy?.activeJob;
@@ -641,11 +651,18 @@ export function GameView({
       void refresh();
       return;
     }
+    if (interaction.kind === "repair") {
+      setRepairOpen(true);
+      return;
+    }
     if (interaction.kind === "gig") {
       api.startGig()
         .then((active) => {
           setGig(active);
-          toast({ tone: "info", text: `${active.emoji} ${active.task} ${getPlace(active.placeId).name}. Stay here for ${active.workSeconds} s.` });
+          if (active.handsOn) {
+            setRepairOpen(true);
+            toast({ tone: "info", text: "🔧 The generator won't start. Check the fuel, spark plug, air filter and oil to find the fault." });
+          } else toast({ tone: "info", text: `${active.emoji} ${active.task} ${getPlace(active.placeId).name}. Stay here for ${active.workSeconds} s.` });
         })
         .catch((error: Error) => toast({ tone: "error", text: error.message }));
       return;
@@ -903,13 +920,15 @@ export function GameView({
           )}
 
           {gig && (
-            <button className="job-chip gig-chip" data-testid="gig-status" onClick={() => setPhone("jobs")}>
+            <button className="job-chip gig-chip" data-testid="gig-status" onClick={() => (repairPlace ? setRepairOpen(true) : setPhone("jobs"))}>
               {gig.emoji} {gig.title} · {naira(gig.reward)}
               {gigEndsAt ? (
                 <>
                   <small>Working · {Math.max(0, Math.ceil((gigEndsAt - gigNow) / 1000))} s left — stay here</small>
                   <i style={{ width: `${Math.min(100, (1 - Math.max(0, gigEndsAt - gigNow) / (gig.workSeconds * 1000)) * 100)}%` }} />
                 </>
+              ) : gig.handsOn && gig.status === "working" ? (
+                <small>{gig.repair?.running ? "Generator running" : "At the generator · find the fault and fix it"}</small>
               ) : (
                 <small>Go to {getPlace(gig.placeId).name} and tap Start job at the door</small>
               )}
@@ -1167,6 +1186,16 @@ export function GameView({
             engine.answerHoldUp(holdUp.robberyId, answer);
             setHoldUp(null);
           }}
+        />
+      )}
+      {repairOpen && gig?.repair && engine && (
+        <RepairPanel
+          gig={gig}
+          onWork={(seconds) => engine.repairWork(seconds)}
+          onGig={setGig}
+          onRunning={() => window.setTimeout(finishGig, 1_200)}
+          onError={(text) => toast({ tone: "error", text })}
+          onClose={() => setRepairOpen(false)}
         />
       )}
       {robTarget && engine && (

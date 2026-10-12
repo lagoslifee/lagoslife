@@ -2,7 +2,7 @@ import type { CabinClass, CharacterAppearance, OutfitId, HotelBookingState, Room
 import type { BottleItem, Citation, PoliceCase, StreetIncident, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
 import type { BusinessStatus, BusinessTypeId, CourseId, ExerciseId, GymStatus, RestResult } from "@lagos-living/shared";
 import type { FoodParcel, HomeStaffRole, HomeStaffState } from "@lagos-living/shared";
-import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick } from "@lagos-living/shared";
+import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick, RepairAction } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -236,6 +236,7 @@ export const api = {
   gigs: () => request<GigStatus>("/api/gigs"),
   takeGig: (gigId: string) => post<GigStatus>("/api/gigs/take", { gigId }),
   startGig: () => post<ActiveGig>("/api/gigs/start"),
+  repairGig: (action: RepairAction) => post<{ message: string; gig: ActiveGig }>("/api/gigs/repair", { action }),
   completeGig: () => post<{ reward: number; balance: number; title: string }>("/api/gigs/complete"),
   cancelGig: () => post<{ cancelled: boolean }>("/api/gigs/cancel"),
   security: () => request<SecurityStatus>("/api/security"),

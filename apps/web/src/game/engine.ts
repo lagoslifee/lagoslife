@@ -109,6 +109,7 @@ import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-in
 import { EntranceMarkers, type EntranceCandidate } from "./entrance-markers";
 import { TourGuide, tourStops } from "./tour-guide";
 import { gymStations, type GymStation } from "./gym-stations";
+import { RepairSite } from "./repair-site";
 import { PropLibrary } from "./props";
 import { HomeStaffView, type StaffPost } from "./home-staff-view";
 import { PartyLights } from "./party-lights";
@@ -188,6 +189,7 @@ export type Interaction =
   | { kind: "place"; place: Place }
   | { kind: "delivery" }
   | { kind: "gig" }
+  | { kind: "repair" }
   | { kind: "interior"; spot: InteriorSpot["id"] }
   | { kind: "travel"; interior: TravelInterior; spot: string }
   | { kind: "plot"; plotId: string }
@@ -386,6 +388,8 @@ export class GameEngine {
   private tour: TourGuide | null = null;
   /** A gym set in progress: the player is held at the station doing the exercise until it ends or they move off. */
   private workout: { station: GymStation; time: number } | null = null;
+  private repairSite: { placeId: string; site: RepairSite } | null = null;
+  private repairing: { until: number; time: number } | null = null;
   private guideLine: Mesh | null = null;
   private homeStaff: HomeStaffView | null = null;
   private couriers: Couriers | null = null;
@@ -1228,6 +1232,11 @@ export class GameEngine {
         move = [0, 0];
         this.controller.teleport(this.workout.station.at[0], this.workout.station.at[1]);
       }
+      if (this.repairing && performance.now() > this.repairing.until) this.repairing = null;
+      if (this.repairing && this.repairSite) {
+        move = [0, 0];
+        this.controller.teleport(...this.repairSite.site.stand);
+      }
       const steps = Math.max(1, Math.ceil(dt / SUBSTEP_DT));
       for (let step = 0; step < steps; step += 1) this.controller.step(dt / steps, move, this.cameraYaw, mode);
       if (this.input.consume("jump")) this.controller.jump();
@@ -1273,6 +1282,14 @@ export class GameEngine {
         this.player.root.setEnabled(true);
         this.player.update(station.speed, station.motion, dt);
         this.player.exercise(station.exercise, workout.time);
+      } else if (this.repairing && this.repairSite) {
+        this.repairing.time += dt;
+        const [sx, sz] = this.repairSite.site.stand;
+        this.player.root.position.set(sx, this.groundY, sz);
+        this.player.root.rotation.y = this.repairSite.site.faceYaw;
+        this.player.root.setEnabled(true);
+        this.player.update(0, "idle", dt);
+        this.player.exercise("repair", this.repairing.time);
       } else {
         if (chair) this.player.root.position.set(chair.seat[0] + Math.sin(chair.yaw) * lean, chair.y, chair.seat[1] + Math.cos(chair.yaw) * lean);
         else this.player.root.position.set(x, seatedTravel ? TRAVEL_SEAT_Y : this.groundY + this.controller.hop, z);
@@ -1310,6 +1327,7 @@ export class GameEngine {
     }
 
     this.updateRemotes(now, dt);
+    this.repairSite?.site.update(now / 1_000);
     this.interior?.update(now * 0.001);
     this.updateWaiters(dt);
     if (!this.staff.idle) this.staff.update(dt, [this.controller.x, this.controller.z], now * 0.001);
@@ -1737,6 +1755,11 @@ export class GameEngine {
       offer(distance + 1.5, { key: bind("interact"), label: `Hold up ${remote.name}`, detail: remote.guards ? "They have armed guards" : "Rob them at gunpoint", disabled: remote.guards > 0 }, () =>
         remote.guards === 0 && this.callbacks.interact({ kind: "holdUp", sessionId, name: remote.name }),
       );
+    }
+    if (this.repairSite && !this.repairing) {
+      const [gx, gz] = this.repairSite.site.at;
+      const distance = Math.hypot(gx - x, gz - z);
+      if (distance < 3.5) offer(distance - 2, { key: bind("interact"), label: "Work on the generator", detail: "Find the fault and fix it" }, () => this.callbacks.interact({ kind: "repair" }));
     }
     if (this.gigTarget) {
       const distance = Math.hypot(this.gigTarget.point[0] - x, this.gigTarget.point[1] - z);
@@ -3127,6 +3150,32 @@ export class GameEngine {
     this.gigTarget = target;
   }
 
+  /** Shows the broken generator for an active repair gig at this place; null removes it. */
+  setRepairSite(placeId: string | null, running = false) {
+    if (this.repairSite && this.repairSite.placeId !== placeId) {
+      this.repairSite.site.dispose();
+      this.repairSite = null;
+      this.repairing = null;
+    }
+    if (placeId && !this.repairSite) {
+      this.repairSite = { placeId, site: new RepairSite(this.scene, this.props, getPlace(placeId), (x, z) => this.world.groundHeight(x, z)) };
+    }
+    this.repairSite?.site.setRunning(running);
+  }
+
+  /** Puts the player at the generator working on it for `seconds`; false when they are not beside it on foot. */
+  repairWork(seconds: number) {
+    const site = this.repairSite?.site;
+    if (!site || this.interior || this.driving || this.passenger || this.riding()) return false;
+    if (Math.hypot(site.at[0] - this.controller.x, site.at[1] - this.controller.z) > 5) return false;
+    this.emote = null;
+    this.sitting = null;
+    this.workout = null;
+    this.controller.teleport(...site.stand);
+    this.repairing = { until: performance.now() + seconds * 1_000, time: 0 };
+    return true;
+  }
+
   setDeliveryTarget(target: { point: Vec2; label: string } | null) {
     this.deliveryTarget = target;
     this.parcel?.setEnabled(Boolean(target));
@@ -3829,6 +3878,7 @@ export class GameEngine {
 
   async dispose() {
     this.endTour();
+    this.setRepairSite(null);
     for (const prop of this.streetProps.splice(0)) prop.dispose();
     this.disposed = true;
     window.removeEventListener("resize", this.resize);

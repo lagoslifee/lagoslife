@@ -333,7 +333,7 @@ function GigBoard({ onNavigate, onClose, onRefresh, onToast }: Props) {
       {active ? (
         <div className="job-card" data-testid="gig-active">
           <p>{active.emoji} <strong>{active.title}</strong> · {naira(active.reward)}</p>
-          <p>{active.task} <strong>{getPlace(active.placeId).name}</strong>. {active.status === "working" ? "You're on the job — stay at the place until the timer ends." : `Go there and tap “Start job” at the door, then stay ${active.workSeconds} s.`}</p>
+          <p>{active.task} <strong>{getPlace(active.placeId).name}</strong>. {active.handsOn ? (active.status === "working" ? "The generator is beside the door. Find the fault, fix it and start it to get paid." : "Go there and tap “Start job” at the door, then find and fix the generator's fault.") : active.status === "working" ? "You're on the job — stay at the place until the timer ends." : `Go there and tap “Start job” at the door, then stay ${active.workSeconds} s.`}</p>
           <div className="row">
             <button className="primary" onClick={() => go(active.placeId)}>Directions</button>
             <button className="secondary" disabled={busy} onClick={() => void run(() => api.cancelGig(), () => onToast({ tone: "info", text: "Gig cancelled." }))}>Cancel gig</button>
@@ -346,7 +346,7 @@ function GigBoard({ onNavigate, onClose, onRefresh, onToast }: Props) {
               <span>{gig.emoji}</span>
               <div>
                 <strong>{gig.title}</strong>
-                <small>{gig.task} {getPlace(gig.placeId).name} · {gig.workSeconds} s on site</small>
+                <small>{gig.task} {getPlace(gig.placeId).name} · {gig.handsOn ? "hands-on: diagnose and fix" : `${gig.workSeconds} s on site`}</small>
                 <b>{naira(gig.reward)}</b>
               </div>
               <button className="primary" disabled={busy} data-testid={`gig-take-${gig.typeId}`} onClick={() => void run(() => api.takeGig(gig.id), () => { onToast({ tone: "success", text: `Gig taken: ${gig.title}. Directions are on.` }); go(gig.placeId); })}>Take</button>

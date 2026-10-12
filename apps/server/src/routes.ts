@@ -18,6 +18,7 @@ import {
   tradeRequestSchema,
   transferRequestSchema,
   takeGigSchema,
+  repairSchema,
   hireStaffSchema,
   orderDeliverySchema,
   spraySchema,
@@ -66,7 +67,7 @@ import { businessStatus, collectBusiness, enrol, startBusiness, upgradeBusiness 
 import { finishSet, gymStatus, joinGym, startSet } from "./gym-service.js";
 import { finishRest, startRest } from "./home-living-service.js";
 import { applyCleaner, collectParcel, dismissStaff, eatParcel, hireStaff, homeStaff, openParcels, orderDelivery, partyUntil, staffByHome, startParty, stopParty } from "./home-services-service.js";
-import { cancelGig, completeGig, gigStatus, startGigWork, takeGig } from "./gig-service.js";
+import { cancelGig, completeGig, gigStatus, repairGig, startGigWork, takeGig } from "./gig-service.js";
 import { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, marketStatus, sprayMoney, trade, transferMoney } from "./finance-service.js";
 import { auth } from "./auth.js";
 import { acquirePlot, buildingEvents, buyReadyBuilt, listPlots, payNextStage, releasePlotsOf, renewPlotLease, startConstruction } from "./building-service.js";
@@ -651,6 +652,7 @@ export function configureRoutes(app: Express) {
   app.get("/api/gigs", requirePlayer, guarded("Gigs unavailable", (_req, userId) => gigStatus(userId)));
   app.post("/api/gigs/take", requirePlayer, rateLimited, guarded("Gig could not be taken", (req, userId) => takeGig(userId, takeGigSchema.parse(req.body).gigId)));
   app.post("/api/gigs/start", requirePlayer, rateLimited, guarded("Job could not start", (_req, userId) => startGigWork(userId)));
+  app.post("/api/gigs/repair", requirePlayer, rateLimited, guarded("Repair step failed", (req, userId) => repairGig(userId, repairSchema.parse(req.body).action)));
   app.post("/api/gigs/complete", requirePlayer, rateLimited, guarded("Job could not be finished", (_req, userId) => completeGig(userId)));
   app.post("/api/gigs/cancel", requirePlayer, rateLimited, guarded("Gig could not be cancelled", (_req, userId) => cancelGig(userId)));
 

@@ -139,7 +139,7 @@ export class AvatarFactory {
 }
 
 type Limbs = Record<"leftUp" | "leftLow" | "rightUp" | "rightLow" | "leftArm" | "rightArm" | "rightFore" | "leftFore" | "rightHand", TransformNode | null>;
-export type Workout = "treadmill" | "bench" | "dumbbells";
+export type Workout = "treadmill" | "bench" | "dumbbells" | "repair";
 
 /**
  * The resident models are sculpted athletic. At build 0 each bone's thickness (its local Y and Z; X runs along the
@@ -325,7 +325,8 @@ export class Avatar {
 
   /**
    * Gym movements over the clip update() just set (call after it): curls bend both forearms; the seated press pushes
-   * both arms overhead and back. The treadmill needs nothing extra beyond a jog at a standstill.
+   * both arms overhead and back. Repair reaches into the machine and works a spanner. The treadmill needs nothing extra
+   * beyond a jog at a standstill.
    */
   exercise(kind: Workout, time: number) {
     const limbs = this.instance.limbs;
@@ -333,6 +334,12 @@ export class Avatar {
     if (kind === "dumbbells") {
       bend(limbs.rightFore, 0.2 + 1.7 * phase, Axis.X);
       bend(limbs.leftFore, 0.2 + 1.7 * phase, Axis.X);
+    } else if (kind === "repair") {
+      const turn = Math.sin(time * 5);
+      bend(limbs.rightArm, -0.75 + 0.12 * turn);
+      bend(limbs.leftArm, -0.6);
+      bend(limbs.rightFore, 0.7 + 0.45 * turn, Axis.X);
+      bend(limbs.leftFore, 0.8, Axis.X);
     } else if (kind === "bench") {
       for (const [arm, fore, side] of [[limbs.rightArm, limbs.rightFore, 1], [limbs.leftArm, limbs.leftFore, -1]] as const) {
         bend(arm, side * (-1.2 - 1.1 * phase), Axis.Z);

@@ -1,12 +1,14 @@
-import { randomUUID } from "node:crypto";
-import { BUSINESS, boardGigs, gigBoard, GIG_BOARD_MS, GIG_RANGE, getPlace, type ActiveGig, type Gig, type GigStatus } from "@lagos-living/shared";
+import { randomInt, randomUUID } from "node:crypto";
+import { applyRepair, BUSINESS, boardGigs, gigBoard, GIG_BOARD_MS, GIG_RANGE, GENERATOR_FAULTS, getPlace, gigType, newRepair, REPAIR_ACTION_MS, repairView, type ActiveGig, type Gig, type GigStatus, type RepairAction, type RepairState } from "@lagos-living/shared";
 import { hasCertificate } from "./certificates.js";
 import { pool } from "./database.js";
 import { creditWallet, EconomyError, ensureWallet, withTransaction } from "./economy-service.js";
 import { fortune } from "./finance-service.js";
 import { isNear } from "./player-presence.js";
 
-type GigRow = { id: string; gig_id: string; type_id: string; title: string; task: string; emoji: string; place_id: string; reward: string; work_seconds: number; status: "travelling" | "working"; started_work_at: Date | null };
+type GigRow = { id: string; gig_id: string; type_id: string; title: string; task: string; emoji: string; place_id: string; reward: string; work_seconds: number; status: "travelling" | "working"; started_work_at: Date | null; repair: RepairState | null; repair_action_at: Date | null };
+
+const handsOn = (row: GigRow) => gigType(row.type_id)?.handsOn ?? false;
 
 const boardCache = new Map<number, Gig[]>();
 export function gigsFor(board: number) {
@@ -29,16 +31,18 @@ function toActive(row: GigRow): ActiveGig {
     emoji: row.emoji,
     placeId: row.place_id,
     reward: Number(row.reward),
-    workSeconds: row.work_seconds,
+    workSeconds: handsOn(row) ? 0 : row.work_seconds,
+    handsOn: handsOn(row),
     runId: row.id,
     status: row.status,
     startedWorkAt: row.started_work_at ? row.started_work_at.toISOString() : null,
+    repair: row.repair ? repairView(row.repair) : null,
   };
 }
 
 async function openGig(userId: string, lock = false, client: { query: typeof pool.query } = pool) {
   const { rows } = await client.query<GigRow>(
-    `SELECT id, gig_id, type_id, title, task, emoji, place_id, reward, work_seconds, status, started_work_at
+    `SELECT id, gig_id, type_id, title, task, emoji, place_id, reward, work_seconds, status, started_work_at, repair, repair_action_at
      FROM gig_run WHERE user_id = $1 AND status IN ('travelling', 'working')${lock ? " FOR UPDATE" : ""}`,
     [userId],
   );
@@ -75,8 +79,24 @@ export async function startGigWork(userId: string) {
   const row = await openGig(userId);
   if (!row) throw new EconomyError("You don't have a gig. Pick one in Phone → Jobs.", 404);
   if (!isNear(userId, getPlace(row.place_id).door, GIG_RANGE)) throw new EconomyError(`Go to ${getPlace(row.place_id).name} to start this job.`, 409);
-  await pool.query(`UPDATE gig_run SET status = 'working', started_work_at = COALESCE(started_work_at, NOW()) WHERE id = $1`, [row.id]);
+  const repair = handsOn(row) && !row.repair ? newRepair(GENERATOR_FAULTS[randomInt(GENERATOR_FAULTS.length)]!) : null;
+  await pool.query(`UPDATE gig_run SET status = 'working', started_work_at = COALESCE(started_work_at, NOW()), repair = COALESCE(repair, $2) WHERE id = $1`, [row.id, repair]);
   return toActive((await openGig(userId))!);
+}
+
+/** One step of a hands-on repair at the machine. The fault stays on the server; the reply only says what you found. */
+export async function repairGig(userId: string, action: RepairAction) {
+  return withTransaction(async (client) => {
+    const row = await openGig(userId, true, client);
+    if (!row || row.status !== "working" || !row.repair) throw new EconomyError("Start the repair job at the place first.", 409);
+    if (!isNear(userId, getPlace(row.place_id).door, GIG_RANGE + 6)) throw new EconomyError(`Go back to the generator at ${getPlace(row.place_id).name}.`, 409);
+    const wait = row.repair_action_at ? REPAIR_ACTION_MS - (Date.now() - row.repair_action_at.getTime()) : 0;
+    if (wait > 250) throw new EconomyError("Finish what you're doing first.", 429);
+    const result = applyRepair(row.repair, action);
+    if (!result.ok) throw new EconomyError(result.message, 409);
+    await client.query(`UPDATE gig_run SET repair = $2, repair_action_at = NOW() WHERE id = $1`, [row.id, result.state]);
+    return { message: result.message, gig: toActive({ ...row, repair: result.state }) };
+  });
 }
 
 /** Pays once the work time has passed at the door; the row lock and per-run ledger key stop double pay. */
@@ -84,7 +104,8 @@ export async function completeGig(userId: string) {
   return withTransaction(async (client) => {
     const row = await openGig(userId, true, client);
     if (!row || row.status !== "working" || !row.started_work_at) throw new EconomyError("Start the job at the place first.", 409);
-    const left = row.work_seconds * 1000 - (Date.now() - row.started_work_at.getTime());
+    if (handsOn(row) && !row.repair?.running) throw new EconomyError("The generator still isn't running. Find the fault, fix it and start it.", 409);
+    const left = handsOn(row) ? 0 : row.work_seconds * 1000 - (Date.now() - row.started_work_at.getTime());
     if (left > 500) throw new EconomyError(`Keep working: ${Math.ceil(left / 1000)} s to go.`, 409);
     if (!isNear(userId, getPlace(row.place_id).door, GIG_RANGE + 6)) throw new EconomyError(`You left ${getPlace(row.place_id).name} before the job was done. Go back to finish it.`, 409);
     await ensureWallet(client, userId);
