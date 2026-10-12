@@ -1,3 +1,4 @@
+import { AccountSection } from "./AccountSection";
 import { BIKE_RENTAL, HOUSE_DESIGNS, DELIVERY_FEE, DELIVERY_MENU, DELIVERY_SECONDS, HOME_DELIVERY_SECONDS, SEATED_MEAL_ENERGY, type FoodParcel, HOME_STAFF, HOME_STAFF_ROLES, getPlace, type DeliveryItem, type GigStatus, nearestStop, plotById, readyBuiltPrice, ROUTES, type RideState, type TowState, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import { api, naira, type EconomyState, type InteriorState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
@@ -728,9 +729,7 @@ function SettingsApp({ settings, onSettings, bindings, onBindings, quality, onQu
       <h3>Character</h3>
       <button className="secondary" onClick={onCustomise}>Customise character</button>
       <p className="muted small">The 3D resident currently uses one generated model for everyone; saved style choices are kept for the modular wardrobe.</p>
-      <h3>Account</h3>
-      <p>Signed in as <strong>{playerName}</strong></p>
-      <button className="secondary" onClick={onSignOut}>Sign out</button>
+      <AccountSection playerName={playerName} onSignOut={onSignOut} />
     </div>
   );
 }

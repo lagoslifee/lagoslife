@@ -3,6 +3,7 @@ import type { BottleItem, Citation, PoliceCase, StreetIncident, RobberyRecord, S
 import type { BusinessStatus, BusinessTypeId, CourseId, ExerciseId, GymStatus, RestResult } from "@lagos-living/shared";
 import type { FoodParcel, HomeStaffRole, HomeStaffState, HomeTier } from "@lagos-living/shared";
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick, RepairAction } from "@lagos-living/shared";
+import type { AccountSummary, ClaimAccount, LifeGoals } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -255,6 +256,10 @@ export const api = {
   policeReport: (userName: string, details: string) =>
     post<{ status: "charged" | "no_record"; accused: string; restitution: number; station: string }>("/api/police/report", { userName, details }),
   standing: () => request<{ suspension: Suspension | null }>("/api/account/standing"),
+  account: () => request<AccountSummary>("/api/account"),
+  claimAccount: (body: ClaimAccount) => post<AccountSummary>("/api/account/claim", body),
+  goals: () => request<{ goals: LifeGoals | null }>("/api/goals"),
+  saveGoals: (goals: LifeGoals) => request<{ goals: LifeGoals }>("/api/goals", { method: "PUT", body: JSON.stringify(goals) }),
   safety: () => request<SafetyStatus>("/api/safety"),
   block: (userName: string) => post<SafetyStatus>("/api/safety/block", { userName }),
   unblock: (userName: string) => post<SafetyStatus>("/api/safety/unblock", { userName }),

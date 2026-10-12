@@ -458,6 +458,12 @@ export function GameView({
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    const closePhone = () => setPhone(null);
+    window.addEventListener("lagos-goals", closePhone);
+    return () => window.removeEventListener("lagos-goals", closePhone);
+  }, []);
+
   const finishingSet = useRef(false);
   useEffect(() => {
     if (!workout || !engine || finishingSet.current) return;

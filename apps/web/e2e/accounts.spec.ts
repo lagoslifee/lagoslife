@@ -1,19 +1,13 @@
 import { Client } from "@colyseus/sdk";
 import { expect, test, type Page } from "@playwright/test";
-import { useLowGraphics, waitForGame } from "./helpers";
+import { signUp, useLowGraphics, waitForGame } from "./helpers";
 
 async function register(page: Page, prefix: string, password = "LocalTestPass!42") {
   const unique = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const email = `${prefix.toLowerCase()}-${unique}@example.test`;
   const playerName = `${prefix}${unique.slice(-7)}`;
   await useLowGraphics(page);
-  await page.goto("/?manual=1");
-  await page.getByRole("button", { name: "Create account" }).click();
-  await page.getByLabel("Player name").fill(playerName);
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Create account" }).click();
-  await waitForGame(page);
+  await signUp(page, playerName, email, password);
   return { email, playerName, password };
 }
 
@@ -54,7 +48,7 @@ test("registers, enters Lekki, and persists character appearance across sign-in"
   await openSettings(page);
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
-  await page.getByLabel("Email").fill(account.email);
+  await page.getByLabel("Username or email").fill(account.playerName);
   await page.getByLabel("Password").fill(account.password);
   await page.getByRole("button", { name: "Enter Lagos" }).click();
   await waitForGame(page);
@@ -111,9 +105,9 @@ test("completes password recovery through captured development email", async ({ 
   await openSettings(page);
   await page.getByRole("button", { name: "Sign out" }).click();
   await page.getByRole("button", { name: "Forgot password?" }).click();
-  await page.getByLabel("Email").fill(account.email);
+  await page.getByLabel("Username or email").fill(account.playerName);
   await page.getByRole("button", { name: "Send reset link" }).click();
-  await expect(page.getByRole("status")).toContainText("If that account exists");
+  await expect(page.getByRole("status")).toContainText("If that account has an email");
 
   type Inbox = { items: Array<{ id: string; to: Array<{ address: string }> }> };
   const findId = async () => {
@@ -127,7 +121,7 @@ test("completes password recovery through captured development email", async ({ 
   await page.goto(resetUrl!);
   await page.getByLabel("New password").fill("NewLocalPass!84");
   await page.getByRole("button", { name: "Save password" }).click();
-  await page.getByLabel("Email").fill(account.email);
+  await page.getByLabel("Username or email").fill(account.email);
   await page.getByLabel("Password").fill("NewLocalPass!84");
   await page.getByRole("button", { name: "Enter Lagos" }).click();
   await waitForGame(page);

@@ -5,12 +5,16 @@ import {
   hairstyles,
   isStarterOutfit,
   outfits,
+  NO_EMAIL_DOMAIN,
+  PASSWORD_MIN,
   skinTones,
   starterOutfits,
+  usernameSchema,
   type CharacterAppearance,
   type OutfitId,
 } from "@lagos-living/shared";
 import { FormEvent, lazy, Suspense, useEffect, useRef, useState } from "react";
+import { LifeGoalsDialog } from "./ui/LifeGoals";
 import { ACCESSORY_LABELS, BODY_LABELS, HAIR_LABELS, OUTFITS } from "./game/wardrobe";
 import { apiConfigured, apiUrl, authClient, authHeaders, guestMode, sessionToken, signOut, startGuestSession } from "./auth-client";
 
@@ -44,7 +48,7 @@ function SuspendedScreen({ suspension }: { suspension: Suspension }) {
         <p>Reason given by a moderator: <strong>{suspension.reason}</strong></p>
         <p>{suspension.until ? `The suspension ends ${new Date(suspension.until).toLocaleString("en-NG")}.` : "This suspension has no end date."}</p>
         <p className="muted small">Your homes, cars and game naira are kept. If you think this is a mistake, contact the moderation team.</p>
-        <button className="secondary" onClick={async () => { await signOut(); location.assign("/?manual=1"); }}>Sign out</button>
+        <button className="secondary" onClick={async () => { await signOut(); location.assign("/?manual=1&login=1"); }}>Sign out</button>
       </div>
     </main>
   );
@@ -52,11 +56,50 @@ function SuspendedScreen({ suspension }: { suspension: Suspension }) {
 
 type AuthMode = "login" | "register" | "forgot" | "reset";
 
+/** The Naija World mark (gold tile, Lagos skyline over the lagoon) with the wordmark beside it. */
+export function BrandLogo({ tagline = true }: { tagline?: boolean }) {
+  return (
+    <div className="brand-logo">
+      <img src="/favicon.svg" alt="" width={44} height={44} />
+      <span>
+        <b>NAIJA WORLD</b>
+        {tagline && <small>Your life · Your city · Your story</small>}
+      </span>
+    </div>
+  );
+}
+
+function PasswordField({ label, value, onChange, autoComplete }: { label: string; value: string; onChange: (value: string) => void; autoComplete: string }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <label>{label}
+      <span className="password-field">
+        <input
+          required
+          minLength={PASSWORD_MIN}
+          maxLength={128}
+          type={shown ? "text" : "password"}
+          autoComplete={autoComplete}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={`At least ${PASSWORD_MIN} characters`}
+        />
+        <button type="button" className="password-toggle" aria-pressed={shown} onClick={() => setShown(!shown)}>{shown ? "Hide" : "Show"}</button>
+      </span>
+    </label>
+  );
+}
+
+const placeholderEmail = (username: string) => `${username.toLowerCase()}.${Math.random().toString(36).slice(2, 10)}@${NO_EMAIL_DOMAIN}`;
+
 function AuthScreen() {
-  const token = new URLSearchParams(location.search).get("token");
-  const [mode, setMode] = useState<AuthMode>(token ? "reset" : "login");
+  const query = new URLSearchParams(location.search);
+  const token = query.get("token");
+  const [mode, setMode] = useState<AuthMode>(token ? "reset" : query.has("login") ? "login" : "register");
   const [email, setEmail] = useState("");
-  const [playerName, setPlayerName] = useState("");
+  const [identifier, setIdentifier] = useState("");
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -67,29 +110,31 @@ function AuthScreen() {
     setMessage("");
     try {
       if (mode === "register") {
-        const result = await authClient.signUp.email({
-          email,
-          password,
-          name: playerName,
-          username: playerName,
-        });
+        const checked = usernameSchema.safeParse(username);
+        if (!checked.success) throw new Error("Username: 3–20 letters, numbers, _ or . (no spaces).");
+        const result = await authClient.signUp.email({ email: email.trim() || placeholderEmail(username), password, name: name.trim(), username: username.trim() });
         if (result.error) throw new Error(result.error.message);
+        localStorage.setItem("lagos-new-account", "1");
       } else if (mode === "login") {
-        const result = await authClient.signIn.email({ email, password });
-        if (result.error) throw new Error(result.error.message);
+        const id = identifier.trim();
+        const result = id.includes("@") ? await authClient.signIn.email({ email: id, password }) : await authClient.signIn.username({ username: id.replace(/^@/, ""), password });
+        if (result.error) throw new Error(result.error.message === "Invalid username or password" || /invalid/i.test(result.error.message ?? "") ? "That username/email and password don't match." : result.error.message);
       } else if (mode === "forgot") {
-        const result = await authClient.requestPasswordReset({
-          email,
-          redirectTo: `${location.origin}/?reset=1`,
+        const response = await fetch(`${apiUrl}/api/account/forgot`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ identifier: identifier.trim(), redirectTo: `${location.origin}/?reset=1` }),
         });
-        if (result.error) throw new Error(result.error.message);
-        setMessage("If that account exists, a reset link has been sent.");
+        const body = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) throw new Error(body.error ?? "Could not send the reset link.");
+        setMessage("If that account has an email, a reset link is on its way. Check your inbox (and spam). It expires in 1 hour.");
       } else if (token) {
         const result = await authClient.resetPassword({ newPassword: password, token });
         if (result.error) throw new Error(result.error.message);
-        history.replaceState({}, "", "/");
+        history.replaceState({}, "", "/?login=1");
         setMode("login");
-        setMessage("Password updated. Sign in to continue.");
+        setPassword("");
+        setMessage("Password updated. Log in with your new password.");
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Something went wrong.");
@@ -98,92 +143,105 @@ function AuthScreen() {
     }
   }
 
-  const title = {
-    login: "Welcome back",
-    register: "Create your resident",
-    forgot: "Recover your account",
-    reset: "Choose a new password",
+  const playAsGuest = () => {
+    setBusy(true);
+    startGuestSession()
+      .then(() => location.assign("/"))
+      .catch((error: Error) => {
+        setMessage(error.message);
+        setBusy(false);
+      });
+  };
+
+  const switchTo = (next: AuthMode) => {
+    setMode(next);
+    setMessage("");
+  };
+  const title = { login: "Welcome back", register: "Start your Lagos life", forgot: "Forgot your password?", reset: "Choose a new password" }[mode];
+  const lead = {
+    login: "Log in with your username or email.",
+    register: "Create your resident in a few seconds. Your username is public; your name and email stay private.",
+    forgot: "Enter your username or email. If the account has an email, we'll send a link to reset your password.",
+    reset: "Pick a new password for your account.",
   }[mode];
 
   return (
     <main className="landing-shell">
       <section className="brand-panel">
-        <div className="wordmark"><span>NW</span> NAIJA WORLD</div>
+        <BrandLogo />
         <div className="hero-copy">
-          <p className="eyebrow">NAIJA WORLD</p>
+          <p className="eyebrow">A LIVING LAGOS · ONLINE WITH FRIENDS</p>
           <h1>Your life. Your city.<br />Your story.</h1>
           <p>
-            Build a life across the islands. Find work, make a home, meet people,
-            and shape a city that remembers you.
+            Build a life across the islands. Find work, buy land and build your house, drive real cars, train at the gym,
+            party in VIP and fly to Dubai, all alongside real people.
           </p>
-          <div className="districts">
-            <span>Ikoyi</span><span>Victoria Island</span><span>Lekki Phase 1</span>
-          </div>
+          <ul className="feature-chips">
+            <li>🏡 Build your home</li><li>🚗 Real cars</li><li>💼 Run a business</li><li>🍾 VIP nights</li><li>✈️ Fly to Dubai</li>
+          </ul>
         </div>
         <div className="lagoon-line" />
       </section>
 
       <section className="auth-panel">
-        <form className="auth-card" onSubmit={submit}>
-          <p className="step-label">NAIJA WORLD / EARLY DEVELOPMENT</p>
+        <form className="auth-card" onSubmit={submit} data-testid="auth-card">
+          {(mode === "login" || mode === "register") && (
+            <div className="auth-tabs" role="tablist">
+              <button type="button" role="tab" aria-selected={mode === "register"} onClick={() => switchTo("register")}>Sign up</button>
+              <button type="button" role="tab" aria-selected={mode === "login"} onClick={() => switchTo("login")}>Log in</button>
+            </div>
+          )}
           <h2>{title}</h2>
-          <p className="muted">
-            {mode === "register"
-              ? "Your player name is public. Never use private personal information."
-              : "Enter the city and continue your story."}
-          </p>
+          <p className="muted">{lead}</p>
           {mode === "register" && (
-            <label>Player name
-              <input
-                required
-                minLength={3}
-                maxLength={20}
-                autoComplete="username"
-                value={playerName}
-                onChange={(event) => setPlayerName(event.target.value)}
-                placeholder="e.g. IslandRunner"
-              />
+            <>
+              <label>Your name
+                <input required maxLength={40} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Ada Obi" />
+              </label>
+              <label>Username
+                <input
+                  required
+                  minLength={3}
+                  maxLength={20}
+                  pattern="[A-Za-z0-9_.]+"
+                  title="3–20 letters, numbers, _ or ."
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value.replace(/\s/g, ""))}
+                  placeholder="e.g. IslandRunner"
+                />
+                <small className="field-hint">What other residents see. Letters, numbers, _ or .</small>
+              </label>
+            </>
+          )}
+          {(mode === "login" || mode === "forgot") && (
+            <label>Username or email
+              <input required autoComplete="username" autoCapitalize="none" value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder="IslandRunner or you@example.com" />
             </label>
           )}
-          {mode !== "reset" && (
-            <label>Email
-              <input
-                required
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@example.com"
-              />
-            </label>
-          )}
-          {mode !== "forgot" && (
-            <label>{mode === "reset" ? "New password" : "Password"}
-              <input
-                required
-                minLength={10}
-                type="password"
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="At least 10 characters"
-              />
+          {mode !== "forgot" && <PasswordField label={mode === "reset" ? "New password" : "Password"} value={password} onChange={setPassword} autoComplete={mode === "login" ? "current-password" : "new-password"} />}
+          {mode === "register" && (
+            <label>Email <em className="optional">optional · recommended</em>
+              <input type="email" autoComplete="email" maxLength={120} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
+              <small className="field-hint">Only used to reset your password if you forget it. Without one, a lost password means a lost account.</small>
             </label>
           )}
           {message && <p className="form-message" role="status">{message}</p>}
           <button className="primary" disabled={busy}>
-            {busy ? "Please wait…" : mode === "login" ? "Enter Lagos" : mode === "register" ? "Create account" : mode === "forgot" ? "Send reset link" : "Save password"}
+            {busy ? "Please wait…" : { login: "Enter Lagos", register: "Create account", forgot: "Send reset link", reset: "Save password" }[mode]}
           </button>
           <div className="auth-links">
-            {mode === "login" ? (
-              <>
-                <button type="button" onClick={() => setMode("register")}>Create account</button>
-                <button type="button" onClick={() => setMode("forgot")}>Forgot password?</button>
-              </>
-            ) : (
-              <button type="button" onClick={() => setMode("login")}>Back to sign in</button>
-            )}
+            {mode === "login" && <button type="button" onClick={() => switchTo("forgot")}>Forgot password?</button>}
+            {(mode === "forgot" || mode === "reset") && <button type="button" onClick={() => switchTo("login")}>Back to log in</button>}
           </div>
+          {guestMode && (mode === "login" || mode === "register") && (
+            <div className="guest-entry">
+              <span>or</span>
+              <button type="button" className="secondary" disabled={busy} onClick={playAsGuest} data-testid="play-as-guest">Play as guest</button>
+              <small className="field-hint">Jump straight in. Create an account later from Phone → Settings to keep your progress.</small>
+            </div>
+          )}
         </form>
       </section>
     </main>
@@ -281,6 +339,12 @@ function GameShell({
     return () => window.removeEventListener("lagos-appearance", changed);
   }, []);
   const [creatorOpen, setCreatorOpen] = useState(false);
+  const [goalsOpen, setGoalsOpen] = useState(() => localStorage.getItem("lagos-new-account") === "1");
+  useEffect(() => {
+    const open = () => setGoalsOpen(true);
+    window.addEventListener("lagos-goals", open);
+    return () => window.removeEventListener("lagos-goals", open);
+  }, []);
   const [standing, setStanding] = useState<{ checked: boolean; suspension: Suspension | null }>({ checked: false, suspension: null });
 
   useEffect(() => {
@@ -314,14 +378,15 @@ function GameShell({
           playerName={playerName}
           appearance={appearance}
           onSuspended={(suspension) => setStanding({ checked: true, suspension })}
-          overlayOpen={creatorOpen}
+          overlayOpen={creatorOpen || goalsOpen}
           onCustomise={() => setCreatorOpen(true)}
           onSignOut={async () => {
             await signOut();
-            location.assign("/?manual=1");
+            location.assign("/?manual=1&login=1");
           }}
         />
       </Suspense>
+      {goalsOpen && !creatorOpen && <LifeGoalsDialog playerName={playerName} onClose={() => setGoalsOpen(false)} />}
       {creatorOpen && (
         <CharacterCreator
           initial={appearance}
@@ -380,6 +445,8 @@ function Main() {
   const query = new URLSearchParams(location.search);
   const manual = query.has("manual") || query.has("reset") || query.has("token");
   const local = ["localhost", "127.0.0.1"].includes(location.hostname);
+  // Returning guests (a saved token) and `?guest=1` go straight in; new visitors see sign-up, log-in or play as guest.
+  const autoGuest = guestMode && !manual && (Boolean(sessionToken.get()) || query.has("guest"));
 
   useEffect(() => {
     if (session.isPending || session.data || manual || autoSignIn !== "idle") return;
@@ -397,10 +464,10 @@ function Main() {
         .catch(() => setAutoSignIn("idle"));
       return;
     }
-    if (!guestMode) return;
+    if (!autoGuest) return;
     setAutoSignIn("pending");
     startGuestSession()
-      .then(() => location.reload())
+      .then(() => location.assign(location.pathname))
       .catch((error: Error) => {
         // A phone switching networks or a server mid-restart usually answers a few seconds later.
         if (guestAttempts.current < 3) {
@@ -411,7 +478,7 @@ function Main() {
         setGuestError(error.message);
         setAutoSignIn("failed");
       });
-  }, [manual, local, autoSignIn, session.data, session.isPending]);
+  }, [manual, local, autoGuest, autoSignIn, session.data, session.isPending]);
 
   if (autoSignIn === "failed") {
     return (
@@ -425,7 +492,7 @@ function Main() {
       </main>
     );
   }
-  if (session.isPending || autoSignIn === "pending" || (!session.data && !manual && guestMode)) {
+  if (session.isPending || autoSignIn === "pending" || (!session.data && autoGuest)) {
     return <SlowLoading text={local ? "Entering local test session…" : "Entering Naija World…"} offline={Boolean(session.error)} />;
   }
   return session.data ? <GameShell user={session.data.user} /> : <AuthScreen />;

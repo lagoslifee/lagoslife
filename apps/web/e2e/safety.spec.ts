@@ -1,17 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
-import { API, apiGet, resetProgress, useLowGraphics, waitForGame } from "./helpers";
+import { API, apiGet, resetProgress, useLowGraphics, waitForGame, signUp } from "./helpers";
 
 async function register(page: Page, prefix: string) {
   const unique = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const playerName = `${prefix}${unique.slice(-7)}`;
   await useLowGraphics(page);
-  await page.goto("/?manual=1");
-  await page.getByRole("button", { name: "Create account" }).click();
-  await page.getByLabel("Player name").fill(playerName);
-  await page.getByLabel("Email").fill(`${prefix.toLowerCase()}-${unique}@example.test`);
-  await page.getByLabel("Password").fill("LocalTestPass!42");
-  await page.getByRole("button", { name: "Create account" }).click();
-  await waitForGame(page);
+  await signUp(page, playerName, `${prefix.toLowerCase()}-${unique}@example.test`);
   return playerName;
 }
 

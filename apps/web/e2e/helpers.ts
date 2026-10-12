@@ -52,6 +52,20 @@ export async function waitForGame(page: Page) {
   await expect(page.getByTestId("network")).toContainText("online", { timeout: 20_000 });
 }
 
+/** Signs up through the landing page and skips the goals welcome; returns once the game is running. */
+export async function signUp(page: Page, playerName: string, email: string, password = "LocalTestPass!42") {
+  await page.goto("/?manual=1");
+  await page.getByRole("tab", { name: "Sign up" }).click();
+  await page.getByLabel("Your name").fill(`${playerName} Tester`);
+  await page.getByLabel("Username").fill(playerName);
+  await page.getByLabel("Password").fill(password);
+  await page.getByLabel("Email").fill(email);
+  await page.getByRole("button", { name: "Create account" }).click();
+  await waitForGame(page);
+  await expect(page.getByTestId("life-goals")).toBeVisible();
+  await page.getByRole("button", { name: "Maybe later" }).click();
+}
+
 export async function apiGet<T>(page: Page, path: string) {
   return page.evaluate(async ([api, p]) => (await fetch(`${api}${p}`, { credentials: "include" })).json(), [API, path] as const) as Promise<T>;
 }

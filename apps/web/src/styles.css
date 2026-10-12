@@ -130,6 +130,62 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 }
 .form-message { padding: 11px; color: #36524e; background: #e2e8df; border-radius: 6px; font-size: 13px; }
 
+.brand-logo { position: relative; z-index: 2; display: flex; align-items: center; gap: 12px; }
+.brand-logo img { width: 44px; height: 44px; filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .35)); }
+.brand-logo b { display: block; font: 800 15px/1 Inter, "Segoe UI", Arial, sans-serif; letter-spacing: .16em; color: #f5f2e8; }
+.brand-logo small { display: block; margin-top: 5px; font-size: 10.5px; letter-spacing: .08em; color: #9fd3c7; text-transform: uppercase; }
+.feature-chips { display: flex; flex-wrap: wrap; gap: 10px; margin: 34px 0 0; padding: 0; list-style: none; }
+.feature-chips li { padding: 9px 14px; border: 1px solid rgba(231, 189, 98, .28); border-radius: 999px; background: rgba(255, 255, 255, .05); font-size: 13px; color: #e9e3d0; }
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin-bottom: 22px; background: #e2e3d8; border-radius: 12px; }
+.auth-tabs button { padding: 11px; border: 0; border-radius: 9px; background: none; color: #4c5e5a; font-weight: 700; }
+.auth-tabs button[aria-selected="true"] { background: #fffdf8; color: #0f3b35; box-shadow: 0 2px 8px rgba(11, 40, 37, .12); }
+.auth-card .muted { margin-bottom: 18px; }
+.password-field { position: relative; display: block; }
+.password-field input { padding-right: 70px; }
+.password-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); padding: 7px 10px; border: 0; border-radius: 6px; background: #e8ece6; color: #1d5c53; font-size: 12px; font-weight: 700; }
+.field-hint { font-weight: 500; font-size: 12px; line-height: 1.45; color: #6a7773; }
+.optional { font-style: normal; font-weight: 600; font-size: 11px; color: #a17a28; margin-left: 6px; text-transform: uppercase; letter-spacing: .05em; }
+.guest-entry { display: grid; gap: 10px; margin-top: 22px; text-align: center; }
+.guest-entry > span { position: relative; color: #8a9692; font-size: 12px; }
+.guest-entry > span::before, .guest-entry > span::after { content: ""; position: absolute; top: 50%; width: 42%; height: 1px; background: #d5d9d1; }
+.guest-entry > span::before { left: 0; }
+.guest-entry > span::after { right: 0; }
+.guest-entry .secondary { width: 100%; }
+
+.goals-backdrop { position: fixed; z-index: 40; overflow-y: auto; place-items: start center; padding: max(16px, env(safe-area-inset-top)) 12px calc(16px + env(safe-area-inset-bottom, 0px)); }
+.goals-card { width: min(680px, 100%); margin: auto 0; padding: 26px 24px 20px; border-radius: 22px; background: #fbf9f2; color: #142b29; box-shadow: 0 30px 90px rgba(0, 0, 0, .45); }
+.goals-card h2 { margin: 8px 0 6px; font: 800 28px/1.15 Inter, "Segoe UI", Arial, sans-serif; letter-spacing: -.03em; }
+.goals-card .muted { margin-bottom: 8px; font-size: 14px; }
+.goals-card h3 { margin: 20px 0 10px; font-size: 15px; }
+.goals-card h3 small { font-weight: 500; color: #7b8884; font-size: 12px; margin-left: 6px; }
+.goal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.goal-chip, .interest-chip, .playstyle-card { border: 1.5px solid #d9ddd4; background: #fff; color: #1d332f; border-radius: 12px; text-align: left; transition: border-color .15s, background .15s, transform .1s; }
+.goal-chip { display: flex; align-items: center; gap: 10px; padding: 11px 12px; font-size: 13.5px; font-weight: 600; line-height: 1.3; }
+.goal-chip span { font-size: 20px; }
+.interest-row { display: flex; flex-wrap: wrap; gap: 7px; }
+.interest-chip { padding: 8px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+.playstyle-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.playstyle-card { display: grid; gap: 3px; padding: 12px; }
+.playstyle-card span { font-size: 22px; }
+.playstyle-card small { color: #6a7773; font-size: 12px; line-height: 1.35; }
+.goal-chip[aria-pressed="true"], .interest-chip[aria-pressed="true"], .playstyle-card[aria-pressed="true"] { border-color: #116c60; background: #e4f3ef; box-shadow: inset 0 0 0 1px #116c60; }
+.goal-chip:active, .interest-chip:active, .playstyle-card:active { transform: scale(.98); }
+.goals-card textarea { width: 100%; padding: 12px 14px; border: 1px solid #c9d0c9; border-radius: 10px; background: #fff; color: #142b29; font: inherit; font-size: 14px; resize: vertical; }
+.goals-card textarea:focus { outline: none; border-color: #168272; box-shadow: 0 0 0 3px rgba(22, 130, 114, .12); }
+.goals-actions { position: sticky; bottom: -20px; display: flex; justify-content: flex-end; gap: 10px; margin: 18px -24px -20px; padding: 14px 24px; background: linear-gradient(transparent, #fbf9f2 30%); border-radius: 0 0 22px 22px; }
+@media (max-width: 640px) {
+  .goals-card { padding: 20px 16px 16px; }
+  .goals-card h2 { font-size: 23px; }
+  .goal-grid { grid-template-columns: 1fr 1fr; }
+  .goal-chip { padding: 9px 10px; font-size: 12.5px; }
+  .playstyle-grid { grid-template-columns: 1fr 1fr; }
+  .goals-actions { margin: 14px -16px -16px; padding: 12px 16px; }
+  .goals-actions button { flex: 1; }
+}
+.claim-card { display: grid; gap: 4px; padding: 14px; margin-bottom: 10px; border-radius: 14px; background: #fff; border: 1px solid #e3e0d4; }
+.claim-card label { margin: 8px 0; }
+.claim-card .muted { margin-bottom: 4px; }
+
 .loading-screen { height: 100%; display: grid; place-items: center; background: #092421; color: #e6bd62; letter-spacing: .1em; }
 .modal-backdrop { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px; background: rgba(2,18,17,.76); }
 .credit { color: #16715f; }.debit { color: #a24d3d; }
@@ -569,9 +625,11 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 
 @media (max-width: 820px) {
   .landing-shell { grid-template-columns: 1fr; }
-  .brand-panel { min-height: 44vh; padding: 25px; }
-  .hero-copy { margin-top: 55px; }
-  .hero-copy h1 { font-size: 52px; }
+  .brand-panel { min-height: 0; padding: 22px 22px 26px; }
+  .hero-copy { margin-top: 26px; }
+  .hero-copy h1 { font-size: 40px; margin: 10px 0 0; }
+  .feature-chips { margin-top: 16px; gap: 6px; }
+  .feature-chips li { padding: 6px 10px; font-size: 12px; }
   .hero-copy > p:not(.eyebrow), .districts { display: none; }
   .auth-panel { padding: 40px 24px; }
   .creator-card { grid-template-columns: 1fr; max-height: 90vh; overflow-y: auto; }
