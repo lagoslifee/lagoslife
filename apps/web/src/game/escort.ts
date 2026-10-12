@@ -1,4 +1,10 @@
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import type { Scene } from "@babylonjs/core/scene";
 import type { Vec2 } from "@lagos-living/shared";
 import type { Avatar, AvatarFactory } from "./avatar";
 import { equipSecurity, securityLook } from "./security-kit";
@@ -12,6 +18,55 @@ type Guard = { avatar: Avatar; x: number; z: number; yaw: number; shown: boolean
 /** How far behind the leader's car the Hilux drives, measured along the leader's own path. */
 const FOLLOW_METRES = 11;
 const TRUCK_COLOUR = "#141617";
+/** Where the two guards riding on the bed stand, in truck space (x across, z forward), and the bed floor height. */
+const BED_RIDERS: Vec2[] = [[-0.42, -1.55], [0.42, -1.85]];
+const BED_FLOOR = 0.95;
+/** Cab roof height of the Hilux asset (its bounding height includes the mirrors and bed rails). */
+const ROOF = 1.74;
+
+type Livery = { frame: StandardMaterial; red: StandardMaterial; blue: StandardMaterial; gold: StandardMaterial; word: StandardMaterial };
+let livery: Livery | null = null;
+
+function liveryFor(scene: Scene): Livery {
+  if (livery && livery.frame.getScene() === scene) return livery;
+  const flat = (name: string, hex: string, glow = 0) => {
+    const material = new StandardMaterial(name, scene);
+    material.diffuseColor = Color3.FromHexString(hex);
+    material.emissiveColor = Color3.FromHexString(hex).scale(glow);
+    material.specularColor = new Color3(0.25, 0.25, 0.25);
+    return material;
+  };
+  const texture = new DynamicTexture("escort lettering", { width: 512, height: 128 }, scene, true);
+  const context = texture.getContext() as CanvasRenderingContext2D;
+  context.clearRect(0, 0, 512, 128);
+  context.fillStyle = "#d4af37";
+  context.beginPath();
+  context.moveTo(40, 20);
+  context.lineTo(96, 20);
+  context.lineTo(96, 70);
+  context.quadraticCurveTo(96, 104, 68, 116);
+  context.quadraticCurveTo(40, 104, 40, 70);
+  context.closePath();
+  context.fill();
+  context.fillStyle = "#141617";
+  context.font = "bold 52px sans-serif";
+  context.textAlign = "center";
+  context.fillText("★", 68, 86);
+  context.fillStyle = "#f4f4f4";
+  context.textAlign = "left";
+  context.font = "bold 74px sans-serif";
+  context.fillText("SECURITY", 118, 94);
+  texture.hasAlpha = true;
+  texture.update();
+  const word = new StandardMaterial("escort lettering", scene);
+  word.diffuseTexture = texture;
+  word.useAlphaFromDiffuseTexture = true;
+  word.emissiveColor = new Color3(0.45, 0.45, 0.45);
+  word.specularColor = Color3.Black();
+  livery = { frame: flat("escort frame", "#0b0c0d"), red: flat("escort red", "#ff2323", 1), blue: flat("escort blue", "#2563ff", 1), gold: flat("escort stripe", "#b8902c", 0.08), word };
+  return livery;
+}
+
 /** Beyond this the escort has lost the leader (teleport, unstuck, long load) and reappears behind them. */
 const LOST_METRES = 160;
 
@@ -28,6 +83,9 @@ export class Escort {
   private gate: { point: Vec2 } | null = null;
   /** The entrance the leader walked in by; guards stand either side of it until the leader walks away. */
   private post: Crumb | null = null;
+  private lenses: { mesh: Mesh; red: boolean }[] = [];
+  private kit: Mesh[] = [];
+  private time = 0;
 
   constructor(
     private readonly id: string,
@@ -40,6 +98,7 @@ export class Escort {
     this.truck = vehicles.create(`escort ${id}`, "toyota-hilux", TRUCK_COLOUR);
     this.truck.root.setEnabled(false);
     addCaster(this.truck.meshes);
+    this.dressTruck(avatars.scene);
     this.setCount(count);
   }
 
@@ -57,6 +116,54 @@ export class Escort {
       avatar.setVisible(false);
       this.guards.push({ avatar, x: 0, z: 0, yaw: 0, shown: false });
     }
+  }
+
+  /** Light bar with red and blue lenses on the cab roof, a push bar, a roll bar for the bed riders, and gold "SECURITY" livery. */
+  private dressTruck(scene: Scene) {
+    const look = liveryFor(scene);
+    const { width, length } = this.truck.model;
+    const add = (mesh: Mesh, material: StandardMaterial, x: number, y: number, z: number) => {
+      mesh.material = material;
+      mesh.parent = this.truck.body;
+      mesh.position.set(x, y, z);
+      mesh.isPickable = false;
+      this.kit.push(mesh);
+      return mesh;
+    };
+    add(MeshBuilder.CreateBox(`${this.id} bar base`, { width: 1.3, height: 0.07, depth: 0.3 }, scene), look.frame, 0, ROOF + 0.04, -0.1);
+    for (const [index, x] of [-0.48, -0.16, 0.16, 0.48].entries()) {
+      const red = index < 2;
+      const lens = add(MeshBuilder.CreateBox(`${this.id} lens ${index}`, { width: 0.3, height: 0.12, depth: 0.24 }, scene), red ? look.red : look.blue, x, ROOF + 0.13, -0.1);
+      this.lenses.push({ mesh: lens, red });
+    }
+    const front = length / 2 + 0.06;
+    for (const side of [-1, 1]) add(MeshBuilder.CreateBox(`${this.id} push upright`, { width: 0.07, height: 0.62, depth: 0.07 }, scene), look.frame, side * 0.55, 0.62, front);
+    add(MeshBuilder.CreateBox(`${this.id} push bar`, { width: 1.22, height: 0.07, depth: 0.07 }, scene), look.frame, 0, 0.92, front);
+    add(MeshBuilder.CreateBox(`${this.id} push low`, { width: 1.22, height: 0.07, depth: 0.07 }, scene), look.frame, 0, 0.5, front);
+    for (const side of [-1, 1]) add(MeshBuilder.CreateBox(`${this.id} roll upright`, { width: 0.07, height: 0.75, depth: 0.07 }, scene), look.frame, side * (width / 2 - 0.2), BED_FLOOR + 0.37, -0.95);
+    add(MeshBuilder.CreateBox(`${this.id} roll bar`, { width: width - 0.33, height: 0.07, depth: 0.07 }, scene), look.frame, 0, BED_FLOOR + 0.75, -0.95);
+    for (const side of [-1, 1]) {
+      const stripe = add(MeshBuilder.CreatePlane(`${this.id} stripe`, { width: length * 0.8, height: 0.05 }, scene), look.gold, side * (width / 2 + 0.015), 0.74, 0);
+      stripe.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+      const word = add(MeshBuilder.CreatePlane(`${this.id} word`, { width: 1.5, height: 0.38 }, scene), look.word, side * (width / 2 + 0.02), 1.0, -0.15);
+      word.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+    }
+  }
+
+  /** Fast double-strobe: reds then blues, brighter while the convoy moves. */
+  private strobe(dt: number, moving: boolean) {
+    this.time += dt;
+    const phase = Math.floor(this.time * (moving ? 8 : 3)) % 8;
+    const redOn = phase === 0 || phase === 2;
+    const blueOn = phase === 4 || phase === 6;
+    for (const lens of this.lenses) lens.mesh.visibility = (lens.red ? redOn : blueOn) ? 1 : 0.35;
+  }
+
+  /** Bed rider positions in world space, standing behind the roll bar facing forward. */
+  private bedSpot(slot: number) {
+    const [bx, bz] = BED_RIDERS[slot]!;
+    const yaw = this.truck.yaw;
+    return { x: this.truck.x + Math.cos(yaw) * bx + Math.sin(yaw) * bz, z: this.truck.z - Math.sin(yaw) * bx + Math.cos(yaw) * bz, yaw };
   }
 
   /** Sends the first guard to stand at `point` (a gate); `null` calls them back into formation. */
@@ -132,8 +239,11 @@ export class Escort {
         this.truck.setPose(target.x, this.ground(target.x, target.z), target.z, target.yaw);
       }
       this.truck.track(dt);
+      this.strobe(dt, Math.abs(this.truck.speed) > 0.5);
+      let riders = 0;
       for (const [index, guard] of this.guards.entries()) {
         if (index === 0 && this.gate) this.walkGuard(guard, index, this.gate.point, null, dt, true);
+        else if (riders < BED_RIDERS.length) this.rideBed(guard, riders++, dt);
         else this.showGuard(guard, false);
       }
       this.wasDriving = true;
@@ -141,6 +251,7 @@ export class Escort {
     }
 
     this.truck.track(dt);
+    this.strobe(dt, false);
     this.wasDriving = false;
     if (this.post && Math.hypot(this.post.x - leader.x, this.post.z - leader.z) > 4) this.post = null;
     if (this.post) {
@@ -172,6 +283,16 @@ export class Escort {
     const across = 1.6 + Math.floor(index / 2) * 1.1;
     const back = 1.2 + Math.floor(index / 2) * 0.6;
     return [post.x - forwardX * back + forwardZ * side * across, post.z - forwardZ * back - forwardX * side * across];
+  }
+
+  /** Standing on the bed, one hand on the roll bar, swaying a little with the truck. */
+  private rideBed(guard: Guard, slot: number, dt: number) {
+    const spot = this.bedSpot(slot);
+    this.showGuard(guard, true);
+    [guard.x, guard.z, guard.yaw] = [spot.x, spot.z, spot.yaw];
+    guard.avatar.root.position.set(spot.x, this.ground(spot.x, spot.z) + BED_FLOOR, spot.z);
+    guard.avatar.root.rotation.y = spot.yaw;
+    guard.avatar.update(0, "idle", dt);
   }
 
   private showGuard(guard: Guard, shown: boolean) {
@@ -213,6 +334,7 @@ export class Escort {
   dispose() {
     for (const guard of this.guards) guard.avatar.dispose();
     this.guards = [];
+    for (const mesh of this.kit) mesh.dispose();
     this.truck.dispose();
   }
 }
