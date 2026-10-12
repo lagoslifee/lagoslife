@@ -1,7 +1,7 @@
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
-import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
@@ -12,11 +12,12 @@ export type EntranceCandidate = { key: string; point: Vec2; name: string; title?
 type Marker = { root: TransformNode; arrow: Mesh; texture: DynamicTexture; accent: string; key: string | null };
 
 /** Doors further than this get no marker; only the nearest few are lit so phones draw a handful of meshes. */
-const SHOW_RANGE = 70;
-const POOL = 3;
+const SHOW_RANGE = 90;
+const POOL = 4;
 const BILLBOARD_Y = 2;
-/** The route's own door gets a bigger cyan marker from further out, drawn instead of the gold one. */
-const DESTINATION_RANGE = 160;
+/** The route's own door gets a bigger cyan marker and a light beam from further out, drawn instead of the gold one. */
+const DESTINATION_RANGE = 700;
+const BEAM_HEIGHT = 40;
 
 /**
  * Glowing floor rings, a bobbing arrow and a name board over the door of nearby places outdoors, and a green EXIT
@@ -29,6 +30,7 @@ export class EntranceMarkers {
   private destinationRing: Mesh | null = null;
   private destinationName: string | null = null;
   private destinationBoard: Mesh | null = null;
+  private destinationBeam: Mesh | null = null;
   private elapsed = 0;
   private sinceChoose = 1;
 
@@ -45,7 +47,19 @@ export class EntranceMarkers {
     ring.parent = this.destination.root;
     ring.position.y = 0.08;
     ring.isPickable = false;
+    ring.alwaysSelectAsActiveMesh = true;
     this.destinationRing = ring;
+    const beamMaterial = this.material("destination beam", new Color3(0.2, 0.85, 1));
+    beamMaterial.alpha = 0.32;
+    beamMaterial.backFaceCulling = false;
+    beamMaterial.fogEnabled = false;
+    const beam = MeshBuilder.CreateCylinder("destination beam", { diameterTop: 0.5, diameterBottom: 1.3, height: BEAM_HEIGHT, tessellation: 16, cap: Mesh.NO_CAP }, this.scene);
+    beam.material = beamMaterial;
+    beam.parent = this.destination.root;
+    beam.position.y = BEAM_HEIGHT / 2;
+    beam.isPickable = false;
+    beam.alwaysSelectAsActiveMesh = true;
+    this.destinationBeam = beam;
     const pad = MeshBuilder.CreateDisc("destination pad", { radius: 1.1, tessellation: 28 }, this.scene);
     const padMaterial = this.material("destination pad", new Color3(0.2, 0.85, 1));
     padMaterial.alpha = 0.28;
@@ -54,6 +68,7 @@ export class EntranceMarkers {
     pad.rotation.x = Math.PI / 2;
     pad.position.y = 0.05;
     pad.isPickable = false;
+    pad.alwaysSelectAsActiveMesh = true;
     this.destinationBoard = (this.destination.root.getChildMeshes().find((child) => child.name.endsWith("board")) as Mesh | undefined) ?? null;
   }
 
@@ -87,9 +102,10 @@ export class EntranceMarkers {
     label.parent = root;
     label.position.y = 3.5;
     label.billboardMode = BILLBOARD_Y;
+    // The parent moves these meshes after they're built, so culling against their stored bounds would hide them.
     for (const mesh of [ring, arrow, label]) {
       mesh.isPickable = false;
-      mesh.doNotSyncBoundingInfo = true;
+      mesh.alwaysSelectAsActiveMesh = true;
     }
     root.setEnabled(false);
     return { root, arrow, texture, accent, key: null };
@@ -118,7 +134,7 @@ export class EntranceMarkers {
   }
 
   /** `candidates` is only read when it is time to re-pick the nearest doors; interior floors sit at y = 0. */
-  update(dt: number, player: Vec2, outdoors: boolean, candidates: () => EntranceCandidate[], exit: Vec2 | null, destination: EntranceCandidate | null = null) {
+  update(dt: number, player: Vec2, outdoors: boolean, candidates: () => EntranceCandidate[], exit: Vec2 | null, destination: EntranceCandidate | null = null, viewDistance = Infinity) {
     this.elapsed += dt;
     const bob = 2.3 + Math.sin(this.elapsed * 3) * 0.18;
     const target = destination && (!outdoors || Math.hypot(destination.point[0] - player[0], destination.point[1] - player[1]) < DESTINATION_RANGE) ? destination : null;
@@ -130,7 +146,24 @@ export class EntranceMarkers {
         this.draw(this.destination, title, line);
       }
       if (this.destinationBoard) this.destinationBoard.position.y = outdoors ? 4.4 : 3.3;
-      if (outdoors) this.place(this.destination, target.point);
+      this.destinationBeam?.setEnabled(outdoors);
+      // Past the camera's far plane the beam alone is drawn on the same bearing just inside it, so it still shows the way.
+      const away = Math.hypot(target.point[0] - player[0], target.point[1] - player[1]);
+      const reach = viewDistance * 0.8;
+      const proxied = outdoors && away > reach;
+      for (const child of this.destination.root.getChildMeshes()) if (child !== this.destinationBeam) child.setEnabled(!proxied);
+      if (this.destinationBeam) {
+        // Widen the beam with distance so it stays a few pixels wide on a phone, and draw it over buildings when far.
+        const grow = Math.max(1, away / 60);
+        this.destinationBeam.scaling.set(grow, Math.max(1, away / 200), grow);
+        this.destinationBeam.position.y = (BEAM_HEIGHT * this.destinationBeam.scaling.y) / 2;
+        this.destinationBeam.renderingGroupId = away > 80 ? 1 : 0;
+      }
+      if (proxied) {
+        const f = reach / away;
+        const point: Vec2 = [player[0] + (target.point[0] - player[0]) * f, player[1] + (target.point[1] - player[1]) * f];
+        this.place(this.destination, point);
+      } else if (outdoors) this.place(this.destination, target.point);
       else this.place(this.destination, target.point, 0);
       this.destination.arrow.position.y = outdoors ? bob + 0.6 : bob;
       const pulse = 1 + Math.sin(this.elapsed * 4) * 0.08;

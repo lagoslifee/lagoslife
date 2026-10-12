@@ -1318,7 +1318,7 @@ export class GameEngine {
     }
     const tourStop = this.tour?.stop;
     const outdoorTarget = this.waypointDoor ?? (tourStop ? { key: `tour:${tourStop.id}`, point: tourStop.point, name: tourStop.name, title: "TOUR STOP" } : null);
-    this.entrances?.update(dt, [x, z], !this.interior && !bus && !seatedTravel, () => this.entranceCandidates(), this.interior && !seatedTravel ? (this.interior.spots.find((spot) => spot.id === "exit")?.point ?? null) : null, this.interior ? indoorTarget : outdoorTarget);
+    this.entrances?.update(dt, [x, z], !this.interior && !bus && !seatedTravel, () => this.entranceCandidates(), this.interior && !seatedTravel ? (this.interior.spots.find((spot) => spot.id === "exit")?.point ?? null) : null, this.interior ? indoorTarget : outdoorTarget, this.camera.maxZ);
     this.updateGuideLine([x, z], guideSpot?.point ?? null);
     this.spotters?.update(dt, now, this.spottedCar(x, z), [x, z], !this.interior && !bus);
     this.updateTout(dt, now, x, z);
@@ -3691,6 +3691,7 @@ export class GameEngine {
           }),
       appearance: () => this.player?.appearance ?? null,
       emote: (emote: "wave" | "dance" | "sit" | "none") => this.playEmote(emote),
+      fastTravel: (placeId: string) => this.fastTravel({ placeId }, placeId),
       remoteAppearances: () =>
         Object.fromEntries([...this.remotes].map(([sessionId, remote]) => [remote.tag.textContent ?? sessionId, remote.avatar?.appearance ?? null])),
     };
