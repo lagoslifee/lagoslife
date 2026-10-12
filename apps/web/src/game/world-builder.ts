@@ -1822,16 +1822,26 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
         const [mx, mz] = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2];
         if (!clear(mx, mz, 0.3)) continue;
         const length = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
-        get("concrete").box(mx, 1.2, mz, length + 0.02, 2.4, 0.26, yaw, 1, [0.93, 0.9, 0.82]);
-        get("darkFrame").box(mx, 2.44, mz, length + 0.02, 0.08, 0.34, yaw);
+        get("plaster").box(mx, 1.2, mz, length + 0.02, 2.4, 0.26, yaw, 1, [0.97, 0.93, 0.84]);
+        get("paintWhite").box(mx, 2.44, mz, length + 0.02, 0.08, 0.34, yaw);
         addObstacle(p0, p1, 0.16);
       }
     }
     for (const [px, pz] of wall.gatePosts) {
       if (!clear(px, pz, 0.3)) continue;
-      get("concrete").box(px, 1.45, pz, 0.6, 2.9, 0.6, yaw, 1, [0.86, 0.82, 0.72]);
+      get("plaster").box(px, 1.45, pz, 0.6, 2.9, 0.6, yaw, 1, [0.8, 0.72, 0.6]);
       get("chrome").box(px, 3.0, pz, 0.32, 0.22, 0.32, yaw);
       addObstacle([px, pz], [px, pz], 0.32);
+    }
+    const [gfx, gfz] = [Math.sin(yaw), Math.cos(yaw)];
+    for (const side of [-1, 1]) {
+      const corners: Vec2[] = [[1.2, 5.6], [1.2, 14.5], [wall.along - 0.6, 14.5], [wall.along - 0.6, 5.6]];
+      // Mirroring the patch to the other side of the drive reverses its winding; keep it facing up.
+      const lawn: Vec2[] = (side < 0 ? corners.reverse() : corners).map(([along, across]) => [
+        place.door[0] + gfx * along + gfz * across * side,
+        place.door[1] + gfz * along - gfx * across * side,
+      ]);
+      if (lawn.every(([x, z]) => clear(x, z, 0.2))) get("grass").polygon(lawn, 0.04, 3);
     }
     const pool = compoundPoolSpots(place).find(({ centre, corners }) => [centre, ...corners].every(([x, z]) => clear(x, z, 0.6)));
     if (pool) {
