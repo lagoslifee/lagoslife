@@ -646,31 +646,8 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
     };
   } else if (kind === "safari") {
     // Open 4×4 on the dunes: body, roll bar and bench rows; dunes stream past and the car rocks.
-    const truck = new TransformNode("safari truck", scene);
+    const { truck, wheels } = buildSafariTruck(scene, disposables);
     truck.position.set(OX, 0, OZ);
-    const parts: Array<[number, number, number, number, number, number, string]> = [
-      [0, 0.55, 0, 2.0, 0.5, 4.6, "#e9e4d8"],
-      [0, 0.2, 1.6, 2.1, 0.4, 0.4, "#202020"],
-      [0, 0.2, -1.6, 2.1, 0.4, 0.4, "#202020"],
-      [0, 1.95, -0.4, 1.9, 0.06, 2.8, "#2b2b2b"],
-      [0, 1.15, 2.0, 1.9, 0.7, 0.06, "#7fb3d5"],
-    ];
-    for (const [x, y, z, w, h, d, hex] of parts) {
-      const part = MeshBuilder.CreateBox("safari part", { width: w, height: h, depth: d }, scene);
-      part.position.set(x, y, z);
-      const material = new StandardMaterial("safari paint", scene);
-      material.diffuseColor = Color3.FromHexString(hex);
-      part.material = material;
-      part.parent = truck;
-      disposables.push(material);
-    }
-    for (const seat of EXCURSION_SEATS.safari) {
-      const bench = MeshBuilder.CreateBox("safari seat", { width: 0.5, height: 0.12, depth: 0.5 }, scene);
-      bench.position.set(seat.at[0], 0.38, seat.at[1]);
-      bench.material = materials.seat;
-      bench.parent = truck;
-    }
-    disposables.push(truck);
     const sand = (materials as unknown as Record<string, Mesh["material"]>).sand ?? materials.dirt;
     const dunes = new TransformNode("dunes", scene);
     dunes.position.set(OX, 0, OZ);
@@ -691,6 +668,7 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
       dunes.position.z = OZ - ((seconds * 9) % 200) + 100;
       truck.rotation.z = Math.sin(seconds * 3.1) * 0.03;
       truck.rotation.x = Math.sin(seconds * 2.3) * 0.025;
+      for (const wheel of wheels) wheel.rotation.x = seconds * 22;
     };
   }
 
@@ -742,4 +720,103 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
       for (const entry of lights) entry.dispose();
     },
   };
+}
+
+/**
+ * An open safari Land Cruiser, facing +z: sand-coloured body with low sides, bonnet and grille, a dashboard with the
+ * wheel on the left, windscreen, roll cage under a canvas sun shade, three rows of tan seats with backs, chunky
+ * tyres and a spare on the tailgate. Seat cushions sit at the travel seat height.
+ */
+function buildSafariTruck(scene: Scene, disposables: Array<{ dispose(): void }>) {
+  const truck = new TransformNode("safari truck", scene);
+  disposables.push(truck);
+  const paints = new Map<string, StandardMaterial>();
+  const paint = (hex: string, alpha = 1, glow = 0) => {
+    const key = `${hex}|${alpha}|${glow}`;
+    let material = paints.get(key);
+    if (!material) {
+      material = new StandardMaterial(`safari ${key}`, scene);
+      material.diffuseColor = Color3.FromHexString(hex);
+      material.emissiveColor = Color3.FromHexString(hex).scale(glow);
+      material.specularColor = new Color3(0.15, 0.15, 0.15);
+      material.alpha = alpha;
+      paints.set(key, material);
+      disposables.push(material);
+    }
+    return material;
+  };
+  const box = (x: number, y: number, z: number, w: number, h: number, d: number, hex: string, parent: TransformNode = truck, alpha = 1, glow = 0) => {
+    const mesh = MeshBuilder.CreateBox("safari part", { width: w, height: h, depth: d }, scene);
+    mesh.position.set(x, y, z);
+    mesh.material = paint(hex, alpha, glow);
+    mesh.parent = parent;
+    mesh.isPickable = false;
+    return mesh;
+  };
+  const BODY = "#d9c79f";
+  const TRIM = "#2c2b28";
+  const LEATHER = "#8a5a32";
+  const BAR = "#3b3b38";
+  box(0, 0.3, 0.1, 1.9, 0.08, 4.8, "#4a4640");
+  for (const side of [-1, 1]) {
+    box(side * 0.97, 0.58, -0.3, 0.06, 0.5, 3.8, BODY);
+    box(side * 0.97, 0.86, -0.3, 0.09, 0.05, 3.8, TRIM);
+    box(side * 1.02, 0.22, 0.1, 0.12, 0.05, 2.0, TRIM);
+    for (const wz of [1.75, -1.55]) box(side * 0.98, 0.86, wz, 0.22, 0.06, 1.0, TRIM);
+  }
+  box(0, 0.58, -2.2, 1.9, 0.5, 0.06, BODY);
+  box(0, 0.74, 2.05, 1.92, 0.42, 1.1, BODY);
+  box(0, 0.96, 2.05, 1.7, 0.03, 0.9, "#cbb88f");
+  box(0, 0.66, 2.62, 1.6, 0.3, 0.04, TRIM);
+  for (let slot = -3; slot <= 3; slot += 1) box(slot * 0.16, 0.66, 2.645, 0.05, 0.24, 0.01, "#6d6a63");
+  for (const side of [-1, 1]) box(side * 0.68, 0.7, 2.645, 0.22, 0.14, 0.02, "#fff6d8", truck, 1, 0.9);
+  box(0, 0.38, 2.68, 1.94, 0.14, 0.12, TRIM);
+  box(0, 0.95, 1.38, 1.84, 0.26, 0.36, TRIM);
+  box(-0.45, 1.09, 1.27, 0.4, 0.1, 0.02, "#1d1d1d");
+  const wheel = MeshBuilder.CreateTorus("safari steering wheel", { diameter: 0.36, thickness: 0.035, tessellation: 20 }, scene);
+  wheel.position.set(-0.45, 1.06, 1.12);
+  wheel.rotation.x = -1.05;
+  wheel.material = paint("#1a1a1a");
+  wheel.parent = truck;
+  box(-0.45, 1.0, 1.22, 0.04, 0.04, 0.22, "#1a1a1a").rotation.x = -0.5;
+  for (const side of [-1, 1]) box(side * 0.92, 1.38, 1.52, 0.05, 0.8, 0.05, BAR);
+  box(0, 1.76, 1.52, 1.9, 0.05, 0.05, BAR);
+  box(0, 1.37, 1.53, 1.8, 0.74, 0.01, "#bfe3f2", truck, 0.22);
+  for (const side of [-1, 1]) {
+    for (const z of [0.95, -0.95, -2.12]) box(side * 0.92, 1.4, z, 0.06, 1.1, 0.06, BAR);
+    box(side * 0.92, 1.95, -0.6, 0.06, 0.06, 3.2, BAR);
+  }
+  for (const z of [0.95, -2.12]) box(0, 1.95, z, 1.9, 0.06, 0.06, BAR);
+  box(0, 2.0, -0.6, 1.96, 0.04, 3.3, "#c2a878");
+  for (const side of [-1, 1]) box(side * 0.99, 1.96, -0.6, 0.02, 0.1, 3.3, "#a88d5f");
+  for (const seat of EXCURSION_SEATS.safari) {
+    const [sx, sz] = seat.at;
+    box(sx, 0.4, sz, 0.48, 0.1, 0.46, LEATHER);
+    box(sx, 0.34, sz, 0.42, 0.1, 0.4, TRIM);
+    box(sx, 0.72, sz - 0.25, 0.48, 0.56, 0.08, LEATHER);
+    box(sx, 1.05, sz - 0.25, 0.26, 0.14, 0.07, LEATHER);
+  }
+  const wheels: TransformNode[] = [];
+  for (const [x, z] of [[-0.98, 1.75], [0.98, 1.75], [-0.98, -1.55], [0.98, -1.55]] as const) {
+    const pivot = new TransformNode("safari wheel", scene);
+    pivot.position.set(x, 0.42, z);
+    pivot.parent = truck;
+    const tyre = MeshBuilder.CreateCylinder("safari tyre", { height: 0.32, diameter: 0.84, tessellation: 18 }, scene);
+    tyre.rotation.z = Math.PI / 2;
+    tyre.material = paint("#1b1b1b");
+    tyre.parent = pivot;
+    const hub = MeshBuilder.CreateCylinder("safari hub", { height: 0.33, diameter: 0.42, tessellation: 6 }, scene);
+    hub.rotation.z = Math.PI / 2;
+    hub.material = paint("#b9b5ad");
+    hub.parent = pivot;
+    wheels.push(pivot);
+  }
+  const spare = MeshBuilder.CreateCylinder("safari spare", { height: 0.26, diameter: 0.78, tessellation: 18 }, scene);
+  spare.rotation.x = Math.PI / 2;
+  spare.position.set(0, 0.85, -2.37);
+  spare.material = paint("#1b1b1b");
+  spare.parent = truck;
+  box(0, 0.85, -2.51, 0.36, 0.36, 0.02, "#b9b5ad");
+  for (const side of [-1, 1]) box(side * 0.82, 0.62, -2.24, 0.14, 0.1, 0.02, "#c0262d", truck, 1, 0.6);
+  return { truck, wheels };
 }
