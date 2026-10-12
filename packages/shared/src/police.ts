@@ -51,6 +51,15 @@ export const POLICE_CHECKPOINTS: Checkpoint[] = [
   { id: "ozumba-checkpoint", name: "Ozumba Mbadiwe checkpoint", point: [-5198.6, -717.3], yaw: -1.947 },
   { id: "awolowo-checkpoint", name: "Awolowo Road checkpoint", point: [-4678.4, 60.6], yaw: -1.622 },
   { id: "ahmadu-bello-checkpoint", name: "Ahmadu Bello Way checkpoint", point: [-5582.2, -2378.6], yaw: -1.641 },
+  // Mid-road stops well away from the stations, so a drive across any district can meet the police.
+  { id: "admiralty-east-checkpoint", name: "Admiralty Way (east) checkpoint", point: [-660.7, 326], yaw: 1.412 },
+  { id: "bourdillon-checkpoint", name: "Bourdillon Road checkpoint", point: [-3167.2, 357.7], yaw: 1.237 },
+  { id: "alfred-rewane-checkpoint", name: "Alfred Rewane Road checkpoint", point: [-4192.7, 1221.3], yaw: -2.799 },
+  { id: "alexander-checkpoint", name: "Alexander Avenue checkpoint", point: [-2328.9, 1031.9], yaw: -0.891 },
+  { id: "gerrard-checkpoint", name: "Gerrard Road checkpoint", point: [-3221.8, 1171.5], yaw: -1.392 },
+  { id: "adeola-odeku-checkpoint", name: "Adeola Odeku Street checkpoint", point: [-5815.3, -1480.3], yaw: -1.546 },
+  { id: "akin-adesola-checkpoint", name: "Akin Adesola Street checkpoint", point: [-4991.1, -1593.6], yaw: -3.138 },
+  { id: "ahmadu-bello-west-checkpoint", name: "Ahmadu Bello Way (west) checkpoint", point: [-6370.4, -2372.1], yaw: 2.272 },
 ];
 
 export const checkpointAnswerSchema = z.object({ checkpointId: z.string().min(1).max(60), answer: z.enum(["comply", "flee"]) });
