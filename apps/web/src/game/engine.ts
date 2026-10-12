@@ -706,7 +706,7 @@ export class GameEngine {
       this.frameDrawCalls = (counter?.current ?? 0) - before;
     });
     window.addEventListener("resize", this.resize);
-    if (import.meta.env.DEV) this.installTestHooks();
+    if (import.meta.env.DEV || import.meta.env.VITE_TEST_HOOKS === "true") this.installTestHooks();
   }
 
   private resize = () => this.engine?.resize();
@@ -2589,13 +2589,17 @@ export class GameEngine {
 
   bookRide(destination: Vec2, label: string, express = false) {
     const quote = this.rideQuote(destination);
+    // The driver waits facing the way the trip starts, so it pulls away without a U-turn across the pavement.
+    const [sx, sz] = quote.pickup.point;
+    const ahead = quote.plan.points.find((point) => Math.hypot(point[0] - sx, point[1] - sz) > 4);
+    const yaw = ahead ? Math.atan2(ahead[0] - sx, ahead[1] - sz) : quote.pickup.yaw;
     // Park on the kerb side of the road, not the centre line.
     const side = 2.6;
-    const kerb: Vec2 = [quote.pickup.point[0] + Math.cos(quote.pickup.yaw) * side, quote.pickup.point[1] - Math.sin(quote.pickup.yaw) * side];
+    const kerb: Vec2 = [sx + Math.cos(yaw) * side, sz - Math.sin(yaw) * side];
     const pickup = walkable(kerb[0], kerb[1], 0.5) ? kerb : quote.pickup.point;
     this.net.send("rideBook", {
       pickup,
-      pickupYaw: quote.pickup.yaw,
+      pickupYaw: yaw,
       dropoff: quote.dropoff.point,
       destination,
       label,
@@ -2912,6 +2916,9 @@ export class GameEngine {
       interact: () => this.triggerInteract(),
       ride: () => this.ride,
       bikes: () => this.bikeStatus(),
+      bookRide: (x: number, z: number, label: string) => this.bookRide([x, z], label),
+      roadDistance: (x: number, z: number) => this.navigator.snap([x, z]).distance,
+      ridePath: () => this.rideCar?.pilot.path ?? null,
       rideCar: () => (this.rideCar ? { x: this.rideCar.car.x, z: this.rideCar.car.z, speed: this.rideCar.car.speed, remaining: this.rideCar.pilot.remaining(this.rideCar.car) } : null),
       navigation: () => this.navigation(),
       navigate: (point: Vec2, label: string) => this.setWaypoint({ point, label }),

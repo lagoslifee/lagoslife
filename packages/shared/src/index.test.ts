@@ -163,7 +163,7 @@ describe("streamed districts", () => {
       expect(districtAt(place.door[0], place.door[1])?.id, place.id).toBe(place.district);
       expect(walkable(place.door[0], place.door[1]), place.id).toBe(true);
     }
-    expect(new Set(PLACES.map((place) => place.district))).toEqual(new Set(["lekki-phase-1", "ikoyi", "victoria-island"]));
+    expect(new Set(PLACES.map((place) => place.district))).toEqual(new Set(["lekki-phase-1", "ikoyi", "victoria-island", "dubai-marina", "dubai-desert"]));
   });
 
   it("blocks the open lagoon but keeps the Lekki-Ikoyi Link Bridge deck walkable", () => {

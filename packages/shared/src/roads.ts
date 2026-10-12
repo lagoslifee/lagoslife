@@ -33,22 +33,9 @@ export class RoadNavigator {
     }
   }
 
-  private nearest(point: Vec2) {
-    let best = this.nodes[0]!;
-    let bestDistance = Infinity;
-    for (const node of this.nodes) {
-      const distance = Math.hypot(node.point[0] - point[0], node.point[1] - point[1]);
-      if (distance < bestDistance) {
-        best = node;
-        bestDistance = distance;
-      }
-    }
-    return best;
-  }
-
-  /** Nearest point on any road to `point`, with the road's heading there. */
-  snap(point: Vec2): { point: Vec2; yaw: number; distance: number } {
-    let best = { point: this.nodes[0]?.point ?? point, yaw: 0, distance: Infinity };
+  /** Nearest point on any road segment, with the segment's end nodes and street name. */
+  private snapEdge(point: Vec2) {
+    let best: { point: Vec2; yaw: number; distance: number; a: number; b: number; name: string | null } | null = null;
     for (const node of this.nodes) {
       for (const edge of node.edges) {
         if (edge.to < node.id) continue;
@@ -61,10 +48,16 @@ export class RoadNavigator {
         const x = ax + dx * t;
         const z = az + dz * t;
         const distance = Math.hypot(point[0] - x, point[1] - z);
-        if (distance < best.distance) best = { point: [x, z], yaw: Math.atan2(dx, dz), distance };
+        if (!best || distance < best.distance) best = { point: [x, z], yaw: Math.atan2(dx, dz), distance, a: node.id, b: edge.to, name: edge.name };
       }
     }
     return best;
+  }
+
+  /** Nearest point on any road to `point`, with the road's heading there. */
+  snap(point: Vec2): { point: Vec2; yaw: number; distance: number } {
+    const best = this.snapEdge(point);
+    return best ? { point: best.point, yaw: best.yaw, distance: best.distance } : { point, yaw: 0, distance: Infinity };
   }
 
   route(from: Vec2, to: Vec2): Vec2[] {
@@ -76,13 +69,29 @@ export class RoadNavigator {
    * the destination; `gap` is how far the destination lies from the nearest road (walk the rest).
    */
   plan(from: Vec2, to: Vec2): { points: Vec2[]; names: Array<string | null>; reachable: boolean; gap: number; metres: number } {
-    const start = this.nearest(from);
-    const goal = this.nearest(to);
-    const open = new Set([start.id]);
+    const start = this.snapEdge(from);
+    const goal = this.snapEdge(to);
+    const straight = Math.hypot(to[0] - from[0], to[1] - from[1]);
+    if (!start || !goal) return { points: [from, to], names: [null, null], reachable: false, gap: Infinity, metres: straight };
+    const gap = goal.distance;
+    const distance = (a: Vec2, b: Vec2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    // Join and leave the graph at the nearest point on a road, not the nearest junction, so the route never starts or
+    // ends with a straight line cut across a block.
+    const g = new Map<number, number>();
     const cameFrom = new Map<number, { from: number; name: string | null }>();
-    const g = new Map([[start.id, 0]]);
-    const f = new Map([[start.id, Math.hypot(start.point[0] - goal.point[0], start.point[1] - goal.point[1])]]);
-    let found = start.id === goal.id;
+    const f = new Map<number, number>();
+    const open = new Set<number>();
+    for (const id of [start.a, start.b]) {
+      const cost = distance(start.point, this.nodes[id]!.point);
+      if (cost < (g.get(id) ?? Infinity)) {
+        g.set(id, cost);
+        f.set(id, cost + distance(this.nodes[id]!.point, goal.point));
+        open.add(id);
+      }
+    }
+    const sameEdge = (start.a === goal.a && start.b === goal.b) || (start.a === goal.b && start.b === goal.a);
+    let best = sameEdge ? distance(start.point, goal.point) : Infinity;
+    let bestEnd = -1;
     while (open.size) {
       let current = -1;
       let lowest = Infinity;
@@ -93,41 +102,55 @@ export class RoadNavigator {
           current = id;
         }
       }
-      if (current === goal.id) {
-        found = true;
-        break;
-      }
+      if (lowest >= best) break;
       open.delete(current);
+      const reached = g.get(current)!;
+      if (current === goal.a || current === goal.b) {
+        const total = reached + distance(this.nodes[current]!.point, goal.point);
+        if (total < best) {
+          best = total;
+          bestEnd = current;
+        }
+      }
       for (const edge of this.nodes[current]!.edges) {
-        const tentative = (g.get(current) ?? Infinity) + edge.cost;
+        const tentative = reached + edge.cost;
         if (tentative < (g.get(edge.to) ?? Infinity)) {
           cameFrom.set(edge.to, { from: current, name: edge.name });
           g.set(edge.to, tentative);
-          const node = this.nodes[edge.to]!;
-          f.set(edge.to, tentative + Math.hypot(node.point[0] - goal.point[0], node.point[1] - goal.point[1]));
+          f.set(edge.to, tentative + distance(this.nodes[edge.to]!.point, goal.point));
           open.add(edge.to);
         }
       }
     }
-    const gap = Math.hypot(goal.point[0] - to[0], goal.point[1] - to[1]);
-    if (!found) return { points: [from, to], names: [null, null], reachable: false, gap, metres: Math.hypot(to[0] - from[0], to[1] - from[1]) };
-    const points: Vec2[] = [to];
-    const names: Array<string | null> = [null];
-    let cursor: number | undefined = goal.id;
-    while (cursor !== undefined) {
-      const step = cameFrom.get(cursor);
-      points.push(this.nodes[cursor]!.point);
-      names.push(step?.name ?? null);
-      cursor = step?.from;
+    if (best === Infinity) return { points: [from, to], names: [null, null], reachable: false, gap, metres: straight };
+    // names[i] is the street of the leg leaving points[i].
+    const points: Vec2[] = [from, start.point];
+    const names: Array<string | null> = [null, start.name];
+    if (bestEnd >= 0) {
+      const chain: number[] = [];
+      for (let cursor: number | undefined = bestEnd; cursor !== undefined; cursor = cameFrom.get(cursor)?.from) chain.push(cursor);
+      chain.reverse();
+      chain.forEach((id, index) => {
+        points.push(this.nodes[id]!.point);
+        names.push(index < chain.length - 1 ? (cameFrom.get(chain[index + 1]!)?.name ?? null) : goal.name);
+      });
     }
-    points.push(from);
-    names.push(null);
-    points.reverse();
-    names.reverse();
-    // names[i] is the street of the leg arriving at points[i]; shift so it names the leg leaving points[i].
-    const leaving = names.slice(1).concat(null);
+    points.push(goal.point, to);
+    names.push(null, null);
+    const kept: Vec2[] = [];
+    const keptNames: Array<string | null> = [];
+    points.forEach((point, index) => {
+      const last = kept[kept.length - 1];
+      if (last && distance(last, point) < 0.05) {
+        kept[kept.length - 1] = point;
+        keptNames[keptNames.length - 1] = names[index] ?? keptNames[keptNames.length - 1]!;
+        return;
+      }
+      kept.push(point);
+      keptNames.push(names[index]!);
+    });
     let metres = 0;
-    for (let index = 1; index < points.length; index += 1) metres += Math.hypot(points[index]![0] - points[index - 1]![0], points[index]![1] - points[index - 1]![1]);
-    return { points, names: leaving, reachable: true, gap, metres };
+    for (let index = 1; index < kept.length; index += 1) metres += distance(kept[index]!, kept[index - 1]!);
+    return { points: kept, names: keptNames, reachable: true, gap, metres };
   }
 }
