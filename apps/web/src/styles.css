@@ -543,6 +543,8 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
   .hud-location h2 { font-size: 15px; }
   .hud-status { right: 10px; top: 10px; }
   .objective { top: auto; bottom: 230px; width: 92vw; }
+  .dubai-guide, .dubai-guide-chip { top: auto; bottom: 230px; }
+  .dubai-guide { width: 92vw; }
   .minimap { width: 130px; height: 130px; right: 10px; bottom: 30px; }
   .hud-buttons { left: auto; right: 150px; bottom: 10px; }
   .hud-buttons button:nth-child(4), .perf, .controls-card { display: none; }
@@ -999,3 +1001,12 @@ button.wide { width: 100%; margin: 6px 0; }
 .staff-row small { color: #6b7d79; font-size: 11px; }
 .staff-row button { font-size: 12px; padding: 6px 8px; }
 .wide { width: 100%; }
+.phone-region-note { grid-column: 1 / -1; margin: 0 0 4px; padding: 8px 10px; border-radius: 10px; background: rgba(63, 216, 255, 0.12); color: #cfefff; font-size: 12.5px; line-height: 1.35; }
+.dubai-guide { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); width: min(440px, 46vw); padding: 10px 14px; border-radius: 12px; background: rgba(12, 18, 26, 0.86); border: 1px solid rgba(255, 210, 58, 0.55); color: #f5f2e8; display: grid; gap: 6px; z-index: 5; }
+.dubai-guide header { display: flex; justify-content: space-between; align-items: center; }
+.dubai-guide p { margin: 0; font-size: 12.5px; color: #d6d0c4; line-height: 1.35; }
+.dubai-guide-stops { display: flex; flex-wrap: wrap; gap: 6px; }
+.dubai-guide-stops button { padding: 6px 10px; font-size: 13px; }
+.dubai-guide .dubai-home { width: 100%; font-weight: 800; }
+.dubai-guide-chip { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); z-index: 5; padding: 6px 12px; border-radius: 999px; }
+

@@ -19,6 +19,7 @@ import { ClubBarSheet, ClubDoorSheet, ClubTableSheet } from "./ClubSheets";
 import { COMMUNITY_KINDS, CommunitySheet } from "./CommunitySheets";
 import { PlaceSheet } from "./Sheets";
 import { airportStep } from "./airport-guide";
+import { DubaiGuide } from "./DubaiGuide";
 import { ExcursionPanel, FlightPanel, LOCAL_PHOTOS_KEY, TRAVEL_SHEET_KINDS, TravelPlaceSheet, TravelSpotSheet, loadLocalPhotos, tripHint } from "./TravelSheets";
 import { PlotSheet } from "./PlotSheet";
 import { HomeDesigner } from "./HomeDesigner";
@@ -406,7 +407,8 @@ export function GameView({
 
   const chosenPath = housing === "later" ? null : housing;
   const settledPath = housingPath(properties, plots, null);
-  const objective = useMemo(() => currentObjective(economy, properties, plots, hud, visitedHome, chosenPath), [economy, properties, plots, hud, visitedHome, chosenPath]);
+  const inDubai = engine?.playerRegion() === "dubai";
+  const objective = useMemo(() => (inDubai ? null : currentObjective(economy, properties, plots, hud, visitedHome, chosenPath)), [inDubai, economy, properties, plots, hud, visitedHome, chosenPath]);
   const objectiveKey = objective ? `${objective.step}:${objective.title}` : "";
   useEffect(() => {
     if (objectiveKey) setGuideOpen(true);
@@ -786,6 +788,9 @@ export function GameView({
             <div className="save-state" data-testid="save-state">✓ {ago(savedAt, now)}</div>
           </section>
 
+          {inDubai && !guideHidden && !airportGuide && hud.location !== "bus" && !(hud.location === "interior" && (trip?.flight || trip?.excursion)) && (
+            <DubaiGuide here={[hud.x, hud.z]} onNavigate={(next) => setManualTarget(next)} />
+          )}
           {objective && !guideHidden && sheet?.kind !== "dealership" && !(hud.location === "interior" && (trip?.flight || trip?.excursion)) && (
             <section className={`objective ${guideOpen ? "open" : "collapsed"}`} data-testid="objective">
               <div className="objective-head">

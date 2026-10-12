@@ -40,6 +40,9 @@ const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
   { id: "help", label: "Help", icon: "?" },
 ];
 
+/** Apps about life in Lagos, hidden from the home screen while the player is in Dubai. */
+const LAGOS_ONLY = new Set<PhoneApp>(["transport", "jobs", "order", "property", "community", "justice"]);
+
 type Props = {
   app: PhoneApp;
   setApp: (app: PhoneApp) => void;
@@ -93,6 +96,7 @@ export function Phone(props: Props) {
   const { app, setApp, onClose } = props;
   const [cabTo, setCabTo] = useState<CabDestination | null>(null);
   const title = APPS.find((entry) => entry.id === app)?.label ?? "Phone";
+  const inDubai = props.engine?.playerRegion() === "dubai";
   return (
     <aside className="phone" role="dialog" aria-label="Phone">
       <div className="phone-status">
@@ -115,7 +119,8 @@ export function Phone(props: Props) {
       <div className="phone-body">
         {app === "home" && (
           <div className="app-grid">
-            {APPS.map((entry) => (
+            {inDubai && <p className="phone-region-note" data-testid="dubai-phone-note">🇦🇪 You're in Dubai. Lagos apps (Jobs, Danfo, Order, My Home…) come back when you fly home from Dubai International.</p>}
+            {APPS.filter((entry) => !inDubai || !LAGOS_ONLY.has(entry.id)).map((entry) => (
               <button key={entry.id} className="app-icon" onClick={() => (entry.id === "map" ? props.onOpenMap() : setApp(entry.id))}>
                 <span>{entry.icon}</span>
                 {entry.label}

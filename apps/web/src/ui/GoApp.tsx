@@ -1,4 +1,4 @@
-import { FAST_TRAVEL, placeById, type FastTravelState, type Happening, type TravelPrompt } from "@lagos-living/shared";
+import { FAST_TRAVEL, placeById, regionOf, type FastTravelState, type Happening, type TravelPrompt } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import type { GameEngine } from "../game/engine";
 import type { RideAsk } from "../multiplayer";
@@ -38,9 +38,14 @@ export function GoApp({ engine, onClose }: { engine: GameEngine | null; onClose:
     setCompanions([]);
     onClose();
   };
+  const region = engine.playerRegion();
+  const local = (placeId: string | null | undefined) => {
+    const place = placeId ? placeById.get(placeId) : undefined;
+    return !place || regionOf(place.door[0], place.door[1]) === region;
+  };
   const places = state.discovered
     .map((id) => placeById.get(id))
-    .filter((place): place is NonNullable<typeof place> => Boolean(place))
+    .filter((place): place is NonNullable<typeof place> => Boolean(place) && regionOf(place!.door[0], place!.door[1]) === region)
     .filter((place) => !filter || `${place.name} ${place.street}`.toLowerCase().includes(filter.toLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name));
   return (
@@ -53,7 +58,7 @@ export function GoApp({ engine, onClose }: { engine: GameEngine | null; onClose:
       <h3>Tonight in the City</h3>
       {state.happenings.length === 0 && <p className="muted small">Nothing busy in this world right now. Clubs, boarding flights and groups of two or more residents show up here.</p>}
       <ul className="go-list" data-testid="happenings">
-        {state.happenings.map((item) => (
+        {state.happenings.filter((item) => local(item.placeId)).map((item) => (
           <li key={item.id}>
             <span>
               {HAPPENING_ICON[item.kind]} <strong>{item.title}</strong>
@@ -70,7 +75,7 @@ export function GoApp({ engine, onClose }: { engine: GameEngine | null; onClose:
 
       <h3>Favourites</h3>
       <div className="go-favourites">
-        {state.favourites.map((favourite) => (
+        {state.favourites.filter((favourite) => region === "lagos" || (favourite.id !== "home" && favourite.id !== "garage")).map((favourite) => (
           <button
             key={favourite.id}
             data-testid={`go-${favourite.id}`}

@@ -2725,7 +2725,8 @@ export class GameEngine {
       this.beacon.isPickable = false;
     }
     const { x, z } = this.controller;
-    const distance = Math.hypot(target.point[0] - x, target.point[1] - z);
+    const goal = this.waypointDoor && !this.car ? this.waypointDoor.point : target.point;
+    const distance = Math.hypot(goal[0] - x, goal[1] - z);
     if (this.waypointDoor && this.car && distance < 30 && this.parkNoticeFor !== target.label) {
       this.parkNoticeFor = target.label;
       this.caption(`You're at ${target.label} — park and walk to the glowing blue ENTRANCE`);
@@ -2738,7 +2739,7 @@ export class GameEngine {
       return;
     }
     this.beacon.setEnabled(true);
-    this.beacon.position.set(target.point[0], 20, target.point[1]);
+    this.beacon.position.set(goal[0], 20, goal[1]);
     const moved = Math.hypot(x - this.lastRoute.x, z - this.lastRoute.z);
     if (this.routePlan) {
       this.guidance = guide(this.routePlan, [x, z]);
@@ -2750,7 +2751,7 @@ export class GameEngine {
     }
     if (now - this.lastRoute.at > 2500 || moved > 12 || !this.routeMesh) {
       this.lastRoute = { at: now, x, z };
-      this.routePlan = this.navigator.plan([x, z], target.point);
+      this.routePlan = this.navigator.plan([x, z], goal);
       this.routePoints = this.routePlan.points;
       this.guidance = guide(this.routePlan, [x, z]);
       this.routeMesh?.dispose();
@@ -2863,7 +2864,9 @@ export class GameEngine {
     if (!same) {
       this.lastRoute.at = 0;
       this.parkNoticeFor = null;
-      this.waypointDoor = target ? (this.entranceCandidates().find((door) => Math.hypot(door.point[0] - target.point[0], door.point[1] - target.point[1]) < 2) ?? null) : null;
+      const near = (point: Vec2) => target && Math.hypot(point[0] - target.point[0], point[1] - target.point[1]) < 2;
+      const kerbPlace = target ? PLACES.find((place) => place.kind !== "delivery" && place.buildingId !== null && near(place.kerb)) : undefined;
+      this.waypointDoor = target ? (this.entranceCandidates().find((door) => near(door.point)) ?? (kerbPlace ? { key: kerbPlace.id, point: kerbPlace.door, name: kerbPlace.name } : null)) : null;
       if (this.waypointDoor && target) this.waypointDoor = { ...this.waypointDoor, name: target.label };
     }
     if (!target) {
@@ -3194,7 +3197,7 @@ export class GameEngine {
 
   /** Lagos or Dubai, from where the player stands. */
   playerRegion() {
-    return regionOf(this.controller.x, this.controller.z);
+    return this.interior ? regionOf(this.lastStreet[0], this.lastStreet[1]) : regionOf(this.controller.x, this.controller.z);
   }
 
   /** Metres left on the current ride, while riding. */
