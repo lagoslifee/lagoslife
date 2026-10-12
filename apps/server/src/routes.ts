@@ -1,5 +1,6 @@
 import {
   enrolSchema,
+  gymSetSchema,
   startBusinessSchema,
   upgradeBusinessSchema,
   acquirePropertySchema,
@@ -62,6 +63,7 @@ import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
 import { businessStatus, collectBusiness, enrol, startBusiness, upgradeBusiness } from "./business-service.js";
+import { finishSet, gymStatus, joinGym, startSet } from "./gym-service.js";
 import { applyCleaner, dismissStaff, hireStaff, homeStaff, orderDelivery, partyUntil, staffByHome, startParty, stopParty } from "./home-services-service.js";
 import { cancelGig, completeGig, gigStatus, startGigWork, takeGig } from "./gig-service.js";
 import { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, marketStatus, sprayMoney, trade, transferMoney } from "./finance-service.js";
@@ -531,6 +533,12 @@ export function configureRoutes(app: Express) {
     const body = enrolSchema.parse(req.body);
     return enrol(userId, body.course, body.idempotencyKey);
   }));
+
+  app.get("/api/gym", requirePlayer, guarded("Gym unavailable", (_req, userId) => gymStatus(userId)));
+  app.post("/api/gym/join", requirePlayer, rateLimited, guarded("Membership failed", (req, userId) =>
+    joinGym(userId, z.object({ idempotencyKey: z.string().uuid() }).parse(req.body).idempotencyKey)));
+  app.post("/api/gym/set", requirePlayer, rateLimited, guarded("Could not start the set", (req, userId) => startSet(userId, gymSetSchema.parse(req.body).exercise)));
+  app.post("/api/gym/finish", requirePlayer, rateLimited, guarded("Could not finish the set", (_req, userId) => finishSet(userId)));
 
   app.post("/api/delivery/order", requirePlayer, rateLimited, guarded("Order failed", (req, userId) => {
     const body = orderDeliverySchema.parse(req.body);

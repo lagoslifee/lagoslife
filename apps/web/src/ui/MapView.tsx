@@ -39,6 +39,8 @@ const PLACE_GLYPH: Record<PlaceKind, { glyph: string; color: string }> = {
   desert: { glyph: "🐪", color: "#bf8f3c" },
   car_rental: { glyph: "🚗", color: "#2e7d32" },
   tourism: { glyph: "ℹ️", color: "#00838f" },
+  gym: { glyph: "🏋", color: "#1f6f43" },
+  estate: { glyph: "🏢", color: "#1b4fa0" },
 };
 
 const waterImages = new WeakMap<WorldData, HTMLCanvasElement>();

@@ -1044,3 +1044,10 @@ button.wide { width: 100%; margin: 6px 0; }
 .estate-hero small { font-size: 12px; line-height: 1.35; color: #cfe6df; }
 .estate-design.luxury { border-color: rgba(230, 189, 98, 0.6); background: rgba(230, 189, 98, 0.08); }
 .estate-tag { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: 999px; background: #e6bd62; color: #1a1408; font-size: 10.5px; font-weight: 800; vertical-align: middle; }
+
+.gym-fitness { display: flex; align-items: center; gap: 10px; margin: 4px 0 6px; }
+.gym-bar { flex: 1; height: 10px; border-radius: 6px; background: rgba(127, 127, 127, 0.25); overflow: hidden; }
+.gym-bar i { display: block; height: 100%; background: linear-gradient(90deg, #36b36a, #1f6f43); }
+.gym-people { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.gym-people li { padding: 4px 10px; border-radius: 999px; background: rgba(31, 111, 67, 0.15); font-size: 0.85rem; }
+.workout-card strong { font-size: 1.4rem; }

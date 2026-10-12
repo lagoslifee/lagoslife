@@ -169,6 +169,7 @@ import {
   type RoomVehicle,
 } from "../vehicle-service.js";
 import { loadAppearance, profileEvents } from "../profile-service.js";
+import { loadFitness } from "../gym-service.js";
 import { buildingEvents } from "../building-service.js";
 import { homePropertyOf, loadDiscoveries, recordDiscovery } from "../fast-travel-service.js";
 import { encounterEligible, payEncounter, resolveEncounter, startEncounter } from "../street-encounter-service.js";
@@ -212,6 +213,7 @@ type Player = {
   userId: string;
   name: string;
   appearance: CharacterAppearance;
+  build: number;
   looksRequestedAt: number;
   x: number;
   z: number;
@@ -397,6 +399,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private onSanctioned = (userId: string, kind: string, reason: string, endsAt: number | null) => this.applySanction(userId, kind, reason, endsAt);
   private onBlocksChanged = (userIds: string[]) => void this.refreshHidden(userIds);
   private onAppearance = (userId: string, appearance: CharacterAppearance) => this.updateAppearance(userId, appearance);
+  private onBuild = (userId: string, build: number) => this.updateBuild(userId, build);
   private onPlotsChanged = () => this.broadcast("plots", {});
   private onSecurityChanged = (userId: string) => void this.refreshGuards(userId);
   private onTravelInvite = (userId: string, from: string) => {
@@ -434,6 +437,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     safetyEvents.on("sanctioned", this.onSanctioned);
     safetyEvents.on("blocksChanged", this.onBlocksChanged);
     profileEvents.on("appearance", this.onAppearance);
+    profileEvents.on("build", this.onBuild);
     buildingEvents.on("changed", this.onPlotsChanged);
     securityEvents.on("changed", this.onSecurityChanged);
     travelEvents.on("invite", this.onTravelInvite);
@@ -540,7 +544,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   async onJoin(client: LagosClient) {
     const ticket = ++this.joinCounter;
     this.joinTickets.set(client.auth.userId, ticket);
-    const [suspension, mute, hidden, appearance, security, discovered, homePropertyId] = await Promise.all([
+    const [suspension, mute, hidden, appearance, security, discovered, homePropertyId, build] = await Promise.all([
       activeSuspension(client.auth.userId).catch(() => null),
       activeMute(client.auth.userId).catch(() => null),
       hiddenPlayers(client.auth.userId).catch(() => new Set<string>()),
@@ -548,6 +552,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       getSecurityStatus(client.auth.userId).catch(() => ({ guards: 0, until: null })),
       loadDiscoveries(client.auth.userId).catch(() => new Set<string>()),
       homePropertyOf(client.auth.userId).catch(() => null),
+      loadFitness(client.auth.userId).catch(() => 0),
     ]);
     if (suspension) throw new Error("This account is suspended.");
     clearProgressReset(client.auth.userId);
@@ -564,6 +569,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       userId: client.auth.userId,
       name: client.auth.name,
       appearance,
+      build,
       looksRequestedAt: 0,
       x: spawn[0],
       z: spawn[1],
@@ -655,13 +661,21 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const now = Date.now();
     if (now - player.looksRequestedAt < 5_000) return;
     player.looksRequestedAt = now;
-    const looks: Look[] = [...this.players.values()].map(({ sessionId, appearance }) => ({ sessionId, appearance }));
+    const looks: Look[] = [...this.players.values()].map(({ sessionId, appearance, build }) => ({ sessionId, appearance, build }));
     client.send("looks", looks);
   }
 
   private sendLook(player: Player, except?: string) {
-    const look: Look = { sessionId: player.sessionId, appearance: player.appearance };
+    const look: Look = { sessionId: player.sessionId, appearance: player.appearance, build: player.build };
     for (const client of this.clients) if (client.sessionId !== except) client.send("look", look);
+  }
+
+  private updateBuild(userId: string, build: number) {
+    for (const player of this.players.values()) {
+      if (player.userId !== userId) continue;
+      player.build = build;
+      this.sendLook(player);
+    }
   }
 
   private updateAppearance(userId: string, appearance: CharacterAppearance) {
@@ -714,6 +728,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     safetyEvents.off("sanctioned", this.onSanctioned);
     safetyEvents.off("blocksChanged", this.onBlocksChanged);
     profileEvents.off("appearance", this.onAppearance);
+    profileEvents.off("build", this.onBuild);
     buildingEvents.off("changed", this.onPlotsChanged);
     securityEvents.off("changed", this.onSecurityChanged);
     travelEvents.off("invite", this.onTravelInvite);

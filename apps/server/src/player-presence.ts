@@ -37,6 +37,17 @@ export function isNear(userId: string, point: readonly [number, number], radius:
   );
 }
 
+/** Everyone whose last known position is within `radius` of `point`. */
+export function usersNear(point: readonly [number, number], radius: number, location = "street") {
+  const now = Date.now();
+  const found: string[] = [];
+  for (const [userId, position] of positions) {
+    if (now - position.updatedAt > 15_000 || position.location !== location) continue;
+    if (Math.hypot(position.x - point[0], position.z - point[1]) <= radius) found.push(userId);
+  }
+  return found;
+}
+
 const resetUsers = new Set<string>();
 
 /** Live sessions must not write their stale in-memory position back over a progress reset. */

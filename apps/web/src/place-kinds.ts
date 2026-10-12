@@ -48,4 +48,6 @@ export const PLACE_KIND: Record<Place["kind"], KindInfo> = {
   desert: { label: "Desert camp", icon: "🏜", colour: "#a5662b", category: "leisure" },
   car_rental: { label: "Car hire", icon: "🔑", colour: "#1f4e5f", category: "cars" },
   tourism: { label: "Tours", icon: "🧭", colour: "#2a6f5b", category: "travel" },
+  gym: { label: "Gym", icon: "🏋", colour: "#1f6f43", category: "leisure" },
+  estate: { label: "Estate agent", icon: "🏢", colour: "#1b4fa0", category: "homes" },
 };

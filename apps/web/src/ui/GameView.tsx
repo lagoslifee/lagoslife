@@ -1,4 +1,4 @@
-import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
+import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL, EXERCISES, type ExerciseId } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { noteFps, report, setReportedQuality } from "../diagnostics";
@@ -25,6 +25,8 @@ import { PlotSheet } from "./PlotSheet";
 import { HomeDesigner } from "./HomeDesigner";
 import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
 import { CheckpointPrompt, HoldUpPrompt, PoliceStationSheet, SecuritySheet } from "./PoliceSheets";
+import { GymSheet } from "./GymSheet";
+import { EstateApp } from "./EstateApp";
 import { ChatPanel, ReportDialog, WarningNotice, type ReportTarget } from "./SafetyUI";
 
 type Toast = Notice & { id: number; at: number };
@@ -110,6 +112,7 @@ export function GameView({
   const [holdUp, setHoldUp] = useState<HoldUp | null>(null);
   const [robTarget, setRobTarget] = useState<{ sessionId: string; name: string } | null>(null);
   const [plots, setPlots] = useState<PlotState[]>([]);
+  const [workout, setWorkout] = useState<{ exercise: ExerciseId; endsAt: number } | null>(null);
   const [phone, setPhone] = useState<PhoneApp | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(() => !localStorage.getItem("lagos-help-seen"));
@@ -400,6 +403,29 @@ export function GameView({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const finishingSet = useRef(false);
+  useEffect(() => {
+    if (!workout || !engine || finishingSet.current) return;
+    if (!engine.isWorkingOut()) {
+      setWorkout(null);
+      return;
+    }
+    if (now < workout.endsAt) return;
+    finishingSet.current = true;
+    api.gymFinish()
+      .then((result) => {
+        if (result.counted) toast({ tone: "success", text: `Set done 💪 Fitness ${Math.round(result.fitness * 100)}% · energy ${result.energy}.` });
+        else toast({ tone: "info", text: result.reason });
+        return refresh();
+      })
+      .catch((error: Error) => toast({ tone: "error", text: error.message }))
+      .finally(() => {
+        engine.stopWorkout();
+        setWorkout(null);
+        finishingSet.current = false;
+      });
+  }, [now, workout, engine]);
 
   useEffect(() => {
     document.documentElement.style.setProperty("--text-scale", String(settings.textScale));
@@ -759,6 +785,12 @@ export function GameView({
                 {tow.stageEndsAt && tow.stageEndsAt > now ? ` · ${Math.ceil((tow.stageEndsAt - now) / 1000)}s` : ""}
               </button>
             ))}
+            {workout && (
+              <div className="airport-step workout-card" data-testid="workout-card">
+                <small>{EXERCISES[workout.exercise].emoji} {EXERCISES[workout.exercise].name} · move to stop</small>
+                <strong>{Math.max(0, Math.ceil((workout.endsAt - now) / 1000))}s</strong>
+              </div>
+            )}
             {airportGuide ? (
               <div className="airport-step" data-testid="airport-step">
                 <small>✈ Step {airportGuide.step} of {airportGuide.total} · follow the blue line</small>
@@ -1004,6 +1036,34 @@ export function GameView({
       {sheet?.kind === "police" && (
         <PoliceStationSheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} onJustice={() => setPhone("justice")} />
       )}
+      {sheet?.kind === "gym" && (
+        <GymSheet
+          place={sheet}
+          balance={economy?.balance ?? 0}
+          onClose={() => setSheet(null)}
+          onRefresh={refresh}
+          onToast={toast}
+          onTrain={(exercise, endsAt) => {
+            if (!engine?.startWorkout(exercise)) return false;
+            setWorkout({ exercise, endsAt: Date.parse(endsAt) });
+            return true;
+          }}
+        />
+      )}
+      {sheet?.kind === "estate" && (
+        <div className="sheet-backdrop" onClick={() => setSheet(null)}>
+          <section className="sheet" role="dialog" aria-label={sheet.name} data-testid="estate-sheet" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <p className="eyebrow">ESTATE AGENT · {sheet.street.toUpperCase()}</p>
+                <h2>{sheet.name}</h2>
+              </div>
+              <button className="icon-button" onClick={() => setSheet(null)} aria-label="Close">✕</button>
+            </header>
+            <EstateApp properties={properties} plots={plots} here={hud ? [hud.x, hud.z] : null} onRefresh={refresh} onToast={toast} onNavigate={setManualTarget} onClose={() => setSheet(null)} />
+          </section>
+        </div>
+      )}
       {sheet?.kind === "security" && (
         <SecuritySheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} />
       )}
@@ -1136,7 +1196,7 @@ export function GameView({
           onNavigate={(next) => setManualTarget(next)}
         />
       )}
-      {sheet && !["dealership", "mechanic", "club", "police", "security"].includes(sheet.kind) && !COMMUNITY_KINDS.has(sheet.kind) && !TRAVEL_SHEET_KINDS.has(sheet.kind) && (
+      {sheet && !["dealership", "mechanic", "club", "police", "security", "gym", "estate"].includes(sheet.kind) && !COMMUNITY_KINDS.has(sheet.kind) && !TRAVEL_SHEET_KINDS.has(sheet.kind) && (
         <PlaceSheet
           place={sheet}
           economy={economy}

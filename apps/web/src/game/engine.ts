@@ -61,6 +61,7 @@ import {
   type BusState,
   type CharacterAppearance,
   type ChatMessage,
+  type ExerciseId,
   type Look,
   type MotionState,
   type NetworkPlayer,
@@ -105,6 +106,7 @@ import {
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
 import { EntranceMarkers, type EntranceCandidate } from "./entrance-markers";
 import { TourGuide, tourStops } from "./tour-guide";
+import { gymStations, type GymStation } from "./gym-stations";
 import { PropLibrary } from "./props";
 import { HomeStaffView, type StaffPost } from "./home-staff-view";
 import { PartyLights } from "./party-lights";
@@ -273,6 +275,8 @@ const PLACE_ACTIONS: Record<Place["kind"], string> = {
   desert: "Desert camp",
   car_rental: "Hire a car",
   tourism: "Things to do in Dubai",
+  gym: "Gym",
+  estate: "Estate agent",
 };
 
 /** Lines the crew say on a 60-second flight, keyed by phase. */
@@ -373,6 +377,8 @@ export class GameEngine {
   /** The desk the HUD wants the player to walk to next inside a terminal or other travel interior. */
   private indoorGuide: { spot: string; label: string } | null = null;
   private tour: TourGuide | null = null;
+  /** A gym set in progress: the player is held at the station doing the exercise until it ends or they move off. */
+  private workout: { station: GymStation; time: number } | null = null;
   private guideLine: Mesh | null = null;
   private homeStaff: HomeStaffView | null = null;
   private staffPosts: StaffPost[] = [];
@@ -381,6 +387,8 @@ export class GameEngine {
   private spotters: CarSpotters | null = null;
   private gatePlot: string | null = null;
   private looks = new Map<string, CharacterAppearance>();
+  private builds = new Map<string, number>();
+  private build = 0;
   private appearance: CharacterAppearance = defaultAppearance;
   private buses = new Map<string, DanfoView>();
   private busTags = new Map<string, HTMLDivElement>();
@@ -737,6 +745,7 @@ export class GameEngine {
     this.assertLive();
     if (this.avatars) {
       this.player = this.avatars.create("player", this.appearance);
+      this.player.setBuild(this.build);
       this.player.onMeshes = (meshes) => this.addCaster(meshes);
     } else {
       this.playerFallback = MeshBuilder.CreateCapsule("player", { height: 1.76, radius: 0.3 }, scene);
@@ -1196,6 +1205,14 @@ export class GameEngine {
         this.controller.yaw = this.seatYaw;
       }
       if (move[0] || move[1]) this.emote = null;
+      if (this.workout && (move[0] || move[1])) {
+        this.workout = null;
+        this.callbacks.notice({ tone: "info", text: "You stepped off. That set won't count unless you finish it at the machine." });
+      }
+      if (this.workout) {
+        move = [0, 0];
+        this.controller.teleport(this.workout.station.at[0], this.workout.station.at[1]);
+      }
       const steps = Math.max(1, Math.ceil(dt / SUBSTEP_DT));
       for (let step = 0; step < steps; step += 1) this.controller.step(dt / steps, move, this.cameraYaw, mode);
       if (this.input.consume("jump")) this.controller.jump();
@@ -1226,11 +1243,22 @@ export class GameEngine {
       if (this.sitting && (speed > 0.1 || this.emote !== this.sitting.pose || !this.interior)) this.sitting = null;
       const chair = this.sitting;
       const lean = chair?.pose === "sit" ? 0.08 : 0;
-      if (chair) this.player.root.position.set(chair.seat[0] + Math.sin(chair.yaw) * lean, chair.y, chair.seat[1] + Math.cos(chair.yaw) * lean);
-      else this.player.root.position.set(x, seatedTravel ? TRAVEL_SEAT_Y : this.groundY + this.controller.hop, z);
-      this.player.root.rotation.y = chair ? chair.yaw : seatedTravel ? this.seatYaw : this.controller.yaw;
-      this.player.root.setEnabled(!bus && !inCar);
-      if (!inCar) this.player.update(speed, motion, dt);
+      const workout = this.workout;
+      if (workout) {
+        const { station } = workout;
+        workout.time += dt;
+        this.player.root.position.set(station.at[0], this.groundY + station.lift, station.at[1]);
+        this.player.root.rotation.y = station.yaw;
+        this.player.root.setEnabled(true);
+        this.player.update(station.speed, station.motion, dt);
+        this.player.exercise(station.exercise, workout.time);
+      } else {
+        if (chair) this.player.root.position.set(chair.seat[0] + Math.sin(chair.yaw) * lean, chair.y, chair.seat[1] + Math.cos(chair.yaw) * lean);
+        else this.player.root.position.set(x, seatedTravel ? TRAVEL_SEAT_Y : this.groundY + this.controller.hop, z);
+        this.player.root.rotation.y = chair ? chair.yaw : seatedTravel ? this.seatYaw : this.controller.yaw;
+        this.player.root.setEnabled(!bus && !inCar);
+        if (!inCar) this.player.update(speed, motion, dt);
+      }
     } else if (this.playerFallback) {
       this.playerFallback.position.set(x, this.groundY + 0.88, z);
       this.playerFallback.setEnabled(!bus && !inCar);
@@ -1866,6 +1894,7 @@ export class GameEngine {
       }
       if (near.has(player.sessionId) && !remote.avatar && this.avatars) {
         const avatar = this.avatars.create(`remote-${player.sessionId}`, this.looks.get(player.sessionId) ?? defaultAppearance);
+        avatar.setBuild(this.builds.get(player.sessionId) ?? 0);
         avatar.onMeshes = (meshes) => this.addCaster(meshes);
         remote.avatar = avatar;
       } else if (!near.has(player.sessionId) && remote.avatar) {
@@ -1888,13 +1917,17 @@ export class GameEngine {
   }
 
   private onLooks(looks: Look[]) {
-    for (const { sessionId, appearance } of looks) {
+    for (const { sessionId, appearance, build } of looks) {
       if (sessionId === this.net.sessionId) {
         this.setAppearance(appearance);
+        this.build = build;
+        this.player?.setBuild(build);
         continue;
       }
       this.looks.set(sessionId, appearance);
+      this.builds.set(sessionId, build);
       this.remotes.get(sessionId)?.avatar?.setAppearance(appearance);
+      this.remotes.get(sessionId)?.avatar?.setBuild(build);
     }
     if (this.looks.size > 400) {
       for (const sessionId of this.looks.keys()) {
@@ -2856,6 +2889,33 @@ export class GameEngine {
         props.place("restaurant-table", x, z, Math.atan2(fx, fz), this.streetProps, this.world.groundHeight(x, z));
       }
     }
+    const stations = gymStations();
+    void props.ensure(stations.map((station) => station.prop)).then(() => {
+      if (this.disposed) return;
+      for (const station of stations) {
+        const [px, pz] = station.propAt;
+        props.place(station.prop, px, pz, station.propYaw, this.streetProps, this.world.groundHeight(px, pz));
+      }
+    });
+  }
+
+  /** Puts the player on the machine for a gym set; false when they are driving, riding or indoors. */
+  startWorkout(exercise: ExerciseId) {
+    const station = gymStations().find((entry) => entry.exercise === exercise);
+    if (!station || this.interior || this.driving || this.passenger || this.riding()) return false;
+    this.emote = null;
+    this.sitting = null;
+    this.controller.teleport(station.at[0], station.at[1]);
+    this.workout = { station, time: 0 };
+    return true;
+  }
+
+  stopWorkout() {
+    this.workout = null;
+  }
+
+  isWorkingOut() {
+    return this.workout !== null;
   }
 
   /** Starts the free Dubai Marina walking tour with a guide beside the player; only on the street in Dubai. */

@@ -83,7 +83,12 @@ export const saveCharacterSchema = z.object({
 });
 
 /** Appearance travels in its own messages, once per join or change, so 20 Hz snapshots stay small. */
-export const lookSchema = z.object({ sessionId: z.string().min(1).max(64), appearance: characterAppearanceSchema });
+export const lookSchema = z.object({
+  sessionId: z.string().min(1).max(64),
+  appearance: characterAppearanceSchema,
+  /** Gym fitness from 0 (ordinary build) to 1 (fully trained). */
+  build: z.number().min(0).max(1).default(0),
+});
 export type Look = z.infer<typeof lookSchema>;
 export const looksSchema = z.array(lookSchema).max(200);
 
@@ -122,6 +127,7 @@ export * from "./finance.js";
 export * from "./gigs.js";
 export * from "./home-services.js";
 export * from "./business.js";
+export * from "./gym.js";
 import { worldVehicleSchema } from "./vehicles.js";
 
 export const motionStates = ["idle", "walk", "jog", "sprint", "sit", "wave", "dance", "drive"] as const;

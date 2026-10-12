@@ -126,6 +126,7 @@ export class AvatarFactory {
       leftArm: node("upperarm_l"),
       rightArm: node("upperarm_r"),
       rightFore: node("lowerarm_r"),
+      leftFore: node("lowerarm_l"),
       rightHand: node("hand_r"),
     };
     const bones = new Map<string, TransformNode>();
@@ -137,7 +138,8 @@ export class AvatarFactory {
   }
 }
 
-type Limbs = Record<"leftUp" | "leftLow" | "rightUp" | "rightLow" | "leftArm" | "rightArm" | "rightFore" | "rightHand", TransformNode | null>;
+type Limbs = Record<"leftUp" | "leftLow" | "rightUp" | "rightLow" | "leftArm" | "rightArm" | "rightFore" | "leftFore" | "rightHand", TransformNode | null>;
+export type Workout = "treadmill" | "bench" | "dumbbells";
 
 /**
  * The resident models are sculpted athletic. At build 0 each bone's thickness (its local Y and Z; X runs along the
@@ -319,6 +321,24 @@ export class Avatar {
     if (motion === "wave") this.wave(dt);
     else this.waveTime = 0;
     if (this.held) this.holdPose(dt, motion);
+  }
+
+  /**
+   * Gym movements over the clip update() just set (call after it): curls bend both forearms; the seated press pushes
+   * both arms overhead and back. The treadmill needs nothing extra beyond a jog at a standstill.
+   */
+  exercise(kind: Workout, time: number) {
+    const limbs = this.instance.limbs;
+    const phase = 0.5 - 0.5 * Math.cos(time * 3.2);
+    if (kind === "dumbbells") {
+      bend(limbs.rightFore, 0.2 + 1.7 * phase, Axis.X);
+      bend(limbs.leftFore, 0.2 + 1.7 * phase, Axis.X);
+    } else if (kind === "bench") {
+      for (const [arm, fore, side] of [[limbs.rightArm, limbs.rightFore, 1], [limbs.leftArm, limbs.leftFore, -1]] as const) {
+        bend(arm, side * (-1.2 - 1.1 * phase), Axis.Z);
+        bend(fore, side * (-1.6 + 1.3 * phase), Axis.Z);
+      }
+    }
   }
 
   /** The animation library has no wave, so the right arm is raised and the forearm swings on top of idle. */

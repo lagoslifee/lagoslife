@@ -16,7 +16,7 @@ export const FAST_TRAVEL = {
 export const FAST_TRAVEL_KINDS = [
   "job", "food", "shop", "furniture", "dealership", "mechanic", "library", "worship", "community", "park", "club",
   "police", "security", "airport", "consulate", "hotel", "restaurant", "cafe", "boutique", "souvenir", "lounge",
-  "beach", "marina", "photo", "car_rental", "tourism",
+  "beach", "marina", "photo", "car_rental", "tourism", "gym", "estate",
 ] as const satisfies readonly PlaceKind[];
 
 export const isFastTravelKind = (kind: string) => (FAST_TRAVEL_KINDS as readonly string[]).includes(kind);

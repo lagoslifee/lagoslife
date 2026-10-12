@@ -33,7 +33,9 @@ export type PlaceKind =
   | "photo"
   | "desert"
   | "car_rental"
-  | "tourism";
+  | "tourism"
+  | "gym"
+  | "estate";
 
 export type Place = {
   id: string;
