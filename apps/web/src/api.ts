@@ -1,5 +1,6 @@
 import type { CabinClass, CharacterAppearance, OutfitId, HotelBookingState, RoomType, TicketState, TravelStatus, VisaPlan, VisaState } from "@lagos-living/shared";
 import type { BottleItem, Citation, PoliceCase, StreetIncident, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
+import type { HomeStaffRole, HomeStaffState } from "@lagos-living/shared";
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
@@ -60,6 +61,8 @@ export type PropertyListing = {
 export type PlotState = {
   id: string;
   status: "available" | "mine" | "taken";
+  /** Gateman and house guard on duty at a built house, visible to everyone. */
+  staff?: HomeStaffRole[];
   tenureType: "leased" | "owned" | null;
   nextPaymentAt: string | null;
   accessEndsAt: string | null;
@@ -86,6 +89,8 @@ export type InteriorState = {
   availableFurniture: Array<{ itemId: string; name: string; available: number }>;
   carried: Array<{ itemId: string; name: string; category: string; available: number }>;
   storage: Array<{ itemId: string; name: string; quantity: number }>;
+  staff?: HomeStaffState;
+  partyUntil?: string | null;
   home: { hunger: number; energy: number; cleanliness: number };
 };
 
@@ -155,7 +160,7 @@ export const api = {
   removeGuest: (propertyId: string, username: string) => post<{ removed: boolean }>(`/api/properties/${propertyId}/guests/remove`, { username }),
   removeFurniture: (propertyId: string, placementId: string) => post(`/api/properties/${propertyId}/furniture/remove`, { placementId }),
   storage: (propertyId: string, itemId: string, direction: "store" | "retrieve") => post(`/api/properties/${propertyId}/storage`, { itemId, direction }),
-  homeAction: (propertyId: string, action: "sleep" | "cook" | "clean") => post(`/api/properties/${propertyId}/action`, { action }),
+  homeAction: (propertyId: string, action: "sleep" | "cook" | "clean" | "tv") => post(`/api/properties/${propertyId}/action`, { action }),
   settings: () => request<PlayerSettings>("/api/settings"),
   saveSettings: (settings: PlayerSettings) => request<PlayerSettings>("/api/settings", { method: "PUT", body: JSON.stringify(settings) }),
   resetProgress: () => post<{ reset: boolean }>("/api/dev/reset-progress"),
@@ -207,6 +212,11 @@ export const api = {
   betSpin: (stake: number) => post<{ replayed: boolean; balance: number; round: number; stopsAt: number }>("/api/betting/spin", { stake, idempotencyKey: crypto.randomUUID() }),
   betFootball: (fixtureId: string, pick: Pick, stake: number) =>
     post<{ replayed: boolean; balance: number; odds: number }>("/api/betting/football", { fixtureId, pick, stake, idempotencyKey: crypto.randomUUID() }),
+  hireStaff: (propertyId: string, role: HomeStaffRole) => post<{ balance: number }>(`/api/properties/${propertyId}/staff`, { role, idempotencyKey: crypto.randomUUID() }),
+  dismissStaff: (propertyId: string, role: HomeStaffRole) => post<{ dismissed: boolean }>(`/api/properties/${propertyId}/staff/dismiss`, { role }),
+  party: (propertyId: string, on: boolean) => post<{ partyUntil: string | null; invited?: number }>(`/api/properties/${propertyId}/party`, { on }),
+  orderDelivery: (itemId: string) =>
+    post<{ balance: number; item: { id: string; name: string; emoji: string; shop: string }; needs: { hunger: number; energy: number } }>("/api/delivery/order", { itemId, idempotencyKey: crypto.randomUUID() }),
   gigs: () => request<GigStatus>("/api/gigs"),
   takeGig: (gigId: string) => post<GigStatus>("/api/gigs/take", { gigId }),
   startGig: () => post<ActiveGig>("/api/gigs/start"),

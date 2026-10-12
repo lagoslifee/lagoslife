@@ -103,6 +103,8 @@ import {
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
 import { EntranceMarkers, type EntranceCandidate } from "./entrance-markers";
+import { HomeStaffView, type StaffPost } from "./home-staff-view";
+import { PartyLights } from "./party-lights";
 import { Escort, type EscortLeader } from "./escort";
 import { StreetCrews } from "./street-crews";
 import { CarSpotters, type SpottedCar } from "./car-spotters";
@@ -355,6 +357,10 @@ export class GameEngine {
   private ownGuards = 0;
   private crews: StreetCrews | null = null;
   private entrances: EntranceMarkers | null = null;
+  private homeStaff: HomeStaffView | null = null;
+  private staffPosts: StaffPost[] = [];
+  private staffPostsAt = 0;
+  private partyLights: PartyLights | null = null;
   private spotters: CarSpotters | null = null;
   private gatePlot: string | null = null;
   private looks = new Map<string, CharacterAppearance>();
@@ -722,6 +728,7 @@ export class GameEngine {
     this.showroom = this.buildShowroom(this.vehicleFactory);
     this.bikeStations = new BikeStationsView(scene, this.materials, (x, z) => this.world.groundHeight(x, z), this.vehicleFactory, (meshes) => this.addCaster(meshes));
     this.entrances = new EntranceMarkers(scene, (x, z) => this.world.groundHeight(x, z));
+    if (this.avatars) this.homeStaff = new HomeStaffView(this.avatars, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) this.crews = new StreetCrews(scene, this.avatars, this.vehicleFactory, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) {
       this.spotters = new CarSpotters(
@@ -1223,6 +1230,14 @@ export class GameEngine {
       outdoors: !this.interior && !bus,
     });
     this.crews?.update(dt, x, z, !this.interior);
+    if (this.homeStaff) {
+      if (now - this.staffPostsAt > 1000) {
+        this.staffPostsAt = now;
+        this.staffPosts = this.interior ? [] : this.staffPostsNear(x, z);
+      }
+      this.homeStaff.update(dt, this.staffPosts);
+    }
+    this.partyLights?.update(now * 0.001);
     this.entrances?.update(dt, [x, z], !this.interior && !bus && !seatedTravel, () => this.entranceCandidates(), this.interior && !seatedTravel ? (this.interior.spots.find((spot) => spot.id === "exit")?.point ?? null) : null);
     this.spotters?.update(dt, now, this.spottedCar(x, z), [x, z], !this.interior && !bus);
     this.updateTout(dt, now, x, z);
@@ -1869,6 +1884,44 @@ export class GameEngine {
     }
   }
 
+  private staffPostsNear(x: number, z: number): StaffPost[] {
+    const posts: StaffPost[] = [];
+    for (const plot of PLOTS) {
+      if (Math.hypot(plot.gate[0] - x, plot.gate[1] - z) > 90) continue;
+      const state = this.plotStates.find((entry) => entry.id === plot.id);
+      if (!state?.construction?.completed || !state.staff?.length) continue;
+      const outward = Math.atan2(-plot.inward[0], -plot.inward[1]);
+      if (state.staff.includes("gateman")) posts.push({ key: `${plot.id}:gateman`, role: "gateman", point: [plot.gate[0] + plot.along[0] * 2.4 + plot.inward[0] * 0.8, plot.gate[1] + plot.along[1] * 2.4 + plot.inward[1] * 0.8], yaw: outward });
+      if (state.staff.includes("guard")) {
+        const [dx, dz] = houseDoor(plot);
+        posts.push({ key: `${plot.id}:guard`, role: "guard", point: [dx - plot.inward[0] * 1.4 + plot.along[0] * 1.2, dz - plot.inward[1] * 1.4 + plot.along[1] * 1.2], yaw: outward });
+      }
+    }
+    return posts;
+  }
+
+  /** Coloured lights inside the home while a house party is on. */
+  setHomeParty(on: boolean) {
+    if (on && !this.partyLights) this.partyLights = new PartyLights(this.scene);
+    if (!on && this.partyLights) {
+      this.partyLights.dispose();
+      this.partyLights = null;
+    }
+  }
+
+  /** A rider walks up and hands over a food or pharmacy order. */
+  deliveryRider(caption: string, onArrive?: () => void) {
+    const { x, z, yaw } = this.controller;
+    const from: Vec2 = [x - Math.sin(yaw) * 9 + Math.cos(yaw) * 3, z - Math.cos(yaw) * 9 - Math.sin(yaw) * 3];
+    this.staff.deliver(from, staffLook(Math.floor(Math.random() * 1000), regionOf(x, z) === "dubai", "waiter"), "bag", caption, onArrive);
+  }
+
+  /** Dims the screen briefly for a home activity such as watching TV. */
+  pauseVeil(icon: string, title: string, caption: string) {
+    this.showVeil(icon, title, caption, 2_200);
+    if (this.transfer) this.transfer.arrivedAt = performance.now();
+  }
+
   private entranceCandidates(): EntranceCandidate[] {
     const doors: EntranceCandidate[] = PLACES.filter((place) => place.kind !== "delivery").map((place) => ({ key: place.id, point: place.door, name: place.name }));
     for (const plot of PLOTS) {
@@ -1917,7 +1970,8 @@ export class GameEngine {
         const state = this.plotStates.find((entry) => entry.id === plot.id);
         if (state?.status !== "mine" || !state.construction?.completed) continue;
         const distance = Math.hypot(plot.gate[0] - x, plot.gate[1] - z);
-        if (distance < (escort ? GATE_GUARD_RANGE : GATE_OPEN_RANGE) && (!nearest || distance < nearest.distance)) nearest = { plot, distance };
+        const gateman = state.staff?.includes("gateman");
+        if (distance < (escort || gateman ? GATE_GUARD_RANGE : GATE_OPEN_RANGE) && (!nearest || distance < nearest.distance)) nearest = { plot, distance };
       }
     }
     if (this.gatePlot && this.gatePlot !== nearest?.plot.id) {
@@ -1928,7 +1982,8 @@ export class GameEngine {
     if (!nearest) return;
     const { plot } = nearest;
     this.gatePlot = plot.id;
-    if (escort) {
+    const gateman = this.plotStates.find((entry) => entry.id === plot.id)?.staff?.includes("gateman");
+    if (escort && !gateman) {
       escort.sendToGate([plot.gate[0] + plot.along[0] * 3, plot.gate[1] + plot.along[1] * 3]);
       if (escort.atGate()) this.plotsView.setGateOpen(plot.id, true);
     } else {

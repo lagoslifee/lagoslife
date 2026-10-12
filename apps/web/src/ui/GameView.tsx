@@ -582,6 +582,13 @@ export function GameView({
           return refresh();
         })
         .catch((error: Error) => toast({ tone: "error", text: error.message }));
+    } else if (interaction.spot === "tv" && propertyId) {
+      api.homeAction(propertyId, "tv")
+        .then(() => {
+          engine?.pauseVeil("📺", "Watching Nollywood…", "Energy +15");
+          return refresh();
+        })
+        .catch((error: Error) => toast({ tone: "error", text: error.message }));
     } else if (interaction.spot === "storage") {
       setPhone("property");
     } else if (interaction.spot === "bar" && propertyId) {
@@ -595,6 +602,28 @@ export function GameView({
   };
 
   const inClub = Boolean(hud?.location === "interior" && hud.propertyId && CLUBS[hud.propertyId]);
+  const homeId = hud?.location === "interior" && hud.propertyId && !CLUBS[hud.propertyId] && !hud.previewOnly ? hud.propertyId : null;
+  const [partyOn, setPartyOn] = useState(false);
+  useEffect(() => {
+    if (!homeId) {
+      setPartyOn(false);
+      return;
+    }
+    let live = true;
+    const poll = () =>
+      api.interior(homeId)
+        .then((state) => live && setPartyOn(Boolean(state.partyUntil && new Date(state.partyUntil).getTime() > Date.now())))
+        .catch(() => undefined);
+    void poll();
+    const timer = window.setInterval(poll, 15_000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [homeId, phone]);
+  useEffect(() => {
+    engine?.setHomeParty(partyOn);
+  }, [engine, partyOn]);
   const clubId = inClub ? hud!.propertyId! : null;
   const showClubTables = useCallback((tables: ClubTable[]) => {
     setClubTables(tables);
@@ -985,6 +1014,7 @@ export function GameView({
       {engine && hud?.location === "interior" && hud.propertyId && CLUBS[hud.propertyId] && (
         <ClubRadio clubId={hud.propertyId} volume={settings.muted ? 0 : settings.masterVolume} onPlaying={(playing) => engine.setClubBeat(!playing)} />
       )}
+      {engine && homeId && partyOn && <ClubRadio clubId={homeId} volume={settings.muted ? 0 : settings.masterVolume} onPlaying={() => undefined} />}
       {clubTable !== null && inClub && hud?.propertyId && (
         <ClubTableSheet
           place={propertyPlace(hud.propertyId)!}

@@ -1,4 +1,4 @@
-import { BIKE_RENTAL, HOUSE_DESIGNS, getPlace, type GigStatus, nearestStop, plotById, readyBuiltPrice, ROUTES, type RideState, type TowState, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
+import { BIKE_RENTAL, HOUSE_DESIGNS, DELIVERY_FEE, DELIVERY_MENU, HOME_STAFF, HOME_STAFF_ROLES, getPlace, type DeliveryItem, type GigStatus, nearestStop, plotById, readyBuiltPrice, ROUTES, type RideState, type TowState, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import { api, naira, type EconomyState, type InteriorState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { actionLabels, keyLabel, type Action, type Bindings } from "../game/controller";
@@ -13,7 +13,7 @@ import { PlacesApp, type CabDestination } from "./PlacesApp";
 import { BoutiqueApp } from "./BoutiqueApp";
 import { BankApp, BetApp, DocumentsApp } from "./FinanceApps";
 
-export type PhoneApp = "home" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "bank" | "bet" | "documents" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
+export type PhoneApp = "home" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "order" | "bank" | "bet" | "documents" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
 
 const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
   { id: "places", label: "Places", icon: "📍" },
@@ -25,6 +25,7 @@ const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
   { id: "transport", label: "Transport", icon: "🚌" },
   { id: "jobs", label: "Jobs", icon: "📦" },
   { id: "bank", label: "Bank", icon: "🏦" },
+  { id: "order", label: "Order", icon: "🛵" },
   { id: "bet", label: "Bet", icon: "🎰" },
   { id: "wallet", label: "Wallet", icon: "₦" },
   { id: "documents", label: "My ID", icon: "🪪" },
@@ -133,6 +134,7 @@ export function Phone(props: Props) {
         {app === "transport" && <TransportApp {...props} />}
         {app === "jobs" && <JobsApp {...props} />}
         {app === "wallet" && <WalletApp {...props} />}
+        {app === "order" && <OrderApp {...props} />}
         {app === "bank" && <BankApp economy={props.economy} onRefresh={props.onRefresh} onToast={props.onToast} />}
         {app === "bet" && <BetApp onRefresh={props.onRefresh} onToast={props.onToast} />}
         {app === "documents" && <DocumentsApp playerName={props.playerName} vehicles={props.vehicles.length} />}
@@ -396,6 +398,101 @@ function WalletApp({ economy, onEat }: Props) {
   );
 }
 
+function HomeServices({ propertyId, inside, onRefresh, onToast }: { propertyId: string; inside: boolean; onRefresh: () => Promise<void>; onToast: (notice: Notice) => void }) {
+  const [state, setState] = useState<InteriorState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const load = () => api.interior(propertyId).then(setState).catch(() => setState(null));
+  useEffect(() => {
+    if (open || inside) void load();
+  }, [propertyId, open, inside]);
+  const run = async (text: string, work: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await work();
+      onToast({ tone: "success", text });
+      await load();
+      await onRefresh();
+    } catch (error) {
+      onToast({ tone: "error", text: (error as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!open && !inside) return <button className="link" onClick={() => setOpen(true)}>Staff & party ›</button>;
+  const party = state?.partyUntil && new Date(state.partyUntil).getTime() > Date.now();
+  return (
+    <div className="home-services">
+      <h4>Household staff</h4>
+      {HOME_STAFF_ROLES.map((role) => {
+        const info = HOME_STAFF[role];
+        const hired = state?.staff?.find((entry) => entry.role === role);
+        return (
+          <div key={role} className="staff-row">
+            <span>{info.emoji}</span>
+            <div><strong>{info.name}</strong><small>{hired ? `On duty until ${new Date(hired.paidUntil).toLocaleDateString("en-NG", { weekday: "short", day: "numeric", month: "short" })}` : info.blurb}</small></div>
+            <button className={hired ? "secondary" : "primary"} disabled={busy || !state?.access.owner} data-testid={`hire-${role}`} onClick={() => void run(hired ? `${info.name} kept on for another week.` : `${info.name} hired for a week.`, () => api.hireStaff(propertyId, role))}>
+              {hired ? `+1 week ${naira(info.weekly)}` : `Hire ${naira(info.weekly)}/wk`}
+            </button>
+          </div>
+        );
+      })}
+      <p className="muted small">Gatemen and guards stand at built houses with gates; everyone can see them. Without a cleaner, use “Clean” at home yourself.</p>
+      <h4>House party</h4>
+      {inside ? (
+        <button className={party ? "secondary wide" : "primary wide"} disabled={busy || !state?.access.owner} data-testid="party-toggle" onClick={() => void run(party ? "Party over. Lights back to normal." : "🎉 Party started! Your invited friends have been told.", () => api.party(propertyId, !party))}>
+          {party ? "End the party" : "🎉 Start a party (music, lights, invite friends)"}
+        </button>
+      ) : (
+        <p className="muted small">Go inside to start a party. Invite friends from the home designer first; they get told when it starts.</p>
+      )}
+    </div>
+  );
+}
+
+function OrderApp({ engine, onRefresh, onToast, onClose }: Props) {
+  const [shop, setShop] = useState<"food" | "pharmacy">("food");
+  const [busy, setBusy] = useState<string | null>(null);
+  const order = async (item: DeliveryItem) => {
+    setBusy(item.id);
+    try {
+      const result = await api.orderDelivery(item.id);
+      const caption = `${item.emoji} Your ${item.name} has arrived. Hunger ${result.needs.hunger}/100 · energy ${result.needs.energy}/100.`;
+      onToast({ tone: "info", text: `Order placed: ${item.name}. A rider is on the way.` });
+      await onRefresh();
+      onClose();
+      if (engine) engine.deliveryRider(caption);
+      else onToast({ tone: "success", text: caption });
+    } catch (error) {
+      onToast({ tone: "error", text: (error as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="app-section">
+      <div className="category-chips">
+        <button className={`chip${shop === "food" ? " selected" : ""}`} onClick={() => setShop("food")}>🍛 Food</button>
+        <button className={`chip${shop === "pharmacy" ? " selected" : ""}`} onClick={() => setShop("pharmacy")} data-testid="order-pharmacy">💊 Pharmacy</button>
+      </div>
+      <ul className="gig-board">
+        {DELIVERY_MENU.filter((item) => item.shop === shop).map((item) => (
+          <li key={item.id}>
+            <span>{item.emoji}</span>
+            <div>
+              <strong>{item.name}</strong>
+              <small>{item.blurb} · {item.hunger ? `hunger +${item.hunger}` : ""}{item.hunger && item.energy ? " · " : ""}{item.energy ? `energy +${item.energy}` : ""}</small>
+              <b>{naira(item.price)}</b>
+            </div>
+            <button className="primary" disabled={Boolean(busy)} data-testid={`order-${item.id}`} onClick={() => void order(item)}>{busy === item.id ? "…" : "Order"}</button>
+          </li>
+        ))}
+      </ul>
+      <p className="muted small">Delivered to wherever you are, indoors or out · {naira(DELIVERY_FEE)} delivery fee. Medicine restores energy when you feel run-down. Fictional items, game naira only.</p>
+    </div>
+  );
+}
+
 function PropertyApp({ properties, economy, onRefresh, onToast, onNavigate, onClose, hud, onInteriorChanged, onDesign, plots }: Props) {
   const mine = properties.filter((listing) => listing.isMine);
   const invited = properties.filter((listing) => listing.hasGuestAccess && !listing.isMine);
@@ -470,6 +567,7 @@ function PropertyApp({ properties, economy, onRefresh, onToast, onNavigate, onCl
               </>
             )}
           </div>
+          <HomeServices propertyId={listing.id} inside={insideOwned === listing.id} onRefresh={onRefresh} onToast={onToast} />
         </div>
       ))}
       {insideOwned && interior && (

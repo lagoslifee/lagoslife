@@ -983,3 +983,11 @@ button.wide { width: 100%; margin: 6px 0; }
 .gig-board li div { display: grid; }
 .gig-board li small { color: #6b7d79; }
 .gig-board li b { color: #116c60; }
+.home-services { margin-top: 8px; padding-top: 6px; border-top: 1px dashed #d8d2c2; }
+.home-services h4 { margin: 8px 0 4px; font-size: calc(13px * var(--text-scale)); }
+.staff-row { display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; padding: 6px 0; }
+.staff-row > span { font-size: 20px; }
+.staff-row div { display: grid; }
+.staff-row small { color: #6b7d79; font-size: 11px; }
+.staff-row button { font-size: 12px; padding: 6px 8px; }
+.wide { width: 100%; }

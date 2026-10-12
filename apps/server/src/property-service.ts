@@ -551,9 +551,13 @@ export async function moveStorage(
 export async function performHomeAction(
   userId: string,
   propertyId: string,
-  action: "sleep" | "cook" | "clean",
+  action: "sleep" | "cook" | "clean" | "tv",
 ) {
   await requirePropertyAccess(userId, propertyId);
+  if (action === "tv") {
+    const tv = await pool.query(`SELECT 1 FROM furniture_placement WHERE property_id = $1 AND item_id = 'tv-console'`, [propertyId]);
+    if (!tv.rowCount) throw new EconomyError("Place a TV first (Phone → My Home → Design).");
+  }
   if (action === "sleep") {
     const bed = await pool.query(
       `SELECT 1 FROM furniture_placement
@@ -566,7 +570,11 @@ export async function performHomeAction(
     sleep: "energy = 100, hunger = GREATEST(0, hunger - 10)",
     cook: "hunger = 100, energy = GREATEST(0, energy - 5), cleanliness = GREATEST(0, cleanliness - 10)",
     clean: "cleanliness = 100, energy = GREATEST(0, energy - 10)",
+    tv: "energy = LEAST(100, energy + 15)",
   };
+  // Cooking feeds and TV rests the resident as well as the household.
+  const personal = { cook: "hunger = 100", tv: "energy = LEAST(100, energy + 15), hunger = GREATEST(0, hunger - 3)" } as Record<string, string>;
+  if (personal[action]) await pool.query(`UPDATE player_profile SET ${personal[action]}, updated_at = NOW() WHERE user_id = $1`, [userId]);
   const result = await pool.query(
     `UPDATE home_state SET ${updates[action]}, updated_at = NOW()
      WHERE property_id = $1 RETURNING hunger, energy, cleanliness`,

@@ -14,6 +14,8 @@ import {
   tradeRequestSchema,
   transferRequestSchema,
   takeGigSchema,
+  hireStaffSchema,
+  orderDeliverySchema,
   tenancyActionSchema,
   homeActionSchema,
   inviteGuestSchema,
@@ -55,6 +57,7 @@ import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
+import { applyCleaner, dismissStaff, hireStaff, homeStaff, orderDelivery, partyUntil, staffByHome, startParty, stopParty } from "./home-services-service.js";
 import { cancelGig, completeGig, gigStatus, startGigWork, takeGig } from "./gig-service.js";
 import { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, marketStatus, trade, transferMoney } from "./finance-service.js";
 import { auth } from "./auth.js";
@@ -450,7 +453,11 @@ export function configureRoutes(app: Express) {
   app.get("/api/properties", requirePlayer, guarded("Listings unavailable", (_req, userId) =>
     listProperties(userId)));
 
-  app.get("/api/plots", requirePlayer, guarded("Plots unavailable", (_req, userId) => listPlots(userId)));
+  app.get("/api/plots", requirePlayer, guarded("Plots unavailable", async (_req, userId) => {
+    const plots = await listPlots(userId);
+    const staff = await staffByHome(plots.flatMap((plot) => (plot.construction?.homeId ? [plot.construction.homeId] : [])));
+    return plots.map((plot) => ({ ...plot, staff: plot.construction?.homeId ? (staff.get(plot.construction.homeId) ?? []) : [] }));
+  }));
 
   app.post("/api/plots/:plotId/acquire", requirePlayer, rateLimited, guarded("Plot could not be acquired", (req, userId) => {
     const body = z.object({ tenure: z.enum(["leased", "owned"]), idempotencyKey: z.string().min(8).max(80) }).parse(req.body);
@@ -487,8 +494,24 @@ export function configureRoutes(app: Express) {
   app.post("/api/properties/:propertyId/home", requirePlayer, guarded("Home could not be set", (req, userId) =>
     setHome(userId, String(req.params.propertyId))));
 
-  app.get("/api/properties/:propertyId/interior", requirePlayer, guarded("Home could not be entered", (req, userId) =>
-    getInterior(userId, String(req.params.propertyId))));
+  app.get("/api/properties/:propertyId/interior", requirePlayer, guarded("Home could not be entered", async (req, userId) => {
+    const propertyId = String(req.params.propertyId);
+    await applyCleaner(propertyId);
+    const [interior, staff, party] = await Promise.all([getInterior(userId, propertyId), homeStaff(propertyId), partyUntil(propertyId)]);
+    return { ...interior, staff, partyUntil: party };
+  }));
+  app.post("/api/properties/:propertyId/staff", requirePlayer, rateLimited, guarded("Staff could not be hired", (req, userId) => {
+    const body = hireStaffSchema.parse(req.body);
+    return hireStaff(userId, String(req.params.propertyId), body.role, body.idempotencyKey);
+  }));
+  app.post("/api/properties/:propertyId/staff/dismiss", requirePlayer, rateLimited, guarded("Staff unchanged", (req, userId) =>
+    dismissStaff(userId, String(req.params.propertyId), hireStaffSchema.pick({ role: true }).parse(req.body).role)));
+  app.post("/api/properties/:propertyId/party", requirePlayer, rateLimited, guarded("Party could not start", (req, userId) =>
+    z.object({ on: z.boolean() }).parse(req.body).on ? startParty(userId, String(req.params.propertyId)) : stopParty(userId, String(req.params.propertyId))));
+  app.post("/api/delivery/order", requirePlayer, rateLimited, guarded("Order failed", (req, userId) => {
+    const body = orderDeliverySchema.parse(req.body);
+    return orderDelivery(userId, body.itemId, body.idempotencyKey);
+  }));
 
   app.post("/api/properties/:propertyId/furniture", requirePlayer, rateLimited, guarded("Furniture could not be placed", (req, userId) =>
     placeFurniture(userId, String(req.params.propertyId), placeFurnitureSchema.parse(req.body))));

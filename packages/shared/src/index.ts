@@ -120,6 +120,7 @@ export * from "./travel.js";
 export * from "./fast-travel.js";
 export * from "./finance.js";
 export * from "./gigs.js";
+export * from "./home-services.js";
 import { worldVehicleSchema } from "./vehicles.js";
 
 export const motionStates = ["idle", "walk", "jog", "sprint", "sit", "wave", "dance", "drive"] as const;
@@ -308,7 +309,7 @@ export const moveFurnitureSchema = z.object({
 });
 
 export const homeActionSchema = z.object({
-  action: z.enum(["sleep", "cook", "clean"]),
+  action: z.enum(["sleep", "cook", "clean", "tv"]),
 });
 
 export const inviteGuestSchema = z.object({

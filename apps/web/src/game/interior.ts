@@ -16,7 +16,7 @@ import { SignAtlas } from "./sign-atlas";
 export type InteriorKind = "starter" | "preview" | "home" | "club";
 /** `x`/`z` are room-local metres; pieces saved before free placement only have their grid cell. */
 export type Placement = { id?: string; itemId: string; gridX: number; gridZ: number; rotation: number; x?: number | null; z?: number | null };
-export type InteriorSpot = { id: "exit" | "bed" | "storage" | "kitchen" | "bar" | "dance" | `table-${number}`; point: Vec2; label: string };
+export type InteriorSpot = { id: "exit" | "bed" | "storage" | "kitchen" | "bar" | "dance" | "tv" | `table-${number}`; point: Vec2; label: string };
 
 const HEIGHT = 3.0;
 const [OX, OZ] = INTERIOR_ORIGIN;
@@ -133,7 +133,9 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
         const build = furniture[placement.itemId];
         if (!build) continue;
         const [x, z] = placementCentre(placement);
-        build(x, z, (placement.rotation * Math.PI) / 180);
+        const yaw = (placement.rotation * Math.PI) / 180;
+        build(x, z, yaw);
+        if (placement.itemId === "tv-console") spots.push({ id: "tv", point: [x - Math.sin(yaw) * 1.8, z - Math.cos(yaw) * 1.8], label: "Watch TV" });
       }
     } else {
       sofa(OX + 0.3, OZ - 0.2, 0);
