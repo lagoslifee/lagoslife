@@ -148,6 +148,7 @@ export class Avatar {
   private instance: Instance;
   private current: CharacterAppearance;
   private visible = true;
+  private props: TransformNode[] = [];
   private waveTime = 0;
   /** Receives the meshes of each body instance, e.g. to register shadow casters again after a body change. */
   private meshListener: ((meshes: AbstractMesh[]) => void) | null = null;
@@ -180,8 +181,10 @@ export class Avatar {
     const rebuild = appearance.body !== this.current.body;
     this.current = appearance;
     if (rebuild) {
+      for (const prop of this.props) prop.parent = this.root;
       this.disposeInstance();
       this.instance = this.factory.instantiate(this.name, this.root, appearance);
+      for (const prop of this.props) prop.parent = this.instance.holder;
       this.started = false;
       this.meshListener?.(this.instance.meshes);
     }
@@ -283,6 +286,12 @@ export class Avatar {
     }
     bend(limbs.leftArm, -0.55);
     bend(limbs.rightArm, -0.55);
+  }
+
+  /** Carries a prop (vest, tray, rifle) with the body: it shows and hides with the avatar and survives body changes. */
+  attachProp(node: TransformNode) {
+    this.props.push(node);
+    node.parent = this.instance.holder;
   }
 
   setVisible(visible: boolean) {

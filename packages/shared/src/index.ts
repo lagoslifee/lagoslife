@@ -17,6 +17,7 @@ export const outfits = [
   "resort-linen",
   "beach-day",
   "police-uniform",
+  "security-uniform",
 ] as const;
 export type OutfitId = (typeof outfits)[number];
 /** Anyone can pick these in the character studio. */

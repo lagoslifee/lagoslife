@@ -10,6 +10,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
 import { CLUBS, PLACES, POLICE_CHECKPOINTS, type CharacterAppearance, type Vec2 } from "@lagos-living/shared";
 import type { Avatar, AvatarFactory } from "./avatar";
+import { equipSecurity } from "./security-kit";
 import type { VehicleFactory, VehicleView } from "./vehicles";
 
 /** Crews are built when the player comes this close and removed past SHOW + 80 m. */
@@ -34,8 +35,8 @@ const OFFICER_2: CharacterAppearance = { body: "female", skinTone: "deep", hairs
 const OFFICER_3: CharacterAppearance = { body: "male", skinTone: "deep", hairstyle: "low-fade", outfit: "police-uniform", accessory: "cap" };
 const OFFICER_4: CharacterAppearance = { body: "male", skinTone: "warm", hairstyle: "low-fade", outfit: "police-uniform", accessory: "beard" };
 const STOPPED_CARS = [["toyota-corolla", "#7a1f2b"], ["toyota-camry", "#2f4a6d"], ["honda-accord", "#5b5f63"], ["lexus-rx350", "#1f3d2b"]] as const;
-const BOUNCER: CharacterAppearance = { body: "male", skinTone: "deep", hairstyle: "low-fade", outfit: "office-smart", accessory: "glasses" };
-const BOUNCER_2: CharacterAppearance = { body: "male", skinTone: "rich", hairstyle: "low-fade", outfit: "office-smart", accessory: "beard" };
+const BOUNCER: CharacterAppearance = { body: "male", skinTone: "deep", hairstyle: "low-fade", outfit: "security-uniform", accessory: "glasses" };
+const BOUNCER_2: CharacterAppearance = { body: "male", skinTone: "rich", hairstyle: "low-fade", outfit: "security-uniform", accessory: "beard" };
 
 type Site = { id: string; kind: "checkpoint" | "club"; point: Vec2; yaw: number };
 
@@ -170,7 +171,9 @@ export class StreetCrews {
     if (site.kind === "club") {
       const [ax, az] = at(0.6, -1.5);
       const [bx, bz] = at(0.6, 1.5);
-      crew.people.push(this.person(`bouncer ${site.id} a`, BOUNCER, ax, az, site.yaw), this.person(`bouncer ${site.id} b`, BOUNCER_2, bx, bz, site.yaw));
+      const bouncers = [this.person(`bouncer ${site.id} a`, BOUNCER, ax, az, site.yaw), this.person(`bouncer ${site.id} b`, BOUNCER_2, bx, bz, site.yaw)];
+      for (const bouncer of bouncers) equipSecurity(this.scene, bouncer.avatar, false);
+      crew.people.push(...bouncers);
       return crew;
     }
     const y = (x: number, z: number) => this.ground(x, z);

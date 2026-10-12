@@ -48,6 +48,7 @@ export const OUTFITS: Record<
   "resort-linen": { label: "Resort linen, white trousers", top: { colour: "#9fd3cf" }, longSleeves: false, trousers: { colour: "#f4f1ea" }, skirt: null, shoes: "#c9a36a" },
   "beach-day": { label: "Beach shirt, swim shorts", top: { colour: "#ff7a5c", print: { colour: "#ffd166", accent: "#118ab2" } }, longSleeves: false, trousers: { colour: "#118ab2" }, skirt: null, shoes: "#f4f4f2" },
   "police-uniform": { label: "Nigeria Police uniform", top: { colour: "#15171c" }, longSleeves: true, trousers: { colour: "#15171c" }, skirt: null, shoes: "#0b0b0c" },
+  "security-uniform": { label: "Security uniform", top: { colour: "#2b333d" }, longSleeves: true, trousers: { colour: "#16191d" }, skirt: null, shoes: "#0b0b0c" },
 };
 
 export const BODY_LABELS: Record<Body, string> = { male: "Male", female: "Female" };

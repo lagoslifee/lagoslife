@@ -1,6 +1,7 @@
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
-import type { CharacterAppearance, Vec2 } from "@lagos-living/shared";
+import type { Vec2 } from "@lagos-living/shared";
 import type { Avatar, AvatarFactory } from "./avatar";
+import { equipSecurity, securityLook } from "./security-kit";
 import type { VehicleFactory, VehicleView } from "./vehicles";
 
 export type EscortLeader = { x: number; z: number; yaw: number; driving: boolean; outdoors: boolean };
@@ -14,14 +15,9 @@ const TRUCK_COLOUR = "#141617";
 /** Beyond this the escort has lost the leader (teleport, unstuck, long load) and reappears behind them. */
 const LOST_METRES = 160;
 
-const SKINS: CharacterAppearance["skinTone"][] = ["deep", "rich", "warm", "rich"];
-
-function guardLook(index: number): CharacterAppearance {
-  return { body: "male", skinTone: SKINS[index % SKINS.length]!, hairstyle: "low-fade", outfit: "office-smart", accessory: index % 2 ? "glasses" : "none" };
-}
 
 /**
- * Hired guards: a black Hilux that follows the leader's route while they drive, and guards who step out and walk in
+ * Hired guards in uniform and vests, carrying rifles: a black Hilux that follows the leader's route while they drive, and guards who step out and walk in
  * formation behind them on foot. One guard can be sent ahead to open a gate.
  */
 export class Escort {
@@ -53,7 +49,8 @@ export class Escort {
     while (this.guards.length > count) this.guards.pop()!.avatar.dispose();
     while (this.guards.length < count) {
       const index = this.guards.length;
-      const avatar = this.avatars.create(`guard ${this.id} ${index}`, guardLook(index));
+      const avatar = this.avatars.create(`guard ${this.id} ${index}`, securityLook(index));
+      equipSecurity(this.avatars.scene, avatar, true);
       avatar.onMeshes = (meshes) => this.addCaster(meshes);
       avatar.setVisible(false);
       this.guards.push({ avatar, x: 0, z: 0, yaw: 0, shown: false });
