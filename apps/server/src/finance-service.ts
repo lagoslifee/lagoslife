@@ -332,3 +332,15 @@ export async function betFootball(userId: string, input: { fixtureId: string; pi
   });
   return { ...result, odds };
 }
+
+/** A friend joining a booked cab pays half the fare; the booker gets that half back. */
+export async function splitCabFare(hostUserId: string, guestUserId: string, half: number, rideId: string, guestName: string, hostName: string) {
+  return withTransaction(async (client) => {
+    await ensureWallet(client, hostUserId);
+    await ensureWallet(client, guestUserId);
+    await client.query(`SELECT 1 FROM wallet WHERE user_id = ANY($1::text[]) ORDER BY user_id FOR UPDATE`, [[hostUserId, guestUserId]]);
+    if (await replayed(client, guestUserId, `cab-share:${rideId}`)) throw new EconomyError("You're already sharing this cab.", 409);
+    await debitWallet(client, guestUserId, half, "ride_fare", `Shared cab with ${hostName} · half fare`, `cab-share:${rideId}`, { rideId });
+    await creditWallet(client, hostUserId, half, "ride_refund", `${guestName} paid half the cab fare`, `cab-share-in:${rideId}:${guestUserId}`);
+  });
+}

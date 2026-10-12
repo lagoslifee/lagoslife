@@ -1,6 +1,7 @@
 import { FAST_TRAVEL, placeById, type FastTravelState, type Happening, type TravelPrompt } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import type { GameEngine } from "../game/engine";
+import type { RideAsk } from "../multiplayer";
 
 const HAPPENING_ICON: Record<Happening["kind"], string> = { club: "🎶", flight: "✈", gathering: "👥", beach: "🏖", ride: "🚲" };
 
@@ -162,6 +163,29 @@ export function TravelPromptCard({ prompt, onAnswer }: { prompt: TravelPrompt; o
       <div className="row">
         <button className="primary" data-testid="travel-accept" onClick={() => onAnswer(true)}>{prompt.kind === "together" ? "Go with them" : "Let them come"}</button>
         <button data-testid="travel-decline" onClick={() => onAnswer(false)}>Not now</button>
+      </div>
+    </section>
+  );
+}
+
+/** A player at this player's car or booked cab asks to come along; it closes itself after 30 seconds. */
+export function RideAskCard({ ask, onAnswer }: { ask: RideAsk; onAnswer: (allow: boolean) => void }) {
+  const [shownAt] = useState(() => Date.now());
+  const now = useNow(250);
+  const left = Math.max(0, Math.ceil((shownAt + 30_000 - now) / 1_000));
+  useEffect(() => {
+    if (left === 0) onAnswer(false);
+  }, [left, onAnswer]);
+  return (
+    <section className="travel-prompt" role="alertdialog" aria-label="Ride request" data-testid="ride-ask">
+      <p>
+        <strong>{ask.name}</strong>{" "}
+        {ask.cab ? <>wants to share your cab and pay half the fare (₦{ask.share.toLocaleString("en-NG")} back to you).</> : <>is at your car asking for a ride.</>}{" "}
+        <small className="muted">{left}s</small>
+      </p>
+      <div className="row">
+        <button className="primary" data-testid="ride-allow" onClick={() => onAnswer(true)}>Let them in</button>
+        <button data-testid="ride-decline" onClick={() => onAnswer(false)}>No</button>
       </div>
     </section>
   );

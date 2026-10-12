@@ -36,6 +36,9 @@ export type PoliceEvent =
   | { type: "holdUp"; holdUp: HoldUp }
   | { type: "holdUpEnd"; robberyId: string };
 
+/** Another player standing at this player's car (or booked cab) asks to ride along. */
+export type RideAsk = { sessionId: string; name: string; vehicleId: string; cab: boolean; share: number };
+
 export type MultiplayerHandlers = {
   snapshot: (snapshot: WorldSnapshot, ownSessionId: string) => void;
   self: (self: SelfState) => void;
@@ -59,6 +62,7 @@ export type MultiplayerHandlers = {
   react: (reaction: { sessionId: string; emoji: string }) => void;
   goState: (state: FastTravelState) => void;
   travelPrompt: (prompt: TravelPrompt) => void;
+  rideAsk: (ask: RideAsk) => void;
   agbero: (encounter: AgberoEncounter | null) => void;
   /** The owner rearranged the home this player is standing in. */
   interior: () => void;
@@ -155,6 +159,7 @@ export class MultiplayerConnection {
       );
       room.onMessage("agbero", (encounter: AgberoEncounter | null) => this.handlers.agbero(encounter && typeof encounter.id === "string" ? encounter : null));
       room.onMessage("goState", (state: FastTravelState) => Array.isArray(state?.discovered) && this.handlers.goState(state));
+      room.onMessage("rideAsk", (ask: RideAsk) => typeof ask?.sessionId === "string" && typeof ask.name === "string" && this.handlers.rideAsk(ask));
       room.onMessage("travelPrompt", (prompt: TravelPrompt) => typeof prompt?.requestId === "string" && this.handlers.travelPrompt(prompt));
       room.onMessage("photo", (photo: { spot?: unknown; companions?: unknown }) =>
         this.handlers.photo({ spot: String(photo?.spot ?? ""), companions: Array.isArray(photo?.companions) ? photo.companions.map(String) : [] }),
@@ -220,6 +225,8 @@ export class MultiplayerConnection {
       | "testDrive"
       | "rideBook"
       | "rideBoard"
+      | "rideAsk"
+      | "rideAnswer"
       | "rideArrive"
       | "rideCancel"
       | "rideSkip"

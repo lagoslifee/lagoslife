@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   checkpointAnswerSchema,
   type CheckpointStop,
@@ -153,6 +154,7 @@ import { verifyMultiplayerToken, type MultiplayerIdentity } from "../multiplayer
 import { clearProgressReset, removePlayerPosition, setPlayerPosition, wasProgressReset } from "../player-presence.js";
 import { homeEvents } from "../home-events.js";
 import { playerEvents } from "../player-events.js";
+import { splitCabFare } from "../finance-service.js";
 import { isPropertyAvailable, requirePropertyAccess } from "../property-service.js";
 import { vehicleEvents } from "../vehicle-events.js";
 import { issueCitation } from "../justice-service.js";
@@ -479,6 +481,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("returnBike", (client) => void this.handleReturnBike(client));
     this.onMessage("rideBook", (client, payload) => void this.handleRideBook(client, payload));
     this.onMessage("rideBoard", (client) => this.handleRideBoard(client));
+    this.onMessage("rideAsk", (client, payload) => this.handleRideAsk(client, payload));
+    this.onMessage("rideAnswer", (client, payload) => void this.handleRideAnswer(client, payload));
     this.onMessage("rideArrive", (client) => void this.handleRideArrive(client));
     this.onMessage("rideCancel", (client, payload) => void this.handleRideCancel(client, payload));
     this.onMessage("rideSkip", (client) => void this.handleRideSkip(client));
@@ -1376,6 +1380,65 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     }
   }
 
+  /** Asks whoever controls a car for a seat: the owner of a locked private car, or the rider who booked a cab. */
+  private rideAsks = new Map<string, { vehicleId: string; hostSessionId: string; at: number }>();
+
+  private rideHost(vehicle: RoomVehicle) {
+    if (vehicle.npc) {
+      for (const candidate of this.players.values()) if (candidate.ride?.vehicleId === vehicle.id && ["waiting", "riding"].includes(candidate.ride.status)) return candidate;
+      return undefined;
+    }
+    return vehicle.ownerUserId ? this.playerByUser(vehicle.ownerUserId) : undefined;
+  }
+
+  private handleRideAsk(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const vehicleId = typeof (payload as { vehicleId?: unknown })?.vehicleId === "string" ? (payload as { vehicleId: string }).vehicleId : null;
+    if (!player || !vehicleId || this.limited(player.actionRate, 3)) return;
+    const vehicle = this.vehicles.get(vehicleId);
+    if (!vehicle || player.location !== "street" || player.vehicleId || player.busId) return;
+    if (Math.hypot(player.x - vehicle.x, player.z - vehicle.z) > VEHICLE_RULES.enterRange + 2) return this.notify(client, { tone: "error", text: "Walk up to the car first." });
+    const host = this.rideHost(vehicle);
+    const hostClient = host ? this.clientFor(host) : undefined;
+    if (!host || !hostClient || host === player) return this.notify(client, { tone: "error", text: "The owner isn't around to let you in." });
+    const previous = this.rideAsks.get(client.sessionId);
+    if (previous && previous.vehicleId === vehicleId && Date.now() - previous.at < 10_000) return;
+    this.rideAsks.set(client.sessionId, { vehicleId, hostSessionId: hostClient.sessionId, at: Date.now() });
+    const half = vehicle.npc && host.ride ? Math.floor(host.ride.fare / 2) : 0;
+    hostClient.send("rideAsk", { sessionId: client.sessionId, name: player.name, vehicleId, cab: Boolean(vehicle.npc), share: half });
+    this.notify(client, { tone: "info", text: vehicle.npc ? `Asked ${host.name} to share their cab. If they agree you pay half: ₦${half.toLocaleString("en-NG")}.` : `Asked ${host.name} for a ride. Wait for them to let you in.` });
+  }
+
+  private async handleRideAnswer(client: Client, payload: unknown) {
+    const parsed = z.object({ sessionId: z.string().min(1).max(80), allow: z.boolean() }).safeParse(payload);
+    const host = this.players.get(client.sessionId);
+    if (!parsed.success || !host) return;
+    const ask = this.rideAsks.get(parsed.data.sessionId);
+    this.rideAsks.delete(parsed.data.sessionId);
+    const guest = this.players.get(parsed.data.sessionId);
+    const guestClient = guest ? this.clientFor(guest) : undefined;
+    if (!ask || ask.hostSessionId !== client.sessionId || !guest || !guestClient || Date.now() - ask.at > 60_000) return;
+    if (!parsed.data.allow) return this.notify(guestClient, { tone: "info", text: `${host.name} said no this time.` });
+    const vehicle = this.vehicles.get(ask.vehicleId);
+    if (!vehicle || guest.location !== "street" || guest.vehicleId || guest.busId) return;
+    if (Math.hypot(guest.x - vehicle.x, guest.z - vehicle.z) > VEHICLE_RULES.enterRange + 4) return this.notify(guestClient, { tone: "error", text: "You walked away from the car." });
+    if (this.passengersOf(vehicle.id).length >= getVehicleModel(vehicle.modelId).seats - 1) return this.notify(guestClient, { tone: "error", text: "There's no free seat left." });
+    if (vehicle.npc) {
+      const ride = host.ride;
+      if (!ride || ride.vehicleId !== vehicle.id || !["waiting", "riding"].includes(ride.status)) return this.notify(guestClient, { tone: "error", text: "That cab has gone." });
+      const half = Math.floor(ride.fare / 2);
+      try {
+        if (half > 0) await splitCabFare(host.userId, guest.userId, half, ride.id, guest.name, host.name);
+      } catch (error) {
+        return this.notify(guestClient, { tone: "error", text: (error as Error).message.includes("Insufficient") ? `You need ₦${half.toLocaleString("en-NG")} for your half.` : (error as Error).message });
+      }
+      this.notify(client, { tone: "success", text: `${guest.name} is sharing your cab and paid you half: ₦${half.toLocaleString("en-NG")}.` });
+    } else {
+      this.notify(client, { tone: "success", text: `${guest.name} is riding with you.` });
+    }
+    this.seatPassenger(guestClient, guest, vehicle);
+  }
+
   private handleRideBoard(client: Client) {
     const player = this.players.get(client.sessionId);
     const ride = player?.ride;
@@ -1437,6 +1500,14 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (vehicle && aboard) {
       vehicle.x = x;
       vehicle.z = z;
+      for (const rider of this.passengersOf(vehicle.id)) {
+        if (rider === player) continue;
+        [rider.x, rider.z] = [x, z];
+        rider.lastAcceptedAt = now;
+        setPlayerPosition(rider.userId, x, z, "street");
+        const riderClient = this.clientFor(rider);
+        if (riderClient) this.sendSelf(riderClient, rider, "teleported");
+      }
     } else if (vehicle) {
       this.vehicles.delete(vehicle.id);
       ride.vehicleId = null;
@@ -1509,6 +1580,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         const client = this.clientFor(player);
         if (client) this.sendSelf(client, player, "parked");
       }
+      this.ejectPassengers(vehicle.id);
       this.vehicles.delete(vehicle.id);
     }
     ride.vehicleId = null;

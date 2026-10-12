@@ -11,7 +11,8 @@ import { currentObjective, housingPath, type HousingPath } from "./objectives";
 import { Welcome } from "./Welcome";
 import { DailyBonusPopup } from "./FinanceApps";
 import { Phone, type PhoneApp } from "./Phone";
-import { TravelPromptCard } from "./GoApp";
+import { RideAskCard, TravelPromptCard } from "./GoApp";
+import type { RideAsk } from "../multiplayer";
 import { AgberoPrompt } from "./AgberoPrompt";
 import { ClubRadio } from "./ClubRadio";
 import { ClubBarSheet, ClubDoorSheet, ClubTableSheet } from "./ClubSheets";
@@ -101,6 +102,7 @@ export function GameView({
   const [clubTables, setClubTables] = useState<ClubTable[]>([]);
   const [checkpoint, setCheckpoint] = useState<CheckpointStop | null>(null);
   const [travelPrompts, setTravelPrompts] = useState<TravelPrompt[]>([]);
+  const [rideAsks, setRideAsks] = useState<RideAsk[]>([]);
   const [agbero, setAgbero] = useState<AgberoEncounter | null>(null);
   const [holdUp, setHoldUp] = useState<HoldUp | null>(null);
   const [robTarget, setRobTarget] = useState<{ sessionId: string; name: string } | null>(null);
@@ -326,6 +328,7 @@ export function GameView({
           if (!encounter) void refresh();
         },
         arrived: (label) => setArrival({ label, at: Date.now() }),
+        rideAsk: (ask) => setRideAsks((list) => [...list.filter((entry) => entry.sessionId !== ask.sessionId), ask].slice(-3)),
         travelPrompt: (prompt) => setTravelPrompts((list) => [...list.filter((entry) => entry.requestId !== prompt.requestId), prompt].slice(-3)),
         ride: (next) => {
           setRide(next);
@@ -964,6 +967,17 @@ export function GameView({
             const prompt = travelPrompts[0]!;
             engine.answerTravel(prompt.requestId, accept);
             setTravelPrompts((list) => list.filter((entry) => entry.requestId !== prompt.requestId));
+          }}
+        />
+      )}
+      {rideAsks[0] && engine && !travelPrompts[0] && (
+        <RideAskCard
+          key={rideAsks[0].sessionId}
+          ask={rideAsks[0]}
+          onAnswer={(allow) => {
+            const ask = rideAsks[0]!;
+            engine.answerRideAsk(ask.sessionId, allow);
+            setRideAsks((list) => list.filter((entry) => entry.sessionId !== ask.sessionId));
           }}
         />
       )}

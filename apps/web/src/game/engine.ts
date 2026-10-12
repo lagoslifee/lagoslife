@@ -112,7 +112,7 @@ import { apiUrl, authHeaders } from "../auth-client";
 import type { PlotState } from "../api";
 import { buildProgress } from "./build-progress";
 import { PlotsView } from "./plots";
-import { MultiplayerConnection, type MultiplayerStatus, type PoliceEvent } from "../multiplayer";
+import { MultiplayerConnection, type MultiplayerStatus, type PoliceEvent, type RideAsk } from "../multiplayer";
 import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, MAX_AUTO_SCALING, qualityStep } from "./adaptive-quality";
 import { CityAudio } from "./audio";
 import { appearanceFor, Avatar, AvatarFactory, dubaiDriverLook, taxiDriverLook } from "./avatar";
@@ -205,6 +205,8 @@ export type EngineCallbacks = {
   photo: (photo: { spot: string; companions: string[]; image: string | null }) => void;
   /** Someone asks this player to travel with them, or to join them; nothing happens unless they accept. */
   travelPrompt: (prompt: TravelPrompt) => void;
+  /** Someone at this player's car or booked cab asks to come along; they only get in if allowed. */
+  rideAsk: (ask: RideAsk) => void;
   /** A roadside tout asks this driver for change; null when it is over. */
   agbero: (encounter: AgberoEncounter | null) => void;
   /** The player reached the waypoint; the route has already been cleared. */
@@ -554,6 +556,7 @@ export class GameEngine {
       trip: (trip) => this.onTrip(trip),
       goState: (state) => this.goListener?.(state),
       travelPrompt: (prompt) => this.callbacks.travelPrompt(prompt),
+      rideAsk: (ask) => this.callbacks.rideAsk(ask),
       agbero: (encounter) => {
         this.showTout(encounter);
         this.callbacks.agbero(encounter);
@@ -1549,7 +1552,7 @@ export class GameEngine {
         if (ride?.vehicleId === state.id && ride.status === "waiting") {
           offer(distance - 1, { key: bind("interact"), label: "Get in · Lagos Living Ride", detail: `${ride.driverName} · ${ride.plate} → ${ride.label}` }, () => this.net.send("rideBoard"));
         } else {
-          offer(distance + 1, { key: "🚕", label: state.ownerName, detail: "Booked by another rider", disabled: true }, () => undefined);
+          offer(distance + 1, { key: bind("interact"), label: "Ask to share this cab", detail: free > 0 ? "Split the fare with the rider who booked it" : "Full", disabled: free <= 0 }, () => this.net.send("rideAsk", { vehicleId: state.id }));
         }
         continue;
       }
@@ -1558,7 +1561,7 @@ export class GameEngine {
       } else if (state.mine || state.testDriveEndsAt) {
         continue;
       } else if (state.locked) {
-        offer(distance + 1, { key: "🔒", label: `${state.ownerName}'s ${view.model.name}`, detail: "Locked", disabled: true }, () => undefined);
+        offer(distance + 1, { key: bind("interact"), label: `Ask ${state.ownerName} for a ride`, detail: free > 0 ? `${view.model.name} · locked, they decide` : "No free seat", disabled: free <= 0 }, () => this.net.send("rideAsk", { vehicleId: state.id }));
       } else if (free <= 0) {
         offer(distance + 1, { key: "…", label: `${state.ownerName}'s ${view.model.name}`, detail: view.model.seats < 2 ? "No passenger seat" : "Full", disabled: true }, () => undefined);
       } else if (Math.abs(view.speed) > 1) {
@@ -2273,6 +2276,10 @@ export class GameEngine {
     const screen = this.project(tout.at[0], this.world.groundHeight(tout.at[0], tout.at[1]) + 2.1, tout.at[1]);
     tout.tag.style.display = screen.visible ? "block" : "none";
     if (screen.visible) tout.tag.style.transform = `translate(${screen.x}px, ${screen.y}px) translate(-50%, -100%)`;
+  }
+
+  answerRideAsk(sessionId: string, allow: boolean) {
+    this.net.send("rideAnswer", { sessionId, allow });
   }
 
   answerTravel(requestId: string, accept: boolean) {

@@ -3,7 +3,7 @@ import { FOOTBALL_ROUND_MS, footballRound, matchResult, pickOf, SPIN_ROUND_MS, s
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const { pool } = await import("./database.js");
-const { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, fixturesFor, fortune, marketStatus, spinResult, trade, transferMoney } = await import("./finance-service.js");
+const { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, fixturesFor, fortune, marketStatus, spinResult, splitCabFare, trade, transferMoney } = await import("./finance-service.js");
 
 const make = () => ({ id: `fin-${randomUUID()}`, username: `fin${randomUUID().replaceAll("-", "").slice(0, 12)}` });
 const alice = make();
@@ -50,6 +50,17 @@ describe("transfers", () => {
     expect(await balance(bob.id)).toBe(b0 + 25_000);
     await expect(transferMoney(alice.id, { userName: "nobody-by-this-name", amount: 500, note: "", idempotencyKey: randomUUID() })).rejects.toThrow(/No resident/);
     await expect(transferMoney(alice.id, { userName: alice.username, amount: 500, note: "", idempotencyKey: randomUUID() })).rejects.toThrow(/yourself/);
+  });
+});
+
+describe("shared cab", () => {
+  it("moves half the fare from the guest to the host once per ride", async () => {
+    const [a0, b0] = [await balance(alice.id), await balance(bob.id)];
+    const rideId = randomUUID();
+    await splitCabFare(alice.id, bob.id, 1_500, rideId, "Bob", "Alice");
+    await expect(splitCabFare(alice.id, bob.id, 1_500, rideId, "Bob", "Alice")).rejects.toThrow(/already sharing/);
+    expect(await balance(alice.id)).toBe(a0 + 1_500);
+    expect(await balance(bob.id)).toBe(b0 - 1_500);
   });
 });
 
