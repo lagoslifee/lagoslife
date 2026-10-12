@@ -10,10 +10,11 @@ import { VehiclesApp } from "./VehicleSheets";
 import { JusticeApp, SafetyApp, type ReportTarget } from "./SafetyUI";
 import { GoApp } from "./GoApp";
 import { PlacesApp, type CabDestination } from "./PlacesApp";
+import { GamesApp } from "./games/GamesApp";
 import { BoutiqueApp } from "./BoutiqueApp";
 import { BankApp, BetApp, DocumentsApp } from "./FinanceApps";
 
-export type PhoneApp = "home" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "order" | "bank" | "bet" | "documents" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
+export type PhoneApp = "home" | "games" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "order" | "bank" | "bet" | "documents" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
 
 const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
   { id: "places", label: "Places", icon: "📍" },
@@ -27,6 +28,7 @@ const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
   { id: "bank", label: "Bank", icon: "🏦" },
   { id: "order", label: "Order", icon: "🛵" },
   { id: "bet", label: "Bet", icon: "🎰" },
+  { id: "games", label: "Games", icon: "🎮" },
   { id: "wallet", label: "Wallet", icon: "₦" },
   { id: "documents", label: "My ID", icon: "🪪" },
   { id: "property", label: "My Home", icon: "🏠" },
@@ -132,6 +134,7 @@ export function Phone(props: Props) {
         {app === "places" && (
           <PlacesApp engine={props.engine} hud={props.hud} onNavigate={props.onNavigate} onCab={(destination) => { setCabTo(destination); setApp("ride"); }} onClose={onClose} />
         )}
+        {app === "games" && <GamesApp />}
         {app === "go" && <GoApp engine={props.engine} onClose={onClose} />}
         {app === "boutique" && <BoutiqueApp engine={props.engine} economy={props.economy} onRefresh={props.onRefresh} onToast={props.onToast} />}
         {app === "ride" && <RideApp key={cabTo?.key ?? "ride"} engine={props.engine} ride={props.ride} properties={props.properties} initial={cabTo} onNavigate={props.onNavigate} onClose={onClose} />}
