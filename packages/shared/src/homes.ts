@@ -6,14 +6,16 @@ export type HomeUnit = { id: string; placeId: string; unit: string };
 const ADEBAYO_COURT = "lekki-adebayo-flat-2";
 const OKORO_TERRACE = "lekki-chief-okoro-house";
 
-/** Must match the rows seeded by apps/server/migrations (0005 and 0009). */
+/** Units behind one door: the first keeps the place id, the rest are "<place>-2", "<place>-3"… */
+const units = (placeId: string, count: number, label: string): HomeUnit[] =>
+  Array.from({ length: count }, (_, index) => ({ id: index === 0 ? placeId : `${placeId}-${index + 1}`, placeId, unit: `${label} ${index + 1}` }));
+
+/** Must match the rows seeded by apps/server/migrations (0005, 0009 and 0037). */
 export const HOME_UNITS: HomeUnit[] = [
   ...Array.from({ length: 12 }, (_, index) => ({ id: `lekki-adebayo-flat-${index + 1}`, placeId: ADEBAYO_COURT, unit: `Flat ${index + 1}` })),
-  ...Array.from({ length: 6 }, (_, index) => ({
-    id: index === 0 ? OKORO_TERRACE : `${OKORO_TERRACE}-${index + 1}`,
-    placeId: OKORO_TERRACE,
-    unit: `House ${index + 1}`,
-  })),
+  ...units(OKORO_TERRACE, 6, "House"),
+  ...units("vi-femi-pearse-court", 8, "Flat"),
+  ...units("vi-kofo-residences", 4, "Apartment"),
 ];
 
 const unitById = new Map(HOME_UNITS.map((unit) => [unit.id, unit]));

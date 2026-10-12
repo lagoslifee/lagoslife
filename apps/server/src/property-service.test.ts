@@ -286,6 +286,16 @@ describe("rental agreements", () => {
     expect(HOME_UNITS.filter(({ placeId }) => placeId === "lekki-chief-okoro-house")).toHaveLength(6);
   });
 
+  it("prices mapped homes by district: Lekki Phase 1, then Victoria Island, then Ikoyi", async () => {
+    const mapped = (await listProperties(users[0]!.id)).filter((listing) => listing.placeId && listing.listingType !== "built");
+    const prices = (district: string, key: "purchasePrice" | "rent", type: string) =>
+      mapped.filter((listing) => listing.district === district && listing.listingType === type).map((listing) => listing[key]);
+    expect(Math.max(...prices("Lekki Phase 1", "purchasePrice", "sale"))).toBeLessThan(Math.min(...prices("Victoria Island", "purchasePrice", "sale")));
+    expect(Math.max(...prices("Victoria Island", "purchasePrice", "sale"))).toBeLessThan(Math.min(...prices("Ikoyi", "purchasePrice", "sale")));
+    expect(Math.max(...prices("Lekki Phase 1", "rent", "rental"))).toBeLessThan(Math.min(...prices("Victoria Island", "rent", "rental")));
+    expect(prices("Ikoyi", "rent", "rental")).toEqual([]);
+  });
+
   it("lets several residents rent flats in the same building at once", async () => {
     const court = getPlace("lekki-adebayo-flat-2");
     const free = (await listProperties(users[0]!.id)).filter((listing) => listing.placeId === court.id && listing.available);
