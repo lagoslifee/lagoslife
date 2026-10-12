@@ -10,6 +10,7 @@ import {
   VEHICLE_RULES,
   vehicleModelById,
   TOW_STAGE_LABEL,
+  TOW,
   type Notice,
   type TowDestination,
   type TowStage,
@@ -344,8 +345,8 @@ export function VehiclesApp({ engine, tows, vehicles, properties, position, driv
                   homes={homes}
                   disabled={!engine}
                   onCancel={() => setTowing(null)}
-                  onConfirm={(destination) => {
-                    engine?.requestTow(vehicle.id, destination);
+                  onConfirm={(destination, express) => {
+                    engine?.requestTow(vehicle.id, destination, express);
                     setTowing(null);
                   }}
                 />
@@ -366,12 +367,13 @@ function TowRequest({ vehicle, homes, disabled, onCancel, onConfirm }: {
   homes: PropertyListing[];
   disabled: boolean;
   onCancel: () => void;
-  onConfirm: (destination: TowDestination) => void;
+  onConfirm: (destination: TowDestination, express: boolean) => void;
 }) {
   const [choice, setChoice] = useState<string>(homes[0] ? `home:${homes[0].id}` : "here");
   const towFee = vehicle.insured ? 0 : VEHICLE_RULES.towFee;
   const { repair, fullRepair } = vehicle.serviceQuote;
   const total = towFee + repair;
+  const destination = (): TowDestination => (choice === "here" ? { kind: "here" } : { kind: "home", propertyId: choice.slice(5) });
   return (
     <div className="tow-request" data-testid="tow-request">
       <p className="small"><strong>Ade Recovery</strong> collects {vehicle.plate}, repairs it to 100% and brings the same car back about {10} seconds after collection.</p>
@@ -391,12 +393,15 @@ function TowRequest({ vehicle, homes, disabled, onCancel, onConfirm }: {
         ))}
         <label>
           <input type="radio" name={`tow-${vehicle.id}`} checked={choice === "here"} onChange={() => setChoice("here")} />
-          My current location <span className="muted small">(a safe roadside spot near you when it is ready)</span>
+          Right where I am <span className="muted small">(next to you, even off the road; at the door if you're indoors)</span>
         </label>
       </fieldset>
       <div className="row wrap">
-        <button className="primary" disabled={disabled} onClick={() => onConfirm(choice === "here" ? { kind: "here" } : { kind: "home", propertyId: choice.slice(5) })}>
-          Send the truck · {naira(total)}
+        <button className="primary" data-testid="tow-express" disabled={disabled} onClick={() => onConfirm(destination(), true)}>
+          ⚡ Express · {TOW.expressSeconds} s · {naira(total + TOW.expressFee)}
+        </button>
+        <button className="secondary" disabled={disabled} onClick={() => onConfirm(destination(), false)}>
+          Standard · about 25 s · {naira(total)}
         </button>
         <button className="secondary" onClick={onCancel}>Not now</button>
       </div>

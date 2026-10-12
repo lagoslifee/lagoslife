@@ -25,7 +25,8 @@ vi.mock("@lagos-living/shared", async (original) => ({ ...(await original<object
 
 const { TowDispatcher } = await import("./tow-dispatch.js");
 
-function setup(owner: { onStreet: boolean; x: number; z: number } | null) {
+function setup(where: { onStreet: boolean; x: number; z: number; door?: [number, number] } | null) {
+  const owner = where ? { door: null, ...where } : null;
   const vehicles = new Map<string, RoomVehicle>();
   vehicles.set("car-1", {
     id: "car-1", ownerUserId: "u1", ownerName: "Ada", modelId: "tokunbo-saloon", colour: "#101418", plate: "EKO 123 AB",
@@ -108,6 +109,47 @@ describe("tow dispatcher", () => {
     await run(dispatcher, 40, clock);
     expect(service.deliverTow).toHaveBeenCalledWith("tow-2", { kind: "kerb", x: 500, z: 500, yaw: 0 }, expect.stringContaining("offline"));
     expect(notices.at(-1)).toContain("Ade Auto Works");
+    vi.useRealTimers();
+  });
+
+  it("express collects at once and unloads the repaired car beside the owner in about three seconds", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const clock = { now: 3_000_000 };
+    vi.setSystemTime(clock.now);
+    service.deliverTow.mockClear();
+    const { vehicles, sent, dispatcher, job } = setup({ onStreet: true, x: 4, z: 300 });
+    dispatcher.start({ ...job, id: "tow-4" }, true);
+    const started = clock.now;
+    await run(dispatcher, 0.2, clock);
+    expect(vehicles.has("car-1")).toBe(false);
+    expect(vehicles.get("tow-tow-4")?.tow?.carrying).toBeTruthy();
+    await run(dispatcher, 4.5, clock);
+    const delivered = sent.find((state) => state.stage === "delivered");
+    expect(delivered).toBeTruthy();
+    expect(delivered!.at - started).toBeLessThan((TOW.expressSeconds + 1.5) * 1_000);
+    const [, spot] = service.deliverTow.mock.calls[0]!;
+    expect(Math.abs((spot as { z: number }).z - 300)).toBeLessThan(30);
+    vi.useRealTimers();
+  });
+
+  it("delivers next to an owner far from any road, and to the door when they are indoors", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const clock = { now: 4_000_000 };
+    vi.setSystemTime(clock.now);
+    service.deliverTow.mockClear();
+    const field = setup({ onStreet: true, x: 200, z: 300 });
+    field.dispatcher.start({ ...field.job, id: "tow-5" }, true);
+    await run(field.dispatcher, 5, clock);
+    const [, open] = service.deliverTow.mock.calls[0]!;
+    const { x, z } = open as { x: number; z: number };
+    expect(Math.hypot(x - 200, z - 300)).toBeLessThan(15);
+
+    service.deliverTow.mockClear();
+    const inside = setup({ onStreet: false, x: 9_000, z: 9_000, door: [1, 600] });
+    inside.dispatcher.start({ ...inside.job, id: "tow-6" }, true);
+    await run(inside.dispatcher, 5, clock);
+    const [, door] = service.deliverTow.mock.calls[0]!;
+    expect(Math.abs((door as { z: number }).z - 600)).toBeLessThan(30);
     vi.useRealTimers();
   });
 

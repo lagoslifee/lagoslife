@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  TOW,
   dialSpeed,
   checkpointAnswerSchema,
   type CheckpointStop,
@@ -378,7 +379,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     vehicles: this.vehicles,
     owner: (userId) => {
       const player = [...this.players.values()].find((entry) => entry.userId === userId && entry.connected);
-      return player ? { onStreet: player.location === "street" && !player.busId && !player.vehicleId, x: player.x, z: player.z } : null;
+      if (!player) return null;
+      const indoors = player.location !== "street" && !player.busId && !player.vehicleId;
+      return { onStreet: player.location === "street" && !player.busId && !player.vehicleId, x: player.x, z: player.z, door: indoors ? player.returnPoint : null };
     },
     send: (userId, type, payload) => {
       for (const player of this.players.values()) if (player.userId === userId) this.clientFor(player)?.send(type, payload);
@@ -1935,17 +1938,17 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const player = this.players.get(client.sessionId);
     const parsed = towRequestSchema.safeParse(payload);
     if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
-    const { vehicleId, destination, idempotencyKey } = parsed.data;
+    const { vehicleId, destination, express, idempotencyKey } = parsed.data;
     const car = this.vehicles.get(vehicleId);
     if (car && (car.testDrive || car.rental || car.npc)) return this.notify(client, { tone: "error", text: "Only cars you own can be towed." });
     if (player.vehicleId === vehicleId) await this.handleExitVehicle(client, true);
     try {
-      const { job } = await requestTow(player.userId, vehicleId, destination, idempotencyKey);
+      const { job } = await requestTow(player.userId, vehicleId, destination, idempotencyKey, express ? TOW.expressFee : 0);
       if (!this.vehicles.has(vehicleId) && !job.collectedAt) await this.refreshVehicle(vehicleId);
-      this.tows.start(job);
+      this.tows.start(job, express);
       this.notify(client, {
         tone: "success",
-        text: `Ade Recovery is on the way for ${job.vehicle.plate}. Paid ${job.quote.total ? `₦${job.quote.total.toLocaleString("en-NG")}` : "nothing"}${job.quote.insurer ? ` (cover paid ₦${job.quote.insurer.toLocaleString("en-NG")})` : ""}.`,
+        text: `${express ? `Ade Recovery express: ${job.vehicle.plate} will be beside you in about ${TOW.expressSeconds} s` : `Ade Recovery is on the way for ${job.vehicle.plate}`}. Paid ${job.quote.total ? `₦${job.quote.total.toLocaleString("en-NG")}` : "nothing"}${job.quote.insurer ? ` (cover paid ₦${job.quote.insurer.toLocaleString("en-NG")})` : ""}.`,
       });
     } catch (error) {
       const message = error instanceof EconomyError ? error.message : "The tow could not be booked. Try again.";

@@ -17,7 +17,8 @@ import {
 export type TowHost = {
   vehicles: Map<string, RoomVehicle>;
   /** Null when the owner is not in this room. */
-  owner(userId: string): { onStreet: boolean; x: number; z: number } | null;
+  /** `door` is set while the owner is inside a building: deliveries go to its entrance. */
+  owner(userId: string): { onStreet: boolean; x: number; z: number; door: Vec2 | null } | null;
   send(userId: string, type: string, payload: unknown): void;
   notify(userId: string, notice: Notice): void;
   /** Driver parks and steps out, passengers step out: nobody rides onto the truck. */
@@ -39,10 +40,14 @@ type Job = TowJobRow & {
   busy: boolean;
   leaving: boolean;
   unloadStartedAt: number | null;
+  express: boolean;
 };
 
 const LOAD_SLIDE = 0.55;
 const KERB_OFFSET = 2.6;
+/** Off-road drop spots: the truck drives straight in over this distance instead of following a road. */
+const DIRECT_METRES = 8;
+const OFF_ROAD = 15;
 
 function pathLength(from: Vec2, path: Vec2[], index: number) {
   let total = 0;
@@ -105,10 +110,50 @@ export class TowDispatcher {
     return false;
   }
 
-  start(row: TowJobRow) {
+  start(row: TowJobRow, express = false) {
     if (this.jobs.has(row.id)) return this.send(this.jobs.get(row.id)!);
     const job = this.track(row);
-    this.beginArriving(job, Date.now());
+    job.express = express;
+    if (express) void this.beginExpress(job);
+    else this.beginArriving(job, Date.now());
+  }
+
+  /** Express: the car is lifted at once and the truck rolls up beside the drop spot with it on the bed. */
+  private async beginExpress(job: Job) {
+    job.busy = true;
+    let garage = false;
+    try {
+      await this.host.clearOccupants(job.vehicleId).catch(() => undefined);
+      const car = this.host.vehicles.get(job.vehicleId);
+      if (car) job.carStart = { x: car.x, z: car.z, yaw: car.yaw };
+      if (!(await collectTow(job.id))) {
+        this.jobs.delete(job.id);
+        return;
+      }
+      this.host.vehicles.delete(job.vehicleId);
+      job.collectedAt = Date.now();
+      job.delivery = await this.prepareDelivery(job);
+      const now = Date.now();
+      if (job.delivery.spot.kind === "garage") {
+        garage = true;
+        return;
+      }
+      this.spawnTruck(job, this.directPath(job.delivery.spot), true);
+      job.speed = 6;
+      this.setStage(job, "returning", now, now + TOW.expressSeconds * 1_000);
+    } catch (error) {
+      console.error("Express tow failed", job.id, error);
+    } finally {
+      job.busy = false;
+      if (garage) void this.finish(job);
+    }
+  }
+
+  /** A short straight run that stops just ahead of the spot, used where there is no road to follow. */
+  private directPath(spot: { x: number; z: number; yaw: number }): Vec2[] {
+    const forward: Vec2 = [Math.sin(spot.yaw), Math.cos(spot.yaw)];
+    const stop: Vec2 = [spot.x + forward[0] * 6, spot.z + forward[1] * 6];
+    return [[stop[0] - forward[0] * DIRECT_METRES, stop[1] - forward[1] * DIRECT_METRES], stop];
   }
 
   states(userId: string) {
@@ -163,6 +208,7 @@ export class TowDispatcher {
       busy: false,
       leaving: false,
       unloadStartedAt: null,
+      express: false,
     };
     this.jobs.set(row.id, job);
     return job;
@@ -342,9 +388,10 @@ export class TowDispatcher {
             job.delivery = delivery;
             const at = Date.now();
             if (delivery.spot.kind === "garage") return this.finish(job);
-            const route = approach([delivery.spot.x, delivery.spot.z], TOW.returnApproachMetres);
-            this.spawnTruck(job, route.path, true);
-            this.setStage(job, "returning", at, Math.max(deliverAt, at + (pathLength(route.path[0]!, route.path, 1) / TOW.truckSpeed + TOW.unloadSeconds) * 1_000));
+            const offRoad = roadNavigator().snap([delivery.spot.x, delivery.spot.z]).distance > OFF_ROAD;
+            const path = offRoad ? this.directPath(delivery.spot) : approach([delivery.spot.x, delivery.spot.z], TOW.returnApproachMetres).path;
+            this.spawnTruck(job, path, true);
+            this.setStage(job, "returning", at, Math.max(deliverAt, at + (pathLength(path[0]!, path, 1) / TOW.truckSpeed + TOW.unloadSeconds) * 1_000));
           })
           .catch((error) => console.error("Tow delivery could not be prepared", job.id, error))
           .finally(() => {
@@ -432,10 +479,10 @@ export class TowDispatcher {
   }
 
   /** A clear roadside spot near the owner: on the kerb, not in a building, not on another car or person. */
-  private kerbsideNear(x: number, z: number) {
+  private kerbsideNear(x: number, z: number, range: number = TOW.hereRoadRange) {
     const nav = roadNavigator();
     const road = nav.snap([x, z]);
-    if (road.distance > TOW.hereRoadRange) return null;
+    if (road.distance > range) return null;
     const forward: Vec2 = [Math.sin(road.yaw), Math.cos(road.yaw)];
     const right: Vec2 = [Math.cos(road.yaw), -Math.sin(road.yaw)];
     for (const offset of [0, 7, -7, 14, -14, 21, -21, 28, -28]) {
@@ -453,17 +500,39 @@ export class TowDispatcher {
     return null;
   }
 
+  /** Open ground right next to the owner, for when there is no road close by (a beach, a compound, a field). */
+  private clearSpotNear(x: number, z: number) {
+    for (const radius of [4, 5.5, 7.5, 10, 14]) {
+      for (let i = 0; i < 12; i += 1) {
+        const angle = (i * Math.PI) / 6;
+        const cx = x + Math.cos(angle) * radius;
+        const cz = z + Math.sin(angle) * radius;
+        const yaw = Math.atan2(-Math.sin(angle), Math.cos(angle));
+        const forward: Vec2 = [Math.sin(yaw), Math.cos(yaw)];
+        const clear = [-2.6, 0, 2.6].every((along) => walkable(cx + forward[0] * along, cz + forward[1] * along, 0.9));
+        if (!clear) continue;
+        if ([...this.host.vehicles.values()].some((vehicle) => Math.hypot(vehicle.x - cx, vehicle.z - cz) < 5.5)) continue;
+        if (this.host.personNear(cx, cz, 2.2)) continue;
+        return { x: cx, z: cz, yaw };
+      }
+    }
+    return null;
+  }
+
   /** Checked when the return is prepared, so "here" means where the owner is now. */
   private async prepareDelivery(job: Job): Promise<{ spot: DeliverySpot; label: string; note: string | null }> {
     let reason: string | null = null;
     if (job.destination.kind === "here") {
       const owner = this.host.owner(job.userId);
-      if (owner?.onStreet) {
-        const kerb = this.kerbsideNear(owner.x, owner.z);
-        if (kerb) return { spot: { kind: "kerb", ...kerb }, label: "at the roadside near you", note: null };
-        reason = "There was no safe roadside spot near you";
+      if (owner) {
+        const [x, z] = owner.door ?? [owner.x, owner.z];
+        const kerb = this.kerbsideNear(x, z, 25);
+        if (kerb) return { spot: { kind: "kerb", ...kerb }, label: owner.door ? "at the roadside by the door" : "at the roadside near you", note: null };
+        const open = this.clearSpotNear(x, z) ?? this.kerbsideNear(x, z);
+        if (open) return { spot: { kind: "kerb", ...open }, label: owner.door ? "outside the door" : "right next to you", note: null };
+        reason = "There was no clear spot near you";
       } else {
-        reason = owner ? "You were indoors" : "You were offline";
+        reason = "You were offline";
       }
     }
     const propertyId = job.destination.kind === "home" ? job.destination.propertyId : await firstHome(job.userId);

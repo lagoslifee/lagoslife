@@ -19,6 +19,9 @@ export const TOW = {
   approachTimeoutSeconds: 40,
   /** "My current location" needs a road within this distance of the owner. */
   hereRoadRange: 60,
+  /** Express: the car is collected at once and unloaded beside you about this many seconds later, for an extra fee. */
+  expressSeconds: 3,
+  expressFee: 5_000,
 } as const;
 
 export const towStages = ["requested", "arriving", "loading", "collected", "repairing", "returning", "delivered", "cancelled"] as const;
@@ -44,6 +47,7 @@ export type TowDestination = z.infer<typeof towDestinationSchema>;
 export const towRequestSchema = z.object({
   vehicleId: z.string().min(1).max(60),
   destination: towDestinationSchema,
+  express: z.boolean().default(false),
   idempotencyKey: z.uuid(),
 });
 export const towCancelSchema = z.object({ towId: z.string().min(1).max(60) });

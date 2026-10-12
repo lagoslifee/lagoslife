@@ -77,7 +77,7 @@ async function holdsHome(client: PoolClient, userId: string, propertyId: string)
  * One charge, one job: a replayed key returns the existing job, and the partial unique index refuses a
  * second active tow for the same car.
  */
-export async function requestTow(userId: string, vehicleId: string, destination: TowDestination, idempotencyKey: string) {
+export async function requestTow(userId: string, vehicleId: string, destination: TowDestination, idempotencyKey: string, expressFee = 0) {
   const job = await withTransaction(async (client) => {
     await ensureWallet(client, userId);
     await client.query(`SELECT balance FROM wallet WHERE user_id = $1 FOR UPDATE`, [userId]);
@@ -99,16 +99,17 @@ export async function requestTow(userId: string, vehicleId: string, destination:
     }
     const quote = towQuote(row);
     const id = randomUUID();
-    await debitWallet(client, userId, quote.total, "vehicle_tow", `Tow & repair · ${row.plate}`, idempotencyKey, { vehicleId, towId: id, ...quote });
+    const charged = quote.total + expressFee;
+    await debitWallet(client, userId, charged, "vehicle_tow", `${expressFee ? "Express tow" : "Tow"} & repair · ${row.plate}`, idempotencyKey, { vehicleId, towId: id, ...quote, expressFee });
     const inserted = await client.query(
       `INSERT INTO vehicle_tow (id, vehicle_id, user_id, stage, destination, property_id, tow_fee, repair, full_repair, charged, idempotency_key, from_x, from_z)
        VALUES ($1, $2, $3, 'arriving', $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
       [
         id, vehicleId, userId, destination.kind, destination.kind === "home" ? destination.propertyId : null,
-        quote.towFee, quote.repair, quote.fullRepair, quote.total, idempotencyKey, Number(row.x), Number(row.z),
+        quote.towFee, quote.repair, quote.fullRepair, charged, idempotencyKey, Number(row.x), Number(row.z),
       ],
     );
-    await logEvent(client, vehicleId, userId, "tow", quote.total, { towId: id, destination: destination.kind });
+    await logEvent(client, vehicleId, userId, "tow", charged, { towId: id, destination: destination.kind, express: expressFee > 0 });
     return { job: toJob({ ...inserted.rows[0], model_id: row.model_id, colour: row.colour, plate: row.plate }), replayed: false };
   });
   return job;

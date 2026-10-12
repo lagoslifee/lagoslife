@@ -3493,8 +3493,8 @@ export class GameEngine {
     return { ...result, problem, metres, fare, tripSeconds: metres / (RIDE.driverSpeed * 0.75), walkAfter: result.dropoff.distance };
   }
 
-  requestTow(vehicleId: string, destination: TowDestination) {
-    this.net.send("towRequest", { vehicleId, destination, idempotencyKey: crypto.randomUUID() });
+  requestTow(vehicleId: string, destination: TowDestination, express = false) {
+    this.net.send("towRequest", { vehicleId, destination, express, idempotencyKey: crypto.randomUUID() });
   }
 
   cancelTow(towId: string) {
