@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const bodies = ["male", "female"] as const;
 export const skinTones = ["deep", "rich", "warm", "golden", "light"] as const;
+export const hairColours = ["black", "dark-brown", "auburn", "honey-blonde", "burgundy", "platinum"] as const;
 export const hairstyles = ["low-fade", "twists", "braids", "afro", "locs", "parted", "buns", "long"] as const;
 export const outfits = [
   "island-casual",
@@ -66,9 +67,11 @@ export const characterAppearanceSchema = z.object({
   hairstyle: z.enum(hairstyles),
   outfit: z.enum(outfits),
   accessory: z.enum(accessories),
+  hairColour: z.enum(hairColours).optional(),
 });
 
 export type CharacterAppearance = z.infer<typeof characterAppearanceSchema>;
+export type HairColour = (typeof hairColours)[number];
 
 export const defaultAppearance: CharacterAppearance = {
   body: "male",

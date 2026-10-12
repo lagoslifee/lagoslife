@@ -1,4 +1,4 @@
-import type { accessories, bodies, hairstyles, outfits, skinTones } from "@lagos-living/shared";
+import type { accessories, bodies, HairColour, hairstyles, outfits, skinTones } from "@lagos-living/shared";
 
 type SkinTone = (typeof skinTones)[number];
 type Outfit = (typeof outfits)[number];
@@ -114,3 +114,14 @@ export const HAIR_LABELS: Record<Hairstyle, string> = {
 export const ACCESSORY_LABELS: Record<Accessory, string> = { none: "None", glasses: "Glasses", cap: "Cap", headwrap: "Gele headwrap", beard: "Beard" };
 
 export const HAIR_COLOUR = "#16110e";
+
+export const HAIR_COLOURS: Record<HairColour, { label: string; hex: string }> = {
+  black: { label: "Black", hex: HAIR_COLOUR },
+  "dark-brown": { label: "Dark brown", hex: "#3b2417" },
+  auburn: { label: "Auburn", hex: "#7a3218" },
+  "honey-blonde": { label: "Honey blonde", hex: "#b98a4a" },
+  burgundy: { label: "Burgundy", hex: "#5e1426" },
+  platinum: { label: "Platinum", hex: "#b8b0a2" },
+};
+
+export const hairHex = (appearance: { hairColour?: HairColour | undefined }) => HAIR_COLOURS[appearance.hairColour ?? "black"].hex;

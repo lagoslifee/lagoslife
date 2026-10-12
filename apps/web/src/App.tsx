@@ -2,6 +2,7 @@ import {
   accessories,
   bodies,
   defaultAppearance,
+  hairColours,
   hairstyles,
   isStarterOutfit,
   outfits,
@@ -15,7 +16,7 @@ import {
 } from "@lagos-living/shared";
 import { FormEvent, lazy, Suspense, useEffect, useRef, useState } from "react";
 import { LifeGoalsDialog } from "./ui/LifeGoals";
-import { ACCESSORY_LABELS, BODY_LABELS, HAIR_LABELS, OUTFITS } from "./game/wardrobe";
+import { ACCESSORY_LABELS, HAIR_COLOURS, HAIR_LABELS, OUTFITS, SKIN_TONE_COLOURS } from "./game/wardrobe";
 import { apiConfigured, apiUrl, authClient, authHeaders, guestMode, sessionToken, signOut, startGuestSession } from "./auth-client";
 
 /** After a new deploy, an open tab asks for chunk names that no longer exist; reload once to get the new build. */
@@ -105,6 +106,7 @@ function AuthScreen() {
   const [email, setEmail] = useState("");
   const [identifier, setIdentifier] = useState("");
   const [name, setName] = useState("");
+  const [body, setBody] = useState<(typeof bodies)[number] | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -118,9 +120,17 @@ function AuthScreen() {
       if (mode === "register") {
         const checked = usernameSchema.safeParse(username);
         if (!checked.success) throw new Error("Username: 3–20 letters, numbers, _ or . (no spaces).");
+        if (!body) throw new Error("Choose woman or man so we can build your avatar.");
         const result = await authClient.signUp.email({ email: email.trim() || placeholderEmail(username), password, name: name.trim(), username: username.trim() });
         if (result.error) throw new Error(result.error.message);
         localStorage.setItem("lagos-new-account", "1");
+        localStorage.setItem("lagos-new-look", "1");
+        if (result.data?.token) sessionToken.set(result.data.token);
+        await fetch(`${apiUrl}/api/character`, {
+          method: "PUT",
+          headers: { "content-type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ appearance: starterLook(body) }),
+        }).catch(() => undefined);
         enterWithToken(result.data?.token);
         return;
       } else if (mode === "login") {
@@ -208,6 +218,15 @@ function AuthScreen() {
               <label>Your name
                 <input required maxLength={40} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Ada Obi" />
               </label>
+              <fieldset className="gender-choice">
+                <legend>I am a</legend>
+                {(["female", "male"] as const).map((option) => (
+                  <button key={option} type="button" aria-pressed={body === option} onClick={() => setBody(option)}>
+                    <span aria-hidden="true">{option === "female" ? "👩🏾" : "👨🏾"}</span>{option === "female" ? "Woman" : "Man"}
+                  </button>
+                ))}
+                <small className="field-hint">Sets your avatar's body. You pick face, hair and outfit next.</small>
+              </fieldset>
               <label>Username
                 <input
                   required
@@ -258,15 +277,55 @@ function AuthScreen() {
   );
 }
 
+/** A first look for a new resident of the chosen body, so the avatar matches before they open the studio. */
+export function starterLook(body: (typeof bodies)[number]): CharacterAppearance {
+  return body === "female"
+    ? { body, skinTone: "rich", hairstyle: "long", outfit: "ankara-dress", accessory: "none", hairColour: "black" }
+    : { body, skinTone: "rich", hairstyle: "low-fade", outfit: "island-casual", accessory: "none", hairColour: "black" };
+}
+
+function ChipRow<T extends string>({ label, options, value, names, onPick, swatch }: {
+  label: string;
+  options: readonly T[];
+  value: T;
+  names?: Partial<Record<T, string>>;
+  onPick: (value: T) => void;
+  swatch?: (value: T) => string;
+}) {
+  return (
+    <fieldset className="studio-row">
+      <legend>{label}</legend>
+      <div className={swatch ? "studio-swatches" : "studio-chips"}>
+        {options.map((option) => (
+          <button
+            key={option}
+            type="button"
+            aria-pressed={option === value}
+            aria-label={names?.[option] ?? option.replaceAll("-", " ")}
+            title={names?.[option] ?? option.replaceAll("-", " ")}
+            onClick={() => onPick(option)}
+            style={swatch ? { background: swatch(option) } : undefined}
+          >
+            {swatch ? null : names?.[option] ?? option.replaceAll("-", " ")}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function CharacterCreator({
   initial,
+  welcome,
   onClose,
 }: {
   initial: CharacterAppearance;
+  welcome: boolean;
   onClose: (value?: CharacterAppearance) => void;
 }) {
   const [appearance, setAppearance] = useState(initial);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [wearable, setWearable] = useState<readonly OutfitId[]>(() => (isStarterOutfit(initial.outfit) ? starterOutfits : [...starterOutfits, initial.outfit]));
   useEffect(() => {
     void fetch(`${apiUrl}/api/wardrobe`, { credentials: "include", headers: authHeaders() })
@@ -277,53 +336,49 @@ function CharacterCreator({
 
   async function save() {
     setSaving(true);
+    setError("");
     const response = await fetch(`${apiUrl}/api/character`, {
       method: "PUT",
       credentials: "include",
       headers: { "content-type": "application/json", ...authHeaders() },
       body: JSON.stringify({ appearance }),
-    });
+    }).catch(() => null);
     setSaving(false);
-    if (response.ok) onClose(appearance);
+    if (response?.ok) onClose(appearance);
+    else setError("Could not save your look. Check your connection and try again.");
   }
 
-  const selectors = [
-    ["Body", "body", bodies, BODY_LABELS],
-    ["Skin tone", "skinTone", skinTones, null],
-    ["Hair", "hairstyle", hairstyles, HAIR_LABELS],
-    ["Outfit", "outfit", wearable, Object.fromEntries(outfits.map((outfit) => [outfit, OUTFITS[outfit].label]))],
-    ["Accessory", "accessory", accessories, ACCESSORY_LABELS],
-  ] as const;
+  const set = <K extends keyof CharacterAppearance>(key: K) => (value: CharacterAppearance[K]) => setAppearance({ ...appearance, [key]: value });
+  const pickBody = (body: (typeof bodies)[number]) => {
+    if (body === appearance.body) return;
+    const starter = starterLook(body);
+    setAppearance({ ...appearance, body, hairstyle: starter.hairstyle, outfit: wearable.includes(starter.outfit) ? starter.outfit : appearance.outfit, accessory: "none" });
+  };
+  const outfitNames = Object.fromEntries(outfits.map((outfit) => [outfit, OUTFITS[outfit].label])) as Record<OutfitId, string>;
 
   return (
-    <div className="modal-backdrop">
-      <section className="creator-card" role="dialog" aria-modal="true" aria-label="Character creator">
+    <div className="modal-backdrop creator-backdrop">
+      <section className="creator-card" role="dialog" aria-modal="true" aria-label="Character creator" data-testid="character-creator">
         <div className="character-preview">
           <Suspense fallback={<p className="preview-status">Loading your resident…</p>}>
             <CharacterPreview appearance={appearance} />
           </Suspense>
         </div>
         <div className="creator-options">
-          <p className="step-label">CHARACTER STUDIO</p>
-          <h2>Make Lagos yours</h2>
-          {selectors.map(([label, key, options, names]) => (
-            <label key={key}>{label}
-              <select
-                value={appearance[key]}
-                onChange={(event) =>
-                  setAppearance({ ...appearance, [key]: event.target.value })
-                }
-              >
-                {options.map((option) => (
-                  <option key={option} value={option}>{(names as Record<string, string> | null)?.[option] ?? option.replaceAll("-", " ")}</option>
-                ))}
-              </select>
-            </label>
-          ))}
+          <p className="step-label">{welcome ? "STEP 1 OF 2 · YOUR LOOK" : "CHARACTER STUDIO"}</p>
+          <h2>{welcome ? "Choose your look" : "Make Lagos yours"}</h2>
+          {welcome && <p className="muted small">This is how other residents will see you. You can change it any time from Phone → Settings.</p>}
+          <ChipRow label="Body" options={bodies} value={appearance.body} names={{ female: "Woman", male: "Man" }} onPick={pickBody} />
+          <ChipRow label="Skin tone" options={skinTones} value={appearance.skinTone} onPick={set("skinTone")} swatch={(tone) => SKIN_TONE_COLOURS[tone]} />
+          <ChipRow label="Hairstyle" options={hairstyles} value={appearance.hairstyle} names={HAIR_LABELS} onPick={set("hairstyle")} />
+          <ChipRow label="Hair colour" options={hairColours} value={appearance.hairColour ?? "black"} names={Object.fromEntries(hairColours.map((colour) => [colour, HAIR_COLOURS[colour].label]))} onPick={set("hairColour")} swatch={(colour) => HAIR_COLOURS[colour].hex} />
+          <ChipRow label="Face" options={accessories} value={appearance.accessory} names={ACCESSORY_LABELS} onPick={set("accessory")} />
+          <ChipRow label="Outfit" options={wearable} value={appearance.outfit} names={outfitNames} onPick={set("outfit")} />
+          {error && <p className="form-message" role="status">{error}</p>}
           <div className="creator-actions">
-            <button className="secondary" onClick={() => onClose()}>Cancel</button>
+            {!welcome && <button className="secondary" onClick={() => onClose()}>Cancel</button>}
             <button className="primary" onClick={save} disabled={saving}>
-              {saving ? "Saving…" : "Save character"}
+              {saving ? "Saving…" : welcome ? "Looks good · next" : "Save character"}
             </button>
           </div>
         </div>
@@ -348,7 +403,9 @@ function GameShell({
     window.addEventListener("lagos-appearance", changed);
     return () => window.removeEventListener("lagos-appearance", changed);
   }, []);
-  const [creatorOpen, setCreatorOpen] = useState(false);
+  const [welcomeLook, setWelcomeLook] = useState(() => localStorage.getItem("lagos-new-look") === "1");
+  const [creatorOpen, setCreatorOpen] = useState(welcomeLook);
+  const [appearanceLoaded, setAppearanceLoaded] = useState(false);
   const [goalsOpen, setGoalsOpen] = useState(() => localStorage.getItem("lagos-new-account") === "1");
   useEffect(() => {
     const open = () => setGoalsOpen(true);
@@ -368,7 +425,8 @@ function GameShell({
     fetch(`${apiUrl}/api/character`, { credentials: "include", headers: authHeaders() })
       .then((response) => response.json())
       .then((data) => setAppearance(data.appearance ?? defaultAppearance))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setAppearanceLoaded(true));
   }, []);
 
   if (!standing.checked) return <div className="loading-screen">Preparing Lagos…</div>;
@@ -397,11 +455,14 @@ function GameShell({
         />
       </Suspense>
       {goalsOpen && !creatorOpen && <LifeGoalsDialog playerName={playerName} onClose={() => setGoalsOpen(false)} />}
-      {creatorOpen && (
+      {creatorOpen && (appearanceLoaded || !welcomeLook) && (
         <CharacterCreator
           initial={appearance}
+          welcome={welcomeLook}
           onClose={(next) => {
             if (next) setAppearance(next);
+            localStorage.removeItem("lagos-new-look");
+            setWelcomeLook(false);
             setCreatorOpen(false);
           }}
         />

@@ -57,11 +57,13 @@ export async function signUp(page: Page, playerName: string, email: string, pass
   await page.goto("/?manual=1");
   await page.getByRole("tab", { name: "Sign up" }).click();
   await page.getByLabel("Your name").fill(`${playerName} Tester`);
+  await page.getByRole("button", { name: "Man" }).click();
   await page.getByLabel("Username").fill(playerName);
   await page.getByLabel("Password").fill(password);
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Create account" }).click();
   await waitForGame(page);
+  await page.getByRole("button", { name: "Looks good · next" }).click();
   await expect(page.getByTestId("life-goals")).toBeVisible();
   await page.getByRole("button", { name: "Maybe later" }).click();
 }

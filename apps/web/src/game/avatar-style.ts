@@ -9,7 +9,8 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Bone } from "@babylonjs/core/Bones/bone";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
-import type { CharacterAppearance } from "@lagos-living/shared";
+import { hairstyles, type CharacterAppearance } from "@lagos-living/shared";
+import { hairHex } from "./wardrobe";
 import type { Accessory, Body, Hairstyle } from "./appearance";
 
 /**
@@ -230,6 +231,15 @@ export function headAnchor(scene: Scene, name: string, mesh: AbstractMesh, bones
   return anchor;
 }
 
+const hairMaterials = new WeakMap<Scene, Map<string, PBRMaterial>>();
+function hairMaterial(scene: Scene, hex: string) {
+  let cache = hairMaterials.get(scene);
+  if (!cache) hairMaterials.set(scene, (cache = new Map()));
+  let found = cache.get(hex);
+  if (!found) cache.set(hex, (found = material(scene, `hair ${hex}`, hex, 0.85)));
+  return found;
+}
+
 /** Replaces the hairstyle and accessory meshes under a head anchor. */
 export function dressHead(scene: Scene, anchor: TransformNode, appearance: CharacterAppearance, styles: HeadStyle[]) {
   for (const child of anchor.getChildMeshes(true)) child.dispose();
@@ -237,6 +247,7 @@ export function dressHead(scene: Scene, anchor: TransformNode, appearance: Chara
     const source = template(scene, appearance.body, style);
     if (!source) continue;
     const mesh = source.clone(`${anchor.name} ${style}`, anchor)!;
+    if ((hairstyles as readonly string[]).includes(style)) mesh.material = hairMaterial(scene, hairHex(appearance));
     mesh.setEnabled(true);
     mesh.isPickable = false;
   }

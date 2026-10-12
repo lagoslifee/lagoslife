@@ -9,7 +9,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import type { CharacterAppearance } from "@lagos-living/shared";
 import { OUTFITS, SKIN_TONE_COLOURS, type Body, type Fabric } from "./wardrobe";
 
-export { ACCESSORY_LABELS, BODY_LABELS, HAIR_COLOUR, HAIR_LABELS, OUTFITS, SKIN_TONE_COLOURS } from "./wardrobe";
+export { ACCESSORY_LABELS, BODY_LABELS, HAIR_COLOUR, HAIR_COLOURS, HAIR_LABELS, hairHex, OUTFITS, SKIN_TONE_COLOURS } from "./wardrobe";
 export type { Accessory, Body, Hairstyle } from "./wardrobe";
 
 /**

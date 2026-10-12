@@ -206,7 +206,21 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .preview-status { position: absolute; inset: 0; display: grid; place-content: center; margin: 0; padding: 24px; text-align: center; font-weight: 600; }
 .preview-caption { margin: 8px 0 2px; font-weight: 700; }
 .character-preview small { opacity: .65; }
-.creator-options { padding: 42px; }
+.creator-options { padding: 32px 34px; max-height: min(86vh, 760px); overflow-y: auto; }
+.studio-row { border: 0; margin: 12px 0 0; padding: 0; min-width: 0; }
+.studio-row legend { padding: 0; margin-bottom: 6px; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #4a5e59; }
+.studio-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.studio-chips button { padding: 7px 12px; border-radius: 999px; border: 1px solid rgba(23,49,46,.22); background: #fff; color: #17312e; font-weight: 650; font-size: 13px; text-transform: capitalize; }
+.studio-chips button[aria-pressed="true"] { background: #17312e; border-color: #17312e; color: #fff; }
+.studio-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.studio-swatches button { width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 2px solid rgba(0,0,0,.15); box-shadow: inset 0 0 0 2px rgba(255,255,255,.35); }
+.studio-swatches button[aria-pressed="true"] { border-color: #17312e; box-shadow: 0 0 0 3px #e6bd62; }
+.gender-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; border: 0; margin: 0 0 12px; padding: 0; }
+.gender-choice legend { padding: 0; margin-bottom: 6px; font-size: 13px; font-weight: 700; }
+.gender-choice button { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 11px; border-radius: 12px; border: 1.5px solid rgba(23,49,46,.2); background: #fffdf8; color: #17312e; font-weight: 750; font-size: 15px; }
+.gender-choice button span { font-size: 22px; }
+.gender-choice button[aria-pressed="true"] { border-color: #0f5a4f; background: #e3f1ec; box-shadow: 0 0 0 2px rgba(15,90,79,.25); }
+.gender-choice .field-hint { grid-column: 1 / -1; }
 .creator-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 25px; }
 
 /* ---------- In-game HUD ---------- */
@@ -633,8 +647,9 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
   .hero-copy > p:not(.eyebrow), .districts { display: none; }
   .auth-panel { padding: 40px 24px; }
   .creator-card { grid-template-columns: 1fr; max-height: 90vh; overflow-y: auto; }
-  .character-preview { min-height: 300px; }
-  .character-preview-3d canvas { min-height: 260px; }
+  .character-preview { min-height: 240px; }
+  .character-preview-3d canvas { min-height: 220px; }
+  .creator-options { max-height: none; overflow: visible; padding: 20px 18px 22px; }
   .hud-location { left: 10px; top: 10px; min-width: 0; max-width: 55vw; padding: 8px 10px; }
   .hud-location h2 { font-size: 15px; }
   .hud-status { right: 10px; top: 10px; }
