@@ -157,7 +157,8 @@ export function GameView({
     setRestarts(restartsRef.current);
   }, []);
   const [manualTarget, setManualTarget] = useState<{ point: Vec2; label: string } | null>(null);
-  const [quietObjective, setQuietObjective] = useState<string | null>(null);
+  /** The guide's step only draws a route once the player asks for it, so it never pulls them away from where they are heading. */
+  const [routedObjective, setRoutedObjective] = useState<string | null>(null);
   const [arrival, setArrival] = useState<{ label: string; at: number } | null>(null);
   const [ride, setRide] = useState<RideState | null>(null);
   const [tows, setTows] = useState<TowState[]>([]);
@@ -478,11 +479,11 @@ export function GameView({
       : ride?.status === "riding"
         ? { point: ride.dropoff, label: ride.label }
         : null;
-  const objectiveRoute = objective?.target && objectiveKey !== quietObjective ? objective.target : null;
+  const objectiveRoute = objective?.target && objectiveKey === routedObjective ? objective.target : null;
   const target = rideTarget ?? manualTarget ?? objectiveRoute;
   const endRoute = () => {
     setManualTarget(null);
-    setQuietObjective(objectiveKey);
+    setRoutedObjective(null);
   };
 
   useEffect(() => {
@@ -912,7 +913,7 @@ export function GameView({
               {guideOpen && <p>{objective.detail.replace(/press E\b/g, touch ? "tap ✋" : `press ${keyLabel(bindings.interact)}`)}</p>}
               {guideOpen && objective.choose && <button className="primary small-button" onClick={() => setWelcomeOpen(true)}>Choose where to live</button>}
               {target && hud.waypoint && <p className="distance">◆ {target.label} · {Math.round(hud.waypoint.distance)} m</p>}
-              {guideOpen && objective.target && !objectiveRoute && !manualTarget && <button className="secondary small-button" onClick={() => setQuietObjective(null)}>Show route</button>}
+              {guideOpen && objective.target && !objectiveRoute && !manualTarget && <button className="secondary small-button" onClick={() => { setManualTarget(null); setRoutedObjective(objectiveKey); }}>Show route</button>}
             </section>
           )}
           {guideHidden && (
