@@ -491,6 +491,11 @@ export class GameEngine {
   private autopilot: { path: Vec2[]; index: number; sprint: boolean; resolve: (ok: boolean) => void; lastProgress: number; lastPoint: Vec2; deadline: number } | null = null;
   private forcedInput: [number, number] | null = null;
   private readyFired = false;
+  /** Smoothed ground velocity, used to stream the world ahead of a fast car instead of around it. */
+  private streamVelocity: [number, number] = [0, 0];
+  private streamLast: [number, number] | null = null;
+  /** Test hook: moves the streaming focus at a set velocity, standing in for a fast drive. */
+  private streamProbe: { x: number; z: number; vx: number; vz: number; at: number; costs: number[]; bare: number } | null = null;
   private vehicleFactory: VehicleFactory | null = null;
   private vehicles = new Map<string, { view: VehicleView; state: WorldVehicle; tag: HTMLDivElement; driver: Avatar | null; rig: TowRig | null }>();
   private ride: RideState | null = null;
@@ -1456,10 +1461,21 @@ export class GameEngine {
     this.plotsView?.animate(dt);
     this.updateGates(x, z);
     if (!this.interior) {
-      this.world.stream(x, z);
-      this.world.pump(!this.readyFired ? 200 : this.transfer ? 40 : 8);
+      const probe = this.streamProbe;
+      const probeStart = performance.now();
+      if (probe) {
+        probe.x += (probe.vx * (probeStart - probe.at)) / 1000;
+        probe.z += (probe.vz * (probeStart - probe.at)) / 1000;
+        probe.at = probeStart;
+      }
+      const [sx, sz] = probe ? [probe.x, probe.z] : [x, z];
+      const [ax, az] = this.streamAhead(sx, sz, dt);
+      this.world.stream(sx, sz, ax, az);
+      this.world.pump(!this.readyFired ? 200 : this.transfer ? 40 : Math.min(50, Math.max(8, elapsed * 0.35)));
       this.life?.update(dt, [x, z], [...this.buses.values()], now * 0.001);
-      this.world.updateDetail(this.camera.position.x, this.camera.position.z);
+      this.world.updateDetail(probe ? probe.x : this.camera.position.x, probe ? probe.z : this.camera.position.z);
+      probe?.costs.push(performance.now() - probeStart);
+      if (probe && this.world.pendingNear() > 0) probe.bare += 1;
     }
     if (this.shadows) {
       this.sun.position.copyFrom(new Vector3(x, 0, z).subtract(this.sun.direction.scale(120)));
@@ -1955,6 +1971,24 @@ export class GameEngine {
     const hotel = this.trip.room ? placeById.get(this.trip.room.hotelId)?.name ?? "Hotel" : "Hotel";
     if (kind === "pool") return `${hotel} · pool deck`;
     return this.self?.previewOnly ? `${hotel} · room preview` : `${hotel} · your room`;
+  }
+
+  private streamAhead(x: number, z: number, dt: number): [number, number] {
+    const last = this.streamLast;
+    this.streamLast = [x, z];
+    if (!last || dt <= 0) return [x, z];
+    const vx = (x - last[0]) / dt;
+    const vz = (z - last[1]) / dt;
+    if (Math.hypot(vx, vz) > 400) {
+      this.streamVelocity = [0, 0];
+      return [x, z];
+    }
+    const blend = Math.min(1, dt * 3);
+    this.streamVelocity = [this.streamVelocity[0] + (vx - this.streamVelocity[0]) * blend, this.streamVelocity[1] + (vz - this.streamVelocity[1]) * blend];
+    const speed = Math.hypot(this.streamVelocity[0], this.streamVelocity[1]);
+    if (speed < 12) return [x, z];
+    const lead = Math.min(speed * 2.5, 240) / speed;
+    return [x + this.streamVelocity[0] * lead, z + this.streamVelocity[1] * lead];
   }
 
   private vehicleHud(car: CarController, driving: { vehicleId: string; condition: number }) {
@@ -4040,6 +4074,11 @@ export class GameEngine {
           this.carPilot = { path: path.length ? path : [[x, z]], index: 0, resolve, deadline: performance.now() + timeoutMs, stuckSince: null, recovery: null, recoveries: 0 };
         }),
       fps: () => this.engine.getFps(),
+      streamProbe: (probe: { x: number; z: number; vx: number; vz: number } | null) => {
+        const { costs = [], bare = 0 } = this.streamProbe ?? {};
+        this.streamProbe = probe ? { ...probe, at: performance.now(), costs: [], bare: 0 } : null;
+        return { x: this.controller.x, z: this.controller.z, costs, bare };
+      },
       signAtlasLive: () => Boolean(this.atlas.texture.getInternalTexture()),
       gpu: () => ({
         lost: (this.engine as unknown as { _gl: WebGLRenderingContext })._gl.isContextLost(),

@@ -373,9 +373,9 @@ export type BuiltWorld = {
   /** `board` is the For Rent / For Sale signboard: its centre, facing and the way its front faces. */
   placeSigns: Array<{ placeId: string; point: Vec2; board?: { at: Vec2; yaw: number; normal: Vec2 } }>;
   groundHeight: (x: number, z: number) => number;
-  updateDetail: (x: number, z: number) => void;
+  updateDetail: (x: number, z: number, budgetMs?: number) => void;
   /** Queues tiles near the point for loading and releases distant ones. */
-  stream: (x: number, z: number) => void;
+  stream: (x: number, z: number, aheadX?: number, aheadZ?: number) => void;
   /** Builds queued tiles until the time budget is spent. */
   pump: (budgetMs: number) => void;
   /** Tiles within the near radius of the last streamed point that are not built yet. */
@@ -590,7 +590,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     return { doorEdge, doorT };
   };
 
-  function buildTile(key: string, content: WorldTile | null): LoadedTile {
+  function* buildTile(key: string, content: WorldTile | null): Generator<void, LoadedTile, void> {
   const [tx, tz] = key.split("_").map(Number) as [number, number];
   const x0 = tx * TILE;
   const z0 = tz * TILE;
@@ -622,6 +622,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     const n = Math.round(TILE / cell);
     const ground = base.get(x0 + TILE / 2, z0 + TILE / 2, dubai ? "sand" : "dirt");
     for (let row = 0; row < n; row += 1) {
+      if (row % 4 === 0) yield;
       let runStart = -1;
       const zA = grid.originZ + (r0 + row) * cell;
       const zB = zA + cell;
@@ -660,6 +661,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     }
   }
 
+  yield;
   for (const area of content?.areas ?? []) {
     const [cx, cz] = centroid(area.points);
     const ring = shoelace(area.points) < 0 ? [...area.points].reverse() : area.points;
@@ -688,7 +690,9 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     }
   }
 
+  yield;
   for (const { road, part: dense } of roadParts.get(key) ?? []) {
+    yield;
     const [mx, mz] = dense[Math.floor(dense.length / 2)]!;
     if (road.bridge) {
       // Parallel bridge ways (carriageways, footways) merge into one deck; parapets only run along its outer edge.
@@ -919,7 +923,9 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     }
   }
 
+  yield;
   for (const building of content?.buildings ?? []) {
+    yield;
     if (dubai) buildDubaiBuilding(building);
     else buildBuilding(building);
   }
@@ -1715,6 +1721,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     }
   }
 
+  yield;
   // Junction street-name signs, one blade per named street.
   const junctionSigns: BuiltWorld["junctionSigns"] = [];
   for (const junction of tileJunctions) {
@@ -1969,6 +1976,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     }
   }
 
+  yield;
   // Bus stops: shelter, bench, flag sign and painted bay on the carriageway.
   for (const stop of STOPS.filter((candidate) => inTile(candidate.alight[0], candidate.alight[1]))) {
     const { route } = stop;
@@ -2011,6 +2019,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     for (const edge of [-1.2, 1.2]) base.get(sx, sz, "paintYellow").worldRibbon(bay, edge - 0.08, edge + 0.08, 0.047, 1);
   }
 
+  yield;
   // Instanced vegetation and street furniture.
   const instanced: Mesh[] = [];
   const addInstances = (template: Mesh, matrices: Matrix[]) => {
@@ -2117,6 +2126,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     addInstances(merged, tankInstances.map(([x, y, z]) => Matrix.Translation(x, y, z)));
   }
 
+  yield;
   const baseChunks = base.build(scene, materialMap);
   const detailChunks = detail.deferred(scene, materialMap);
   const meshes = [...baseChunks.flatMap((chunk) => chunk.meshes), ...instanced];
@@ -2142,7 +2152,6 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
   let nearKeys: string[] = [];
   let tileBuildMs = 0;
   let lastDetailKey = "";
-  let focus: Vec2 = [0, 0];
   const world: BuiltWorld = {
     roads,
     obstacles,
@@ -2182,20 +2191,21 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     return Math.hypot(dx, dz);
   }
 
-  function stream(x: number, z: number) {
-    focus = [x, z];
-    const span = Math.ceil(loadRadius / TILE) + 1;
+  /** Streams around (x, z); a fast car also passes the point it is heading for (ax, az), whose tiles are built first. */
+  function stream(x: number, z: number, ax = x, az = z) {
+    const span = Math.ceil((loadRadius + Math.hypot(ax - x, az - z)) / TILE) + 1;
     const cx = Math.floor(x / TILE);
     const cz = Math.floor(z / TILE);
-    const keys: Array<{ key: string; distance: number }> = [];
+    const keys: Array<{ key: string; distance: number; order: number }> = [];
     for (let ix = cx - span; ix <= cx + span; ix += 1) {
       for (let iz = cz - span; iz <= cz + span; iz += 1) {
         const key = `${ix}_${iz}`;
         const distance = tileDistance(key, x, z);
-        if (distance <= loadRadius) keys.push({ key, distance });
+        const ahead = tileDistance(key, ax, az);
+        if (Math.min(distance, ahead) <= loadRadius) keys.push({ key, distance, order: Math.min(distance, ahead) });
       }
     }
-    keys.sort((a, b) => a.distance - b.distance);
+    keys.sort((a, b) => a.order - b.order);
     wanted = keys.map(({ key }) => key);
     nearKeys = keys.filter(({ distance }) => distance < 120).map(({ key }) => key);
     for (const key of wanted) {
@@ -2219,7 +2229,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     }
     let released = false;
     for (const [key, tile] of loaded) {
-      if (tileDistance(key, x, z) <= loadRadius + TILE * 0.75) continue;
+      if (Math.min(tileDistance(key, x, z), tileDistance(key, ax, az)) <= loadRadius + TILE * 0.75) continue;
       for (const mesh of tile.meshes) mesh.dispose();
       for (const chunk of tile.detailChunks) for (const mesh of chunk.meshes ?? []) mesh.dispose();
       atlas.release(key);
@@ -2229,37 +2239,61 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     if (released) refreshLists();
   }
 
-  function pump(budgetMs: number) {
-    const start = performance.now();
-    let built = false;
-    for (const key of wanted) {
-      if (loaded.has(key)) continue;
-      if (contentTiles.has(key) && !contents.has(key)) continue;
-      const t0 = performance.now();
-      const tile = buildTile(key, contents.get(key) ?? null);
-      tileBuildMs += performance.now() - t0;
-      loaded.set(key, tile);
-      world.onMeshes?.(tile.meshes);
-      built = true;
-      if (performance.now() - start > budgetMs) break;
-    }
-    if (built) {
-      refreshLists();
-      updateDetail(focus[0], focus[1]);
-    }
+  /** A tile is built a slice at a time across frames; once started it is always finished so its obstacles are registered whole. */
+  let building: { key: string; steps: Generator<void, LoadedTile, void> } | null = null;
+  let detailPending = false;
+
+  function nextTileKey() {
+    return wanted.find((key) => !loaded.has(key) && !(contentTiles.has(key) && !contents.has(key)));
   }
 
-  function updateDetail(x: number, z: number) {
+  function pump(budgetMs: number) {
+    const start = performance.now();
+    const urgent = nearKeys.some((key) => !loaded.has(key) && !(contentTiles.has(key) && !contents.has(key)));
+    const deadline = start + (urgent ? Math.max(budgetMs, 24) : budgetMs);
+    let built = false;
+    while (performance.now() < deadline) {
+      if (!building) {
+        const key = nextTileKey();
+        if (!key) break;
+        building = { key, steps: buildTile(key, contents.get(key) ?? null) };
+      }
+      const t0 = performance.now();
+      let step = building.steps.next();
+      while (!step.done && performance.now() < deadline) step = building.steps.next();
+      tileBuildMs += performance.now() - t0;
+      if (!step.done) break;
+      loaded.set(building.key, step.value);
+      world.onMeshes?.(step.value.meshes);
+      building = null;
+      built = true;
+    }
+    if (built) refreshLists();
+    if (built || detailPending) updateDetail(focusDetail[0], focusDetail[1], Math.max(2, deadline - performance.now()));
+  }
+
+  let focusDetail: Vec2 = [0, 0];
+
+  /** Shows detail near the camera. Building new detail chunks is spread over frames (budgetMs) so a fast drive never stalls a frame on them. */
+  function updateDetail(x: number, z: number, budgetMs = 4) {
+    focusDetail = [x, z];
     const key = `${Math.round(x / 10)}:${Math.round(z / 10)}`;
-    if (key === lastDetailKey) return;
-    lastDetailKey = key;
+    if (key === lastDetailKey && !detailPending) return;
+    const deadline = performance.now() + budgetMs;
+    let incomplete = false;
     for (const tile of loaded.values()) {
       for (const chunk of tile.detailChunks) {
         const near = Math.hypot(chunk.x - x, chunk.z - z) < detailRadius + TILE / 4 + 20;
         if (!near && !chunk.meshes) continue;
+        if (near && !chunk.meshes && performance.now() > deadline) {
+          incomplete = true;
+          continue;
+        }
         for (const mesh of near ? chunk.build() : chunk.meshes!) if (mesh.isEnabled() !== near) mesh.setEnabled(near);
       }
     }
+    detailPending = incomplete;
+    lastDetailKey = key;
   }
 
   function groundHeight(x: number, z: number) {
