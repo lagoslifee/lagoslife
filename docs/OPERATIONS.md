@@ -65,6 +65,25 @@ keeps Node processes alive, such as the compose stack below.
   session as `Authorization: Bearer` instead, so it works across unrelated
   domains.
 
+## Vercel web client
+
+`vercel.json` defines one Vercel service, `web`, rooted at `apps/web/`. It
+installs and builds from the repository root (the client imports the shared
+workspace package), publishes `apps/web/dist`, sends unknown paths to
+`index.html` and sets the same headers as Netlify. Import the repository at its
+root and Vercel reads the service from this file. Vercel only serves the client:
+the game server keeps WebSockets and a PostgreSQL pool open, so it still runs
+on its own host.
+
+- While testing, the build command carries the quick-tunnel `VITE_API_URL`, and
+  `scripts/ops/tunnel-watchdog.sh` rewrites it in both `netlify.toml` and
+  `vercel.json` when the tunnel changes.
+- Add the Vercel site to the server as `EXTRA_WEB_ORIGINS=https://<project>.vercel.app`
+  (comma-separated for several) so CORS and sign-in accept it alongside
+  `WEB_ORIGIN`.
+- Keep Vercel access tokens out of the repository; add them as secrets in the
+  host's dashboard.
+
 ## Render game server
 
 `render.yaml` is a Render Blueprint for the server and a PostgreSQL 17

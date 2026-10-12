@@ -2,7 +2,7 @@
 # Testing setup only (a Cloudflare quick tunnel to a cloud VM). Quick tunnels can be dropped by Cloudflare at any time
 # ("Tunnel not found"), which leaves the Netlify site unable to reach the server. Every minute this checks the public
 # health URL; after three failures it starts a new tunnel, restarts the game server with the new address, and pushes
-# netlify.toml with the new VITE_API_URL to main so Netlify rebuilds the client (about a minute).
+# netlify.toml and vercel.json with the new VITE_API_URL to main so Netlify and Vercel rebuild the client (about a minute).
 # Usage (in tmux): scripts/ops/tunnel-watchdog.sh <web-origin>
 set -u
 WEB_ORIGIN="$1"
@@ -27,8 +27,8 @@ while true; do
       $TM send-keys -t game-server "$REPO/scripts/ops/supervise.sh $HOME/lagos/run-server.sh $WEB_ORIGIN" C-m
       tree=/tmp/watchdog-main
       git -C "$REPO" fetch -q origin main && rm -rf "$tree" && git -C "$REPO" worktree prune && git -C "$REPO" worktree add -q "$tree" origin/main &&
-        sed -i "s#https://[a-z0-9-]*\.trycloudflare\.com#$next#" "$tree/netlify.toml" &&
-        git -C "$tree" commit -qam "Point the Netlify client at the restarted game-server tunnel" &&
+        sed -i "s#https://[a-z0-9-]*\.trycloudflare\.com#$next#" "$tree/netlify.toml" "$tree/vercel.json" &&
+        git -C "$tree" commit -qam "Point the Netlify and Vercel clients at the restarted game-server tunnel" &&
         git -C "$tree" push -q origin HEAD:main &&
         echo "$(date -u +%FT%TZ) now serving $next; Netlify is rebuilding"
       git -C "$REPO" worktree remove --force "$tree" 2>/dev/null
