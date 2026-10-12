@@ -1020,6 +1020,42 @@
       "consumedCredits": 10,
       "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13145-eab3-75ca-adb0-4355ab34342a/output/preview.png",
       "recordedAt": "2026-10-12T18:02:21.469Z"
+    },
+    {
+      "label": "prop-helicopter preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13163-569a-7705-9f0b-861794a7f66f",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13163-569a-7705-9f0b-861794a7f66f/output/preview.png",
+      "recordedAt": "2026-10-12T18:33:23.927Z"
+    },
+    {
+      "label": "prop-helicopter refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13164-10e9-77ee-a743-d06e3fa6b2cb",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13164-10e9-77ee-a743-d06e3fa6b2cb/output/preview.png",
+      "recordedAt": "2026-10-12T18:34:06.754Z"
+    },
+    {
+      "label": "car-mclaren-720s preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13164-b994-7241-986e-8879744261b3",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13164-b994-7241-986e-8879744261b3/output/preview.png",
+      "recordedAt": "2026-10-12T18:35:19.932Z"
+    },
+    {
+      "label": "car-mclaren-720s refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13165-d60d-765c-b11a-3e497745a788",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13165-d60d-765c-b11a-3e497745a788/output/preview.png",
+      "recordedAt": "2026-10-12T18:36:12.826Z"
     }
   ]
 }

@@ -21,6 +21,7 @@ export const REAL_CARS = [
   { id: "porsche-cayenne", name: "Porsche Cayenne", model: "2020 Porsche Cayenne SUV", length: 4.93, width: 1.98, height: 1.7, wheel: 0.38, seats: 5 },
   { id: "ferrari-f8", name: "Ferrari F8 Tributo", model: "2020 Ferrari F8 Tributo mid-engine supercar", length: 4.61, width: 1.98, height: 1.21, wheel: 0.34, seats: 2 },
   { id: "lamborghini-huracan", name: "Lamborghini Huracán", model: "2020 Lamborghini Huracan EVO wedge-shaped supercar", length: 4.52, width: 1.93, height: 1.17, wheel: 0.34, seats: 2 },
+  { id: "mclaren-720s", name: "McLaren 720S", model: "2019 McLaren 720S mid-engine supercar with dihedral doors closed", length: 4.54, width: 1.93, height: 1.2, wheel: 0.34, cutRadius: 0.37, seats: 2 },
   { id: "lamborghini-urus", name: "Lamborghini Urus", model: "2021 Lamborghini Urus super SUV", length: 5.11, width: 2.02, height: 1.64, wheel: 0.39, seats: 5 },
   { id: "rolls-royce-cullinan", name: "Rolls-Royce Cullinan", model: "2021 Rolls-Royce Cullinan luxury SUV", length: 5.34, width: 2.0, height: 1.84, wheel: 0.4, seats: 5 },
   { id: "bentley-continental-gt", name: "Bentley Continental GT", model: "2020 Bentley Continental GT grand touring coupe", length: 4.85, width: 1.95, height: 1.4, wheel: 0.36, seats: 4 },

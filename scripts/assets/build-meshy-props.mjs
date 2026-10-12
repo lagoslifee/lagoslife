@@ -50,6 +50,8 @@ export const PROPS = [
   { id: "chandelier", width: 1.4, quarterTurns: 0, texture: 512 },
   { id: "wall-art", width: 1.8, quarterTurns: 0, texture: 512 },
   { id: "console-vase", width: 1.5, quarterTurns: 0, texture: 512 },
+  // Parked on the helipad sky mansion's roof (apps/web/src/game/plots.ts).
+  { id: "helicopter", width: 9.2, quarterTurns: 0 },
 ];
 const TRIANGLE_BUDGET = 7_000;
 

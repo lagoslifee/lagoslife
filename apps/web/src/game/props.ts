@@ -36,7 +36,8 @@ export type PropId =
   | "grand-piano"
   | "chandelier"
   | "wall-art"
-  | "console-vase";
+  | "console-vase"
+  | "helicopter";
 /** Props the street and airports use everywhere; the rest load the first time something asks for them. */
 const STARTUP_PROPS: PropId[] = ["immigration-booth", "checkin-counter", "restaurant-table"];
 

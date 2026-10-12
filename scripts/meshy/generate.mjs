@@ -351,6 +351,13 @@ if (target === "avatar") {
       prompt: "Narrow marble hallway console table with a tall ceramic vase of white orchids and a round mirror above it, realistic, single object",
       texturePrompt: "white marble top, brushed gold legs, white ceramic vase, white orchid flowers, gold framed round mirror",
     },
+    {
+      label: "prop-helicopter",
+      prompt:
+        "Modern private executive light helicopter parked on the ground, sleek enclosed cabin with tinted windows, " +
+        "four bladed main rotor, tail boom with tail rotor, landing skids, realistic, single object, no text, no logos",
+      texturePrompt: "glossy black and gold paint, dark tinted cabin glass, silver rotor blades, black landing skids",
+    },
   ];
   const wanted = process.argv.slice(3);
   const queue = PROPS.filter((prop) => (!wanted.length || wanted.includes(prop.label)) && !existsSync(path.join(outDir, `${prop.label}.glb`)));
