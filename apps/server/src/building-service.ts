@@ -10,6 +10,8 @@ import {
   PLOT_TERMS,
   PLOTS,
   readyBuiltPrice,
+  SHOP_DESIGN_ID,
+  SOLID_FROM_STAGE,
   STAGE_LABELS,
   syncPlotFootprints,
   type HouseDesign,
@@ -28,7 +30,11 @@ buildingEvents.on("changed", () => void refreshPlotFootprints().catch((error) =>
 
 export async function refreshPlotFootprints() {
   const rows = await pool.query(`SELECT plot_id, design_id, stages_paid FROM construction`);
-  syncPlotFootprints(rows.rows.map((row) => ({ plotId: row.plot_id, designId: row.design_id, stagesPaid: Number(row.stages_paid) })));
+  const shops = await pool.query(`SELECT plot_id FROM player_business WHERE plot_id IS NOT NULL`);
+  syncPlotFootprints([
+    ...rows.rows.map((row) => ({ plotId: row.plot_id, designId: row.design_id, stagesPaid: Number(row.stages_paid) })),
+    ...shops.rows.map((row) => ({ plotId: row.plot_id, designId: SHOP_DESIGN_ID, stagesPaid: SOLID_FROM_STAGE })),
+  ]);
 }
 
 async function announce<T>(work: Promise<T>) {
@@ -80,6 +86,7 @@ async function releasePlot(client: PoolClient, plotId: string) {
     await client.query(`DELETE FROM property_tenure WHERE property_id = $1`, [homeId]);
   }
   await client.query(`UPDATE property_listing SET active = FALSE WHERE id = $1`, [homeId]);
+  await client.query(`UPDATE player_business SET plot_id = NULL WHERE plot_id = $1`, [plotId]);
   await client.query(`DELETE FROM plot_tenure WHERE plot_id = $1`, [plotId]);
 }
 
@@ -185,6 +192,8 @@ export type PlotStatus = {
     completed: boolean;
     homeId: string | null;
   };
+  /** A business trading from a shopfront on this plot. */
+  business: null | { type: string; name: string };
 };
 
 /** Every plot with its state, plus the builder's own construction. Finishes houses whose last stage is done. */
@@ -197,9 +206,11 @@ export async function listPlots(userId: string): Promise<PlotStatus[]> {
      FROM plot_tenure t LEFT JOIN construction c ON c.plot_id = t.plot_id`,
   );
   const byPlot = new Map(tenures.rows.map((row) => [row.plot_id as string, row]));
+  const shops = await pool.query<{ plot_id: string; type: string; name: string }>(`SELECT plot_id, type, name FROM player_business WHERE plot_id IS NOT NULL`);
+  const shopByPlot = new Map(shops.rows.map((row) => [row.plot_id, { type: row.type, name: row.name }]));
   return PLOTS.map((plot) => {
     const row = byPlot.get(plot.id);
-    if (!row) return { id: plot.id, status: "available", tenureType: null, nextPaymentAt: null, accessEndsAt: null, overdue: false, construction: null };
+    if (!row) return { id: plot.id, status: "available", tenureType: null, nextPaymentAt: null, accessEndsAt: null, overdue: false, construction: null, business: null };
     const mine = row.owner_user_id === userId;
     const iso = (value: Date | null) => (value ? new Date(value).toISOString() : null);
     return {
@@ -220,6 +231,7 @@ export async function listPlots(userId: string): Promise<PlotStatus[]> {
             homeId: row.completed_at ? builtHomeId(plot.id) : null,
           }
         : null,
+      business: shopByPlot.get(plot.id) ?? null,
     };
   });
 }
@@ -295,6 +307,7 @@ export async function startConstruction(userId: string, plotId: string, designId
     if (!held.rowCount) throw new EconomyError("Lease or buy this plot before building on it.", 403);
     const existing = await client.query(`SELECT 1 FROM construction WHERE plot_id = $1`, [plotId]);
     if (existing.rowCount) throw new EconomyError("Building has already started on this plot.", 409);
+    await refuseShopPlot(client, plotId);
     const stage = design.stages.foundation;
     const balance = await debitWallet(client, userId, stage.cost, "construction",
       `${plot.name} · ${design.name} · ${STAGE_LABELS.foundation}`, idempotencyKey, { plotId, designId, stage: "foundation" });
@@ -308,9 +321,15 @@ export async function startConstruction(userId: string, plotId: string, designId
   }));
 }
 
+/** A plot with a shopfront on it has no room for a house. */
+async function refuseShopPlot(client: PoolClient, plotId: string) {
+  const shop = await client.query(`SELECT 1 FROM player_business WHERE plot_id = $1`, [plotId]);
+  if (shop.rowCount) throw new EconomyError("Your business premises stand on this plot.", 409);
+}
+
 /**
- * Buys a finished house in one go: the freehold (unless the resident already holds this plot) and the whole design,
- * handed over at once for a markup instead of waiting on each stage.
+ * Builders finish a design in one go on land the resident already holds, for a markup instead of waiting on each
+ * stage. Land is never sold with a house: buy or lease the plot first, then choose what to build.
  */
 export async function buyReadyBuilt(userId: string, plotId: string, designId: string, idempotencyKey: string, viaAgent = false) {
   const plot = requirePlot(plotId);
@@ -320,26 +339,18 @@ export async function buyReadyBuilt(userId: string, plotId: string, designId: st
     const balanceBefore = await lockWallet(client, userId);
     const replay = await replayed(client, userId, idempotencyKey);
     if (replay !== null) return { balance: replay, replayed: true };
-    if (!viaAgent) requireAtGate(userId, plot, "buy a house here");
-    const tenure = await client.query(`SELECT owner_user_id FROM plot_tenure WHERE plot_id = $1 FOR UPDATE`, [plotId]);
-    const holdsLand = tenure.rows[0]?.owner_user_id === userId;
-    if (tenure.rowCount && !holdsLand) throw new EconomyError("Another resident already holds this plot.", 409);
-    if (!holdsLand) {
-      const held = await client.query(`SELECT plot_id FROM plot_tenure WHERE owner_user_id = $1`, [userId]);
-      if (held.rowCount) throw new EconomyError("You already hold another plot. One plot per resident.", 409);
-    }
+    if (!viaAgent) requireAtGate(userId, plot, "brief the builders");
+    const tenure = await client.query(`SELECT 1 FROM plot_tenure WHERE plot_id = $1 AND owner_user_id = $2 FOR UPDATE`, [plotId, userId]);
+    if (!tenure.rowCount) throw new EconomyError("Buy or lease this plot first, then choose what to build on it.", 403);
     const existing = await client.query(`SELECT 1 FROM construction WHERE plot_id = $1`, [plotId]);
     if (existing.rowCount) throw new EconomyError("Building has already started on this plot.", 409);
-    const price = readyBuiltPrice(design, holdsLand);
+    await refuseShopPlot(client, plotId);
+    const price = readyBuiltPrice(design);
     const fee = viaAgent ? agentFee(price) : 0;
     if (balanceBefore < price + fee) throw new EconomyError("Insufficient game naira", 402);
     if (fee) await debitWallet(client, userId, fee, "construction", `${ESTATE_AGENT.name} · agent's fee`, `${idempotencyKey}:agent`, { plotId, designId });
     const balance = await debitWallet(client, userId, price, "construction",
-      `${plot.name} · ${design.name} · ready-built${holdsLand ? "" : " with freehold"}`, idempotencyKey, { plotId, designId, readyBuilt: true });
-    if (!holdsLand) {
-      await client.query(`INSERT INTO plot_tenure (plot_id, owner_user_id, tenure_type) VALUES ($1, $2, 'owned')`, [plotId, userId]);
-      await markProgress(client, userId, "first_plot");
-    }
+      `${plot.name} · ${design.name} · built in one go`, idempotencyKey, { plotId, designId, readyBuilt: true });
     await client.query(
       `INSERT INTO construction (plot_id, owner_user_id, design_id, stages_paid, stage_started_at, stage_ready_at)
        VALUES ($1, $2, $3, $4, NOW(), NOW())`,

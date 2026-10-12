@@ -154,7 +154,7 @@ describe("land and building", () => {
     expect((await listPlots(buyer!.id)).find((entry) => entry.id === plotB)?.status).toBe("mine");
   });
 
-  it("sells a modern house ready-built with its land, and lets the owner invite a friend round", async () => {
+  it("sells land on its own, then has the builders finish a house in one go, and lets the owner invite a friend round", async () => {
     const [builder, buyer] = users;
     const design = houseDesign("pool-villa")!;
     expect(design.pool).not.toBeNull();
@@ -163,15 +163,18 @@ describe("land and building", () => {
     setPlayerPosition(builder!.id, 0, 0, "street");
     await expect(buyReadyBuilt(builder!.id, plotA, design.id, key())).rejects.toMatchObject({ status: 409 });
     atGate(builder!.id, plotB);
-    await expect(buyReadyBuilt(builder!.id, plotB, design.id, key())).rejects.toThrow(/Another resident/);
+    await expect(buyReadyBuilt(builder!.id, plotB, design.id, key())).rejects.toMatchObject({ status: 403 });
     atGate(builder!.id, plotA);
+    await expect(buyReadyBuilt(builder!.id, plotA, design.id, key())).rejects.toThrow(/Buy or lease this plot first/);
+    await acquirePlot(builder!.id, plotA, "owned", key());
+    expect((await listPlots(builder!.id)).find((entry) => entry.id === plotA)).toMatchObject({ status: "mine", construction: null, business: null });
     const idempotencyKey = key();
     const bought = await buyReadyBuilt(builder!.id, plotA, design.id, idempotencyKey);
     expect(bought).toMatchObject({ replayed: false, homeId: builtHomeId(plotA) });
     await expect(buyReadyBuilt(builder!.id, plotA, design.id, idempotencyKey)).resolves.toMatchObject({ replayed: true });
-    const price = readyBuiltPrice(design, false);
-    expect(price).toBeGreaterThan(PLOT_TERMS.purchasePrice + designTotal(design));
-    expect(await balance(builder!.id)).toBe(3_000_000 - price);
+    const price = readyBuiltPrice(design);
+    expect(price).toBeGreaterThan(designTotal(design));
+    expect(await balance(builder!.id)).toBe(3_000_000 - PLOT_TERMS.purchasePrice - price);
     const plot = (await listPlots(builder!.id)).find((entry) => entry.id === plotA)!;
     expect(plot).toMatchObject({ status: "mine", tenureType: "owned", construction: { designId: "pool-villa", completed: true } });
     expect((await getEconomyState(builder!.id)).homePropertyId).toBe(builtHomeId(plotA));

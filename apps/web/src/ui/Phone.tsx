@@ -643,20 +643,20 @@ function PropertyApp({ properties, economy, onRefresh, onToast, onNavigate, onCl
         </>
       )}
       <h3>New houses for sale</h3>
-      <p className="muted small">Modern houses on the Lekki plots, bought ready-built with the land or built stage by stage. Walk to a plot's red sign to buy.</p>
+      <p className="muted small">Buy or lease an empty Lekki plot first, then choose what goes on it: a house (smallest to biggest, up to the helipad sky mansion) or your business. Walk to a plot's red sign.</p>
       <div className="house-catalogue">
         {HOUSE_DESIGNS.map((design) => (
           <div key={design.id} className="house-card">
             <strong>{design.name}</strong>
             <span>{design.bedrooms} bed · {design.floors} floor{design.floors > 1 ? "s" : ""}{design.parking ? ` · ${design.parking}-car carport` : ""}{design.pool ? " · pool" : ""}</span>
-            <em>{naira(readyBuiltPrice(design, false))} ready-built</em>
+            <em>{naira(readyBuiltPrice(design))} built in one go · land extra</em>
           </div>
         ))}
       </div>
       {ownPlot ? (
         <button className="secondary" onClick={() => { const plot = plotById(ownPlot.id); if (plot) onNavigate({ point: plot.gate, label: plot.name }); onClose(); }}>Go to your plot</button>
       ) : freePlot ? (
-        <button className="secondary" onClick={() => { const plot = plotById(freePlot.id); if (plot) onNavigate({ point: plot.gate, label: `${plot.name} · houses for sale` }); onClose(); }}>Go to a free plot</button>
+        <button className="secondary" onClick={() => { const plot = plotById(freePlot.id); if (plot) onNavigate({ point: plot.gate, label: `${plot.name} · land for sale` }); onClose(); }}>Go to a free plot</button>
       ) : (
         <p className="muted small">Every plot is taken right now.</p>
       )}

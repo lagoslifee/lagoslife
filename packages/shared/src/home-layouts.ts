@@ -106,6 +106,7 @@ const DESIGN_TIERS: Record<string, HomeTier> = {
   duplex: "apartment",
   "pool-villa": "mansion",
   "estate-mansion": "mansion",
+  "helipad-mansion": "mansion",
 };
 
 /** The plan for a home; flats and anything unknown get the original room. Built houses follow their design. */

@@ -27,6 +27,7 @@ export function EstateApp({ properties, plots, here, onRefresh, onToast, onNavig
     .sort((a, b) => (here ? Math.hypot(a.plot.gate[0] - here[0], a.plot.gate[1] - here[1]) - Math.hypot(b.plot.gate[0] - here[0], b.plot.gate[1] - here[1]) : 0));
   const target = own ? plotById(own.id) : free[0]?.plot;
   const ownHasHouse = Boolean(own && properties.some((listing) => listing.isMine && listing.listingType === "built"));
+  const ownBuilt = Boolean(own && (own.construction || own.business));
   const market = properties.filter((listing) => !listing.isMine && listing.available && listing.listingType !== "built");
 
   const run = async (work: () => Promise<string>) => {
@@ -63,40 +64,43 @@ export function EstateApp({ properties, plots, here, onRefresh, onToast, onNavig
           <p className="muted small">
             {ownHasHouse
               ? "You already have a house on your plot. It's yours for good: there's nothing to list or renew."
-              : target
-                ? `Ready-built on ${target.name} (${target.site}), handed over at once. Pool villas and the estate mansion come with a swimming pool and more parking.`
-                : "Every plot is taken right now. Check Flats & houses for homes on the market."}
+              : ownBuilt
+                ? "The builders are already working on your plot. Go there to pay the next stage."
+                : own
+                  ? `Choose a design for ${target?.name} and the builders hand it over finished, or walk to the plot and build stage by stage for less. Smallest to biggest:`
+                  : "Land comes on its own. Buy or lease a plot in Land & build first, then pick a house (or a business) to build on it."}
           </p>
           <ul className="business-list">
             {HOUSE_DESIGNS.map((design) => {
-              const price = readyBuiltPrice(design, Boolean(own));
+              const price = readyBuiltPrice(design);
               const fee = agentFee(price);
               return (
                 <li key={design.id} className={`business-card estate-design ${design.pool ? "luxury" : ""}`}>
                   <div className="business-head">
-                    <span className="business-emoji">{design.pool ? "🏝" : design.floors > 1 ? "🏡" : "🏠"}</span>
+                    <span className="business-emoji">{design.helipad ? "🚁" : design.pool ? "🏝" : design.floors > 1 ? "🏡" : "🏠"}</span>
                     <div>
-                      <strong>{design.name} {design.pool && <span className="estate-tag">Luxury · pool</span>}</strong>
+                      <strong>{design.name} {design.helipad ? <span className="estate-tag">Helipad · pool</span> : design.pool && <span className="estate-tag">Luxury · pool</span>}</strong>
                       <small className="muted">{design.description}</small>
                       <small>{design.bedrooms} bed · {design.floors} floor{design.floors > 1 ? "s" : ""} · {design.parking} parking · {design.width}×{design.depth} m</small>
-                      <small><strong>{naira(price)}</strong>{own ? "" : " incl. freehold land"} · agent's fee {naira(fee)}</small>
+                      <small><strong>{naira(price)}</strong> finished · land not included · agent's fee {naira(fee)}</small>
                     </div>
                   </div>
-                  {!ownHasHouse && target && (
+                  {own && target && !ownBuilt && (
                     <div className="business-actions">
                       <button
                         className="primary"
                         disabled={busy}
-                        onClick={() => run(async () => (await api.buyReadyBuilt(target.id, design.id, true), `The agent bought you a ${design.name} at ${target.name}. Phone → My Home to go there and furnish it.`))}
+                        onClick={() => run(async () => (await api.buyReadyBuilt(target.id, design.id, true), `The builders finished a ${design.name} on ${target.name}. Phone → My Home to go there and furnish it.`))}
                       >
-                        Buy via agent · {naira(price + fee)}
+                        Build via agent · {naira(price + fee)}
                       </button>
-                      <button onClick={() => go(target.gate, `${target.name} · houses for sale`)}>See the plot</button>
+                      <button onClick={() => go(target.gate, `${target.name} · your plot`)}>Go to my plot</button>
                     </div>
                   )}
                 </li>
               );
             })}
+            {!own && <li><button className="primary" onClick={() => setTab("land")}>Find land first</button></li>}
           </ul>
         </>
       )}
@@ -104,7 +108,7 @@ export function EstateApp({ properties, plots, here, onRefresh, onToast, onNavig
       {tab === "land" && (
         <>
           <p className="muted small">
-            Hold one plot, then build on it stage by stage (cheaper, the builders take a few minutes per stage) or buy a house ready-built. Ground rent {naira(PLOT_TERMS.leaseRent)} a week, or
+            Hold one plot, then build a house or a business on it at the signboard. Land comes empty. Ground rent {naira(PLOT_TERMS.leaseRent)} a week, or
             buy the freehold for {naira(PLOT_TERMS.purchasePrice)}.
           </p>
           {own ? (
@@ -113,7 +117,7 @@ export function EstateApp({ properties, plots, here, onRefresh, onToast, onNavig
               <div className="business-actions">
                 <button className="primary" onClick={() => { const plot = plotById(own.id); if (plot) go(plot.gate, plot.name); }}>Go to your plot</button>
               </div>
-              <small className="muted">At the signboard you can choose a design and pay the builders.</small>
+              <small className="muted">At the signboard choose a house (small to biggest) or a business, and pay the builders.</small>
             </div>
           ) : (
             <ul className="business-list">

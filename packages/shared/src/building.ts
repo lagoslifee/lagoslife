@@ -52,7 +52,7 @@ export const STAGE_LABELS: Record<ConstructionStage, string> = {
 };
 
 export type HouseDesign = {
-  id: "self-contain" | "bungalow" | "duplex" | "pool-villa" | "estate-mansion";
+  id: "self-contain" | "bungalow" | "duplex" | "pool-villa" | "estate-mansion" | "helipad-mansion";
   name: string;
   description: string;
   bedrooms: number;
@@ -65,6 +65,8 @@ export type HouseDesign = {
   parking: number;
   /** Swimming pool in the back garden, width along the street by length into the plot, in metres. */
   pool: [number, number] | null;
+  /** A marked landing pad on the roof with the owner's helicopter parked on it. */
+  helipad?: boolean;
   /** Builders' fee and time for each stage, in order. Testing-scale minutes, not real construction time. */
   stages: Record<ConstructionStage, { cost: number; minutes: number }>;
 };
@@ -160,7 +162,30 @@ export const HOUSE_DESIGNS: HouseDesign[] = [
       finishing: { cost: 500_000, minutes: 5 },
     },
   },
+  {
+    id: "helipad-mansion",
+    name: "Helipad sky mansion",
+    description: "The biggest house you can build: three glass storeys, a rooftop helipad with your helicopter on it, four covered parking bays and a lap pool.",
+    bedrooms: 6,
+    floors: 3,
+    width: 10.6,
+    depth: 12,
+    storageSlots: 110,
+    parking: 4,
+    pool: [8, 3.4],
+    helipad: true,
+    stages: {
+      foundation: { cost: 600_000, minutes: 4 },
+      blockwork: { cost: 1_100_000, minutes: 6 },
+      roofing: { cost: 900_000, minutes: 5 },
+      finishing: { cost: 1_400_000, minutes: 6 },
+    },
+  },
 ];
+
+/** A business built on a plot instead of a house: a shopfront facing the street with parking in front. */
+export const PLOT_SHOP = { width: 12, depth: 9, cost: 350_000 } as const;
+export const SHOP_DESIGN_ID = "shop";
 
 const designIndex = new Map(HOUSE_DESIGNS.map((design) => [design.id, design]));
 
@@ -175,9 +200,9 @@ export function designTotal(design: HouseDesign) {
 /** Builders charge this much more to hand over a design finished at once instead of stage by stage. */
 export const READY_BUILT_MARKUP = 0.2;
 
-/** Land (unless already held) plus the whole design, finished on the spot. */
-export function readyBuiltPrice(design: HouseDesign, holdsLand: boolean) {
-  return (holdsLand ? 0 : PLOT_TERMS.purchasePrice) + Math.round((designTotal(design) * (1 + READY_BUILT_MARKUP)) / 1000) * 1000;
+/** The whole design finished on the spot, on land the resident already holds. Land is always bought on its own. */
+export function readyBuiltPrice(design: HouseDesign) {
+  return Math.round((designTotal(design) * (1 + READY_BUILT_MARKUP)) / 1000) * 1000;
 }
 
 /** Property id given to the finished house on a plot. */
@@ -238,13 +263,17 @@ function plotFootprintId(plotId: string) {
 /** Registers or removes plot houses in the shared collision grid so client and server agree on what is solid. */
 /** Design standing on a plot once its walls are up (as last synced), or null. */
 export function plotDesignId(plotId: string) {
-  return (solidPlots.get(plotId) as HouseDesign["id"] | undefined) ?? null;
+  const id = solidPlots.get(plotId);
+  return id && houseDesign(id) ? (id as HouseDesign["id"]) : null;
 }
 
+const structureSize = (designId: string) => (designId === SHOP_DESIGN_ID ? PLOT_SHOP : houseDesign(designId));
+
+/** Shops (`designId` "shop") are solid at once; houses once their walls are up. */
 export function syncPlotFootprints(structures: PlotStructure[]) {
   const wanted = new Map<string, string>();
   for (const structure of structures) {
-    if (structure.stagesPaid >= SOLID_FROM_STAGE && plotById(structure.plotId) && houseDesign(structure.designId)) {
+    if (structure.stagesPaid >= SOLID_FROM_STAGE && plotById(structure.plotId) && structureSize(structure.designId)) {
       wanted.set(structure.plotId, structure.designId);
     }
   }
@@ -255,7 +284,7 @@ export function syncPlotFootprints(structures: PlotStructure[]) {
   }
   for (const [plotId, designId] of wanted) {
     if (solidPlots.has(plotId)) continue;
-    registerFootprints([{ id: plotFootprintId(plotId), points: houseFootprint(plotById(plotId)!, houseDesign(designId)!) }]);
+    registerFootprints([{ id: plotFootprintId(plotId), points: houseFootprint(plotById(plotId)!, structureSize(designId)!) }]);
     solidPlots.set(plotId, designId);
   }
 }

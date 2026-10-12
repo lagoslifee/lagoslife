@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { BUSINESS_TYPES, COURSES, hourlyIncome, upgradeCost } from "@lagos-living/shared";
+import { BUSINESS, BUSINESS_TYPES, COURSES, hourlyIncome, PLOT_SHOP, PLOTS, upgradeCost } from "@lagos-living/shared";
 
 const { pool } = await import("./database.js");
 const { businessStatus, collectBusiness, enrol, startBusiness, upgradeBusiness } = await import("./business-service.js");
+const { acquirePlot, listPlots, startConstruction, buyReadyBuilt } = await import("./building-service.js");
 
 const user = { id: `biz-${randomUUID()}`, username: `biz${randomUUID().replaceAll("-", "").slice(0, 12)}` };
 const START = 20_000_000;
@@ -61,5 +62,24 @@ describe("businesses and school", () => {
     const before = Number((await pool.query(`SELECT balance FROM wallet WHERE user_id = $1`, [user.id])).rows[0].balance);
     const after = await enrol(user.id, "hospitality", randomUUID());
     expect(after.balance).toBe(before - COURSES.hospitality.fee);
+  });
+
+  it("builds a shopfront on the owner's own plot, moving the business in for better takings and keeping houses off it", async () => {
+    const free = (await listPlots(user.id)).filter((entry) => entry.status === "available");
+    const plotId = free[free.length - 1]!.id;
+    await expect(startBusiness(user.id, "pos-kiosk", "Mama Tobi POS", randomUUID(), plotId)).rejects.toThrow(/Buy or lease/);
+    await acquirePlot(user.id, plotId, "owned", randomUUID(), true);
+    const before = Number((await pool.query(`SELECT balance FROM wallet WHERE user_id = $1`, [user.id])).rows[0].balance);
+    const moved = await startBusiness(user.id, "pos-kiosk", "Mama Tobi POS", randomUUID(), plotId);
+    expect(moved.balance).toBe(before - PLOT_SHOP.cost);
+    const kiosk = (await businessStatus(user.id)).businesses.find((entry) => entry.type === "pos-kiosk")!;
+    expect(kiosk.plotId).toBe(plotId);
+    expect(kiosk.perHour).toBe(Math.round(BUSINESS_TYPES["pos-kiosk"].perHour * 1.5 * (1 + BUSINESS.premisesBoost)));
+    expect((await listPlots(user.id)).find((entry) => entry.id === plotId)).toMatchObject({ status: "mine", construction: null, business: { type: "pos-kiosk", name: "Mama Tobi POS" } });
+    await expect(startBusiness(user.id, "buka", "Iya Basira", randomUUID(), plotId)).rejects.toThrow(/already built/);
+    await expect(buyReadyBuilt(user.id, plotId, "bungalow", randomUUID(), true)).rejects.toThrow(/business premises/);
+    await expect(startConstruction(user.id, plotId, "bungalow", randomUUID())).rejects.toThrow();
+    await pool.query(`DELETE FROM plot_tenure WHERE plot_id = $1`, [plotId]);
+    await pool.query(`UPDATE player_business SET plot_id = NULL WHERE plot_id = $1`, [plotId]);
   });
 });

@@ -81,6 +81,8 @@ export type PlotState = {
     completed: boolean;
     homeId: string | null;
   };
+  /** A business trading from a shopfront on this plot. */
+  business?: null | { type: BusinessTypeId; name: string };
 };
 export type InteriorState = {
   id: string;
@@ -143,7 +145,7 @@ export const api = {
   gymSet: (exercise: ExerciseId) => post<{ exercise: ExerciseId; endsAt: string; name: string }>("/api/gym/set", { exercise }),
   gymFinish: () => post<{ counted: true; fitness: number; energy: number } | { counted: false; reason: string }>("/api/gym/finish", {}),
   business: () => request<BusinessStatus>("/api/business"),
-  startBusiness: (type: BusinessTypeId, name: string) => post<{ balance: number }>("/api/business", { type, name, idempotencyKey: crypto.randomUUID() }),
+  startBusiness: (type: BusinessTypeId, name: string, plotId?: string) => post<{ balance: number }>("/api/business", { type, name, plotId, idempotencyKey: crypto.randomUUID() }),
   upgradeBusiness: (businessId: string) => post<{ balance: number }>(`/api/business/${businessId}/upgrade`, { idempotencyKey: crypto.randomUUID() }),
   collectBusiness: (businessId: string) => post<{ collected: number; balance: number }>(`/api/business/${businessId}/collect`),
   enrol: (course: CourseId) => post<{ balance: number }>("/api/school/enrol", { course, idempotencyKey: crypto.randomUUID() }),

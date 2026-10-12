@@ -37,23 +37,26 @@ export const BUSINESS = {
   adminBoost: 0.2,
   jobBoost: 0.2,
   maxBusinesses: 5,
+  /** Extra takings for a business trading from premises built on the owner's own plot. */
+  premisesBoost: 0.25,
 } as const;
 
 /** Each level adds half the base income; the upgrade to level n+1 costs 60% of the start-up cost × n. */
 export const levelMultiplier = (level: number) => 1 + 0.5 * (Math.max(1, Math.min(BUSINESS.maxLevel, level)) - 1);
 export const upgradeCost = (type: BusinessTypeId, level: number) => (level >= BUSINESS.maxLevel ? null : Math.round((BUSINESS_TYPES[type].cost * 0.6 * level) / 1000) * 1000);
-export const hourlyIncome = (type: BusinessTypeId, level: number, admin: boolean) => Math.round(BUSINESS_TYPES[type].perHour * levelMultiplier(level) * (admin ? 1 + BUSINESS.adminBoost : 1));
+export const hourlyIncome = (type: BusinessTypeId, level: number, admin: boolean, premises = false) =>
+  Math.round(BUSINESS_TYPES[type].perHour * levelMultiplier(level) * (admin ? 1 + BUSINESS.adminBoost : 1) * (premises ? 1 + BUSINESS.premisesBoost : 1));
 
 /** Income waiting to be collected after `elapsedMs`, capped at the store limit. */
-export function pendingIncome(type: BusinessTypeId, level: number, admin: boolean, elapsedMs: number) {
+export function pendingIncome(type: BusinessTypeId, level: number, admin: boolean, elapsedMs: number, premises = false) {
   const hours = Math.max(0, Math.min(BUSINESS.storeHours, elapsedMs / 3_600_000));
-  return Math.floor(hourlyIncome(type, level, admin) * hours);
+  return Math.floor(hourlyIncome(type, level, admin, premises) * hours);
 }
 
-export type BusinessState = { id: string; type: BusinessTypeId; name: string; level: number; perHour: number; pending: number; full: boolean; upgradeCost: number | null; openedAt: string };
+export type BusinessState = { id: string; type: BusinessTypeId; name: string; level: number; perHour: number; pending: number; full: boolean; upgradeCost: number | null; openedAt: string; plotId: string | null };
 export type CourseState = { course: CourseId; endsAt: string; done: boolean };
 export type BusinessStatus = { businesses: BusinessState[]; courses: CourseState[]; certificates: CourseId[] };
 
-export const startBusinessSchema = z.object({ type: z.enum(businessTypeIds), name: z.string().trim().min(2).max(40), idempotencyKey: z.string().uuid() });
+export const startBusinessSchema = z.object({ type: z.enum(businessTypeIds), name: z.string().trim().min(2).max(40), plotId: z.string().max(60).optional(), idempotencyKey: z.string().uuid() });
 export const upgradeBusinessSchema = z.object({ idempotencyKey: z.string().uuid() });
 export const enrolSchema = z.object({ course: z.enum(courseIds), idempotencyKey: z.string().uuid() });

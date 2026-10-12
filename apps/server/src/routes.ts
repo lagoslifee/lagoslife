@@ -527,7 +527,7 @@ export function configureRoutes(app: Express) {
   app.get("/api/business", requirePlayer, guarded("Business unavailable", (_req, userId) => businessStatus(userId)));
   app.post("/api/business", requirePlayer, rateLimited, guarded("Business could not be registered", (req, userId) => {
     const body = startBusinessSchema.parse(req.body);
-    return startBusiness(userId, body.type, body.name, body.idempotencyKey);
+    return startBusiness(userId, body.type, body.name, body.idempotencyKey, body.plotId);
   }));
   app.post("/api/business/:businessId/upgrade", requirePlayer, rateLimited, guarded("Upgrade failed", (req, userId) =>
     upgradeBusiness(userId, z.uuid().parse(req.params.businessId), upgradeBusinessSchema.parse(req.body).idempotencyKey)));

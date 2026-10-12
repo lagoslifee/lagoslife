@@ -758,6 +758,7 @@ export class GameEngine {
       if (this.disposed) return;
       this.props = props;
       this.placeStreetProps(props);
+      this.plotsView?.setProps(props);
     });
     try {
       this.avatars = await AvatarFactory.load(scene);
