@@ -97,6 +97,14 @@ export function Phone(props: Props) {
       <header className="phone-header">
         {app !== "home" ? <button className="icon-button" onClick={() => setApp("home")} aria-label="Back">‹</button> : <span />}
         <h2>{app === "home" ? "Phone" : title}</h2>
+        <button
+          className="icon-button"
+          onClick={() => props.onSettings({ ...props.settings, muted: !props.settings.muted })}
+          aria-label={props.settings.muted ? "Unmute game sounds" : "Mute game sounds"}
+          title={props.settings.muted ? "Sound off — tap to unmute" : "Tap to mute all game sounds"}
+        >
+          {props.settings.muted ? "🔇" : "🔊"}
+        </button>
         <button className="icon-button" onClick={onClose} aria-label="Close phone">✕</button>
       </header>
       <div className="phone-body">
@@ -493,6 +501,7 @@ function SettingsApp({ settings, onSettings, bindings, onBindings, quality, onQu
       {toggle("carSpotters", "Car spotters admire rare cars (simulated photos, never your camera)")}
       {toggle("streetEncounters", "Agbero roadside encounters (fictional touts asking for change)")}
       <h3>Audio & text</h3>
+      {toggle("muted", "Mute all game sounds")}
       {slider("masterVolume", "Master volume", 0, 1, 0.05)}
       {slider("ambienceVolume", "Street ambience", 0, 1, 0.05)}
       {slider("dialogueVolume", "Announcements", 0, 1, 0.05)}

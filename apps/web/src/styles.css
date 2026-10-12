@@ -356,7 +356,7 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 /* ---------- Phone ---------- */
 .phone { position: absolute; right: 24px; bottom: 24px; z-index: 13; width: 360px; height: min(680px, calc(100% - 48px)); display: flex; flex-direction: column; border-radius: 34px; border: 8px solid #101413; background: #f6f3ea; color: #17312e; box-shadow: 0 30px 80px rgba(0,0,0,.5); overflow: hidden; font-size: calc(14px * var(--text-scale)); }
 .phone-status { display: flex; justify-content: space-between; padding: 8px 20px 0; font-size: 12px; font-weight: 700; }
-.phone-header { display: grid; grid-template-columns: 32px 1fr 32px; align-items: center; padding: 6px 12px; border-bottom: 1px solid #e0ddd2; }
+.phone-header { display: grid; grid-template-columns: 32px 1fr 32px 32px; gap: 4px; align-items: center; padding: 6px 12px; border-bottom: 1px solid #e0ddd2; }
 .phone-header h2 { margin: 0; text-align: center; font-size: calc(17px * var(--text-scale)); }
 .phone-body { flex: 1; overflow-y: auto; padding: 14px 16px 20px; }
 .phone-body h3 { margin: 18px 0 8px; font-size: calc(14px * var(--text-scale)); }

@@ -33,10 +33,19 @@ function loadBindings(): Bindings {
   }
 }
 
+/**
+ * The player's chosen quality, unless this browser session already had to step down after running out of graphics
+ * memory. The step-down lasts only for the session so a one-off crash never pins a tablet to low for good.
+ */
 function loadQuality(): Quality {
+  const valid = (value: string | null): value is Quality => value === "low" || value === "medium" || value === "high";
+  const session = sessionStorage.getItem("lagos-quality-session");
+  if (valid(session)) return session;
   const stored = localStorage.getItem("lagos-quality");
-  if (stored === "low" || stored === "medium" || stored === "high") return stored;
-  return matchMedia("(pointer: coarse)").matches ? "low" : "medium";
+  if (valid(stored)) return stored;
+  // Phones start on low; tablets (coarse pointer, large screen) start on medium.
+  const tablet = Math.min(screen.width, screen.height) >= 700;
+  return matchMedia("(pointer: coarse)").matches && !tablet ? "low" : "medium";
 }
 
 /** Netlify adds its own badge in the bottom-right corner of netlify.app sites. */
@@ -130,7 +139,7 @@ export function GameView({
     setQuality((current) => {
       const next: Quality = current === "high" ? "medium" : "low";
       if (next !== current) lowered.current = { from: current, to: next };
-      localStorage.setItem("lagos-quality", next);
+      sessionStorage.setItem("lagos-quality-session", next);
       return next;
     });
     setRestarts(restartsRef.current);
@@ -166,7 +175,7 @@ export function GameView({
     const { from, to } = lowered.current;
     lowered.current = null;
     const label = (quality: Quality) => quality[0]!.toUpperCase() + quality.slice(1);
-    toast({ tone: "info", text: `Your device ran out of graphics memory, so graphics went from ${label(from)} to ${label(to)}. You can change this in Phone → Settings.` });
+    toast({ tone: "info", text: `Your device ran out of graphics memory, so graphics went from ${label(from)} to ${label(to)} for now. Your choice comes back next time you open the game, or pick it again in Phone → Settings.` });
   }, [engine, toast]);
 
   const refreshPlots = useCallback(async () => {
@@ -613,7 +622,7 @@ export function GameView({
           <div className="row">
             <button className="primary" onClick={() => location.reload()}>Try again</button>
             {quality !== "low" && (
-              <button onClick={() => { localStorage.setItem("lagos-quality", "low"); location.reload(); }}>Try with low graphics</button>
+              <button onClick={() => { sessionStorage.setItem("lagos-quality-session", "low"); location.reload(); }}>Try with low graphics</button>
             )}
           </div>
         </div>
@@ -917,7 +926,7 @@ export function GameView({
         <ClubDoorSheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} onEnter={() => engine?.enterProperty(sheet.id, "enter")} />
       )}
       {engine && hud?.location === "interior" && hud.propertyId && CLUBS[hud.propertyId] && (
-        <ClubRadio clubId={hud.propertyId} volume={settings.masterVolume} onPlaying={(playing) => engine.setClubBeat(!playing)} />
+        <ClubRadio clubId={hud.propertyId} volume={settings.muted ? 0 : settings.masterVolume} onPlaying={(playing) => engine.setClubBeat(!playing)} />
       )}
       {clubTable !== null && inClub && hud?.propertyId && (
         <ClubTableSheet
@@ -1030,6 +1039,7 @@ export function GameView({
           }}
           onQuality={(next) => {
             localStorage.setItem("lagos-quality", next);
+            sessionStorage.removeItem("lagos-quality-session");
             location.reload();
           }}
           onNavigate={(next) => setManualTarget(next)}

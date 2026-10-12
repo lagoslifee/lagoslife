@@ -60,7 +60,7 @@ export class CityAudio {
   apply(settings: PlayerSettings) {
     this.settings = settings;
     if (!this.master || !this.ambience) return;
-    this.master.gain.value = settings.masterVolume;
+    this.master.gain.value = settings.muted ? 0 : settings.masterVolume;
     this.ambience.gain.value = settings.ambienceVolume * 0.5;
   }
 
@@ -215,7 +215,7 @@ export class CityAudio {
   announce(text: string) {
     if (!("speechSynthesis" in window) || this.settings.dialogueVolume <= 0) return;
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.volume = this.settings.dialogueVolume * this.settings.masterVolume;
+    utterance.volume = this.settings.muted ? 0 : this.settings.dialogueVolume * this.settings.masterVolume;
     utterance.rate = 1.05;
     const voice = speechSynthesis.getVoices().find((candidate) => candidate.lang === "en-NG") ?? speechSynthesis.getVoices().find((candidate) => candidate.lang.startsWith("en"));
     if (voice) utterance.voice = voice;

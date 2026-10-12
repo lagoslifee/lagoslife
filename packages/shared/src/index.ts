@@ -245,6 +245,8 @@ export const settingsSchema = z.object({
   mouseSensitivity: z.number().min(0.2).max(3),
   invertY: z.boolean(),
   masterVolume: z.number().min(0).max(1),
+  /** Silences every game sound without losing the chosen volume levels. */
+  muted: z.boolean().default(false),
   ambienceVolume: z.number().min(0).max(1),
   dialogueVolume: z.number().min(0).max(1),
   subtitles: z.boolean(),
@@ -265,6 +267,7 @@ export const defaultSettings: PlayerSettings = {
   mouseSensitivity: 1,
   invertY: false,
   masterVolume: 0.8,
+  muted: false,
   ambienceVolume: 0.6,
   dialogueVolume: 0.9,
   subtitles: true,

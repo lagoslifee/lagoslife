@@ -100,7 +100,7 @@ export interface QualityStep {
 
 export const FULL_VIEW_DISTANCE = 1600;
 /** Coarsest hardware scaling automatic quality may reach; beyond this text and faces turn to blocks. */
-export const MAX_AUTO_SCALING = 2.25;
+export const MAX_AUTO_SCALING = 1.8;
 /** Must stay beyond the 700 m sky dome radius or the sky is clipped. */
 export const REDUCED_VIEW_DISTANCE = 760;
 export const FULL_FOG_DENSITY = 0.0024;
@@ -108,7 +108,7 @@ export const FULL_FOG_DENSITY = 0.0024;
 /** What each level changes, cumulatively: resolution, then shadows, then view distance, then resolution again. */
 export function qualityStep(level: number): QualityStep {
   return {
-    scaling: (level >= 1 ? 1.35 : 1) * (level >= 4 ? 1.35 : 1),
+    scaling: (level >= 1 ? 1.25 : 1) * (level >= 4 ? 1.2 : 1),
     shadows: level < 2,
     viewDistance: level >= 3 ? REDUCED_VIEW_DISTANCE : FULL_VIEW_DISTANCE,
     fogDensity: level >= 3 ? 0.0045 : FULL_FOG_DENSITY,

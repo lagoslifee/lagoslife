@@ -4,6 +4,7 @@ import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import "@babylonjs/core/Culling/ray";
 import { TargetCamera } from "@babylonjs/core/Cameras/targetCamera";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport";
+import { DefaultRenderingPipeline } from "@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
@@ -588,7 +589,7 @@ export class GameEngine {
     }
     this.engine = engine;
     const dpr = window.devicePixelRatio || 1;
-    this.baseScaling = this.quality === "low" ? 1.5 : this.quality === "medium" ? Math.max(1, dpr / 1.25) / dpr : 1 / Math.min(dpr, 1.5);
+    this.baseScaling = this.quality === "low" ? 1.2 : this.quality === "medium" ? Math.max(1, dpr / 1.25) / dpr : 1 / Math.min(dpr, 1.5);
     engine.setHardwareScalingLevel(this.baseScaling);
     const scene = new Scene(engine);
     this.scene = scene;
@@ -606,6 +607,18 @@ export class GameEngine {
     this.camera.fov = 0.95;
     this.camera.minZ = 0.1;
     this.camera.maxZ = FULL_VIEW_DISTANCE;
+    if (this.quality === "high") {
+      // Soft bloom on lamps, neon and sun glints plus a light sharpen; scene tone mapping stays in charge of colour.
+      const pipeline = new DefaultRenderingPipeline("finish", false, scene, [this.camera]);
+      pipeline.imageProcessingEnabled = false;
+      pipeline.bloomEnabled = true;
+      pipeline.bloomThreshold = 0.82;
+      pipeline.bloomWeight = 0.22;
+      pipeline.bloomKernel = 48;
+      pipeline.bloomScale = 0.5;
+      pipeline.sharpenEnabled = true;
+      pipeline.sharpen.edgeAmount = 0.25;
+    }
 
     this.callbacks.loading("Lighting the island…", 0.1);
     const hdr = new HDRCubeTexture("/assets/sky/daylight-1k.hdr", scene, 256, false, true, false, true);
