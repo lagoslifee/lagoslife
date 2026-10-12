@@ -351,6 +351,24 @@ describe("LagosRoom driving", () => {
     expect(ada.send.mock.calls.some(([type]) => type === "correction")).toBe(true);
   });
 
+  it("treats parked cars as solid: refuses driving into one but lets the car back out or park nose to tail", async () => {
+    const { room, ada, player } = withCar();
+    const ahead = sampleRoute(lekki, start + 12);
+    room.vehicles.set("car-2", {
+      id: "car-2", ownerUserId: "u-cy", ownerName: "cy", modelId: "eko-hatch", colour: "#2b4c7e",
+      plate: "LND 456 CD", condition: 100, x: ahead.x, z: ahead.z, yaw: ahead.yaw, driverSessionId: null,
+    });
+    await room.handleEnterVehicle(ada, { vehicleId: "car-1" });
+    const behind = drive(room, ada, 1, 6.5, 1);
+    expect(player(ada).x).toBeCloseTo(behind.x);
+    expect(ada.send.mock.calls.some(([type]) => type === "correction")).toBe(false);
+    drive(room, ada, 2, 10, 1);
+    expect(player(ada).x).toBeCloseTo(behind.x);
+    expect(ada.send.mock.calls.some(([type]) => type === "correction")).toBe(true);
+    const back = drive(room, ada, 3, 3, 1);
+    expect(player(ada).x).toBeCloseTo(back.x);
+  });
+
   it("caps a limp-mode car at the reduced top speed", async () => {
     const { room, ada, player } = withCar(20);
     vehicles.claimVehicle.mockResolvedValueOnce({ condition: 20 });

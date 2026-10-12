@@ -136,10 +136,10 @@ export async function freeKerbSlot(client: PoolClient, place: Spot, ignoreVehicl
     `SELECT x, z FROM player_vehicle
      WHERE status IN ('parked', 'driving') AND id <> $5
        AND x BETWEEN $1 AND $2 AND z BETWEEN $3 AND $4`,
-    [place.kerb[0] - 60, place.kerb[0] + 60, place.kerb[1] - 60, place.kerb[1] + 60, ignoreVehicleId],
+    [place.kerb[0] - 95, place.kerb[0] + 95, place.kerb[1] - 95, place.kerb[1] + 95, ignoreVehicleId],
   );
   const taken = nearby.rows.map((row) => [Number(row.x), Number(row.z)] as const);
-  for (let index = 0; index < 13; index += 1) {
+  for (let index = 0; index < 25; index += 1) {
     const [x, z] = kerbSlot(place.kerb, place.kerbYaw, index);
     if (!slotIsClear(x, z, place.kerbYaw)) continue;
     if (taken.some(([tx, tz]) => Math.hypot(tx - x, tz - z) < SLOT_CLEARANCE)) continue;

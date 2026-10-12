@@ -420,6 +420,30 @@ export function kerbSlot(kerb: readonly [number, number], kerbYaw: number, index
   return [kerb[0] + Math.sin(kerbYaw) * step, kerb[1] + Math.cos(kerbYaw) * step];
 }
 
+type VehiclePose = { model: Pick<VehicleModel, "length" | "width">; x: number; z: number; yaw: number };
+
+/**
+ * How far (summed metres) a driven vehicle sits inside another vehicle's footprint. Uses the same shapes as the
+ * client's car physics: three circles along the driven car against the other car's oriented box.
+ */
+export function vehicleOverlap(driven: VehiclePose, other: VehiclePose) {
+  const reach = Math.max(0, driven.model.length / 2 - driven.model.width / 2);
+  const radius = (driven.model.width / 2) * 0.95;
+  const [dfx, dfz] = [Math.sin(driven.yaw), Math.cos(driven.yaw)];
+  const [fx, fz] = [Math.sin(other.yaw), Math.cos(other.yaw)];
+  const halfL = other.model.length / 2 + radius;
+  const halfW = other.model.width / 2 + radius;
+  let total = 0;
+  for (const offset of [reach, 0, -reach]) {
+    const dx = driven.x + dfx * offset - other.x;
+    const dz = driven.z + dfz * offset - other.z;
+    const along = Math.abs(dx * fx + dz * fz);
+    const across = Math.abs(dx * fz - dz * fx);
+    if (along < halfL && across < halfW) total += Math.min(halfL - along, halfW - across);
+  }
+  return total;
+}
+
 export const vehicleStatuses = ["parked", "garaged", "driving", "towing"] as const;
 export type VehicleStatus = (typeof vehicleStatuses)[number];
 

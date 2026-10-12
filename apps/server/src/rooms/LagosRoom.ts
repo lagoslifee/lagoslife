@@ -39,6 +39,7 @@ import {
   vehicleSignalSchema,
   vehicleSeats,
   vehicleModelById,
+  vehicleOverlap,
   kerbSlot,
   testDriveSchema,
   TEST_DRIVE,
@@ -330,6 +331,8 @@ const CONTACT_RADIUS = { pedestrian: 1.3, vehicle: 2.0, danfo: 2.3 };
 /** A car measured at speed that then moves slower than this, with a wall within WALL_REACH ahead, hit the wall. */
 const WALL_STOP_SPEED = 3;
 const WALL_REACH = 3;
+/** Summed overlap (metres) allowed against a parked car before a drive update is refused; absorbs float drift. */
+const PARKED_CAR_TOLERANCE = 0.3;
 
 function distanceToSegment([px, pz]: [number, number], [ax, az]: [number, number], [bx, bz]: [number, number]) {
   const dx = bx - ax;
@@ -831,7 +834,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         : home
         ? insideHome(homeLayout(player.propertyId), parsed.data.x - INTERIOR_ORIGIN[0], parsed.data.z - INTERIOR_ORIGIN[1])
         : Math.abs(parsed.data.x - INTERIOR_ORIGIN[0]) <= half[0] && Math.abs(parsed.data.z - INTERIOR_ORIGIN[1]) <= half[1];
-    if (distance > allowed || !valid) {
+    const intoCar = Boolean(vehicle && !inInterior && this.drivesIntoParkedCar(vehicle, parsed.data, player));
+    if (distance > allowed || !valid || intoCar) {
       client.send("correction", { x: player.x, z: player.z, yaw: player.yaw, sequence: parsed.data.sequence });
       player.lastAcceptedAt = now;
       return;
@@ -2044,6 +2048,27 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       if (near(pose.x, pose.z, CONTACT_RADIUS.danfo)) return "danfo";
     }
     return null;
+  }
+
+  /**
+   * Parked cars are solid: a move that pushes the driven car deeper into one is refused. Moving cars (driven, ride
+   * and recovery trucks) are left to the clients, whose copies of each other run a few frames behind.
+   */
+  private drivesIntoParkedCar(vehicle: RoomVehicle, to: { x: number; z: number; yaw: number }, player: Player) {
+    const model = vehicleModelById.get(vehicle.modelId);
+    if (!model) return false;
+    const before = { model, x: player.x, z: player.z, yaw: player.yaw };
+    const after = { model, ...to };
+    for (const other of this.vehicles.values()) {
+      if (other.id === vehicle.id || other.driverSessionId || other.npc || other.tow) continue;
+      if (Math.abs(other.x - to.x) > 12 || Math.abs(other.z - to.z) > 12) continue;
+      const otherModel = vehicleModelById.get(other.modelId);
+      if (!otherModel) continue;
+      const parked = { model: otherModel, x: other.x, z: other.z, yaw: other.yaw };
+      const depth = vehicleOverlap(after, parked);
+      if (depth > PARKED_CAR_TOLERANCE && depth > vehicleOverlap(before, parked) + 0.05) return true;
+    }
+    return false;
   }
 
   /** Whether a building wall lies within a car's nose length along its last direction of travel. */
