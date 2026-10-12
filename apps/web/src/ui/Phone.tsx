@@ -18,33 +18,35 @@ import { BankApp, BetApp, DocumentsApp } from "./FinanceApps";
 
 export type PhoneApp = "home" | "games" | "business" | "estate" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "order" | "bank" | "bet" | "documents" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
 
-const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
-  { id: "places", label: "Places", icon: "📍" },
-  { id: "go", label: "Go", icon: "⚡" },
-  { id: "estate", label: "Estate", icon: "🏢" },
-  { id: "boutique", label: "Boutique", icon: "👔" },
-  { id: "map", label: "Map", icon: "🗺" },
-  { id: "ride", label: "Ride", icon: "🚕" },
-  { id: "travel", label: "Travel", icon: "✈" },
-  { id: "transport", label: "Transport", icon: "🚌" },
-  { id: "jobs", label: "Jobs", icon: "📦" },
-  { id: "bank", label: "Bank", icon: "🏦" },
-  { id: "business", label: "Business", icon: "💼" },
-  { id: "order", label: "Order", icon: "🛵" },
-  { id: "bet", label: "Bet", icon: "🎰" },
-  { id: "games", label: "Games", icon: "🎮" },
-  { id: "wallet", label: "Wallet", icon: "₦" },
-  { id: "documents", label: "My ID", icon: "🪪" },
-  { id: "property", label: "My Home", icon: "🏠" },
-  { id: "vehicles", label: "Vehicles", icon: "🚗" },
-  { id: "community", label: "Community", icon: "🤝" },
-  { id: "justice", label: "Justice", icon: "⚖" },
-  { id: "safety", label: "Safety", icon: "🛡" },
-  { id: "friends", label: "Friends", icon: "👥" },
-  { id: "notifications", label: "Alerts", icon: "🔔" },
-  { id: "settings", label: "Settings", icon: "⚙" },
-  { id: "help", label: "Help", icon: "?" },
+const APPS: Array<{ id: PhoneApp; label: string; icon: string; tint: string }> = [
+  { id: "places", label: "Places", icon: "📍", tint: "#ff3b30, #ff6b5e" },
+  { id: "go", label: "Go", icon: "⚡", tint: "#ffcc00, #ff9500" },
+  { id: "estate", label: "Estate", icon: "🏢", tint: "#5856d6, #7d7aff" },
+  { id: "boutique", label: "Boutique", icon: "👔", tint: "#ff2d55, #ff6482" },
+  { id: "map", label: "Map", icon: "🗺", tint: "#34c759, #30b0c7" },
+  { id: "ride", label: "Ride", icon: "🚕", tint: "#1c1c1e, #3a3a3c" },
+  { id: "travel", label: "Travel", icon: "✈", tint: "#0a84ff, #64d2ff" },
+  { id: "transport", label: "Transport", icon: "🚌", tint: "#ff9f0a, #ffd60a" },
+  { id: "jobs", label: "Jobs", icon: "📦", tint: "#a2845e, #c9a477" },
+  { id: "bank", label: "Bank", icon: "🏦", tint: "#0b6e4f, #2fbf71" },
+  { id: "business", label: "Business", icon: "💼", tint: "#48484a, #8e8e93" },
+  { id: "order", label: "Order", icon: "🛵", tint: "#ff6b00, #ff9f45" },
+  { id: "bet", label: "Bet", icon: "🎰", tint: "#bf5af2, #da8fff" },
+  { id: "games", label: "Games", icon: "🎮", tint: "#5e5ce6, #bf5af2" },
+  { id: "wallet", label: "Wallet", icon: "₦", tint: "#111111, #2c2c2e" },
+  { id: "documents", label: "My ID", icon: "🪪", tint: "#64d2ff, #0a84ff" },
+  { id: "property", label: "My Home", icon: "🏠", tint: "#ff9500, #ffb340" },
+  { id: "vehicles", label: "Vehicles", icon: "🚗", tint: "#0a84ff, #5e5ce6" },
+  { id: "community", label: "Community", icon: "🤝", tint: "#30d158, #66d4cf" },
+  { id: "justice", label: "Justice", icon: "⚖", tint: "#8e6c3a, #b08d57" },
+  { id: "safety", label: "Safety", icon: "🛡", tint: "#ff453a, #ff9f0a" },
+  { id: "friends", label: "Friends", icon: "👥", tint: "#32ade6, #5ac8fa" },
+  { id: "notifications", label: "Alerts", icon: "🔔", tint: "#ff3b30, #ff9500" },
+  { id: "settings", label: "Settings", icon: "⚙", tint: "#8e8e93, #aeaeb2" },
+  { id: "help", label: "Help", icon: "?", tint: "#007aff, #5ac8fa" },
 ];
+
+const DOCK = new Set<PhoneApp>(["go", "ride", "bank", "settings"]);
 
 /** Apps about life in Lagos, hidden from the home screen while the player is in Dubai. */
 const LAGOS_ONLY = new Set<PhoneApp>(["transport", "jobs", "order", "property", "community", "justice", "estate"]);
@@ -103,15 +105,29 @@ export function Phone(props: Props) {
   const [cabTo, setCabTo] = useState<CabDestination | null>(null);
   const title = APPS.find((entry) => entry.id === app)?.label ?? "Phone";
   const inDubai = props.engine?.playerRegion() === "dubai";
+  const home = app === "home";
+  const visible = APPS.filter((entry) => !inDubai || !LAGOS_ONLY.has(entry.id));
+  const icon = (entry: (typeof APPS)[number]) => (
+    <button key={entry.id} className="app-icon" onClick={() => (entry.id === "map" ? props.onOpenMap() : setApp(entry.id))}>
+      <span style={{ background: `linear-gradient(160deg, ${entry.tint})` }}>{entry.icon}</span>
+      {entry.label}
+      {entry.id === "property" && props.properties.some((listing) => listing.isMine && (days(listing.nextPaymentAt) ?? 9) < 2) && <i className="badge" />}
+    </button>
+  );
   return (
-    <aside className="phone" role="dialog" aria-label="Phone">
+    <aside className={`phone${home ? " on-home" : ""}`} role="dialog" aria-label="Phone">
       <div className="phone-status">
-        <span>{new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" })}</span>
-        <span>{props.economy ? naira(props.economy.balance) : "…"}</span>
+        <span className="phone-time">{new Date().toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit", hour12: false })}</span>
+        <span className="phone-island" aria-hidden="true" />
+        <span className="phone-indicators" aria-hidden="true">
+          <i className="signal"><b /><b /><b /><b /></i>
+          <i className="wifi" />
+          <i className="battery"><b /></i>
+        </span>
       </div>
       <header className="phone-header">
-        {app !== "home" ? <button className="icon-button" onClick={() => setApp("home")} aria-label="Back">‹</button> : <span />}
-        <h2>{app === "home" ? "Phone" : title}</h2>
+        {!home ? <button className="phone-back" onClick={() => setApp("home")} aria-label="Back">‹ Home</button> : <span />}
+        <h2>{home ? "" : title}</h2>
         <button
           className="icon-button"
           onClick={() => props.onSettings({ ...props.settings, muted: !props.settings.muted })}
@@ -123,17 +139,18 @@ export function Phone(props: Props) {
         <button className="icon-button" onClick={onClose} aria-label="Close phone">✕</button>
       </header>
       <div className="phone-body">
-        {app === "home" && (
-          <div className="app-grid">
-            {inDubai && <p className="phone-region-note" data-testid="dubai-phone-note">🇦🇪 You're in Dubai. Lagos apps (Jobs, Danfo, Order, My Home…) come back when you fly home from Dubai International.</p>}
-            {APPS.filter((entry) => !inDubai || !LAGOS_ONLY.has(entry.id)).map((entry) => (
-              <button key={entry.id} className="app-icon" onClick={() => (entry.id === "map" ? props.onOpenMap() : setApp(entry.id))}>
-                <span>{entry.icon}</span>
-                {entry.label}
-                {entry.id === "property" && props.properties.some((listing) => listing.isMine && (days(listing.nextPaymentAt) ?? 9) < 2) && <i className="badge" />}
-              </button>
-            ))}
-          </div>
+        {home && (
+          <>
+            <button className="phone-widget" onClick={() => setApp("wallet")}>
+              <small>Wallet · game naira</small>
+              <strong>{props.economy ? naira(props.economy.balance) : "…"}</strong>
+              {props.economy && <span>Hunger {Math.round(props.economy.needs.hunger)} · Energy {Math.round(props.economy.needs.energy)}</span>}
+            </button>
+            <div className="app-grid">
+              {inDubai && <p className="phone-region-note" data-testid="dubai-phone-note">🇦🇪 You're in Dubai. Lagos apps (Jobs, Danfo, Order, My Home…) come back when you fly home from Dubai International.</p>}
+              {visible.filter((entry) => !DOCK.has(entry.id)).map(icon)}
+            </div>
+          </>
         )}
         {app === "places" && (
           <PlacesApp engine={props.engine} hud={props.hud} onNavigate={props.onNavigate} onCab={(destination) => { setCabTo(destination); setApp("ride"); }} onClose={onClose} />
@@ -190,6 +207,8 @@ export function Phone(props: Props) {
         {app === "settings" && <SettingsApp {...props} />}
         {app === "help" && <HelpApp {...props} />}
       </div>
+      {home && <nav className="phone-dock">{visible.filter((entry) => DOCK.has(entry.id)).map(icon)}</nav>}
+      <button className="phone-home-bar" onClick={() => (home ? onClose() : setApp("home"))} aria-label={home ? "Put the phone away" : "Home screen"} />
     </aside>
   );
 }
