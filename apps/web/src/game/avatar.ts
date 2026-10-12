@@ -16,7 +16,7 @@ import {
   type MotionState,
 } from "@lagos-living/shared";
 import { GarmentPlugin, HAIR_COLOUR, OUTFITS, skinTint, type Accessory, type Body, type Hairstyle } from "./appearance";
-import { dressHead, HEAD_UNIT, headAnchor } from "./avatar-style";
+import { dressHead, HEAD_UNIT, headAnchor, type HeadStyle } from "./avatar-style";
 
 /**
  * Ground speed (m/s) at which each in-place clip's feet keep pace with the ground, from the foot travel
@@ -128,11 +128,41 @@ export class AvatarFactory {
       rightFore: node("lowerarm_r"),
       rightHand: node("hand_r"),
     };
-    return { holder, meshes, body, brows, skirt, garments, hair, anchor, groups, all: entries.animationGroups, limbs };
+    const bones = new Map<string, TransformNode>();
+    for (const [bone] of SLIM) {
+      const found = node(bone);
+      if (found) bones.set(bone, found);
+    }
+    return { holder, meshes, body, brows, skirt, garments, hair, anchor, groups, all: entries.animationGroups, limbs, bones };
   }
 }
 
 type Limbs = Record<"leftUp" | "leftLow" | "rightUp" | "rightLow" | "leftArm" | "rightArm" | "rightFore" | "rightHand", TransformNode | null>;
+
+/**
+ * The resident models are sculpted athletic. At build 0 each bone's thickness (its local Y and Z; X runs along the
+ * bone) is scaled by the factor here, and each child divides out its parent's factor so only that segment thins.
+ * Build 1 is the sculpted model. The clips only animate rotation and translation, so the scale holds.
+ */
+const SLIM: Array<[bone: string, factor: number, parent: string | null]> = [
+  ["spine_02", 0.9, null],
+  ["spine_03", 0.8, "spine_02"],
+  ["neck_01", 1, "spine_03"],
+  ["clavicle_l", 0.78, "spine_03"],
+  ["clavicle_r", 0.78, "spine_03"],
+  ["upperarm_l", 0.72, "clavicle_l"],
+  ["upperarm_r", 0.72, "clavicle_r"],
+  ["lowerarm_l", 0.8, "upperarm_l"],
+  ["lowerarm_r", 0.8, "upperarm_r"],
+  ["hand_l", 1, "lowerarm_l"],
+  ["hand_r", 1, "lowerarm_r"],
+  ["thigh_l", 0.84, null],
+  ["thigh_r", 0.84, null],
+  ["calf_l", 0.88, "thigh_l"],
+  ["calf_r", 0.88, "thigh_r"],
+  ["foot_l", 1, "calf_l"],
+  ["foot_r", 1, "calf_r"],
+];
 type Instance = ReturnType<AvatarFactory["instantiate"]>;
 
 const flex = new Quaternion();
@@ -157,6 +187,8 @@ export class Avatar {
   /** Receives the meshes of each body instance, e.g. to register shadow casters again after a body change. */
   private meshListener: ((meshes: AbstractMesh[]) => void) | null = null;
 
+  private build = 0;
+
   constructor(
     private readonly factory: AvatarFactory,
     private readonly name: string,
@@ -166,6 +198,24 @@ export class Avatar {
     this.current = appearance;
     this.instance = factory.instantiate(name, root, appearance);
     this.dress();
+    this.applyBuild();
+  }
+
+  /** 0 is an ordinary build, 1 the fully trained physique the models are sculpted with. */
+  setBuild(build: number) {
+    this.build = Math.max(0, Math.min(1, build));
+    this.applyBuild();
+  }
+
+  private applyBuild() {
+    const at = (factor: number) => factor + (1 - factor) * this.build;
+    const factors = new Map(SLIM.map(([bone, factor]) => [bone, at(factor)]));
+    for (const [bone, , parent] of SLIM) {
+      const node = this.instance.bones.get(bone);
+      if (!node) continue;
+      const thickness = factors.get(bone)! / (parent ? factors.get(parent)! : 1);
+      node.scaling.set(1, thickness, thickness);
+    }
   }
 
   get appearance() {
@@ -189,6 +239,7 @@ export class Avatar {
       this.disposeInstance();
       this.instance = this.factory.instantiate(this.name, this.root, appearance);
       for (const prop of this.props) prop.parent = this.instance.holder;
+      this.applyBuild();
       this.started = false;
       this.meshListener?.(this.instance.meshes);
     }
@@ -213,9 +264,10 @@ export class Avatar {
       if (on && mesh.material instanceof PBRMaterial) mesh.material.albedoColor = hairColour;
     }
     if (anchor) {
-      const styles: Array<Hairstyle | Accessory> = [];
+      const styles: HeadStyle[] = [];
       if (showHair && !MESH_HAIR.has(appearance.hairstyle)) styles.push(appearance.hairstyle);
-      if (appearance.accessory !== "beard" && appearance.accessory !== "none") styles.push(appearance.accessory);
+      if (appearance.accessory === "cap" && appearance.outfit === "police-uniform") styles.push("police-cap");
+      else if (appearance.accessory !== "beard" && appearance.accessory !== "none") styles.push(appearance.accessory);
       dressHead(anchor.getScene(), anchor, appearance, styles);
     }
   }
