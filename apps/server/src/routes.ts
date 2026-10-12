@@ -545,7 +545,10 @@ export function configureRoutes(app: Express) {
   app.get("/api/gym", requirePlayer, guarded("Gym unavailable", (_req, userId) => gymStatus(userId)));
   app.post("/api/gym/join", requirePlayer, rateLimited, guarded("Membership failed", (req, userId) =>
     joinGym(userId, z.object({ idempotencyKey: z.string().uuid() }).parse(req.body).idempotencyKey)));
-  app.post("/api/gym/set", requirePlayer, rateLimited, guarded("Could not start the set", (req, userId) => startSet(userId, gymSetSchema.parse(req.body).exercise)));
+  app.post("/api/gym/set", requirePlayer, rateLimited, guarded("Could not start the set", (req, userId) => {
+    const { exercise, kg } = gymSetSchema.parse(req.body);
+    return startSet(userId, exercise, kg);
+  }));
   app.post("/api/gym/finish", requirePlayer, rateLimited, guarded("Could not finish the set", (_req, userId) => finishSet(userId)));
 
   app.post("/api/delivery/order", requirePlayer, rateLimited, guarded("Order failed", (req, userId) => {

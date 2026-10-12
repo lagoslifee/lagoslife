@@ -1,4 +1,4 @@
-import { EXERCISES, exerciseIds, GYM, setEnergyCost, staminaFactor, type ExerciseId, type GymStatus, type Notice, type Place } from "@lagos-living/shared";
+import { EXERCISES, exerciseIds, GYM, LIFTS, maxLiftKg, setEnergyCost, staminaFactor, type ExerciseId, type GymStatus, type Notice, type Place } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import { api, naira } from "../api";
 
@@ -18,6 +18,7 @@ const percent = (fitness: number) => `${Math.round(fitness * 100)}%`;
 export function GymSheet({ place, balance, onClose, onRefresh, onToast, onTrain }: Props) {
   const [status, setStatus] = useState<GymStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const [chosenKg, setChosenKg] = useState<Partial<Record<ExerciseId, number>>>({});
   const load = () => api.gym().then(setStatus).catch(() => undefined);
   useEffect(() => {
     void load();
@@ -92,31 +93,59 @@ export function GymSheet({ place, balance, onClose, onRefresh, onToast, onTrain 
             )}
             <h3>Machines</h3>
             <ul className="business-list">
-              {exerciseIds.map((id) => (
+              {exerciseIds.map((id) => {
+                const lift = LIFTS[id];
+                const limit = maxLiftKg(id, status.fitness);
+                const kg = lift ? Math.min(chosenKg[id] ?? limit!, limit!) : undefined;
+                const cost = setEnergyCost(id, status.fitness, kg);
+                return (
                 <li key={id} className="business-card">
                   <div className="business-head">
                     <span className="business-emoji">{EXERCISES[id].emoji}</span>
                     <div>
                       <strong>{EXERCISES[id].name}</strong>
-                      <small className="muted">{EXERCISES[id].blurb} Uses {setEnergyCost(id, status.fitness)} energy{setEnergyCost(id, status.fitness) < EXERCISES[id].energy ? ` (${EXERCISES[id].energy} when untrained)` : ""}.</small>
+                      <small className="muted">{EXERCISES[id].blurb} Uses {cost} energy{!lift && cost < EXERCISES[id].energy ? ` (${EXERCISES[id].energy} when untrained)` : ""}.</small>
                     </div>
                   </div>
+                  {lift && (
+                    <div className="gym-weights" role="group" aria-label={`${EXERCISES[id].name} weight`}>
+                      <small className="muted">
+                        Weight · {kg} {lift.unit}. Your limit is {limit} kg; it rises as you train (up to {lift.trained} kg). Heavier sets build more.
+                      </small>
+                      <div className="studio-chips">
+                        {lift.weights.map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            disabled={option > limit!}
+                            aria-pressed={option === kg}
+                            data-testid={`gym-${id}-${option}`}
+                            title={option > limit! ? "Too heavy for you yet: keep training" : undefined}
+                            onClick={() => setChosenKg((current) => ({ ...current, [id]: option }))}
+                          >
+                            {option > limit! ? "🔒 " : ""}{option} kg
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="business-actions">
                     <button
                       className="primary"
                       disabled={busy || !member || Boolean(status.set)}
                       data-testid={`gym-${id}`}
                       onClick={() => run(async () => {
-                        const set = await api.gymSet(id);
+                        const set = await api.gymSet(id, kg);
                         if (!onTrain(id, set.endsAt)) throw new Error(`Go inside ${GYM.name} and walk up to the machine first.`);
                         onClose();
                       })}
                     >
-                      Start a set
+                      {kg ? `Start a set · ${kg} kg` : "Start a set"}
                     </button>
                   </div>
                 </li>
-              ))}
+                );
+              })}
             </ul>
             <h3>Training here now</h3>
             {status.peopleHere.length ? (

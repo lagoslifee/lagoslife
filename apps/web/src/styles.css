@@ -212,6 +212,9 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .studio-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .studio-chips button { padding: 7px 12px; border-radius: 999px; border: 1px solid rgba(23,49,46,.22); background: #fff; color: #17312e; font-weight: 650; font-size: 13px; text-transform: capitalize; }
 .studio-chips button[aria-pressed="true"] { background: #17312e; border-color: #17312e; color: #fff; }
+.gym-weights { display: grid; gap: 6px; margin-top: 8px; }
+.gym-weights .studio-chips button { text-transform: none; }
+.gym-weights .studio-chips button:disabled { opacity: .45; }
 .studio-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
 .studio-swatches button { width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 2px solid rgba(0,0,0,.15); box-shadow: inset 0 0 0 2px rgba(255,255,255,.35); }
 .studio-swatches button[aria-pressed="true"] { border-color: #17312e; box-shadow: 0 0 0 3px #e6bd62; }

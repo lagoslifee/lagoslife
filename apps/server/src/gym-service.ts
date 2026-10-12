@@ -1,20 +1,19 @@
 import type { Pool, PoolClient } from "pg";
-import { EXERCISES, fitnessNow, getPlace, GYM, gymLocation, setEnergyCost, type ExerciseId, type GymStatus } from "@lagos-living/shared";
+import { EXERCISES, fitnessNow, GYM, gymLocation, liftProblem, LIFTS, maxLiftKg, setEnergyCost, setGain, type ExerciseId, type GymStatus } from "@lagos-living/shared";
 import { pool } from "./database.js";
 import { debitWallet, EconomyError, ensureWallet, withTransaction } from "./economy-service.js";
-import { getPlayerPosition, isNear, usersIn, usersNear } from "./player-presence.js";
+import { getPlayerPosition, usersIn } from "./player-presence.js";
 import { profileEvents } from "./profile-service.js";
 
-type GymRow = { fitness: number; trained_at: Date | null; gym_member_until: Date | null; gym_exercise: ExerciseId | null; gym_set_started_at: Date | null; energy: number };
+type GymRow = { fitness: number; trained_at: Date | null; gym_member_until: Date | null; gym_exercise: ExerciseId | null; gym_set_started_at: Date | null; gym_set_kg: number | null; energy: number };
 
-const gymDoor = () => getPlace(GYM.placeId).door;
-/** Inside the gym, or (for older clients) on the forecourt by the door. */
-const atGym = (userId: string) => getPlayerPosition(userId)?.location === gymLocation() || isNear(userId, gymDoor(), GYM.nearMetres);
+/** Sets are only done inside on the machines, never out on the street. */
+const atGym = (userId: string) => getPlayerPosition(userId)?.location === gymLocation();
 
 async function gymRow(userId: string, lock = false, client: Pool | PoolClient = pool) {
   await client.query(`INSERT INTO player_profile (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`, [userId]);
   const { rows } = await client.query<GymRow>(
-    `SELECT fitness, trained_at, gym_member_until, gym_exercise, gym_set_started_at, energy FROM player_profile WHERE user_id = $1${lock ? " FOR UPDATE" : ""}`,
+    `SELECT fitness, trained_at, gym_member_until, gym_exercise, gym_set_started_at, gym_set_kg, energy FROM player_profile WHERE user_id = $1${lock ? " FOR UPDATE" : ""}`,
     [userId],
   );
   return rows[0]!;
@@ -28,7 +27,7 @@ export async function loadFitness(userId: string) {
 
 export async function gymStatus(userId: string): Promise<GymStatus> {
   const row = await gymRow(userId);
-  const others = [...new Set([...usersIn(gymLocation()), ...usersNear(gymDoor(), GYM.nearMetres)])].filter((id) => id !== userId);
+  const others = usersIn(gymLocation()).filter((id) => id !== userId);
   const names = others.length
     ? (await pool.query<{ name: string }>(`SELECT COALESCE("displayUsername", username, name) AS name FROM "user" WHERE id = ANY($1) ORDER BY 1 LIMIT 20`, [others])).rows.map((r) => r.name)
     : [];
@@ -37,7 +36,7 @@ export async function gymStatus(userId: string): Promise<GymStatus> {
     fitness: fitnessNow(row.fitness, row.trained_at),
     energy: Math.round(Number(row.energy)),
     memberUntil: row.gym_member_until && row.gym_member_until.getTime() > Date.now() ? row.gym_member_until.toISOString() : null,
-    set: live ? { exercise: row.gym_exercise!, endsAt: new Date(row.gym_set_started_at!.getTime() + GYM.setSeconds * 1_000).toISOString() } : null,
+    set: live ? { exercise: row.gym_exercise!, endsAt: new Date(row.gym_set_started_at!.getTime() + GYM.setSeconds * 1_000).toISOString(), kg: row.gym_set_kg } : null,
     peopleHere: names,
   };
 }
@@ -62,20 +61,24 @@ export async function joinGym(userId: string, idempotencyKey: string) {
   });
 }
 
-/** Starts a timed set on one machine. Members only, at the gym, with enough energy left. */
-export async function startSet(userId: string, exercise: ExerciseId) {
+/** Starts a timed set on one machine. Members only, inside the gym, with enough energy left, and a weight your training allows (the heaviest you can lift if none is given). */
+export async function startSet(userId: string, exercise: ExerciseId, kg?: number) {
   return withTransaction(async (client) => {
     const row = await gymRow(userId, true, client);
     if (!row.gym_member_until || row.gym_member_until.getTime() <= Date.now()) {
       throw new EconomyError(`Members only. Join ${GYM.name} for ₦${GYM.monthlyFee.toLocaleString("en-NG")} a month.`, 403);
     }
     if (!atGym(userId)) throw new EconomyError(`Go inside ${GYM.name} on Admiralty Way to train.`, 409);
-    const cost = setEnergyCost(exercise, fitnessNow(row.fitness, row.trained_at));
+    const fitness = fitnessNow(row.fitness, row.trained_at);
+    const weight = LIFTS[exercise] ? (kg ?? maxLiftKg(exercise, fitness)!) : null;
+    const tooHeavy = weight === null ? null : liftProblem(exercise, fitness, weight);
+    if (tooHeavy) throw new EconomyError(tooHeavy, 409);
+    const cost = setEnergyCost(exercise, fitness, weight);
     if (row.energy < Math.max(GYM.minimumEnergy, cost)) {
       throw new EconomyError(`You're too tired for that (${EXERCISES[exercise].name} needs ${cost} energy, you have ${row.energy}). Eat something or rest at home first.`, 409);
     }
-    await client.query(`UPDATE player_profile SET gym_exercise = $2, gym_set_started_at = NOW(), updated_at = NOW() WHERE user_id = $1`, [userId, exercise]);
-    return { exercise, endsAt: new Date(Date.now() + GYM.setSeconds * 1_000).toISOString(), name: EXERCISES[exercise].name };
+    await client.query(`UPDATE player_profile SET gym_exercise = $2, gym_set_started_at = NOW(), gym_set_kg = $3, updated_at = NOW() WHERE user_id = $1`, [userId, exercise, weight]);
+    return { exercise, kg: weight, endsAt: new Date(Date.now() + GYM.setSeconds * 1_000).toISOString(), name: EXERCISES[exercise].name };
   });
 }
 
@@ -90,13 +93,13 @@ export async function finishSet(userId: string) {
     if (elapsed > GYM.setExpirySeconds) return { counted: false as const, reason: "That set timed out. Start another." };
     if (!atGym(userId)) return { counted: false as const, reason: "You left the gym before the set was done." };
     const before = fitnessNow(row.fitness, row.trained_at);
-    const fitness = Math.min(1, before + GYM.gainPerSet);
-    const cost = setEnergyCost(row.gym_exercise, before);
+    const fitness = Math.min(1, before + setGain(row.gym_exercise, before, row.gym_set_kg));
+    const cost = setEnergyCost(row.gym_exercise, before, row.gym_set_kg);
     const updated = await client.query<{ energy: number }>(
       `UPDATE player_profile SET fitness = $2, trained_at = NOW(), energy = GREATEST(0, energy - $3), updated_at = NOW() WHERE user_id = $1 RETURNING energy`,
       [userId, fitness, cost],
     );
-    return { counted: true as const, fitness, energy: Number(updated.rows[0]!.energy), cost };
+    return { counted: true as const, fitness, energy: Number(updated.rows[0]!.energy), cost, kg: row.gym_set_kg };
   });
   if (result.counted) profileEvents.emit("build", userId, result.fitness);
   return result;
