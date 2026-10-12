@@ -101,6 +101,7 @@ import {
   regionOf,
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
+import { EntranceMarkers, type EntranceCandidate } from "./entrance-markers";
 import { Escort, type EscortLeader } from "./escort";
 import { StreetCrews } from "./street-crews";
 import { CarSpotters, type SpottedCar } from "./car-spotters";
@@ -351,6 +352,7 @@ export class GameEngine {
   private escorts = new Map<string, Escort>();
   private ownGuards = 0;
   private crews: StreetCrews | null = null;
+  private entrances: EntranceMarkers | null = null;
   private spotters: CarSpotters | null = null;
   private gatePlot: string | null = null;
   private looks = new Map<string, CharacterAppearance>();
@@ -716,6 +718,7 @@ export class GameEngine {
     buildServiceBay(scene, getPlace("ade-auto-works"), (x, z) => this.world.groundHeight(x, z));
     this.showroom = this.buildShowroom(this.vehicleFactory);
     this.bikeStations = new BikeStationsView(scene, this.materials, (x, z) => this.world.groundHeight(x, z), this.vehicleFactory, (meshes) => this.addCaster(meshes));
+    this.entrances = new EntranceMarkers(scene, (x, z) => this.world.groundHeight(x, z));
     if (this.avatars) this.crews = new StreetCrews(scene, this.avatars, this.vehicleFactory, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) {
       this.spotters = new CarSpotters(
@@ -1217,6 +1220,7 @@ export class GameEngine {
       outdoors: !this.interior && !bus,
     });
     this.crews?.update(dt, x, z, !this.interior);
+    this.entrances?.update(dt, [x, z], !this.interior && !bus && !seatedTravel, () => this.entranceCandidates(), this.interior && !seatedTravel ? (this.interior.spots.find((spot) => spot.id === "exit")?.point ?? null) : null);
     this.spotters?.update(dt, now, this.spottedCar(x, z), [x, z], !this.interior && !bus);
     this.updateTout(dt, now, x, z);
     this.plotsView?.animate(dt);
@@ -1858,13 +1862,23 @@ export class GameEngine {
     }
   }
 
+  private entranceCandidates(): EntranceCandidate[] {
+    const doors: EntranceCandidate[] = PLACES.filter((place) => place.kind !== "delivery").map((place) => ({ key: place.id, point: place.door, name: place.name }));
+    for (const plot of PLOTS) {
+      const state = this.plotStates.find((entry) => entry.id === plot.id);
+      if (state?.status === "mine" && state.construction?.completed) doors.push({ key: plot.id, point: houseDoor(plot), name: "Your house" });
+    }
+    return doors;
+  }
+
   private updateEscorts(dt: number, own: EscortLeader) {
     if (!this.avatars || !this.vehicleFactory) return;
     const wanted = new Map<string, { count: number; leader: EscortLeader }>();
-    if (this.ownGuards) wanted.set("self", { count: this.ownGuards, leader: own });
+    const inDubai = regionOf(own.x, own.z) === "dubai";
+    if (this.ownGuards && !inDubai) wanted.set("self", { count: this.ownGuards, leader: own });
     for (const [sessionId, remote] of this.remotes) {
       const sample = remote.samples.at(-1);
-      if (!remote.guards || !sample || !remote.avatar) continue;
+      if (inDubai || !remote.guards || !sample || !remote.avatar) continue;
       const view = sample.vehicleId ? this.vehicles.get(sample.vehicleId)?.view : undefined;
       const pose = view ? { x: view.x, z: view.z, yaw: view.yaw } : { x: remote.avatar.root.position.x, z: remote.avatar.root.position.z, yaw: remote.avatar.root.rotation.y };
       if (Math.hypot(pose.x - own.x, pose.z - own.z) > ESCORT_VISIBLE_RANGE) continue;
@@ -2048,7 +2062,7 @@ export class GameEngine {
     const before = this.trip;
     this.trip = trip;
     if (this.travelView && before.ticketId === trip.ticketId) {
-      if (!before.immigrationDone && trip.immigrationDone) this.handOver("immigration", "passport", "The officer stamps your passport and hands it back. Welcome to Dubai.");
+      if (!before.immigrationDone && trip.immigrationDone) this.handOver("immigration", "passport", `The officer stamps your passport and hands it back. Welcome to Dubai.${this.ownGuards ? " Your security team stays in Lagos and meets you when you fly back." : ""}`);
       if (!before.bagCollected && trip.bagCollected) this.handOver("baggage", "bag", "The porter lifts your bag off the belt for you. Unpack and change clothes at your hotel wardrobe.");
     }
     this.callbacks.trip(trip);

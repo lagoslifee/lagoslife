@@ -26,6 +26,8 @@ export class Escort {
   private guards: Guard[] = [];
   private wasDriving: boolean | null = null;
   private gate: { point: Vec2 } | null = null;
+  /** The entrance the leader walked in by; guards stand either side of it until the leader walks away. */
+  private post: Crumb | null = null;
 
   constructor(
     private readonly id: string,
@@ -93,13 +95,29 @@ export class Escort {
 
   update(dt: number, leader: EscortLeader) {
     if (!leader.outdoors) {
+      if (this.wasDriving !== null) {
+        const last = this.crumbs.at(-1);
+        this.post = last && Math.hypot(last.x - leader.x, last.z - leader.z) < 30 ? { ...last } : null;
+      }
       this.truck.root.setEnabled(false);
       for (const guard of this.guards) this.showGuard(guard, false);
       this.wasDriving = null;
       return;
     }
     const lost = Math.hypot(this.truck.x - leader.x, this.truck.z - leader.z) > LOST_METRES;
-    if (this.wasDriving === null || lost) this.placeTruckBehind(leader);
+    if (this.wasDriving === null && this.post && Math.hypot(this.post.x - leader.x, this.post.z - leader.z) < 25) {
+      this.placeTruckBehind({ ...leader, x: this.post.x, z: this.post.z, yaw: this.post.yaw });
+      for (const [index, guard] of this.guards.entries()) {
+        const [px, pz] = this.postSpot(index);
+        guard.x = px;
+        guard.z = pz;
+        guard.yaw = this.post.yaw + Math.PI;
+        this.showGuard(guard, true);
+      }
+    } else if (this.wasDriving === null || lost) {
+      this.post = null;
+      this.placeTruckBehind(leader);
+    }
     this.truck.root.setEnabled(true);
 
     const last = this.crumbs.at(-1);
@@ -124,6 +142,11 @@ export class Escort {
 
     this.truck.track(dt);
     this.wasDriving = false;
+    if (this.post && Math.hypot(this.post.x - leader.x, this.post.z - leader.z) > 4) this.post = null;
+    if (this.post) {
+      for (const [index, guard] of this.guards.entries()) this.walkGuard(guard, index, this.postSpot(index), this.post.yaw + Math.PI, dt, false);
+      return;
+    }
     const forwardX = Math.sin(leader.yaw);
     const forwardZ = Math.cos(leader.yaw);
     for (const [index, guard] of this.guards.entries()) {
@@ -138,6 +161,17 @@ export class Escort {
       const tz = leader.z - forwardZ * back - forwardX * side * 0.8;
       this.walkGuard(guard, index, [tx, tz], leader.yaw, dt, false);
     }
+  }
+
+  /** Guards flank the entrance in pairs, facing out to the street. */
+  private postSpot(index: number): Vec2 {
+    const post = this.post!;
+    const forwardX = Math.sin(post.yaw);
+    const forwardZ = Math.cos(post.yaw);
+    const side = index % 2 ? 1 : -1;
+    const across = 1.6 + Math.floor(index / 2) * 1.1;
+    const back = 1.2 + Math.floor(index / 2) * 0.6;
+    return [post.x - forwardX * back + forwardZ * side * across, post.z - forwardZ * back - forwardX * side * across];
   }
 
   private showGuard(guard: Guard, shown: boolean) {
