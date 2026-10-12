@@ -67,10 +67,12 @@ export class RoadNavigator {
   /**
    * Road route with the street name of each leg. `reachable` is false when no road joins the start and
    * the destination; `gap` is how far the destination lies from the nearest road (walk the rest).
+   * `approach` (a door's kerb) picks the road the route leaves by: the nearest road to a door is often a back lane or
+   * the next street over, so without it the last leg would cut across the block.
    */
-  plan(from: Vec2, to: Vec2): { points: Vec2[]; names: Array<string | null>; reachable: boolean; gap: number; metres: number } {
+  plan(from: Vec2, to: Vec2, approach?: Vec2): { points: Vec2[]; names: Array<string | null>; reachable: boolean; gap: number; metres: number } {
     const start = this.snapEdge(from);
-    const goal = this.snapEdge(to);
+    const goal = this.snapEdge(approach ?? to);
     const straight = Math.hypot(to[0] - from[0], to[1] - from[1]);
     if (!start || !goal) return { points: [from, to], names: [null, null], reachable: false, gap: Infinity, metres: straight };
     const gap = goal.distance;
@@ -135,8 +137,14 @@ export class RoadNavigator {
         names.push(index < chain.length - 1 ? (cameFrom.get(chain[index + 1]!)?.name ?? null) : goal.name);
       });
     }
-    points.push(goal.point, to);
-    names.push(null, null);
+    points.push(goal.point);
+    names.push(null);
+    if (approach) {
+      points.push(approach);
+      names.push(null);
+    }
+    points.push(to);
+    names.push(null);
     const kept: Vec2[] = [];
     const keptNames: Array<string | null> = [];
     points.forEach((point, index) => {

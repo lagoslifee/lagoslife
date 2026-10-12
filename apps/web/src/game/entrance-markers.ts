@@ -7,7 +7,8 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
 import type { Vec2 } from "@lagos-living/shared";
 
-export type EntranceCandidate = { key: string; point: Vec2; name: string; title?: string };
+/** `approach` is where the door meets its own street (a place's kerb, a plot's gate): routes arrive there. */
+export type EntranceCandidate = { key: string; point: Vec2; name: string; title?: string; approach?: Vec2 };
 
 type Marker = { root: TransformNode; arrow: Mesh; label: Mesh; texture: DynamicTexture; accent: string; key: string | null };
 

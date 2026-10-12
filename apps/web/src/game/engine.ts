@@ -2221,10 +2221,10 @@ export class GameEngine {
   }
 
   private entranceCandidates(): EntranceCandidate[] {
-    const doors: EntranceCandidate[] = PLACES.filter((place) => place.kind !== "delivery").map((place) => ({ key: place.id, point: place.door, name: place.name }));
+    const doors: EntranceCandidate[] = PLACES.filter((place) => place.kind !== "delivery").map((place) => ({ key: place.id, point: place.door, name: place.name, approach: place.kerb }));
     for (const plot of PLOTS) {
       const state = this.plotStates.find((entry) => entry.id === plot.id);
-      if (state?.status === "mine" && state.construction?.completed) doors.push({ key: plot.id, point: houseDoor(plot), name: "Your house" });
+      if (state?.status === "mine" && state.construction?.completed) doors.push({ key: plot.id, point: houseDoor(plot), name: "Your house", approach: plot.gate });
     }
     return doors;
   }
@@ -3016,7 +3016,9 @@ export class GameEngine {
       this.beacon.isPickable = false;
     }
     const { x, z } = this.controller;
-    const goal = this.waypointDoor && !this.car ? this.waypointDoor.point : target.point;
+    const door = this.waypointDoor;
+    const goal = door ? (this.car ? (door.approach ?? door.point) : door.point) : target.point;
+    const approach = door && !this.car ? door.approach : undefined;
     const distance = Math.hypot(goal[0] - x, goal[1] - z);
     if (this.waypointDoor && this.car && distance < 30 && this.parkNoticeFor !== target.label) {
       this.parkNoticeFor = target.label;
@@ -3042,7 +3044,7 @@ export class GameEngine {
     }
     if (now - this.lastRoute.at > 2500 || moved > 12 || !this.routeMesh) {
       this.lastRoute = { at: now, x, z };
-      this.routePlan = this.navigator.plan([x, z], goal);
+      this.routePlan = this.navigator.plan([x, z], goal, approach);
       this.routePoints = this.routePlan.points;
       this.guidance = guide(this.routePlan, [x, z]);
       this.routeMesh?.dispose();
@@ -3230,7 +3232,9 @@ export class GameEngine {
       this.parkNoticeFor = null;
       const near = (point: Vec2) => target && Math.hypot(point[0] - target.point[0], point[1] - target.point[1]) < 2;
       const kerbPlace = target ? PLACES.find((place) => place.kind !== "delivery" && place.buildingId !== null && near(place.kerb)) : undefined;
-      this.waypointDoor = target ? (this.entranceCandidates().find((door) => near(door.point)) ?? (kerbPlace ? { key: kerbPlace.id, point: kerbPlace.door, name: kerbPlace.name } : null)) : null;
+      this.waypointDoor = target
+        ? (this.entranceCandidates().find((door) => near(door.point)) ?? (kerbPlace ? { key: kerbPlace.id, point: kerbPlace.door, name: kerbPlace.name, approach: kerbPlace.kerb } : null))
+        : null;
       if (this.waypointDoor && target) this.waypointDoor = { ...this.waypointDoor, name: target.label };
     }
     if (!target) {
@@ -3909,6 +3913,8 @@ export class GameEngine {
       rideCar: () => (this.rideCar ? { x: this.rideCar.car.x, z: this.rideCar.car.z, speed: this.rideCar.car.speed, remaining: this.rideCar.pilot.remaining(this.rideCar.car) } : null),
       navigation: () => this.navigation(),
       navigate: (point: Vec2, label: string) => this.setWaypoint({ point, label }),
+      route: () => this.routePoints,
+      plan: (from: Vec2, to: Vec2, approach?: Vec2) => this.navigator.plan(from, to, approach),
       honks: () => this.life?.honks ?? 0,
       cameraInsideCar: () => Boolean(this.life?.carAt(this.camera.position.x, this.camera.position.y, this.camera.position.z, 0)),
       lanesAhead: (seconds: number) => this.life?.lanesAhead(seconds) ?? [],

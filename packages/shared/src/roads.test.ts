@@ -29,6 +29,23 @@ describe("RoadNavigator.plan", () => {
     expect(plan.metres).toBeCloseTo(110, 0);
   });
 
+  it("arrives by the door's own street when given its kerb, even if another road is nearer the door", () => {
+    // Front Street runs past the door's kerb at x = 0; Back Lane passes just behind the house at x = 12.
+    const block = new RoadNavigator([
+      { name: "Front Street", points: [[0, 0], [0, 100]] },
+      { name: "Top Road", points: [[0, 100], [12, 100]] },
+      { name: "Back Lane", points: [[12, 100], [12, 0]] },
+    ]);
+    const door: Vec2 = [10, 30];
+    const kerb: Vec2 = [1, 30];
+    expect(block.plan([0, 5], door).names).toContain("Top Road");
+    const plan = block.plan([0, 5], door, kerb);
+    expect(plan.names).not.toContain("Top Road");
+    expect(plan.points.at(-2)).toEqual(kerb);
+    expect(plan.points.at(-1)).toEqual(door);
+    expect(plan.metres).toBeCloseTo(35, 0);
+  });
+
   it("reports unreachable when the streets are not joined", () => {
     expect(nav.plan([0, 50], [15, 250]).reachable).toBe(false);
   });
