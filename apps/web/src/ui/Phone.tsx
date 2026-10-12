@@ -1,6 +1,6 @@
-import { BIKE_RENTAL, nearestStop, ROUTES, type RideState, type TowState, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
+import { BIKE_RENTAL, HOUSE_DESIGNS, nearestStop, plotById, readyBuiltPrice, ROUTES, type RideState, type TowState, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
-import { api, naira, type EconomyState, type InteriorState, type MyVehicle, type PropertyListing } from "../api";
+import { api, naira, type EconomyState, type InteriorState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { actionLabels, keyLabel, type Action, type Bindings } from "../game/controller";
 import type { GameEngine, HudState } from "../game/engine";
 import { RideApp } from "./RideApp";
@@ -58,6 +58,9 @@ type Props = {
   onReset: () => Promise<void>;
   onEat: (itemId: string) => Promise<void>;
   onInteriorChanged: () => void;
+  /** Opens the top-down home designer for a home the player owns or rents. */
+  onDesign: (propertyId: string) => void;
+  plots: PlotState[];
   onReport: (target: ReportTarget) => void;
   onCustomise: () => void;
   onSignOut: () => void;
@@ -317,8 +320,11 @@ function WalletApp({ economy, onEat }: Props) {
   );
 }
 
-function PropertyApp({ properties, economy, onRefresh, onToast, onNavigate, onClose, hud, onInteriorChanged }: Props) {
+function PropertyApp({ properties, economy, onRefresh, onToast, onNavigate, onClose, hud, onInteriorChanged, onDesign, plots }: Props) {
   const mine = properties.filter((listing) => listing.isMine);
+  const invited = properties.filter((listing) => listing.hasGuestAccess && !listing.isMine);
+  const freePlot = plots.find((plot) => plot.status === "available");
+  const ownPlot = plots.find((plot) => plot.status === "mine");
   const [interior, setInterior] = useState<InteriorState | null>(null);
   const [busy, setBusy] = useState(false);
   const insideId = hud?.location === "interior" && !hud.previewOnly ? hud.propertyId : null;
@@ -392,30 +398,8 @@ function PropertyApp({ properties, economy, onRefresh, onToast, onNavigate, onCl
       ))}
       {insideOwned && interior && (
         <div className="interior-tools">
-          <h3>Furniture</h3>
-          {interior.availableFurniture.length === 0 && <p className="muted">No spare furniture in your bag. Buy some at Home & Style Furnishings.</p>}
-          {interior.availableFurniture.map((item) => (
-            <div key={item.itemId} className="row spread">
-              <span>{item.name} ×{item.available}</span>
-              <button
-                className="link"
-                disabled={busy}
-                onClick={() => {
-                  const taken = new Set(interior.furniture.map((placement) => `${placement.gridX}:${placement.gridZ}`));
-                  const cells: Array<[number, number]> = [[2, 2], [5, 2], [2, 4], [5, 4], [1, 3], [6, 3], [3, 1], [4, 4]];
-                  const cell = cells.find(([x, z]) => !taken.has(`${x}:${z}`));
-                  if (!cell) return onToast({ tone: "error", text: "No free floor space left." });
-                  void run(`${item.name} placed.`, () => api.placeFurniture(insideOwned, item.itemId, cell[0], cell[1], 0));
-                }}
-              >Place</button>
-            </div>
-          ))}
-          {interior.furniture.map((placement) => (
-            <div key={placement.id} className="row spread">
-              <span>{placement.name} (placed)</span>
-              <button className="link" disabled={busy} onClick={() => void run(`${placement.name} picked up.`, () => api.removeFurniture(insideOwned, placement.id))}>Pick up</button>
-            </div>
-          ))}
+          <button className="primary wide" onClick={() => onDesign(insideOwned)} data-testid="design-home">🛋 Design this home — furniture, view from above, invite friends</button>
+          {interior.furniture.length > 0 && <p className="muted small">{interior.furniture.length} piece{interior.furniture.length > 1 ? "s" : ""} of furniture placed{interior.availableFurniture.length ? ` · ${interior.availableFurniture.reduce((sum, item) => sum + item.available, 0)} more in your bag` : ""}.</p>}
           <h3>Storage chest · {interior.storage.reduce((total, item) => total + item.quantity, 0)}/{interior.storageSlots}</h3>
           {interior.storage.map((item) => (
             <div key={item.itemId} className="row spread">
@@ -431,7 +415,37 @@ function PropertyApp({ properties, economy, onRefresh, onToast, onNavigate, onCl
           ))}
         </div>
       )}
-      {!insideOwned && mine.length > 0 && <p className="muted small">Furniture and storage can be managed while you are inside your home.</p>}
+      {!insideOwned && mine.length > 0 && <p className="muted small">Go inside your home to design it: drag furniture anywhere, see the room from above and invite friends round.</p>}
+      {invited.length > 0 && (
+        <>
+          <h3>Homes you're invited to</h3>
+          {invited.map((listing) => (
+            <div key={listing.id} className="home-card">
+              <strong>{listing.name}</strong>
+              <p className="muted">{listing.street ?? listing.addressLabel} · the door opens for you</p>
+              <button className="secondary" onClick={() => { onNavigate({ point: listing.door, label: listing.name }); onClose(); }}>Visit</button>
+            </div>
+          ))}
+        </>
+      )}
+      <h3>New houses for sale</h3>
+      <p className="muted small">Modern houses on the Lekki plots, bought ready-built with the land or built stage by stage. Walk to a plot's red sign to buy.</p>
+      <div className="house-catalogue">
+        {HOUSE_DESIGNS.map((design) => (
+          <div key={design.id} className="house-card">
+            <strong>{design.name}</strong>
+            <span>{design.bedrooms} bed · {design.floors} floor{design.floors > 1 ? "s" : ""}{design.parking ? ` · ${design.parking}-car carport` : ""}{design.pool ? " · pool" : ""}</span>
+            <em>{naira(readyBuiltPrice(design, false))} ready-built</em>
+          </div>
+        ))}
+      </div>
+      {ownPlot ? (
+        <button className="secondary" onClick={() => { const plot = plotById(ownPlot.id); if (plot) onNavigate({ point: plot.gate, label: plot.name }); onClose(); }}>Go to your plot</button>
+      ) : freePlot ? (
+        <button className="secondary" onClick={() => { const plot = plotById(freePlot.id); if (plot) onNavigate({ point: plot.gate, label: `${plot.name} · houses for sale` }); onClose(); }}>Go to a free plot</button>
+      ) : (
+        <p className="muted small">Every plot is taken right now.</p>
+      )}
     </div>
   );
 }

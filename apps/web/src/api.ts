@@ -78,7 +78,10 @@ export type InteriorState = {
   storageSlots: number;
   tenureType: string | null;
   nextPaymentAt: string | null;
-  furniture: Array<{ id: string; itemId: string; name: string; gridX: number; gridZ: number; rotation: number }>;
+  /** `x`/`z`: room-local metres from the middle of the room. */
+  furniture: Array<{ id: string; itemId: string; name: string; gridX: number; gridZ: number; rotation: number; x: number; z: number }>;
+  access: { owner: boolean; guest: boolean };
+  guests: string[];
   availableFurniture: Array<{ itemId: string; name: string; available: number }>;
   carried: Array<{ itemId: string; name: string; category: string; available: number }>;
   storage: Array<{ itemId: string; name: string; quantity: number }>;
@@ -134,6 +137,8 @@ export const api = {
   acquirePlot: (plotId: string, tenure: "leased" | "owned") => post<{ balance: number }>(`/api/plots/${plotId}/acquire`, { tenure, idempotencyKey: crypto.randomUUID() }),
   renewPlot: (plotId: string) => post<{ balance: number }>(`/api/plots/${plotId}/renew`, { idempotencyKey: crypto.randomUUID() }),
   startBuilding: (plotId: string, designId: HouseDesign["id"]) => post<{ balance: number }>(`/api/plots/${plotId}/build`, { designId, idempotencyKey: crypto.randomUUID() }),
+  buyReadyBuilt: (plotId: string, designId: HouseDesign["id"]) =>
+    post<{ balance: number; homeId: string }>(`/api/plots/${plotId}/buy-built`, { designId, idempotencyKey: crypto.randomUUID() }),
   payNextStage: (plotId: string) => post<{ balance: number }>(`/api/plots/${plotId}/next-stage`, { idempotencyKey: crypto.randomUUID() }),
   acquire: (propertyId: string, tenure: "owned" | "rented") => post<{ balance: number }>("/api/properties/acquire", { propertyId, tenure, idempotencyKey: crypto.randomUUID() }),
   renew: (propertyId: string) => post<{ balance: number }>(`/api/properties/${propertyId}/renew`, { idempotencyKey: crypto.randomUUID() }),
@@ -141,6 +146,12 @@ export const api = {
   setHome: (propertyId: string) => post<{ homePropertyId: string }>(`/api/properties/${propertyId}/home`),
   placeFurniture: (propertyId: string, itemId: string, gridX: number, gridZ: number, rotation: 0 | 90 | 180 | 270) =>
     post<{ id: string }>(`/api/properties/${propertyId}/furniture`, { itemId, gridX, gridZ, rotation, idempotencyKey: crypto.randomUUID() }),
+  placeFurnitureAt: (propertyId: string, itemId: string, x: number, z: number, rotation: 0 | 90 | 180 | 270) =>
+    post<{ id: string }>(`/api/properties/${propertyId}/furniture`, { itemId, x, z, rotation, idempotencyKey: crypto.randomUUID() }),
+  moveFurniture: (propertyId: string, placementId: string, x: number, z: number, rotation: 0 | 90 | 180 | 270) =>
+    post<{ id: string }>(`/api/properties/${propertyId}/furniture/move`, { placementId, x, z, rotation }),
+  inviteGuest: (propertyId: string, username: string) => post<{ invited: boolean }>(`/api/properties/${propertyId}/guests`, { username }),
+  removeGuest: (propertyId: string, username: string) => post<{ removed: boolean }>(`/api/properties/${propertyId}/guests/remove`, { username }),
   removeFurniture: (propertyId: string, placementId: string) => post(`/api/properties/${propertyId}/furniture/remove`, { placementId }),
   storage: (propertyId: string, itemId: string, direction: "store" | "retrieve") => post(`/api/properties/${propertyId}/storage`, { itemId, direction }),
   homeAction: (propertyId: string, action: "sleep" | "cook" | "clean") => post(`/api/properties/${propertyId}/action`, { action }),

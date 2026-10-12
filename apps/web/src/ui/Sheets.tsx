@@ -46,7 +46,7 @@ export function PlaceSheet({ place, economy, properties, onClose, onRefresh, onT
     }
   };
 
-  const vendorItems = economy?.catalog.filter((item) => item.vendorId === place.id) ?? [];
+  const vendorItems = economy?.catalog.filter((item) => item.vendorId === place.id || (place.kind === "furniture" && item.category === "furniture" && !item.vendorId)) ?? [];
   const { units, offered: listing, free } = buildingUnits(properties, place.id, focusListingId);
   const noun = place.kind === "rental" ? "flat" : "house";
   const balance = economy?.balance ?? 0;

@@ -1,0 +1,290 @@
+import {
+  findFreeSpot,
+  FURNITURE,
+  furnitureItem,
+  furnitureRect,
+  HOME_FIXTURES,
+  placementProblem,
+  ROOM_HALF,
+  snapFloor,
+  type FurnitureRotation,
+  type Notice,
+  type PlacedPiece,
+} from "@lagos-living/shared";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { api, naira, type EconomyState, type InteriorState } from "../api";
+import type { GameEngine } from "../game/engine";
+
+type Props = {
+  engine: GameEngine;
+  propertyId: string;
+  homeName: string;
+  economy: EconomyState | null;
+  onClose: () => void;
+  onToast: (notice: Notice) => void;
+  onRefresh: () => Promise<void>;
+};
+
+type Tab = "arrange" | "shop" | "guests";
+type Drag = { id: string; dx: number; dz: number; x: number; z: number; moved: boolean };
+
+/** Share of the screen, from the top, left for the 3D view looking down into the room. */
+const VIEW_SHARE = 0.4;
+const PAD = 0.25;
+
+/**
+ * Home designer: a floor plan to drag, turn and pick up furniture, with the room itself seen from straight above
+ * in the top of the screen. Also the furniture catalogue (delivered, so it can be bought from here) and the guest list.
+ */
+export function HomeDesigner({ engine, propertyId, homeName, economy, onClose, onToast, onRefresh }: Props) {
+  const [interior, setInterior] = useState<InteriorState | null>(null);
+  const [tab, setTab] = useState<Tab>("arrange");
+  const [selected, setSelected] = useState<string | null>(null);
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [friend, setFriend] = useState("");
+  const svg = useRef<SVGSVGElement>(null);
+
+  const reload = useCallback(async () => {
+    try {
+      setInterior(await api.interior(propertyId));
+    } catch (error) {
+      onToast({ tone: "error", text: (error as Error).message });
+    }
+  }, [propertyId, onToast]);
+
+  useEffect(() => {
+    engine.setPlanView(VIEW_SHARE);
+    void reload();
+    return () => engine.setPlanView(null);
+  }, [engine, reload]);
+
+  const run = async (success: string | null, work: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await work();
+      if (success) onToast({ tone: "success", text: success });
+      await Promise.all([reload(), onRefresh()]);
+      void engine.refreshInterior();
+    } catch (error) {
+      onToast({ tone: "error", text: (error as Error).message });
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pieces: Array<PlacedPiece & { id: string; name: string }> = (interior?.furniture ?? []).map((piece) =>
+    drag && drag.id === piece.id ? { ...piece, x: drag.x, z: drag.z } : piece,
+  );
+  const selectedPiece = pieces.find((piece) => piece.id === selected) ?? null;
+  const problem = (piece: PlacedPiece) => placementProblem(piece, pieces);
+
+  const floorPoint = (event: ReactPointerEvent) => {
+    const matrix = svg.current?.getScreenCTM();
+    if (!svg.current || !matrix) return null;
+    const point = svg.current.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const local = point.matrixTransform(matrix.inverse());
+    return { x: local.x, z: -local.y };
+  };
+
+  const startDrag = (event: ReactPointerEvent, piece: PlacedPiece & { id: string }) => {
+    if (busy) return;
+    event.stopPropagation();
+    (event.target as Element).setPointerCapture?.(event.pointerId);
+    const at = floorPoint(event);
+    if (!at) return;
+    setSelected(piece.id);
+    setDrag({ id: piece.id, dx: piece.x - at.x, dz: piece.z - at.z, x: piece.x, z: piece.z, moved: false });
+  };
+
+  const moveDrag = (event: ReactPointerEvent) => {
+    if (!drag) return;
+    const at = floorPoint(event);
+    if (!at) return;
+    const x = snapFloor(Math.max(-ROOM_HALF[0], Math.min(ROOM_HALF[0], at.x + drag.dx)));
+    const z = snapFloor(Math.max(-ROOM_HALF[1], Math.min(ROOM_HALF[1], at.z + drag.dz)));
+    if (x !== drag.x || z !== drag.z) setDrag({ ...drag, x, z, moved: true });
+  };
+
+  const endDrag = () => {
+    if (!drag) return;
+    const piece = interior?.furniture.find((entry) => entry.id === drag.id);
+    setDrag(null);
+    if (!piece || !drag.moved) return;
+    const reason = placementProblem({ ...piece, x: drag.x, z: drag.z }, interior!.furniture);
+    if (reason) return onToast({ tone: "error", text: reason });
+    setInterior({ ...interior!, furniture: interior!.furniture.map((entry) => (entry.id === piece.id ? { ...entry, x: drag.x, z: drag.z } : entry)) });
+    void run(null, () => api.moveFurniture(propertyId, piece.id, drag.x, drag.z, piece.rotation as FurnitureRotation));
+  };
+
+  const turn = () => {
+    if (!selectedPiece) return;
+    const rotation = ((selectedPiece.rotation + 90) % 360) as FurnitureRotation;
+    const reason = problem({ ...selectedPiece, rotation });
+    if (reason) return onToast({ tone: "error", text: `Not enough room to turn it: ${reason.charAt(0).toLowerCase()}${reason.slice(1)}` });
+    void run(null, () => api.moveFurniture(propertyId, selectedPiece.id, selectedPiece.x, selectedPiece.z, rotation));
+  };
+
+  const placeNew = (itemId: string, name: string) => {
+    const spot = findFreeSpot(itemId, pieces);
+    if (!spot) return onToast({ tone: "error", text: `No free floor left for the ${name.toLowerCase()}. Pick something up first.` });
+    void run(`${name} placed. Drag it where you want it.`, () => api.placeFurnitureAt(propertyId, itemId, spot.x, spot.z, spot.rotation));
+  };
+
+  const buyAndPlace = (itemId: string) => {
+    const item = furnitureItem(itemId)!;
+    const spot = findFreeSpot(itemId, pieces);
+    if (!spot) return onToast({ tone: "error", text: `No free floor left for the ${item.name.toLowerCase()}. Pick something up first.` });
+    void run(`${item.name} delivered and placed for ${naira(item.price)}.`, async () => {
+      await api.purchase(itemId);
+      await api.placeFurnitureAt(propertyId, itemId, spot.x, spot.z, spot.rotation);
+      setTab("arrange");
+    });
+  };
+
+  const balance = economy?.balance ?? 0;
+  const [hx, hz] = ROOM_HALF;
+  const owner = interior?.access.owner ?? false;
+
+  return (
+    <section className="designer" role="dialog" aria-label={`Design ${homeName}`} data-testid="home-designer">
+      <header>
+        <div>
+          <p className="eyebrow">DESIGN YOUR HOME</p>
+          <h2>{homeName}</h2>
+        </div>
+        <button className="primary" onClick={onClose}>Done</button>
+      </header>
+      <nav className="designer-tabs">
+        {(["arrange", "shop", "guests"] as const).map((entry) => (
+          <button key={entry} className={tab === entry ? "active" : ""} onClick={() => setTab(entry)}>
+            {entry === "arrange" ? "🛋 Arrange" : entry === "shop" ? "🛒 Furniture shop" : "👥 Invite friends"}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "arrange" && (
+        <div className="designer-body">
+          <svg
+            ref={svg}
+            className="floor-plan"
+            viewBox={`${-hx - PAD} ${-hz - PAD} ${(hx + PAD) * 2} ${(hz + PAD) * 2}`}
+            onPointerMove={moveDrag}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+            onPointerDown={() => setSelected(null)}
+            data-testid="floor-plan"
+          >
+            <rect x={-hx} y={-hz} width={hx * 2} height={hz * 2} className="plan-floor" />
+            {[-3, 0, 3].map((x) => <rect key={x} x={x - 0.7} y={-hz - 0.08} width={1.4} height={0.16} className="plan-window" />)}
+            {HOME_FIXTURES.map((fixture) => (
+              <g key={fixture.label}>
+                <rect x={fixture.x - fixture.hx} y={-fixture.z - fixture.hz} width={fixture.hx * 2} height={fixture.hz * 2} className="plan-fixture" />
+                <text x={fixture.x} y={-fixture.z} className="plan-fixture-label">{fixture.label}</text>
+              </g>
+            ))}
+            <rect x={-0.55} y={hz - 0.06} width={1.1} height={0.2} className="plan-door" />
+            {[...pieces].sort((a, b) => Number(Boolean(furnitureItem(b.itemId)?.floor)) - Number(Boolean(furnitureItem(a.itemId)?.floor))).map((piece) => {
+              const item = furnitureItem(piece.itemId);
+              if (!item) return null;
+              const rect = furnitureRect(item, piece.x, piece.z, piece.rotation);
+              const yaw = (piece.rotation * Math.PI) / 180;
+              const invalid = drag?.id === piece.id && Boolean(problem(piece));
+              const backX = Math.sin(yaw) * rect.hx;
+              const backY = -Math.cos(yaw) * rect.hz;
+              return (
+                <g
+                  key={piece.id}
+                  className={`plan-piece ${selected === piece.id ? "selected" : ""} ${invalid ? "invalid" : ""} ${item.floor ? "rug" : ""}`}
+                  onPointerDown={(event) => owner && startDrag(event, piece)}
+                  data-testid={`piece-${piece.itemId}`}
+                >
+                  <rect x={rect.x - rect.hx} y={-rect.z - rect.hz} width={rect.hx * 2} height={rect.hz * 2} rx={0.08} style={{ fill: item.plan }} />
+                  {!item.floor && <circle cx={rect.x + backX * 0.8} cy={-rect.z + backY * 0.8} r={0.07} className="plan-back" />}
+                  <text x={rect.x} y={-rect.z} className="plan-label">{item.name.replace(/^(Island|Lagoon|Woven|Eko|Ikoyi|Velvet|Marble|Six-seat|Sliding|Open|Arc|Potted|Aso-oke Pattern) /, "")}</text>
+                </g>
+              );
+            })}
+          </svg>
+          {selectedPiece ? (
+            <div className="designer-toolbar">
+              <strong>{selectedPiece.name}</strong>
+              <button className="secondary" disabled={busy || !owner} onClick={turn}>⟳ Turn</button>
+              <button className="secondary" disabled={busy || !owner} onClick={() => {
+                setSelected(null);
+                void run(`${selectedPiece.name} picked up and back in your bag.`, () => api.removeFurniture(propertyId, selectedPiece.id));
+              }}>Pick up</button>
+            </div>
+          ) : (
+            <p className="muted small">{owner ? "Drag furniture to move it. Tap a piece to turn it or pick it up. The dot marks its back." : "Only the owner can rearrange this home."}</p>
+          )}
+          {owner && interior && interior.availableFurniture.length > 0 && (
+            <div className="designer-bag">
+              <span className="muted small">In your bag:</span>
+              {interior.availableFurniture.map((item) => (
+                <button key={item.itemId} className="chip" disabled={busy} onClick={() => placeNew(item.itemId, item.name)}>
+                  + {item.name}{item.available > 1 ? ` ×${item.available}` : ""}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "shop" && (
+        <ul className="designer-shop">
+          {FURNITURE.map((item) => {
+            const inBag = interior?.availableFurniture.find((entry) => entry.itemId === item.id)?.available ?? 0;
+            return (
+              <li key={item.id}>
+                <i style={{ background: item.plan }} />
+                <div>
+                  <strong>{item.name}</strong>
+                  <span>{item.description}</span>
+                  <em>{item.size[0]} × {item.size[1]} m{inBag ? ` · ${inBag} in your bag` : ""}</em>
+                </div>
+                <button className="primary" disabled={busy || !owner || balance < item.price} onClick={() => buyAndPlace(item.id)}>
+                  {balance < item.price ? `Need ${naira(item.price)}` : `Buy ${naira(item.price)}`}
+                </button>
+              </li>
+            );
+          })}
+          <li className="muted small">Delivered straight to your home by Home &amp; Style Furnishings. Fictional game naira only.</li>
+        </ul>
+      )}
+
+      {tab === "guests" && (
+        <div className="designer-body">
+          <p className="muted">Invite a friend by their username. They get a message, the house shows up in their Phone → My Home with directions, and your door opens for them. They see your furniture change live while they are inside.</p>
+          <form
+            className="row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const name = friend.trim();
+              if (name.length < 3) return;
+              void run(`${name} is invited. They can now let themselves in.`, async () => {
+                await api.inviteGuest(propertyId, name);
+                setFriend("");
+              });
+            }}
+          >
+            <input value={friend} onChange={(event) => setFriend(event.target.value)} placeholder="Friend's username" maxLength={20} aria-label="Friend's username" />
+            <button className="primary" disabled={busy || !owner || friend.trim().length < 3}>Invite</button>
+          </form>
+          <ul className="designer-guests">
+            {(interior?.guests ?? []).map((name) => (
+              <li key={name}>
+                <span>{name}</span>
+                <button className="link" disabled={busy || !owner} onClick={() => void run(`${name} can no longer let themselves in.`, () => api.removeGuest(propertyId, name))}>Remove</button>
+              </li>
+            ))}
+            {interior && interior.guests.length === 0 && <li className="muted small">No guests yet.</li>}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}

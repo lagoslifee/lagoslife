@@ -412,7 +412,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private onHomeInvite = (guestId: string, host: string, home: string) => {
     const player = this.playerByUser(guestId);
     const client = player ? this.clientFor(player) : undefined;
-    if (client) this.notify(client, { tone: "info", text: `${host} invited you round to ${home}. Phone → Homes → Visit gives you directions; the door will open for you.` });
+    if (client) this.notify(client, { tone: "info", text: `${host} invited you round to ${home}. Phone → My Home → Visit gives you directions; the door will open for you.` });
   };
 
   onAuth(_client: LagosClient, options: { token?: unknown }, _context: AuthContext) {

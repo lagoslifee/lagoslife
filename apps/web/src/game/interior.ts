@@ -4,7 +4,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
-import { bottleById, CLUB_LAYOUT, CLUB_TABLES, INTERIOR_EXIT, INTERIOR_HALF, INTERIOR_ORIGIN, type Club, type Vec2 } from "@lagos-living/shared";
+import { bottleById, CLUB_LAYOUT, CLUB_TABLES, INTERIOR_EXIT, INTERIOR_HALF, INTERIOR_ORIGIN, legacyCellPosition, type Club, type Vec2 } from "@lagos-living/shared";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
@@ -14,15 +14,18 @@ import type { Materials } from "./materials";
 import { SignAtlas } from "./sign-atlas";
 
 export type InteriorKind = "starter" | "preview" | "home" | "club";
-export type Placement = { id?: string; itemId: string; gridX: number; gridZ: number; rotation: number };
+/** `x`/`z` are room-local metres; pieces saved before free placement only have their grid cell. */
+export type Placement = { id?: string; itemId: string; gridX: number; gridZ: number; rotation: number; x?: number | null; z?: number | null };
 export type InteriorSpot = { id: "exit" | "bed" | "storage" | "kitchen" | "bar" | "dance" | `table-${number}`; point: Vec2; label: string };
 
 const HEIGHT = 3.0;
 const [OX, OZ] = INTERIOR_ORIGIN;
 const [HX, HZ] = INTERIOR_HALF;
 
-export function cellCentre(gridX: number, gridZ: number): Vec2 {
-  return [OX - HX + (gridX + 0.5) * 1.4, OZ - HZ + (gridZ + 0.5) * 1.6];
+/** World position of a placed piece. */
+export function placementCentre(placement: Placement): Vec2 {
+  const [x, z] = placement.x != null && placement.z != null ? [placement.x, placement.z] : legacyCellPosition(placement.gridX, placement.gridZ);
+  return [OX + x, OZ + z];
 }
 
 /** Builds one room at the interior origin; obstacles are returned as axis-aligned boxes. */
@@ -47,7 +50,9 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
 
   const corners: Vec2[] = [[OX - HX, OZ - HZ], [OX + HX, OZ - HZ], [OX + HX, OZ + HZ], [OX - HX, OZ + HZ]];
   get("tiles").polygon(corners, 0.02, 1.2, kind === "club" ? [0.16, 0.14, 0.2] : undefined);
-  get("plaster").polygon(corners, HEIGHT, 3, kind === "club" ? [0.08, 0.07, 0.1] : [0.97, 0.97, 0.95], true);
+  // The ceiling is its own mesh so the home designer can lift it off for a view from above.
+  const ceiling = new MeshBuilderBatch("interior ceiling");
+  ceiling.polygon(corners, HEIGHT, 3, kind === "club" ? [0.08, 0.07, 0.1] : [0.97, 0.97, 0.95], true);
   const wallColor: [number, number, number] = kind === "club" ? [0.13, 0.11, 0.17] : kind === "starter" ? [0.86, 0.9, 0.84] : [0.98, 0.95, 0.88];
   for (let index = 0; index < 4; index += 1) {
     const a = corners[index]!;
@@ -95,7 +100,12 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     }
     boxes.push({ x, z, hx: 0.65, hz: 0.65 });
   };
-  const furniture: Record<string, (x: number, z: number, yaw: number) => void> = { "island-bed": bed, "lagoon-sofa": sofa, "woven-table": table };
+  const furniture: Record<string, (x: number, z: number, yaw: number) => void> = {
+    "island-bed": bed,
+    "lagoon-sofa": sofa,
+    "woven-table": table,
+    ...moreFurniture(get, solid, (point) => spots.push({ id: "bed", point, label: "Sleep" })),
+  };
 
   const disposables: Array<{ dispose(): void }> = [];
   let animate: (seconds: number) => void = () => {};
@@ -122,7 +132,7 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
       for (const placement of placements) {
         const build = furniture[placement.itemId];
         if (!build) continue;
-        const [x, z] = cellCentre(placement.gridX, placement.gridZ);
+        const [x, z] = placementCentre(placement);
         build(x, z, (placement.rotation * Math.PI) / 180);
       }
     } else {
@@ -140,6 +150,8 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   }
   const sign = signs.build(scene, atlas.material);
   if (sign) meshes.push(sign);
+  const roof = ceiling.build(scene, materials.plaster);
+  if (roof) meshes.push(roof);
   const light = new PointLight("interior light", new Vector3(OX, HEIGHT - 0.3, OZ), scene);
   light.intensity = kind === "club" ? 5 : 18;
   light.range = 14;
@@ -162,6 +174,10 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
       }
       return [px, pz];
     },
+    /** Lifts the ceiling off so the room can be seen from above. */
+    setCutaway(open: boolean) {
+      roof?.setEnabled(!open);
+    },
     /** Advances animated fixtures such as the club light show; `seconds` is scene time. */
     update(seconds: number) {
       animate(seconds);
@@ -183,6 +199,133 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
 }
 
 export type InteriorView = ReturnType<typeof buildInterior>;
+
+type Batch = (key: string) => MeshBuilderBatch;
+
+/**
+ * Builders for the furniture catalogue beyond the original three pieces. Each takes the piece's centre and yaw;
+ * sizes match FURNITURE footprints in packages/shared/src/furniture.ts. Local +z is the back of the piece.
+ */
+function moreFurniture(get: Batch, solid: Solid, bedSpot: (point: Vec2) => void): Record<string, (x: number, z: number, yaw: number) => void> {
+  const frame = (x: number, z: number, yaw: number) => (lx: number, lz: number): [number, number] => [
+    x + lx * Math.cos(yaw) + lz * Math.sin(yaw),
+    z - lx * Math.sin(yaw) + lz * Math.cos(yaw),
+  ];
+  const part = (key: string, at: (lx: number, lz: number) => [number, number], yaw: number, lx: number, y: number, lz: number, w: number, h: number, d: number, color?: Rgb, collide = false) => {
+    const [px, pz] = at(lx, lz);
+    if (collide) solid(key, px, y, pz, w, h, d, yaw, color);
+    else get(key).box(px, y, pz, w, h, d, yaw, 1, color);
+  };
+  const walnut: Rgb = [0.55, 0.36, 0.22];
+  return {
+    "eko-king-bed": (x, z, yaw) => {
+      const at = frame(x, z, yaw);
+      part("wood", at, yaw, 0, 0.2, 0, 2.0, 0.32, 2.2, [0.45, 0.4, 0.38], true);
+      part("bedding", at, yaw, 0, 0.48, -0.05, 1.92, 0.26, 2.05);
+      part("bedding", at, yaw, 0, 0.62, -0.55, 1.94, 0.06, 1.0, [0.62, 0.55, 0.78]);
+      part("bedding", at, yaw, 0, 0.85, 1.12, 2.1, 1.3, 0.14, [0.5, 0.46, 0.56]);
+      for (const side of [-0.48, 0.48]) part("bedding", at, yaw, side, 0.68, 0.82, 0.75, 0.16, 0.38, [0.92, 0.92, 0.96]);
+      for (const side of [-1.25, 1.25]) {
+        part("wood", at, yaw, side, 0.26, 0.85, 0.42, 0.52, 0.42, walnut, true);
+        part("lamp", at, yaw, side, 0.66, 0.9, 0.2, 0.26, 0.2);
+      }
+      bedSpot(at(-1.7, -0.4));
+    },
+    "ikoyi-sectional": (x, z, yaw) => {
+      const at = frame(x, z, yaw);
+      const grey: Rgb = [0.56, 0.58, 0.62];
+      part("bedding", at, yaw, 0, 0.24, 0.55, 2.8, 0.44, 0.9, grey, true);
+      part("bedding", at, yaw, 0, 0.7, 0.92, 2.8, 0.55, 0.18, grey);
+      part("bedding", at, yaw, -0.95, 0.24, -0.45, 0.9, 0.44, 1.1, grey, true);
+      part("bedding", at, yaw, 1.32, 0.55, 0.55, 0.16, 0.36, 0.9, grey);
+      for (const lx of [-0.9, 0, 0.9]) part("bedding", at, yaw, lx, 0.58, 0.72, 0.6, 0.38, 0.14, [0.85, 0.72, 0.4]);
+    },
+    "velvet-armchair": (x, z, yaw) => {
+      const at = frame(x, z, yaw);
+      const mustard: Rgb = [0.86, 0.62, 0.16];
+      part("bedding", at, yaw, 0, 0.24, -0.03, 0.82, 0.4, 0.8, mustard, true);
+      part("bedding", at, yaw, 0, 0.68, 0.36, 0.82, 0.6, 0.16, mustard);
+      for (const side of [-0.38, 0.38]) part("bedding", at, yaw, side, 0.52, 0, 0.14, 0.24, 0.78, mustard);
+    },
+    "marble-coffee-table": (x, z, yaw) => {
+      const at = frame(x, z, yaw);
+      part("vertexPaint", at, yaw, 0, 0.42, 0, 1.2, 0.06, 0.65, [0.96, 0.95, 0.93], true);
+      part("darkFrame", at, yaw, 0, 0.2, 0, 0.8, 0.38, 0.3);
+    },
+    "dining-set": (x, z, yaw) => {
+      const at = frame(x, z, yaw);
+      part("wood", at, yaw, 0, 0.75, 0, 1.8, 0.06, 0.9, walnut, true);
+      for (const [lx, lz] of [[-0.82, -0.36], [0.82, -0.36], [-0.82, 0.36], [0.82, 0.36]] as const) part("wood", at, yaw, lx, 0.37, lz, 0.06, 0.72, 0.06, walnut);
+      for (const lx of [-0.6, 0, 0.6]) {
+        for (const side of [-1, 1]) {
+          part("bedding", at, yaw, lx, 0.46, side * 0.7, 0.42, 0.06, 0.42, [0.9, 0.86, 0.78]);
+          part("wood", at, yaw, lx, 0.23, side * 0.7, 0.36, 0.44, 0.36, walnut);
+          part("wood", at, yaw, lx, 0.72, side * 0.9, 0.42, 0.5, 0.05, walnut);
+        }
+      }
+    },
+    "tv-console": (x, z, yaw) => {
+      const at = frame(x, z, yaw);
+      part("darkFrame", at, yaw, 0, 0.24, 0, 1.9, 0.48, 0.45, [0.2, 0.18, 0.17], true);
+      part("wood", at, yaw, 0, 0.49, 0, 1.92, 0.03, 0.47, walnut);
+      part("darkFrame", at, yaw, 0, 1.15, 0.12, 1.46, 0.84, 0.05, [0.03, 0.03, 0.04]);
+      part("neon", at, yaw, 0, 1.15, 0.09, 1.38, 0.76, 0.01, [0.08, 0.16, 0.3]);
+      part("darkFrame", at, yaw, 0, 0.62, 0.12, 0.3, 0.22, 0.06, [0.05, 0.05, 0.06]);
+    },
+    wardrobe: (x, z, yaw) => {
+      const at = frame(x, z, yaw);
+      part("vertexPaint", at, yaw, 0, 1.05, 0, 1.7, 2.1, 0.62, [0.86, 0.83, 0.77], true);
+      for (const side of [-0.42, 0.42]) part("chrome", at, yaw, side, 1.05, -0.32, 0.8, 1.9, 0.02);
+      part("darkFrame", at, yaw, 0, 1.05, -0.33, 0.04, 1.9, 0.02);
+    },
+    bookshelf: (x, z, yaw) => {
+      const at = frame(x, z, yaw);
+      for (const side of [-0.48, 0.48]) part("wood", at, yaw, side, 0.95, 0, 0.04, 1.9, 0.38, walnut, true);
+      part("wood", at, yaw, 0, 0.95, 0.18, 1.0, 1.9, 0.03, walnut);
+      const colours: Rgb[] = [[0.7, 0.2, 0.18], [0.18, 0.35, 0.6], [0.85, 0.75, 0.4], [0.2, 0.5, 0.3], [0.9, 0.9, 0.88]];
+      for (let shelf = 0; shelf < 5; shelf += 1) {
+        const y = 0.05 + shelf * 0.44;
+        part("wood", at, yaw, 0, y, 0, 0.94, 0.03, 0.36, walnut);
+        for (let book = 0; book < 6; book += 1) {
+          if ((book + shelf) % 4 === 3) continue;
+          part("vertexPaint", at, yaw, -0.36 + book * 0.14, y + 0.15, 0.02, 0.1, 0.26 + ((book * 7 + shelf) % 3) * 0.03, 0.24, colours[(book + shelf * 2) % colours.length]);
+        }
+      }
+    },
+    "work-desk": (x, z, yaw) => {
+      const at = frame(x, z, yaw);
+      part("vertexPaint", at, yaw, 0, 0.74, 0.25, 1.4, 0.05, 0.7, [0.92, 0.92, 0.9], true);
+      for (const lx of [-0.66, 0.66]) part("darkFrame", at, yaw, lx, 0.36, 0.25, 0.05, 0.72, 0.64);
+      part("darkFrame", at, yaw, 0, 0.78, 0.3, 0.36, 0.02, 0.26, [0.25, 0.26, 0.28]);
+      part("darkFrame", at, yaw, 0, 0.9, 0.44, 0.36, 0.24, 0.02, [0.1, 0.12, 0.16]);
+      part("bedding", at, yaw, 0, 0.48, -0.32, 0.5, 0.08, 0.5, [0.15, 0.15, 0.17]);
+      part("bedding", at, yaw, 0, 0.8, -0.56, 0.48, 0.55, 0.06, [0.15, 0.15, 0.17]);
+      part("chrome", at, yaw, 0, 0.23, -0.32, 0.05, 0.46, 0.05);
+    },
+    "floor-lamp": (x, z, yaw) => {
+      const at = frame(x, z, yaw);
+      part("chrome", at, yaw, 0, 0.02, 0, 0.36, 0.04, 0.36, [0.85, 0.7, 0.4], true);
+      part("chrome", at, yaw, 0, 0.8, 0, 0.04, 1.56, 0.04, [0.85, 0.7, 0.4]);
+      part("lamp", at, yaw, 0, 1.62, 0, 0.42, 0.3, 0.42);
+    },
+    "potted-palm": (x, z, yaw) => {
+      const at = frame(x, z, yaw);
+      part("vertexPaint", at, yaw, 0, 0.25, 0, 0.46, 0.5, 0.46, [0.72, 0.38, 0.24], true);
+      part("palmBark", at, yaw, 0, 0.95, 0, 0.07, 1.0, 0.07);
+      for (let leaf = 0; leaf < 6; leaf += 1) {
+        const angle = (leaf / 6) * Math.PI * 2;
+        const [lx, lz] = [Math.cos(angle) * 0.28, Math.sin(angle) * 0.28];
+        part("bush", at, yaw + angle, lx, 1.35 + (leaf % 2) * 0.15, lz, 0.62, 0.05, 0.2);
+      }
+    },
+    "aso-rug": (x, z, yaw) => {
+      const at = frame(x, z, yaw);
+      part("bedding", at, yaw, 0, 0.022, 0, 2.6, 0.012, 1.8, [0.85, 0.65, 0.22]);
+      part("bedding", at, yaw, 0, 0.03, 0, 2.36, 0.012, 1.56, [0.2, 0.26, 0.55]);
+      for (const lx of [-0.8, 0, 0.8]) part("bedding", at, yaw, lx, 0.037, 0, 0.3, 0.008, 1.2, [0.85, 0.65, 0.22]);
+    },
+  };
+}
 
 type Solid = (key: string, x: number, y: number, z: number, w: number, h: number, d: number, yaw?: number, color?: [number, number, number], collide?: boolean) => void;
 type Rgb = [number, number, number];

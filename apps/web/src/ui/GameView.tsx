@@ -18,6 +18,7 @@ import { COMMUNITY_KINDS, CommunitySheet } from "./CommunitySheets";
 import { PlaceSheet } from "./Sheets";
 import { ExcursionPanel, FlightPanel, LOCAL_PHOTOS_KEY, TRAVEL_SHEET_KINDS, TravelPlaceSheet, TravelSpotSheet, loadLocalPhotos, tripHint } from "./TravelSheets";
 import { PlotSheet } from "./PlotSheet";
+import { HomeDesigner } from "./HomeDesigner";
 import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
 import { CheckpointPrompt, HoldUpPrompt, PoliceStationSheet, SecuritySheet } from "./PoliceSheets";
 import { ChatPanel, ReportDialog, WarningNotice, type ReportTarget } from "./SafetyUI";
@@ -81,6 +82,8 @@ export function GameView({
   const [subtitle, setSubtitle] = useState<{ text: string; kind: "speech" | "sound" } | null>(null);
   const [sheet, setSheet] = useState<Place | null>(null);
   const [plotSheet, setPlotSheet] = useState<string | null>(null);
+  /** Property being arranged in the home designer. */
+  const [designing, setDesigning] = useState<string | null>(null);
   const [travelSpot, setTravelSpot] = useState<{ interior: TravelInterior; spot: string } | null>(null);
   const [trip, setTrip] = useState<TripState | null>(null);
   const [clubBar, setClubBar] = useState<Place | null>(null);
@@ -423,7 +426,7 @@ export function GameView({
   }, [arrival]);
 
   const warnings = safety?.warnings ?? [];
-  const blocking = Boolean(welcomeOpen || sheet || plotSheet || travelSpot || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length || holdUp || robTarget);
+  const blocking = Boolean(welcomeOpen || designing || sheet || plotSheet || travelSpot || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length || holdUp || robTarget);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -455,6 +458,7 @@ export function GameView({
     const onKey = (event: KeyboardEvent) => {
       if (event.code !== "Escape") return;
       if (robTarget) setRobTarget(null);
+      else if (designing) setDesigning(null);
       else if (travelSpot) setTravelSpot(null);
       else if (plotSheet) setPlotSheet(null);
       else if (clubBar) setClubBar(null);
@@ -466,7 +470,7 @@ export function GameView({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sheet, plotSheet, clubBar, clubTable, mapOpen, phone, helpOpen, robTarget, travelSpot]);
+  }, [sheet, plotSheet, clubBar, clubTable, mapOpen, phone, helpOpen, robTarget, travelSpot, designing]);
 
   const moving = (hud?.speed ?? 0) > 1;
   useEffect(() => {
@@ -569,6 +573,10 @@ export function GameView({
   };
 
   const rentReminder = properties.find((listing) => listing.isMine && listing.tenureType === "rented" && listing.nextPaymentAt && new Date(listing.nextPaymentAt).getTime() - Date.now() < 86_400_000);
+  const ownHome = hud?.location === "interior" && !hud.previewOnly && hud.propertyId ? properties.find((listing) => listing.id === hud.propertyId && listing.isMine) ?? null : null;
+  useEffect(() => {
+    if (designing && hud && (hud.location !== "interior" || hud.propertyId !== designing)) setDesigning(null);
+  }, [designing, hud]);
   const previewListing = hud?.previewOnly && hud.propertyId ? properties.find((listing) => listing.id === hud.propertyId) : null;
   const markers = target ? [{ point: target.point, label: target.label, kind: manualTarget ? ("waypoint" as const) : ("objective" as const) }] : [];
 
@@ -611,7 +619,7 @@ export function GameView({
         </div>
       )}
 
-      {hud && engine && engine.data && (
+      {hud && engine && engine.data && !designing && (
         <>
           <section className="hud-location" aria-live="polite" data-testid="current-location">
             <p className="eyebrow">{hud.location === "bus" ? `ABOARD ${hud.bus?.routeNumber ?? ""} DANFO` : hud.location === "interior" ? "INDOORS" : hud.vehicle ? "DRIVING ON" : "YOU ARE ON"}</p>
@@ -770,13 +778,14 @@ export function GameView({
             <button onClick={() => setMapOpen(true)} aria-label="Open map">🗺<span> Map</span> <kbd>{keyLabel(bindings.map)}</kbd></button>
             {touch && <button onClick={() => setChatOpen(true)} aria-label="Open chat">💬<span> Chat</span></button>}
             {!touch && <button onClick={() => setHelpOpen((open) => !open)} aria-label="Controls">⌨<span> Controls</span> <kbd>{keyLabel(bindings.help)}</kbd></button>}
+            {ownHome && <button onClick={() => setDesigning(ownHome.id)} aria-label="Design home">🛋<span> Design</span></button>}
           </div>
           <div className="perf" data-testid="perf">{hud.fps} fps · {hud.frameMs} ms · {hud.qualityStep ? `auto detail −${hud.qualityStep} · ` : ""}{hud.speed.toFixed(1)} m/s {hud.mode}</div>
           <div className="osm-credit">Map data © OpenStreetMap contributors (ODbL)</div>
         </>
       )}
 
-      {hud && engine && (
+      {hud && engine && !designing && (
         <ChatPanel
           messages={chat}
           open={chatOpen}
@@ -968,6 +977,18 @@ export function GameView({
         />
       )}
 
+      {designing && engine && (
+        <HomeDesigner
+          engine={engine}
+          propertyId={designing}
+          homeName={properties.find((listing) => listing.id === designing)?.name ?? "Your home"}
+          economy={economy}
+          onClose={() => setDesigning(null)}
+          onToast={toast}
+          onRefresh={refresh}
+        />
+      )}
+
       {plotSheet && (
         <PlotSheet
           plotId={plotSheet}
@@ -1038,6 +1059,8 @@ export function GameView({
             }
           }}
           onInteriorChanged={() => void engine.refreshInterior()}
+          onDesign={(propertyId) => { setPhone(null); setDesigning(propertyId); }}
+          plots={plots}
           onReport={(target) => { setPhone(null); setReportTarget(target); }}
           onCustomise={() => { setPhone(null); onCustomise(); }}
           onSignOut={onSignOut}

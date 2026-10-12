@@ -3,6 +3,7 @@ import "@babylonjs/core/Helpers/sceneHelpers";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import "@babylonjs/core/Culling/ray";
 import { TargetCamera } from "@babylonjs/core/Cameras/targetCamera";
+import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
@@ -38,6 +39,7 @@ import {
   defaultAppearance,
   districtAt,
   insideBuilding,
+  INTERIOR_HALF,
   INTERIOR_ORIGIN,
   MOVEMENT,
   PLACES,
@@ -444,6 +446,8 @@ export class GameEngine {
   private transitionAt = 0;
   /** Bumped on every interior change so a slow furniture fetch cannot replace a newer room. */
   private interiorToken = 0;
+  /** Home designer: share of the screen (from the top) showing the room from straight above, or null. */
+  private planShare: number | null = null;
   private carPilot: {
     path: Vec2[];
     index: number;
@@ -1301,6 +1305,16 @@ export class GameEngine {
    * behind a moving vehicle once they stop looking around. Enter/exit set the yaw once, elsewhere.
    */
   private updateCamera(dt: number, bus: DanfoView | null) {
+    if (this.planShare && this.interior && !this.travelView) {
+      const [ox, oz] = INTERIOR_ORIGIN;
+      const engine = this.scene.getEngine();
+      const aspect = engine.getRenderWidth() / Math.max(1, engine.getRenderHeight() * this.planShare);
+      const tan = Math.tan(this.camera.fov / 2);
+      const height = Math.max((INTERIOR_HALF[1] + 0.6) / tan, (INTERIOR_HALF[0] + 0.6) / (tan * aspect)) + 3;
+      this.camera.position.set(ox, height, oz - 0.01);
+      this.camera.setTarget(new Vector3(ox, 0, oz));
+      return;
+    }
     const rideView = !this.driving && this.passenger ? this.vehicles.get(this.passenger.vehicleId)?.view : undefined;
     const car = this.driving && this.car ? this.car : rideView ? { x: rideView.x, z: rideView.z, yaw: rideView.yaw, speed: rideView.speed, model: rideView.model } : null;
     const view = car ? this.vehicleView : null;
@@ -2332,6 +2346,7 @@ export class GameEngine {
     if (token !== this.interiorToken || this.self?.location !== self.location) return;
     this.interior?.dispose();
     this.interior = buildInterior(this.scene, this.materials, this.atlas, kind, title, placements, club);
+    this.interior.setCutaway(this.planShare !== null);
     this.staff.setDesks(club ? [{ id: "bar", at: CLUB_BARTENDER, yaw: Math.PI / 2, look: staffLook(70 + club.bpm, regionOf(self.x, self.z) === "dubai" || club.id === TRAVEL_PLACES.club, "hostess") }] : []);
     this.club = club ?? null;
     this.audio.setClub(this.club);
@@ -2417,6 +2432,14 @@ export class GameEngine {
   /** Pauses the synthesised club beat while the DJ's real set is playing. */
   setClubBeat(on: boolean) {
     this.audio.setClub(on ? this.club : null);
+  }
+
+  /** Home designer view: the room from straight above with the ceiling lifted off, drawn in the top `share` of the screen. */
+  setPlanView(share: number | null) {
+    this.planShare = share;
+    this.camera.viewport = share ? new Viewport(0, 1 - share, 1, share) : new Viewport(0, 0, 1, 1);
+    if (this.interior && "setCutaway" in this.interior) this.interior.setCutaway(share !== null);
+    if (!share) this.snapCamera();
   }
 
   async refreshInterior() {

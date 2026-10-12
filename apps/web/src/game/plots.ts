@@ -291,13 +291,7 @@ export class PlotsView {
         this.box(house, "balcony handrail", [w * 0.6, 0.05, 0.08], [w * 0.15, 0.3 + STOREY + 1.12, front - 1.58], m.chrome);
       }
       if (finishing > 0.9) {
-        // A car porch to one side and planters along the front.
-        const porchX = w / 2 + 1.7;
-        if (porchX + 1.7 < plot.width / 2 - 0.4) {
-          this.box(house, "car porch roof", [3.2, 0.16, 5.4], [porchX, 2.75, front + 1.4], m.plaster, true);
-          this.box(house, "car porch pad", [3.0, 0.04, 5.2], [porchX, 0.1, front + 1.4], m.pavers);
-          for (const pz of [front - 1.1, front + 3.9]) this.box(house, "car porch post", [0.12, 2.6, 0.12], [porchX + 1.45, 1.3, pz], m.gate);
-        }
+        this.buildGrounds(house, plot, design, localZ);
         for (const px of [-w / 2 + 0.8, w / 2 - 0.8]) {
           this.box(house, "planter", [1.2, 0.45, 0.5], [px, 0.53, front - 1.0], m.concrete);
           this.box(house, "shrub", [1.0, 0.5, 0.4], [px, 0.98, front - 1.0], m.bush);
@@ -321,6 +315,59 @@ export class PlotsView {
         this.box(house, "sand heap", [1.4, 0.5, 1.4], [-w / 2 - 1.6, 0.25, -d / 2 - 1.2], this.trench);
       }
     }
+  }
+
+  /**
+   * Carports beside the house (bays nose to tail, one or both sides), a paved forecourt linking them to the gate,
+   * and the pool garden behind. House frame: front wall at -depth/2; `localZ` is the house centre from the plot centre.
+   */
+  private buildGrounds(house: TransformNode, plot: Plot, design: HouseDesign, localZ: number) {
+    const m = this.materials;
+    const { width: w, depth: d } = design;
+    const front = -d / 2;
+    const plotFront = -plot.depth / 2 - localZ;
+    const plotBack = plot.depth / 2 - localZ;
+    const sides = design.parking > 2 ? [1, -1] : design.parking > 0 ? [1] : [];
+    const bay = 5.4;
+    if (sides.length) this.box(house, "forecourt", [plot.width - 1.0, 0.04, front - plotFront - 0.5], [0, 0.085, (plotFront + 0.4 + front) / 2], m.pavers);
+    for (const side of sides) {
+      const bays = Math.ceil(design.parking / sides.length);
+      const length = bays * bay;
+      const x = side * (w / 2 + 1.75);
+      const z0 = plotFront + 0.6;
+      const zc = z0 + length / 2;
+      this.box(house, "carport pad", [3.2, 0.05, length], [x, 0.1, zc], m.pavers);
+      this.box(house, "carport roof", [3.4, 0.18, length + 0.2], [x, 2.8, zc], m.plaster, true);
+      this.box(house, "carport fascia", [3.44, 0.1, length + 0.24], [x, 2.66, zc], m.gate);
+      for (let index = 0; index <= bays; index += 1) {
+        const pz = z0 + index * bay;
+        this.box(house, "carport post", [0.14, 2.7, 0.14], [x + side * 1.55, 1.35, Math.min(pz, z0 + length - 0.1)], m.gate);
+        if (index > 0 && index < bays) this.box(house, "bay line", [3.0, 0.02, 0.1], [x, 0.135, pz], m.paintWhite);
+      }
+      this.box(house, "carport light", [0.5, 0.05, 0.5], [x, 2.69, zc], m.lamp);
+    }
+    if (!design.pool) return;
+    const [poolW, poolL] = design.pool;
+    const garden = plotBack - d / 2;
+    const zc = d / 2 + garden / 2;
+    this.box(house, "pool deck", [Math.min(plot.width - 1.2, poolW + 3.2), 0.1, Math.min(garden - 0.6, poolL + 2.2)], [0, 0.1, zc], m.pavers);
+    this.box(house, "pool coping", [poolW + 0.5, 0.12, poolL + 0.5], [0, 0.16, zc], m.concrete);
+    this.box(house, "pool water", [poolW, 0.04, poolL], [0, 0.21, zc], m.water);
+    for (const [lx, lz] of [[-poolW / 2 + 0.25, -poolL / 2 + 0.25], [poolW / 2 - 0.25, poolL / 2 - 0.25]] as const) {
+      this.box(house, "pool light", [0.2, 0.03, 0.2], [lx, 0.2, zc + lz], m.lamp);
+    }
+    const deckX = poolW / 2 + 0.9;
+    for (const [index, lx] of [-deckX, deckX].entries()) {
+      if (Math.abs(lx) + 0.4 > plot.width / 2 - 0.6) continue;
+      this.box(house, "sun lounger", [0.7, 0.25, 1.9], [lx, 0.3, zc - 0.2 + index * 0.3], m.paintWhite);
+      this.box(house, "lounger back", [0.7, 0.55, 0.12], [lx, 0.55, zc + 0.7 + index * 0.3], m.paintWhite);
+    }
+    this.box(house, "umbrella pole", [0.06, 2.4, 0.06], [deckX, 1.3, zc - 1.5], m.chrome);
+    const canopy = MeshBuilder.CreateCylinder("umbrella", { height: 0.35, diameterTop: 0.05, diameterBottom: 2.2, tessellation: 8 }, this.scene);
+    canopy.material = m.awningRed;
+    canopy.position.set(deckX, 2.5, zc - 1.5);
+    canopy.parent = house;
+    this.addShadowCaster(canopy);
   }
 
   dispose() {

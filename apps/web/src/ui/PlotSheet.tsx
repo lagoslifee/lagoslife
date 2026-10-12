@@ -1,4 +1,4 @@
-import { constructionStages, designTotal, HOUSE_DESIGNS, houseDesign, plotById, PLOT_TERMS, STAGE_LABELS, type Notice } from "@lagos-living/shared";
+import { constructionStages, designTotal, HOUSE_DESIGNS, houseDesign, plotById, PLOT_TERMS, readyBuiltPrice, STAGE_LABELS, type HouseDesign, type Notice } from "@lagos-living/shared";
 import { useState, type ReactNode } from "react";
 import { api, naira, type EconomyState, type PlotState } from "../api";
 import { buildProgress } from "../game/build-progress";
@@ -42,6 +42,33 @@ export function PlotSheet({ plotId, state, economy, now, onClose, onRefresh, onT
   };
   const ask = (label: string, cost: number, work: () => Promise<string>) => setConfirm({ label, cost, work });
 
+  const features = (entry: HouseDesign) =>
+    [`${entry.bedrooms} bedroom${entry.bedrooms > 1 ? "s" : ""}`, `${entry.floors} floor${entry.floors > 1 ? "s" : ""}`, entry.parking ? `${entry.parking}-car carport` : "", entry.pool ? `${entry.pool[0]} × ${entry.pool[1]} m pool` : ""]
+      .filter(Boolean)
+      .join(" · ");
+
+  /** Finished houses, handed over at once; `holdsLand` leaves the freehold out of the price. */
+  const readyBuilt = (holdsLand: boolean) => (
+    <div className="choice-grid" data-testid="ready-built">
+      {HOUSE_DESIGNS.map((entry) => {
+        const price = readyBuiltPrice(entry, holdsLand);
+        return (
+          <div className={`choice house-choice ${entry.pool ? "premium" : ""}`} key={entry.id} data-testid={`ready-${entry.id}`}>
+            <strong>{entry.name}</strong>
+            <span>{entry.description}</span>
+            <span className="small">{features(entry)}</span>
+            <button className="primary" disabled={busy || balance < price} onClick={() => ask(`Buy the ${entry.name} ready-built${holdsLand ? "" : " with the land"}`, price, async () => {
+              const result = await api.buyReadyBuilt(plot.id, entry.id);
+              onEnter(result.homeId);
+              onClose();
+              return `Your ${entry.name.toLowerCase()} is ready. Welcome home! Balance ${naira(result.balance)}.`;
+            })}>{balance < price ? `Need ${naira(price)}` : `Buy now · ${naira(price)}`}</button>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   let body: ReactNode;
   if (!state || state.status === "available") {
     body = (
@@ -66,6 +93,9 @@ export function PlotSheet({ plotId, state, economy, now, onClose, onRefresh, onT
           </div>
         </div>
         <p className="muted small">One plot per resident. Tip: leasing leaves more money for the builders.</p>
+        <h3>Or buy a finished house</h3>
+        <p className="muted small">Land and house together, keys handed over at once. Builders charge more than building it yourself stage by stage.</p>
+        {readyBuilt(false)}
       </>
     );
   } else if (state.status === "taken") {
@@ -82,7 +112,7 @@ export function PlotSheet({ plotId, state, economy, now, onClose, onRefresh, onT
               <div className="choice" key={entry.id} data-testid={`design-${entry.id}`}>
                 <strong>{entry.name}</strong>
                 <span>{entry.description}</span>
-                <span className="small">{entry.bedrooms} bedroom{entry.bedrooms > 1 ? "s" : ""} · {entry.floors} floor{entry.floors > 1 ? "s" : ""} · total {naira(designTotal(entry))} · about {minutes} min to build</span>
+                <span className="small">{features(entry)} · total {naira(designTotal(entry))} · about {minutes} min to build</span>
                 <button className="primary" disabled={busy || balance < first} onClick={() => ask(`Start the ${entry.name}`, first, async () => {
                   const result = await api.startBuilding(plot.id, entry.id);
                   return `Builders have started the foundation. Balance ${naira(result.balance)}.`;
@@ -91,6 +121,8 @@ export function PlotSheet({ plotId, state, economy, now, onClose, onRefresh, onT
             );
           })}
         </div>
+        <h3>Or move in today</h3>
+        {readyBuilt(true)}
       </>
     );
   } else {

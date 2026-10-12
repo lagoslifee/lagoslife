@@ -857,3 +857,45 @@ table.departures td { padding: 6px 10px; border-bottom: 1px solid #23413d; }
 /* The dealership shows the car in the game view above, so its sheet stays in the lower half everywhere. */
 .sheet.wide.showcase-sheet { max-height: 52dvh; }
 @media (max-height: 520px) { .sheet.wide.showcase-sheet { max-height: 62dvh; width: min(560px, 60vw); justify-self: end; } }
+
+/* Home designer: floor plan in the bottom of the screen, the room seen from above in the top 40%. */
+.designer { position: absolute; left: 0; right: 0; bottom: 0; top: 40%; z-index: 13; display: flex; flex-direction: column; padding: 12px 14px calc(10px + env(safe-area-inset-bottom, 0px)); border-radius: 16px 16px 0 0; color: #17312e; background: #f6f3ea; box-shadow: 0 -10px 40px rgba(0,0,0,.35); font-size: calc(14px * var(--text-scale)); }
+.designer header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.designer h2 { margin: 2px 0 0; font-size: calc(18px * var(--text-scale)); }
+.designer-tabs { display: flex; gap: 6px; margin: 8px 0; overflow-x: auto; }
+.designer-tabs button { flex: 1 0 auto; padding: 7px 10px; border-radius: 999px; border: 1px solid rgba(23,49,46,.2); background: #fff; color: inherit; font-weight: 600; font-size: calc(12px * var(--text-scale)); }
+.designer-tabs button.active { background: #17312e; color: #fff; border-color: #17312e; }
+.designer-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.floor-plan { width: 100%; flex: 1; min-height: 160px; max-height: 46vh; touch-action: none; user-select: none; }
+.plan-floor { fill: #efe6d3; stroke: #3b3a36; stroke-width: 0.12; }
+.plan-window { fill: #9fd3ea; }
+.plan-door { fill: #6d4127; }
+.plan-fixture { fill: rgba(60, 70, 70, 0.12); stroke: rgba(60,70,70,.35); stroke-width: 0.03; stroke-dasharray: 0.12 0.08; }
+.plan-fixture-label { font-size: 0.24px; fill: #5f6c68; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+.plan-piece { cursor: grab; }
+.plan-piece rect { stroke: rgba(0,0,0,.45); stroke-width: 0.03; }
+.plan-piece.rug rect { opacity: 0.75; }
+.plan-piece.selected rect { stroke: #1ba7d6; stroke-width: 0.09; }
+.plan-piece.invalid rect { stroke: #d0342c; stroke-width: 0.1; }
+.plan-back { fill: rgba(0,0,0,.55); pointer-events: none; }
+.plan-label { font-size: 0.24px; font-weight: 700; fill: #10201e; text-anchor: middle; dominant-baseline: middle; pointer-events: none; paint-order: stroke; stroke: rgba(255,255,255,.7); stroke-width: 0.05px; }
+.designer-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.designer-toolbar strong { flex: 1; }
+.designer-bag { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.designer-bag .chip { padding: 5px 10px; border-radius: 999px; border: 1px solid rgba(23,49,46,.25); background: #fff; font-weight: 600; font-size: calc(12px * var(--text-scale)); }
+.designer-shop { flex: 1; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; align-content: start; }
+.designer-shop li { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center; padding: 10px; border-radius: 10px; background: #fffdf8; border: 1px solid #e0ddd2; }
+.designer-shop li.muted { display: block; border: 0; background: none; }
+.designer-shop i { width: 28px; height: 28px; border-radius: 6px; border: 1px solid rgba(0,0,0,.2); }
+.designer-shop strong, .designer-shop span, .designer-shop em { display: block; }
+.designer-shop span { color: #6a7773; font-size: calc(12px * var(--text-scale)); }
+.designer-shop em { color: #116c60; font-size: 12px; font-style: normal; font-weight: 700; }
+.designer form input { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid #cfcabd; font: inherit; }
+.designer-guests { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.designer-guests li { display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 8px; background: #fffdf8; border: 1px solid #e0ddd2; }
+button.wide { width: 100%; margin: 6px 0; }
+.house-catalogue { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 6px 0 10px; }
+.house-card { display: grid; gap: 3px; padding: 10px; border-radius: 10px; background: #fffdf8; border: 1px solid #e0ddd2; }
+.house-card span { color: #6a7773; font-size: calc(12px * var(--text-scale)); }
+.house-card em { color: #116c60; font-style: normal; font-weight: 700; font-size: 12px; }
+.house-choice.premium { border-color: #1ba7d6; background: linear-gradient(180deg, #f2fbff, #fffdf8); }
