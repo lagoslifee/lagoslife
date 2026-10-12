@@ -15,6 +15,8 @@ type Marker = { root: TransformNode; arrow: Mesh; texture: DynamicTexture; accen
 const SHOW_RANGE = 70;
 const POOL = 3;
 const BILLBOARD_Y = 2;
+/** The route's own door gets a bigger cyan marker from further out, drawn instead of the gold one. */
+const DESTINATION_RANGE = 160;
 
 /**
  * Glowing floor rings, a bobbing arrow and a name board over the door of nearby places outdoors, and a green EXIT
@@ -23,6 +25,9 @@ const BILLBOARD_Y = 2;
 export class EntranceMarkers {
   private readonly markers: Marker[] = [];
   private readonly exit: Marker;
+  private readonly destination: Marker;
+  private destinationRing: Mesh | null = null;
+  private destinationName: string | null = null;
   private elapsed = 0;
   private sinceChoose = 1;
 
@@ -32,6 +37,23 @@ export class EntranceMarkers {
     for (let index = 0; index < POOL; index += 1) this.markers.push(this.marker(`entrance ${index}`, gold, "#ffbe2e"));
     this.exit = this.marker("exit marker", green, "#33f273");
     this.draw(this.exit, "EXIT", "Way out");
+    const cyan = this.material("destination cyan", new Color3(0.2, 0.85, 1));
+    this.destination = this.marker("destination marker", cyan, "#3fd8ff");
+    const ring = MeshBuilder.CreateTorus("destination outer ring", { diameter: 3.4, thickness: 0.12, tessellation: 32 }, this.scene);
+    ring.material = cyan;
+    ring.parent = this.destination.root;
+    ring.position.y = 0.08;
+    ring.isPickable = false;
+    this.destinationRing = ring;
+    const pad = MeshBuilder.CreateDisc("destination pad", { radius: 1.1, tessellation: 28 }, this.scene);
+    const padMaterial = this.material("destination pad", new Color3(0.2, 0.85, 1));
+    padMaterial.alpha = 0.28;
+    pad.material = padMaterial;
+    pad.parent = this.destination.root;
+    pad.rotation.x = Math.PI / 2;
+    pad.position.y = 0.05;
+    pad.isPickable = false;
+    for (const child of this.destination.root.getChildMeshes()) if (child.name.endsWith("board")) child.position.y = 4.4;
   }
 
   private material(name: string, color: Color3) {
@@ -95,9 +117,20 @@ export class EntranceMarkers {
   }
 
   /** `candidates` is only read when it is time to re-pick the nearest doors; interior floors sit at y = 0. */
-  update(dt: number, player: Vec2, outdoors: boolean, candidates: () => EntranceCandidate[], exit: Vec2 | null) {
+  update(dt: number, player: Vec2, outdoors: boolean, candidates: () => EntranceCandidate[], exit: Vec2 | null, destination: EntranceCandidate | null = null) {
     this.elapsed += dt;
     const bob = 2.3 + Math.sin(this.elapsed * 3) * 0.18;
+    const target = outdoors && destination && Math.hypot(destination.point[0] - player[0], destination.point[1] - player[1]) < DESTINATION_RANGE ? destination : null;
+    if (target) {
+      if (this.destinationName !== target.name) {
+        this.destinationName = target.name;
+        this.draw(this.destination, "YOUR DESTINATION", `Walk in here · ${target.name}`);
+      }
+      this.place(this.destination, target.point);
+      this.destination.arrow.position.y = bob + 0.6;
+      const pulse = 1 + Math.sin(this.elapsed * 4) * 0.08;
+      this.destinationRing?.scaling.set(pulse, 1, pulse);
+    } else this.destination.root.setEnabled(false);
     if (exit) {
       this.place(this.exit, exit, 0);
       this.exit.arrow.position.y = bob;
@@ -112,7 +145,7 @@ export class EntranceMarkers {
       this.sinceChoose = 0;
       const near = candidates()
         .map((candidate) => ({ candidate, distance: Math.hypot(candidate.point[0] - player[0], candidate.point[1] - player[1]) }))
-        .filter((entry) => entry.distance < SHOW_RANGE)
+        .filter((entry) => entry.distance < SHOW_RANGE && !(target && Math.hypot(entry.candidate.point[0] - target.point[0], entry.candidate.point[1] - target.point[1]) < 3))
         .sort((a, b) => a.distance - b.distance)
         .slice(0, POOL);
       this.markers.forEach((marker, index) => {
@@ -133,7 +166,7 @@ export class EntranceMarkers {
   }
 
   dispose() {
-    for (const marker of [...this.markers, this.exit]) {
+    for (const marker of [...this.markers, this.exit, this.destination]) {
       marker.texture.dispose();
       marker.root.dispose(false, true);
     }

@@ -412,6 +412,10 @@ export class GameEngine {
   private deliveryTarget: { point: Vec2; label: string } | null = null;
   private gigTarget: { point: Vec2; title: string; place: string } | null = null;
   private waypoint: { point: Vec2; label: string } | null = null;
+  /** Set when the waypoint is a building's door: the route then runs to the door itself, not just the kerb. */
+  private waypointDoor: EntranceCandidate | null = null;
+  private parkNoticeFor: string | null = null;
+  private lastStreet: Vec2 = [0, 0];
   private beacon: Mesh | null = null;
   private routeMesh: Mesh | null = null;
   private routeMaterial: PBRMaterial | null = null;
@@ -1264,7 +1268,7 @@ export class GameEngine {
       this.homeStaff.update(dt, this.staffPosts);
     }
     this.partyLights?.update(now * 0.001);
-    this.entrances?.update(dt, [x, z], !this.interior && !bus && !seatedTravel, () => this.entranceCandidates(), this.interior && !seatedTravel ? (this.interior.spots.find((spot) => spot.id === "exit")?.point ?? null) : null);
+    this.entrances?.update(dt, [x, z], !this.interior && !bus && !seatedTravel, () => this.entranceCandidates(), this.interior && !seatedTravel ? (this.interior.spots.find((spot) => spot.id === "exit")?.point ?? null) : null, this.waypointDoor);
     this.spotters?.update(dt, now, this.spottedCar(x, z), [x, z], !this.interior && !bus);
     this.updateTout(dt, now, x, z);
     this.plotsView?.animate(dt);
@@ -2694,6 +2698,11 @@ export class GameEngine {
 
   private updateWaypoint(now: number) {
     const target = this.waypoint;
+    if (target && this.interior && this.waypointDoor && Math.hypot(this.lastStreet[0] - target.point[0], this.lastStreet[1] - target.point[1]) < 25) {
+      this.setWaypoint(null);
+      this.callbacks.arrived(target.label);
+    }
+    if (!this.interior) this.lastStreet = [this.controller.x, this.controller.z];
     if (!target || this.interior || this.riding()) {
       this.beacon?.setEnabled(false);
       this.routeMesh?.setEnabled(false);
@@ -2710,7 +2719,12 @@ export class GameEngine {
       this.beacon.isPickable = false;
     }
     const { x, z } = this.controller;
-    if (Math.hypot(target.point[0] - x, target.point[1] - z) < (this.car ? 18 : 9)) {
+    const distance = Math.hypot(target.point[0] - x, target.point[1] - z);
+    if (this.waypointDoor && this.car && distance < 30 && this.parkNoticeFor !== target.label) {
+      this.parkNoticeFor = target.label;
+      this.caption(`You're at ${target.label} — park and walk to the glowing blue ENTRANCE`);
+    }
+    if (this.waypointDoor ? !this.car && distance < 3.5 : distance < (this.car ? 18 : 9)) {
       this.setWaypoint(null);
       this.beacon.setEnabled(false);
       this.routeMesh?.setEnabled(false);
@@ -2806,7 +2820,12 @@ export class GameEngine {
   setWaypoint(target: { point: Vec2; label: string } | null) {
     const same = target && this.waypoint && target.point[0] === this.waypoint.point[0] && target.point[1] === this.waypoint.point[1];
     this.waypoint = target;
-    if (!same) this.lastRoute.at = 0;
+    if (!same) {
+      this.lastRoute.at = 0;
+      this.parkNoticeFor = null;
+      this.waypointDoor = target ? (this.entranceCandidates().find((door) => Math.hypot(door.point[0] - target.point[0], door.point[1] - target.point[1]) < 2) ?? null) : null;
+      if (this.waypointDoor && target) this.waypointDoor = { ...this.waypointDoor, name: target.label };
+    }
     if (!target) {
       this.routePlan = null;
       this.guidance = null;
