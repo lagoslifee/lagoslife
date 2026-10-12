@@ -204,7 +204,7 @@ export function HomeDesigner({ engine, propertyId, homeName, economy, onClose, o
                 >
                   <rect x={rect.x - rect.hx} y={-rect.z - rect.hz} width={rect.hx * 2} height={rect.hz * 2} rx={0.08} style={{ fill: item.plan }} />
                   {!item.floor && <circle cx={rect.x + backX * 0.8} cy={-rect.z + backY * 0.8} r={0.07} className="plan-back" />}
-                  <text x={rect.x} y={-rect.z} className="plan-label">{item.name.replace(/^(Island|Lagoon|Woven|Eko|Ikoyi|Velvet|Marble|Six-seat|Sliding|Open|Arc|Potted|Aso-oke Pattern) /, "")}</text>
+                  <text x={rect.x} y={-rect.z} className="plan-label">{item.short}</text>
                 </g>
               );
             })}

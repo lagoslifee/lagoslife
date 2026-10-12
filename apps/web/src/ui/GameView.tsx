@@ -575,7 +575,7 @@ export function GameView({
   const rentReminder = properties.find((listing) => listing.isMine && listing.tenureType === "rented" && listing.nextPaymentAt && new Date(listing.nextPaymentAt).getTime() - Date.now() < 86_400_000);
   const ownHome = hud?.location === "interior" && !hud.previewOnly && hud.propertyId ? properties.find((listing) => listing.id === hud.propertyId && listing.isMine) ?? null : null;
   useEffect(() => {
-    if (designing && hud && (hud.location !== "interior" || hud.propertyId !== designing)) setDesigning(null);
+    if (designing && hud && hud.propertyId !== designing) setDesigning(null);
   }, [designing, hud]);
   const previewListing = hud?.previewOnly && hud.propertyId ? properties.find((listing) => listing.id === hud.propertyId) : null;
   const markers = target ? [{ point: target.point, label: target.label, kind: manualTarget ? ("waypoint" as const) : ("objective" as const) }] : [];

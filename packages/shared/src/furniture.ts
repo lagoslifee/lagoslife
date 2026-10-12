@@ -19,24 +19,26 @@ export type FurnitureItem = {
   bed?: boolean;
   /** Colour used for the piece on the floor plan. */
   plan: string;
+  /** Label on the floor plan. */
+  short: string;
 };
 
 export const FURNITURE: FurnitureItem[] = [
-  { id: "island-bed", name: "Island Double Bed", description: "A comfortable bed that enables sleeping at home.", price: 36_000, size: [1.7, 2.2], bed: true, plan: "#8fb3e0" },
-  { id: "lagoon-sofa", name: "Lagoon Sofa", description: "A compact teal sofa for a Lagos living room.", price: 28_000, size: [2.4, 1.0], plan: "#3a9a8f" },
-  { id: "woven-table", name: "Woven Side Table", description: "A locally inspired table for small interiors.", price: 9_500, size: [1.3, 0.8], plan: "#b07a46" },
-  { id: "eko-king-bed", name: "Eko King Bed", description: "A wide upholstered king bed with bedside tables.", price: 78_000, size: [2.9, 2.4], bed: true, plan: "#c9b7e8" },
-  { id: "ikoyi-sectional", name: "Ikoyi Sectional Sofa", description: "An L-shaped grey sectional that seats six.", price: 95_000, size: [2.8, 2.0], plan: "#8d939b" },
-  { id: "velvet-armchair", name: "Velvet Armchair", description: "A deep mustard armchair for reading by the window.", price: 22_000, size: [0.95, 0.95], plan: "#d9a526" },
-  { id: "marble-coffee-table", name: "Marble Coffee Table", description: "A low white marble table for the sitting room.", price: 18_000, size: [1.2, 0.65], plan: "#e8e4dc" },
-  { id: "dining-set", name: "Six-seat Dining Set", description: "A walnut dining table with six chairs for Sunday rice.", price: 65_000, size: [2.2, 1.7], plan: "#7a5232" },
-  { id: "tv-console", name: "TV and Media Console", description: "A 65-inch TV on a long low console.", price: 55_000, size: [1.9, 0.5], plan: "#2b2f36" },
-  { id: "wardrobe", name: "Sliding Wardrobe", description: "A tall wardrobe with mirrored sliding doors.", price: 48_000, size: [1.7, 0.65], plan: "#cfc6b6" },
-  { id: "bookshelf", name: "Open Bookshelf", description: "Five open shelves of books and keepsakes.", price: 21_000, size: [1.0, 0.4], plan: "#9c6b3f" },
-  { id: "work-desk", name: "Work Desk and Chair", description: "A desk with a laptop and an office chair.", price: 32_000, size: [1.4, 1.2], plan: "#5c6b7a" },
-  { id: "floor-lamp", name: "Arc Floor Lamp", description: "A brass floor lamp with a warm shade.", price: 9_000, size: [0.45, 0.45], plan: "#f2d27a" },
-  { id: "potted-palm", name: "Potted Palm", description: "A tall areca palm in a clay pot.", price: 7_500, size: [0.6, 0.6], plan: "#4f9a4a" },
-  { id: "aso-rug", name: "Aso-oke Pattern Rug", description: "A large woven rug in indigo and gold.", price: 16_000, size: [2.6, 1.8], floor: true, plan: "#3b4f8f" },
+  { id: "island-bed", name: "Island Double Bed", description: "A comfortable bed that enables sleeping at home.", price: 36_000, size: [1.7, 2.2], bed: true, plan: "#8fb3e0", short: "Bed" },
+  { id: "lagoon-sofa", name: "Lagoon Sofa", description: "A compact teal sofa for a Lagos living room.", price: 28_000, size: [2.4, 1.0], plan: "#3a9a8f", short: "Sofa" },
+  { id: "woven-table", name: "Woven Side Table", description: "A locally inspired table for small interiors.", price: 9_500, size: [1.3, 0.8], plan: "#b07a46", short: "Table" },
+  { id: "eko-king-bed", name: "Eko King Bed", description: "A wide upholstered king bed with bedside tables.", price: 78_000, size: [2.9, 2.4], bed: true, plan: "#c9b7e8", short: "King bed" },
+  { id: "ikoyi-sectional", name: "Ikoyi Sectional Sofa", description: "An L-shaped grey sectional that seats six.", price: 95_000, size: [2.8, 2.0], plan: "#8d939b", short: "Sectional" },
+  { id: "velvet-armchair", name: "Velvet Armchair", description: "A deep mustard armchair for reading by the window.", price: 22_000, size: [0.95, 0.95], plan: "#d9a526", short: "Chair" },
+  { id: "marble-coffee-table", name: "Marble Coffee Table", description: "A low white marble table for the sitting room.", price: 18_000, size: [1.2, 0.65], plan: "#e8e4dc", short: "Coffee" },
+  { id: "dining-set", name: "Six-seat Dining Set", description: "A walnut dining table with six chairs for Sunday rice.", price: 65_000, size: [2.2, 1.7], plan: "#7a5232", short: "Dining" },
+  { id: "tv-console", name: "TV and Media Console", description: "A 65-inch TV on a long low console.", price: 55_000, size: [1.9, 0.5], plan: "#2b2f36", short: "TV" },
+  { id: "wardrobe", name: "Sliding Wardrobe", description: "A tall wardrobe with mirrored sliding doors.", price: 48_000, size: [1.7, 0.65], plan: "#cfc6b6", short: "Wardrobe" },
+  { id: "bookshelf", name: "Open Bookshelf", description: "Five open shelves of books and keepsakes.", price: 21_000, size: [1.0, 0.4], plan: "#9c6b3f", short: "Books" },
+  { id: "work-desk", name: "Work Desk and Chair", description: "A desk with a laptop and an office chair.", price: 32_000, size: [1.4, 1.2], plan: "#5c6b7a", short: "Desk" },
+  { id: "floor-lamp", name: "Arc Floor Lamp", description: "A brass floor lamp with a warm shade.", price: 9_000, size: [0.45, 0.45], plan: "#f2d27a", short: "Lamp" },
+  { id: "potted-palm", name: "Potted Palm", description: "A tall areca palm in a clay pot.", price: 7_500, size: [0.6, 0.6], plan: "#4f9a4a", short: "Palm" },
+  { id: "aso-rug", name: "Aso-oke Pattern Rug", description: "A large woven rug in indigo and gold.", price: 16_000, size: [2.6, 1.8], floor: true, plan: "#3b4f8f", short: "Rug" },
 ];
 
 const furnitureIndex = new Map(FURNITURE.map((item) => [item.id, item]));

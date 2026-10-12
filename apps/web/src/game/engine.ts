@@ -2442,12 +2442,9 @@ export class GameEngine {
     if (!share) this.snapCamera();
   }
 
+  /** Rebuilds the room in place (the old one stays up until the new one is ready, so there is no flash of street). */
   async refreshInterior() {
-    if (this.self && this.self.location !== "street") {
-      this.interior?.dispose();
-      this.interior = null;
-      await this.loadInterior(this.self);
-    }
+    if (this.self && this.self.location !== "street") await this.loadInterior(this.self);
   }
 
   private updateWaypoint(now: number) {
