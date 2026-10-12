@@ -1,7 +1,8 @@
-import { PLACES, RIDE, type RideState, type Vec2 } from "@lagos-living/shared";
+import { PLACES, RIDE, regionOf, type RideState, type Vec2 } from "@lagos-living/shared";
 import { useEffect, useMemo, useState } from "react";
 import { naira, type PropertyListing } from "../api";
 import type { GameEngine } from "../game/engine";
+import { useTravelStatus } from "./TravelSheets";
 
 type Destination = { key: string; label: string; sub: string; point: Vec2 };
 
@@ -38,16 +39,29 @@ export function RideApp({ engine, ride, properties, onNavigate, onClose }: Props
   const [booking, setBooking] = useState(false);
   useEffect(() => setBooking(false), [ride?.id, ride?.status]);
 
+  const [travel] = useTravelStatus();
+  const region = engine?.playerRegion() ?? "lagos";
   const destinations = useMemo(() => {
     const list: Destination[] = [];
-    for (const listing of properties.filter((entry) => entry.isMine)) {
+    // Only places on this side of the flight: a Dubai taxi cannot take you to Lekki.
+    const local = (point: Vec2) => regionOf(point[0], point[1]) === region;
+    if (region === "dubai") {
+      const stays = (travel?.bookings ?? []).filter((booking) => booking.status === "booked" || booking.status === "checked_in");
+      for (const booking of stays) {
+        const hotel = PLACES.find((place) => place.id === booking.hotelId);
+        if (hotel) list.push({ key: `stay-${booking.id}`, label: `My hotel · ${hotel.name}`, sub: `${booking.status === "checked_in" ? "Checked in" : "Booked"} · drops you at the entrance`, point: hotel.kerb });
+      }
+    }
+    for (const listing of properties.filter((entry) => entry.isMine && local(entry.door))) {
       list.push({ key: `home-${listing.id}`, label: listing.isHome ? `Home · ${listing.name}` : listing.name, sub: listing.addressLabel, point: listing.door });
     }
     const pin = engine?.currentWaypoint();
-    if (pin) list.push({ key: "pin", label: `Map pin · ${pin.label}`, sub: "Your current destination", point: pin.point });
-    for (const place of PLACES) list.push({ key: place.id, label: place.name, sub: `${place.kind.replace("_", " ")} · ${place.street}`, point: place.door });
+    if (pin && local(pin.point)) list.push({ key: "pin", label: `Map pin · ${pin.label}`, sub: "Your current destination", point: pin.point });
+    for (const place of PLACES) {
+      if (local(place.door)) list.push({ key: place.id, label: place.name, sub: `${place.kind.replace("_", " ")} · ${place.street}`, point: place.kerb });
+    }
     return list;
-  }, [properties, engine]);
+  }, [properties, engine, region, travel]);
 
   const term = query.trim().toLowerCase();
   const matches = (term ? destinations.filter((entry) => `${entry.label} ${entry.sub}`.toLowerCase().includes(term)) : destinations).slice(0, term ? 12 : 8);
@@ -62,12 +76,12 @@ export function RideApp({ engine, ride, properties, onNavigate, onClose }: Props
           <span className="ride-avatar" aria-hidden>🚕</span>
           <div>
             <strong>{ride.driverName}</strong>
-            <p className="muted">Tokunbo Saloon · {ride.plate}</p>
+            <p className="muted">{regionOf(ride.pickup[0], ride.pickup[1]) === "dubai" ? "Dubai Taxi" : "Tokunbo Saloon"} · {ride.plate}</p>
           </div>
           <span className="ride-fare">{naira(ride.fare)}</span>
         </div>
         {ride.status === "approaching" && (
-          <p className="callout" data-testid="ride-status">Driver arriving in <b>{clock(ride.arrivesAt - now)}</b>. Wait by the yellow beacon on the road.</p>
+          <p className="callout" data-testid="ride-status">Driver arriving in <b>{clock(ride.arrivesAt - now)}</b>. Wait by the beacon on the road.</p>
         )}
         {ride.status === "waiting" && (
           <p className="callout" data-testid="ride-status">{ride.driverName} is at the pickup. Walk to the car and press Get in. Waiting {clock((ride.waitUntil ?? now) - now)} more.</p>

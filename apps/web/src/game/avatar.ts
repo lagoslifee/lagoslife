@@ -61,6 +61,20 @@ export function taxiDriverLook(rideKey: string): CharacterAppearance {
   return { ...appearanceFor(seed % 10_000), outfit: "taxi-uniform", accessory: "cap" };
 }
 
+/** Dubai taxi drivers: mostly South Asian and Gulf men in a pressed shirt, some Emiratis in a kandura. */
+export function dubaiDriverLook(rideKey: string): CharacterAppearance {
+  let seed = 0;
+  for (let index = 0; index < rideKey.length; index += 1) seed = (Math.imul(seed, 31) + rideKey.charCodeAt(index)) >>> 0;
+  const pick = <T,>(options: readonly T[], salt: number) => options[(Math.imul(seed + salt, 2654435761) >>> 13) % options.length]!;
+  return {
+    body: "male",
+    skinTone: pick(["golden", "warm", "light", "rich", "golden"] as const, 0x31),
+    hairstyle: pick(["parted", "low-fade"] as const, 0x77),
+    outfit: seed % 4 === 0 ? "kandura" : "office-smart",
+    accessory: pick(["beard", "none", "beard", "glasses"] as const, 0x5d),
+  };
+}
+
 export class AvatarFactory {
   private constructor(private readonly containers: Record<Body, AssetContainer>, readonly scene: Scene) {}
 

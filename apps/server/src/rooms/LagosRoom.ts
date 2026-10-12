@@ -185,7 +185,7 @@ type LagosClient = Client & { auth: MultiplayerIdentity };
 
 export const BUS_CAPACITY = 14;
 const RIDE_DRIVERS = ["Tunde", "Chioma", "Emeka", "Aisha", "Segun", "Ngozi", "Ibrahim", "Folake", "Kelechi", "Bisi"];
-const DUBAI_DRIVERS = ["Rashid", "Imran", "Joseph", "Faisal", "Anil", "Omar", "Samuel", "Yusuf"];
+const DUBAI_DRIVERS = ["Rashid", "Imran", "Faisal", "Anil", "Omar", "Yusuf", "Hamdan", "Sultan", "Arjun", "Bilal", "Tariq", "Rajesh"];
 const BUS_CRUISE = 12.5;
 const BUS_ACCEL = 1.8;
 const BUS_BRAKE = 2.4;
@@ -1320,9 +1320,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       fare,
       driverName: region === "dubai" ? DUBAI_DRIVERS[randomInt(DUBAI_DRIVERS.length)]! : RIDE_DRIVERS[randomInt(RIDE_DRIVERS.length)]!,
       plate: region === "dubai"
-        ? `DXB ${String.fromCharCode(65 + randomInt(26))} ${10000 + randomInt(90000)}`
+        ? `DUBAI ${String.fromCharCode(65 + randomInt(26))} ${10000 + randomInt(90000)}`
         : `LLR ${100 + randomInt(900)} ${String.fromCharCode(65 + randomInt(26))}${String.fromCharCode(65 + randomInt(26))}`,
-      colour: RIDE.colour,
+      colour: region === "dubai" ? RIDE.dubaiColour : RIDE.colour,
       modelId: RIDE.modelId,
       vehicleId: null,
       bookedAt: now,

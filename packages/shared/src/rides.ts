@@ -28,6 +28,8 @@ export const RIDE = {
   modelId: "tokunbo-saloon",
   /** Lagos taxi yellow, with a roof sign and a chequered stripe. */
   colour: "#f2c230",
+  /** Dubai taxis are cream with a red roof. */
+  dubaiColour: "#e8dcc0",
   /** Skipping ahead puts the rider at the drop-off after this short transfer. */
   skipSeconds: 3,
   boardRange: 7,

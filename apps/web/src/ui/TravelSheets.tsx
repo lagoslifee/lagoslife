@@ -1,4 +1,5 @@
 import {
+  PLACES,
   ACTIVITIES,
   CABINS,
   CAR_RENTAL,
@@ -206,6 +207,8 @@ export function TravelPlaceSheet({
   if (place.kind === "airport") {
     const lagos = place.id === TRAVEL_PLACES.lagosAirport;
     const ticket = status?.ticket;
+    const stay = status?.bookings.find((booking) => booking.status === "checked_in") ?? status?.bookings.find((booking) => booking.status === "booked");
+    const myHotel = stay ? PLACES.find((entry) => entry.id === stay.hotelId) : undefined;
     return (
       <Sheet eyebrow={lagos ? "INTERNATIONAL DEPARTURES" : "DUBAI ARRIVALS & DEPARTURES · RECREATED"} title={place.name} onClose={onClose} testId="airport-sheet">
         {lagos ? (
@@ -224,8 +227,17 @@ export function TravelPlaceSheet({
           <>
             <p className="muted">Going home? Enter departures to check in for your return flight. Arriving passengers come out here at the pickup area.</p>
             <TicketLine ticket={ticket} />
+            {myHotel ? (
+              <p className="travel-flag ok">Your room: {myHotel.name}. A Dubai Taxi takes you to the hotel entrance.</p>
+            ) : (
+              <p className="muted small">No hotel booked yet. Book one in the Travel app, or take a taxi to the Marina and walk in.</p>
+            )}
             <div className="row">
-              <button className="secondary" onClick={() => { onOpenApp("ride"); }}>🚕 Taxi to the Marina</button>
+              {myHotel ? (
+                <button className="primary" data-testid="taxi-to-hotel" onClick={() => { engine.bookRide(myHotel.kerb, myHotel.name); onOpenApp("ride"); }}>🚕 Taxi to {myHotel.name}</button>
+              ) : (
+                <button className="secondary" onClick={() => { onOpenApp("ride"); }}>🚕 Taxi to the Marina</button>
+              )}
               <button className="secondary" onClick={() => { navigateTo(TRAVEL_PLACES.carRental, onNavigate); onClose(); }}>🚗 Car hire desk</button>
             </div>
           </>

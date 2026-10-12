@@ -93,6 +93,7 @@ import {
   type AgberoEncounter,
   type Favourite,
   type TravelPrompt,
+  regionOf,
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
 import { Escort, type EscortLeader } from "./escort";
@@ -105,7 +106,7 @@ import { PlotsView } from "./plots";
 import { MultiplayerConnection, type MultiplayerStatus, type PoliceEvent } from "../multiplayer";
 import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, MAX_AUTO_SCALING, qualityStep } from "./adaptive-quality";
 import { CityAudio } from "./audio";
-import { appearanceFor, Avatar, AvatarFactory, taxiDriverLook } from "./avatar";
+import { appearanceFor, Avatar, AvatarFactory, dubaiDriverLook, taxiDriverLook } from "./avatar";
 import { addTaxiLivery } from "./taxi-livery";
 import { CarController } from "./car-controller";
 import { VehicleFactory, type VehicleView } from "./vehicles";
@@ -913,8 +914,10 @@ export class GameEngine {
         tag.className = "world-tag vehicle-tag";
         this.overlay.appendChild(tag);
         const taxi = state.id.startsWith("ride-");
-        if (taxi) addTaxiLivery(view);
-        entry = { view, state, tag, driver: state.npc && this.avatars ? this.avatars.create(`driver ${state.id}`, taxi ? taxiDriverLook(state.id) : undefined) : null, rig: null };
+        const dubai = regionOf(state.x, state.z) === "dubai";
+        if (taxi) addTaxiLivery(view, dubai ? "dubai" : "lagos");
+        const look = taxi ? (dubai ? dubaiDriverLook(state.id) : taxiDriverLook(state.id)) : undefined;
+        entry = { view, state, tag, driver: state.npc && this.avatars ? this.avatars.create(`driver ${state.id}`, look) : null, rig: null };
         this.vehicles.set(state.id, entry);
         view.setPose(state.x, this.world.groundHeight(state.x, state.z), state.z, state.yaw);
       }
@@ -2660,6 +2663,11 @@ export class GameEngine {
     this.net.send("rideCancel", { reason: "rider" });
   }
 
+  /** Lagos or Dubai, from where the player stands. */
+  playerRegion() {
+    return regionOf(this.controller.x, this.controller.z);
+  }
+
   /** Metres left on the current ride, while riding. */
   rideRemaining() {
     return this.rideCar ? this.rideCar.pilot.remaining(this.rideCar.car) : null;
@@ -2700,10 +2708,11 @@ export class GameEngine {
     const along = [0];
     for (let index = 1; index < path.length; index += 1) along.push(along[index - 1]! + Math.hypot(path[index]![0] - path[index - 1]![0], path[index]![1] - path[index - 1]![1]));
     const view = this.vehicleFactory.create(`ride-approach-${ride.id}`, ride.modelId, ride.colour);
-    addTaxiLivery(view);
+    const dubai = regionOf(ride.pickup[0], ride.pickup[1]) === "dubai";
+    addTaxiLivery(view, dubai ? "dubai" : "lagos");
     this.addCaster(view.meshes);
     view.setLights(true);
-    this.rideApproach = { rideId: ride.id, view, driver: this.avatars ? this.avatars.create(`approach driver ${ride.id}`, taxiDriverLook(`ride-${ride.id}`)) : null, path, along, startAt: Date.now(), arrivesAt: ride.arrivesAt };
+    this.rideApproach = { rideId: ride.id, view, driver: this.avatars ? this.avatars.create(`approach driver ${ride.id}`, dubai ? dubaiDriverLook(`ride-${ride.id}`) : taxiDriverLook(`ride-${ride.id}`)) : null, path, along, startAt: Date.now(), arrivesAt: ride.arrivesAt };
   }
 
   private updateRideApproach(dt: number) {
