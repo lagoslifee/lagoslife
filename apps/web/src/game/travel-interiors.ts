@@ -26,6 +26,7 @@ import {
 import { MeshBuilderBatch } from "./geometry";
 import type { InteriorSpot } from "./interior";
 import type { Materials } from "./materials";
+import { buildAirliner } from "./airliner";
 import { SignAtlas } from "./sign-atlas";
 
 const [OX, OZ] = INTERIOR_ORIGIN;
@@ -98,7 +99,9 @@ function board(scene: Scene, name: string, width: number, height: number, lines:
     const size = line.size ?? 28;
     y += size + 10;
     ctx.fillStyle = line.colour ?? "#ffffff";
-    ctx.font = `bold ${size}px Inter, Arial, sans-serif`;
+    let fit = size;
+    do ctx.font = `bold ${fit}px Inter, Arial, sans-serif`;
+    while (ctx.measureText(line.text).width > 512 - 36 && --fit > 10);
     ctx.fillText(line.text, 18, y);
   }
   texture.update(true);
@@ -171,7 +174,10 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
   if (!open) {
     get("plaster").polygon(corners, height, 3, [0.97, 0.97, 0.96], true);
     const wall: Rgb = kind === "consulate" ? [0.93, 0.9, 0.84] : kind === "hotel" ? [0.95, 0.92, 0.86] : kind === "cabin" ? [0.92, 0.92, 0.9] : [0.9, 0.92, 0.94];
+    const terminal = kind === "airport-los" || kind === "airport-dxb";
     for (let index = 0; index < 4; index += 1) {
+      // Terminals glaze the north side onto the apron instead of walling it.
+      if (terminal && index === 2) continue;
       const a = corners[index]!;
       const b = corners[(index + 1) % 4]!;
       get("plaster").wall(b[0], b[1], a[0], a[1], 0, height, 2.5, wall);
@@ -232,28 +238,56 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
     const dubai = kind === "airport-dxb";
     const accent: Rgb = dubai ? [0.78, 0.62, 0.32] : [0.05, 0.45, 0.25];
     // Glass curtain wall to the apron on the north side, with a parked jet beyond.
-    get("glass").quad([OX - HX, 0.02, OZ + HZ - 0.03], [OX + HX, 0.02, OZ + HZ - 0.03], [OX + HX, height - 0.4, OZ + HZ - 0.03], [OX - HX, height - 0.4, OZ + HZ - 0.03], [0, 0, -1], [[0, 0], [8, 0], [8, 2], [0, 2]]);
+    const clear = new StandardMaterial("terminal glass", scene);
+    clear.diffuseColor = Color3.FromHexString("#bfe3f2");
+    clear.specularColor = new Color3(0.9, 0.9, 0.9);
+    clear.alpha = 0.16;
+    clear.backFaceCulling = false;
+    const curtain = MeshBuilder.CreatePlane("terminal curtain wall", { width: HX * 2, height: height - 0.42 }, scene);
+    curtain.position.set(OX, 0.02 + (height - 0.42) / 2, OZ + HZ - 0.03);
+    curtain.material = clear;
+    curtain.isPickable = false;
+    disposables.push(clear, curtain);
     for (let x = -HX + 2; x < HX; x += 2.5) deco("frame", x, height / 2, HZ - 0.06, 0.08, height, 0.08);
     const apron = glow(scene, "apron sky", dubai ? "#f2d7a8" : "#bcd9ef", disposables);
-    const sky = MeshBuilder.CreatePlane("apron view", { width: HX * 2 + 20, height: 30 }, scene);
-    sky.position.set(OX, 10, OZ + HZ + 30);
+    const sky = MeshBuilder.CreatePlane("apron view", { width: 400, height: 80 }, scene);
+    sky.position.set(OX, 30, OZ + HZ + 80);
     sky.material = apron;
     disposables.push(sky);
-    deco("concrete", 0, 0.0, HZ + 14, HX * 2 + 20, 0.05, 28, [0.55, 0.55, 0.55]);
-    deco("paintWhite", 0, 3.2, HZ + 14, 4.0, 3.6, 30, [0.95, 0.96, 0.97]);
-    deco("paintWhite", 0, 3.6, HZ + 12, 34, 0.5, 4.0, [0.92, 0.93, 0.95]);
-    deco("paintWhite", 0, 6.2, HZ + 28, 0.4, 4.5, 3.0, accent);
-    deco("darkFrame", 0, 1.6, HZ + 1.5, 1.6, 3.2, 3.0, [0.4, 0.42, 0.45]);
+    deco("concrete", 0, 0.0, HZ + 40, 400, 0.05, 80, [0.55, 0.55, 0.55]);
+    for (const x of [-9, 9]) deco("paintWhite", x, 0.04, HZ + 22, 0.25, 0.02, 40, [0.95, 0.85, 0.2]);
+    const jet = buildAirliner(scene, "parked airliner", { accent: dubai ? "#b8913c" : "#0d7a3e", title: "LAGOS LIVING AIR" });
+    jet.root.position.x = OX;
+    jet.root.position.z = OZ + HZ + 22;
+    disposables.push(jet);
+    // Jet bridge from the gate to the forward door.
+    deco("darkFrame", layout.spots.gate![0], 3.2, HZ + 1.6, 2.4, 2.6, 3.2, [0.4, 0.42, 0.45]);
+    deco("glass", layout.spots.gate![0], 3.2, HZ + 1.6, 2.5, 1.0, 2.6);
     // Ticket desk and check-in counters on the west side; gate desk at the jet bridge.
-    solid("wood", -14.2, 0.55, -3.5, 1.2, 1.1, 3.2, accent);
+    const tz = layout.spots.tickets![1];
+    const cz = layout.spots.checkin![1];
+    solid("wood", -14.2, 0.55, tz, 1.2, 1.1, 3.2, accent);
     sign("Tickets", "Lagos ⇄ Dubai · LL 721 / 722", -14.7, 2.0, -3.5, 2.6, "east");
     for (const z of [0.8, 2.5, 4.2]) {
       solid("concrete", -14.2, 0.55, z, 1.2, 1.1, 1.2, [0.85, 0.86, 0.88]);
       deco("rubber", -13.4, 0.35, z, 0.6, 0.12, 1.1);
     }
     sign("Check-in", "Economy · Business priority", -14.7, 2.0, 2.5, 2.6, "east");
-    solid("concrete", 0, 0.55, 9.4, 2.6, 1.1, 0.7, accent);
-    sign(dubai ? "Gate B7" : "Gate 3", dubai ? "LL 722 to Lagos" : "LL 721 to Dubai", 0, 2.5, HZ - 0.2, 2.4);
+    // Counter tops and staff monitors facing the agents' side of each desk.
+    const monitors = (z: number) => {
+      deco("darkFrame", -14.45, 1.32, z, 0.05, 0.32, 0.42, [0.08, 0.08, 0.1]);
+      deco("chrome", -14.45, 1.14, z, 0.18, 0.04, 0.12, [0.3, 0.3, 0.32]);
+    };
+    deco("chrome", -14.15, 1.12, tz, 1.35, 0.04, 3.3, [0.9, 0.88, 0.84]);
+    for (const dz of [-1, 0, 1]) monitors(tz + dz);
+    for (const z of [0.8, 2.5, 4.2]) {
+      deco("chrome", -14.15, 1.12, z, 1.35, 0.04, 1.25, [0.9, 0.88, 0.84]);
+      monitors(z);
+      deco("darkFrame", -13.75, 1.6, z + 0.4, 0.04, 0.3, 0.42, [0.05, 0.05, 0.07]);
+    }
+    const [gx] = layout.spots.gate!;
+    solid("concrete", gx, 0.55, 9.4, 2.6, 1.1, 0.7, accent);
+    sign(dubai ? "Gate B7" : "Gate 3", dubai ? "LL 722 to Lagos" : "LL 721 to Dubai", gx, 2.5, HZ - 0.2, 2.4);
     // Departures board facing the entrance.
     const flights = board(scene, "departures", 6, 2, [
       { text: dubai ? "DEPARTURES · DXB" : "DEPARTURES · LOS", colour: "#ffd23a", size: 30 },
@@ -261,9 +295,44 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
       { text: dubai ? "LL 722  LAGOS       NEXT 10s" : "LL 721  DUBAI       NEXT 10s", size: 26 },
       { text: "Check in · then gate · 60 s flight", colour: "#9fd3ff", size: 22 },
     ], "#0b0f18", disposables);
-    flights.position.set(OX - 4, 3.6, OZ - 5.5);
-    flights.rotation.y = Math.PI;
+    flights.position.set(OX - 4, 3.6, OZ - 5.52);
     deco("darkFrame", -4, 3.6, -5.45, 6.2, 2.2, 0.08);
+    // Overhead wayfinding: yellow-on-navy boards hung from the ceiling, numbered in the order you use them.
+    const hang = (name: string, x: number, z: number, width: number, lines: Array<{ text: string; colour?: string; size?: number }>, facing: "south" | "north" | "east") => {
+      const panel = board(scene, name, width, 1.1, lines, "#0d1b3d", disposables);
+      panel.position.set(OX + x, 4.3, OZ + z);
+      panel.rotation.y = facing === "south" ? 0 : facing === "north" ? Math.PI : -Math.PI / 2;
+      const along = facing === "east";
+      deco("darkFrame", along ? x - 0.04 : x, 4.3, along ? z : facing === "south" ? z + 0.04 : z - 0.04, along ? 0.06 : width + 0.12, 1.22, along ? width + 0.12 : 0.06);
+      for (const side of [-1, 1]) {
+        const offset = side * (width / 2 - 0.3);
+        deco("chrome", along ? x : x + offset, (4.85 + height) / 2, along ? z + offset : z, 0.04, height - 4.85, 0.04);
+      }
+    };
+    const Y = "#ffd23a";
+    hang("sign tickets", -13.6, tz, 3.2, [{ text: "1  TICKETS", colour: Y, size: 40 }, { text: "Buy here · staff hand you the pass", size: 20 }], "east");
+    hang("sign checkin", -13.6, cz + 0.8, 3.2, [{ text: "2  CHECK-IN", colour: Y, size: 40 }, { text: "Bag drop · boarding pass", size: 20 }], "east");
+    hang("sign gate", gx, 7.6, 3.2, [{ text: `3  GATE ${dubai ? "B7" : "3"}`, colour: Y, size: 40 }, { text: "Show pass · board the aircraft", size: 20 }], "south");
+    const [lx0, lz0] = layout.spots.lounge!;
+    hang("sign lounge", lx0, lz0 - 2.6, 3.2, [{ text: "BUSINESS LOUNGE", colour: Y, size: 34 }, { text: "Sit down · staff bring your order", size: 20 }], "south");
+    const loungeArrow = lx0 < 0 ? "← BUSINESS LOUNGE" : "BUSINESS LOUNGE →";
+    if (dubai) {
+      const [sx, sz] = layout.spawn;
+      hang("sign arrivals", sx, sz - 2.2, 6, [
+        { text: "ARRIVALS  ↑ IMMIGRATION  ↑ BAGGAGE", colour: Y, size: 24 },
+        { text: "↑ EXIT · TAXI TO HOTEL · CAR HIRE", size: 20 },
+      ], "north");
+    }
+    if (dubai) {
+      hang("sign exit", 0, -7.12, 7, [
+        { text: "↑ EXIT · TAXI TO YOUR HOTEL · CAR HIRE", colour: Y, size: 22 },
+        { text: "Tourism centre: safari · dhow · clubs", size: 20 },
+      ], "north");
+    }
+    hang("sign departures", 0, -7.2, 7, [
+      { text: "← 1 TICKETS   ← 2 CHECK-IN   ↑ 3 GATE", colour: Y, size: 22 },
+      { text: `DEPARTURES · ${loungeArrow}`, size: 20 },
+    ], "south");
     // Business lounge with sofas behind a low screen.
     const [lx, lz] = layout.spots.lounge!;
     get("fabric").polygon([P(lx - 3, lz - 2.2), P(lx + 3, lz - 2.2), P(lx + 3, lz + 2.2), P(lx - 3, lz + 2.2)], 0.03, 1, [0.35, 0.12, 0.15]);
@@ -306,8 +375,7 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
     } else {
       sign("Murtala Muhammed Terminal", "Lagos Living Air · fictional", 0, 3.4, -HZ + 0.04, 4.2, "north");
     }
-    light(-8, height - 0.4, 0, "#fff6e8", 22, 22);
-    light(8, height - 0.4, 0, "#fff6e8", 22, 22);
+    for (const x of [-8, 8]) light(x, height - 0.4, 0, "#fff6e8", 22, 22).excludedMeshes.push(...jet.meshes);
   } else if (kind === "cabin") {
     // Fuselage: side walls with windows, overhead bins, an aisle runner and both cabins of seats.
     get("fabric").polygon([P(-0.38, -HZ), P(0.38, -HZ), P(0.38, HZ), P(-0.38, HZ)], 0.03, 1, [0.55, 0.12, 0.15]);
