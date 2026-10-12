@@ -4,7 +4,21 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
-import { bottleById, CLUB_LAYOUT, CLUB_TABLES, INTERIOR_EXIT, INTERIOR_HALF, INTERIOR_ORIGIN, legacyCellPosition, type Club, type Vec2 } from "@lagos-living/shared";
+import {
+  bottleById,
+  CLUB_LAYOUT,
+  CLUB_TABLES,
+  FRONT_WALL,
+  HOME_LAYOUTS,
+  INTERIOR_EXIT,
+  INTERIOR_HALF,
+  INTERIOR_ORIGIN,
+  legacyCellPosition,
+  type Club,
+  type HomeLayout,
+  type Vec2,
+} from "@lagos-living/shared";
+import type { Material } from "@babylonjs/core/Materials/material";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
@@ -13,6 +27,7 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import { buildExitDoor } from "./exit-door";
 import { MeshBuilderBatch } from "./geometry";
 import type { Materials } from "./materials";
+import type { PropId, PropLibrary } from "./props";
 import { SignAtlas } from "./sign-atlas";
 
 export type InteriorKind = "starter" | "preview" | "home" | "club";
@@ -43,10 +58,68 @@ export function placementCentre(placement: Placement): Vec2 {
   return [OX + x, OZ + z];
 }
 
+/** Catalogue pieces drawn with a Meshy model when it has loaded; the box builders below still add seats, spots and collision. */
+const FURNITURE_MODELS: Partial<Record<string, PropId>> = {
+  "island-bed": "double-bed",
+  "lagoon-sofa": "sofa",
+  "woven-table": "side-table",
+  "eko-king-bed": "king-bed",
+  "ikoyi-sectional": "sectional",
+  "velvet-armchair": "armchair",
+  "marble-coffee-table": "coffee-table",
+  "dining-set": "dining-set",
+  "tv-console": "tv-console",
+  wardrobe: "wardrobe",
+  bookshelf: "bookshelf",
+  "work-desk": "work-desk",
+  "floor-lamp": "floor-lamp",
+  "potted-palm": "potted-palm",
+};
+const SHOWPIECES: PropId[] = ["kitchen-wall", "kitchen-island", "grand-piano", "chandelier", "wall-art", "console-vase", "potted-palm"];
+
+/** Meshy models a home needs before it is built, so the first frame already shows them. */
+export function interiorModels(kind: InteriorKind, layout: HomeLayout, placements: Placement[]): PropId[] {
+  if (kind === "club" || kind === "starter") return [];
+  const pieces = kind === "preview" ? previewPieces(layout).map((piece) => piece.itemId) : placements.map((piece) => piece.itemId);
+  const models = pieces.map((itemId) => FURNITURE_MODELS[itemId]).filter((id): id is PropId => Boolean(id));
+  return [...new Set([...models, ...(layout.tier === "flat" ? [] : SHOWPIECES)])];
+}
+
+/** What a show-home preview is dressed with: a sitting room, a bed and, in the bigger homes, dining and a TV. */
+function previewPieces(layout: HomeLayout): Placement[] {
+  const piece = (itemId: string, x: number, z: number, rotation: number): Placement => ({ itemId, gridX: 0, gridZ: 0, rotation, x, z });
+  if (layout.tier === "flat") return [piece("lagoon-sofa", 0.3, -0.2, 0), piece("woven-table", 0.3, 1.4, 0), piece("island-bed", layout.halfX - 1.2, layout.back - 1.4, 0)];
+  const wide = layout.tier === "mansion";
+  return [
+    piece("aso-rug", 0, 1.6, 0),
+    piece("ikoyi-sectional", 0, 2.6, 0),
+    piece("marble-coffee-table", 0, 0.9, 0),
+    piece("tv-console", 0, -1.8, 180),
+    piece("velvet-armchair", 2.3, 0.9, 90),
+    piece("dining-set", wide ? -7 : -3.6, wide ? 6.5 : 5, 0),
+    piece("eko-king-bed", wide ? 8.5 : layout.halfX - 3.2, wide ? 9 : layout.back - 1.6, 0),
+    piece("wardrobe", wide ? 11.8 : layout.halfX - 0.5, wide ? 5 : layout.back - 4.6, 90),
+    piece("floor-lamp", 2.4, 3.4, 0),
+    piece("potted-palm", -2.4, 3.4, 0),
+    piece("bookshelf", wide ? -12.7 : -layout.halfX + 0.3, wide ? 9 : 4.5, 270),
+  ];
+}
+
+export type InteriorOptions = { layout?: HomeLayout; props?: PropLibrary | null };
+
 /** Builds one room at the interior origin; obstacles are returned as axis-aligned boxes. */
-export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtlas, kind: InteriorKind, title: string, placements: Placement[], club?: Club) {
+export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtlas, kind: InteriorKind, title: string, placements: Placement[], club?: Club, options: InteriorOptions = {}) {
+  const layout = kind === "club" || kind === "starter" ? HOME_LAYOUTS.flat : (options.layout ?? HOME_LAYOUTS.flat);
+  const props = options.props ?? null;
+  const [X0, X1, Z0, Z1, H] = [OX - layout.halfX, OX + layout.halfX, OZ + FRONT_WALL, OZ + layout.back, layout.height];
+  const disposables: Array<{ dispose(): void }> = [];
+  const local_ = homeMaterials(scene, layout, disposables);
   const batches = new Map<string, MeshBuilderBatch>();
+  // While a Meshy model stands in for a piece, its box geometry goes here and is never built.
+  const unused = new MeshBuilderBatch("interior unused");
+  let hidden = false;
   const get = (key: string) => {
+    if (hidden) return unused;
     let batch = batches.get(key);
     if (!batch) {
       batch = new MeshBuilderBatch(`interior ${key}`);
@@ -62,27 +135,34 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
       boxes.push({ x, z, hx: (swap ? d : w) / 2, hz: (swap ? w : d) / 2 });
     }
   };
+  const model = (id: PropId, x: number, z: number, yaw: number, scale = 1, y = 0) => props?.place(id, x, z, yaw, disposables, y, scale) ?? null;
 
-  const corners: Vec2[] = [[OX - HX, OZ - HZ], [OX + HX, OZ - HZ], [OX + HX, OZ + HZ], [OX - HX, OZ + HZ]];
+  const corners: Vec2[] = [[X0, Z0], [X1, Z0], [X1, Z1], [X0, Z1]];
   const marina = kind === "club" && club?.id === DUBAI_CLUB;
-  get("tiles").polygon(corners, 0.02, 1.2, marina ? [0.78, 0.76, 0.74] : kind === "club" ? [0.16, 0.14, 0.2] : undefined);
+  const grand = kind !== "club" && kind !== "starter" && layout.tier !== "flat";
+  if (grand) get(local_.floorKey).polygon(corners, 0.02, local_.floorTile);
+  else get("tiles").polygon(corners, 0.02, 1.2, marina ? [0.78, 0.76, 0.74] : kind === "club" ? [0.16, 0.14, 0.2] : undefined);
   // The ceiling is its own mesh so the home designer can lift it off for a view from above.
   const ceiling = new MeshBuilderBatch("interior ceiling");
-  ceiling.polygon(corners, HEIGHT, 3, marina ? [0.14, 0.12, 0.1] : kind === "club" ? [0.08, 0.07, 0.1] : [0.97, 0.97, 0.95], true);
-  const wallColor: [number, number, number] = marina ? [0.3, 0.25, 0.19] : kind === "club" ? [0.13, 0.11, 0.17] : kind === "starter" ? [0.86, 0.9, 0.84] : [0.98, 0.95, 0.88];
+  ceiling.polygon(corners, H, 3, marina ? [0.14, 0.12, 0.1] : kind === "club" ? [0.08, 0.07, 0.1] : [0.97, 0.97, 0.95], true);
+  const wallColor: [number, number, number] = marina ? [0.3, 0.25, 0.19] : kind === "club" ? [0.13, 0.11, 0.17] : kind === "starter" ? [0.86, 0.9, 0.84] : local_.wall;
   for (let index = 0; index < 4; index += 1) {
     const a = corners[index]!;
     const b = corners[(index + 1) % 4]!;
-    get("plaster").wall(b[0], b[1], a[0], a[1], 0, HEIGHT, 2.5, wallColor);
+    get(kind === "club" || kind === "starter" ? "plaster" : "homeWall").wall(b[0], b[1], a[0], a[1], 0, H, 2.5, wallColor);
   }
-  // Windows with a bright daylight view on the north and east walls.
-  for (const x of kind === "club" ? [] : [-3, 0, 3]) {
-    get("lamp").quad([OX + x + 0.7, 1.0, OZ + HZ - 0.02], [OX + x - 0.7, 1.0, OZ + HZ - 0.02], [OX + x - 0.7, 2.3, OZ + HZ - 0.02], [OX + x + 0.7, 2.3, OZ + HZ - 0.02], [0, 0, -1], [[0, 0], [1, 0], [1, 1], [0, 1]]);
-    get("frame").box(OX + x, 1.65, OZ + HZ - 0.04, 0.06, 1.3, 0.05);
-    get("frame").box(OX + x, 1.0, OZ + HZ - 0.06, 1.5, 0.06, 0.12);
-    get("frame").box(OX + x, 2.3, OZ + HZ - 0.04, 1.5, 0.06, 0.05);
+  if (grand) {
+    dressHome(layout, { get, solid, model, boxes });
+  } else {
+    // Windows with a bright daylight view on the north and east walls.
+    for (const x of kind === "club" ? [] : [-3, 0, 3]) {
+      get("lamp").quad([OX + x + 0.7, 1.0, Z1 - 0.02], [OX + x - 0.7, 1.0, Z1 - 0.02], [OX + x - 0.7, 2.3, Z1 - 0.02], [OX + x + 0.7, 2.3, Z1 - 0.02], [0, 0, -1], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      get("frame").box(OX + x, 1.65, Z1 - 0.04, 0.06, 1.3, 0.05);
+      get("frame").box(OX + x, 1.0, Z1 - 0.06, 1.5, 0.06, 0.12);
+      get("frame").box(OX + x, 2.3, Z1 - 0.04, 1.5, 0.06, 0.05);
+    }
+    if (kind !== "club") get("lamp").quad([X1 - 0.02, 1.0, OZ - 0.8], [X1 - 0.02, 1.0, OZ + 0.8], [X1 - 0.02, 2.3, OZ + 0.8], [X1 - 0.02, 2.3, OZ - 0.8], [-1, 0, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
   }
-  if (kind !== "club") get("lamp").quad([OX + HX - 0.02, 1.0, OZ - 0.8], [OX + HX - 0.02, 1.0, OZ + 0.8], [OX + HX - 0.02, 2.3, OZ + 0.8], [OX + HX - 0.02, 2.3, OZ - 0.8], [-1, 0, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
   // Exit door on the south wall.
   const [exitX, exitZ] = INTERIOR_EXIT;
   const exitDisposables: Array<{ dispose(): void }> = [];
@@ -129,7 +209,19 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     ...moreFurniture(get, solid, addSpot, addSeat),
   };
 
-  const disposables: Array<{ dispose(): void }> = [...exitDisposables];
+  disposables.push(...exitDisposables);
+  const placePiece = (placement: Placement) => {
+    const build = furniture[placement.itemId];
+    if (!build) return;
+    const [x, z] = placementCentre(placement);
+    const yaw = (placement.rotation * Math.PI) / 180;
+    const id = FURNITURE_MODELS[placement.itemId];
+    // Models face +Z; catalogue pieces put their back on local +z, so they turn half a turn.
+    hidden = Boolean(id && model(id, x, z, yaw + Math.PI));
+    build(x, z, yaw);
+    hidden = false;
+    if (placement.itemId === "tv-console") spots.push({ id: "tv", point: [x - Math.sin(yaw) * 1.8, z - Math.cos(yaw) * 1.8], label: "Watch TV" });
+  };
   let animate: (seconds: number) => void = () => {};
   let clubView: ReturnType<typeof buildClub> | null = null;
   if (kind === "club") {
@@ -141,52 +233,53 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     solid("wood", OX + HX - 0.4, 1.0, OZ - 1.5, 0.6, 2.0, 1.6, 0, [0.8, 0.7, 0.6]);
     get("fabric").polygon([[OX - 2, OZ - 1.5], [OX + 1, OZ - 1.5], [OX + 1, OZ + 1], [OX - 2, OZ + 1]], 0.03, 1, [0.8, 0.45, 0.3]);
   } else {
-    get("concrete").box(OX - HX + 0.35, 0.45, OZ - 1.2, 0.7, 0.9, 3.2, 0, 1, [0.92, 0.9, 0.86]);
-    boxes.push({ x: OX - HX + 0.35, z: OZ - 1.2, hx: 0.35, hz: 1.6 });
-    get("darkFrame").box(OX - HX + 0.35, 0.92, OZ - 0.6, 0.55, 0.04, 0.55);
-    get("chrome").box(OX - HX + 0.35, 0.93, OZ - 1.8, 0.45, 0.03, 0.35);
-    spots.push({ id: "kitchen", point: [OX - HX + 1.3, OZ - 1.2], label: "Cook a meal" });
-    get("fabric").polygon([[OX - 1.5, OZ - 1], [OX + 2, OZ - 1], [OX + 2, OZ + 1.6], [OX - 1.5, OZ + 1.6]], 0.03, 1, [0.55, 0.3, 0.25]);
+    if (!grand) {
+      get("concrete").box(OX - HX + 0.35, 0.45, OZ - 1.2, 0.7, 0.9, 3.2, 0, 1, [0.92, 0.9, 0.86]);
+      boxes.push({ x: OX - HX + 0.35, z: OZ - 1.2, hx: 0.35, hz: 1.6 });
+      get("darkFrame").box(OX - HX + 0.35, 0.92, OZ - 0.6, 0.55, 0.04, 0.55);
+      get("chrome").box(OX - HX + 0.35, 0.93, OZ - 1.8, 0.45, 0.03, 0.35);
+      get("fabric").polygon([[OX - 1.5, OZ - 1], [OX + 2, OZ - 1], [OX + 2, OZ + 1.6], [OX - 1.5, OZ + 1.6]], 0.03, 1, [0.55, 0.3, 0.25]);
+    }
+    spots.push({ id: "kitchen", point: [OX + layout.kitchen[0], OZ + layout.kitchen[1]], label: "Cook a meal" });
     if (kind === "home") {
-      solid("wood", OX + HX - 0.55, 0.4, OZ + HZ - 0.7, 1.0, 0.8, 0.6, 0, [0.75, 0.55, 0.35]);
-      get("chrome").box(OX + HX - 0.55, 0.62, OZ + HZ - 1.0, 0.3, 0.06, 0.04);
-      spots.push({ id: "storage", point: [OX + HX - 0.55, OZ + HZ - 1.7], label: "Open storage" });
-      for (const placement of placements) {
-        const build = furniture[placement.itemId];
-        if (!build) continue;
-        const [x, z] = placementCentre(placement);
-        const yaw = (placement.rotation * Math.PI) / 180;
-        build(x, z, yaw);
-        if (placement.itemId === "tv-console") spots.push({ id: "tv", point: [x - Math.sin(yaw) * 1.8, z - Math.cos(yaw) * 1.8], label: "Watch TV" });
-      }
+      const [sx, sz] = [OX + layout.storage[0], OZ + layout.storage[1]];
+      solid("wood", sx, 0.4, sz, 1.0, 0.8, 0.6, 0, [0.75, 0.55, 0.35]);
+      get("chrome").box(sx, 0.62, sz - 0.3, 0.3, 0.06, 0.04);
+      spots.push({ id: "storage", point: [sx, sz - 1.0], label: "Open storage" });
+      for (const placement of placements) placePiece(placement);
     } else {
-      sofa(OX + 0.3, OZ - 0.2, 0);
-      table(OX + 0.3, OZ + 1.4, 0);
-      bed(OX + HX - 1.2, OZ + HZ - 1.4, Math.PI);
+      for (const placement of previewPieces(layout)) placePiece(placement);
     }
   }
 
   const meshes: Mesh[] = [];
   for (const [key, batch] of batches) {
-    const material = (materials as unknown as Record<string, Mesh["material"]>)[key]!;
-    const mesh = batch.build(scene, material!);
+    const material = local_.byKey[key] ?? (materials as unknown as Record<string, Material>)[key]!;
+    const mesh = batch.build(scene, material);
     if (mesh) meshes.push(mesh);
   }
   const sign = signs.build(scene, atlas.material);
   if (sign) meshes.push(sign);
-  const roof = ceiling.build(scene, materials.plaster);
+  const roof = ceiling.build(scene, kind === "club" || kind === "starter" ? materials.plaster : local_.byKey.homeCeiling!);
   if (roof) meshes.push(roof);
-  const light = new PointLight("interior light", new Vector3(OX, HEIGHT - 0.3, OZ), scene);
-  light.intensity = kind === "club" ? 5 : 18;
-  light.range = 14;
-  light.diffuse = Color3.FromHexString(kind === "club" ? "#b8a8ff" : "#fff1dc");
+  // Bigger homes get a light per zone; tall rooms hang them lower so the floor still reads bright.
+  const lightPoints: Vec2[] = layout.tier === "mansion" ? [[0, 1.5], [-7, 8], [7, 8]] : layout.tier === "flat" || !grand ? [[0, 0]] : [[0, 0.5], [0, layout.back - 4]];
+  const lights = lightPoints.map(([lx, lz], index) => {
+    const light = new PointLight(`interior light ${index}`, new Vector3(OX + lx, Math.min(H - 0.6, 4.2), OZ + lz), scene);
+    light.intensity = kind === "club" ? 5 : grand ? 26 : 18;
+    light.range = grand ? 20 : 14;
+    light.diffuse = Color3.FromHexString(kind === "club" ? "#b8a8ff" : "#fff1dc");
+    return light;
+  });
 
   return {
     spots,
     seats: clubView?.seats ?? seats,
+    /** Inside faces of the walls, in world metres, and the ceiling height. */
+    bounds: { minX: X0, maxX: X1, minZ: Z0, maxZ: Z1, height: H },
     collide(x: number, z: number, radius: number): Vec2 {
-      let px = Math.max(OX - HX + radius, Math.min(OX + HX - radius, x));
-      let pz = Math.max(OZ - HZ + radius, Math.min(OZ + HZ - radius, z));
+      let px = Math.max(X0 + radius, Math.min(X1 - radius, x));
+      let pz = Math.max(Z0 + radius, Math.min(Z1 - radius, z));
       for (const box of boxes) {
         const dx = px - box.x;
         const dz = pz - box.z;
@@ -218,7 +311,7 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     dispose() {
       for (const mesh of meshes) mesh.dispose();
       for (const item of disposables) item.dispose();
-      light.dispose();
+      for (const light of lights) light.dispose();
     },
   };
 }
@@ -226,6 +319,364 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
 export type InteriorView = ReturnType<typeof buildInterior>;
 
 type Batch = (key: string) => MeshBuilderBatch;
+type HomeMaterials = ReturnType<typeof homeMaterials>;
+
+/** Deterministic noise so every visit paints the same veins and planks. */
+function seeded(seed: number) {
+  let state = seed;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 2 ** 32;
+  };
+}
+
+function painted(scene: Scene, name: string, size: [number, number], draw: (context: CanvasRenderingContext2D, w: number, h: number) => void, disposables: Array<{ dispose(): void }>) {
+  const texture = new DynamicTexture(name, { width: size[0], height: size[1] }, scene, true);
+  draw(texture.getContext() as CanvasRenderingContext2D, size[0], size[1]);
+  texture.update(true);
+  texture.wrapU = Texture.WRAP_ADDRESSMODE;
+  texture.wrapV = Texture.WRAP_ADDRESSMODE;
+  texture.anisotropicFilteringLevel = 4;
+  disposables.push(texture);
+  return texture;
+}
+
+/** Floors, trim and views for the bigger homes, drawn once per visit on small canvases. */
+function homeMaterials(scene: Scene, layout: HomeLayout, disposables: Array<{ dispose(): void }>) {
+  const byKey: Record<string, Material> = {};
+  const wall: Rgb = layout.tier === "mansion" ? [0.97, 0.94, 0.88] : layout.tier === "apartment" ? [0.95, 0.95, 0.93] : layout.tier === "house" ? [0.96, 0.92, 0.84] : [0.98, 0.95, 0.88];
+  const pbr = (name: string, setup: (material: PBRMaterial) => void) => {
+    const material = new PBRMaterial(name, scene);
+    material.metallic = 0;
+    material.roughness = 0.5;
+    setup(material);
+    disposables.push(material);
+    return material;
+  };
+  // Painted plaster with a little self-light, so far walls and high ceilings stay bright on phones with few lights.
+  byKey.homeWall = pbr("home wall", (material) => {
+    material.roughness = 0.85;
+    material.emissiveColor = new Color3(0.32, 0.31, 0.29);
+  });
+  byKey.homeCeiling = pbr("home ceiling", (material) => {
+    material.roughness = 0.9;
+    material.emissiveColor = new Color3(0.3, 0.3, 0.29);
+  });
+  if (layout.tier === "flat") return { byKey, floorKey: "tiles", floorTile: 1.2, wall };
+  const random = seeded(layout.tier.length * 977);
+  const floor = pbr(`${layout.tier} floor`, (material) => {
+    if (layout.tier === "house") {
+      material.albedoTexture = painted(scene, "oak planks", [512, 512], (context, w, h) => {
+        const rows = 8;
+        for (let row = 0; row < rows; row += 1) {
+          let x = -random() * w * 0.5;
+          while (x < w) {
+            const length = w * (0.35 + random() * 0.4);
+            const tone = 128 + random() * 42;
+            context.fillStyle = `rgb(${tone}, ${tone * 0.76}, ${tone * 0.56})`;
+            context.fillRect(x, (row * h) / rows, length, h / rows);
+            context.strokeStyle = "rgba(60, 35, 18, 0.18)";
+            for (let line = 0; line < 5; line += 1) {
+              const y = (row * h) / rows + random() * (h / rows);
+              context.beginPath();
+              context.moveTo(x, y);
+              context.bezierCurveTo(x + length * 0.3, y + 2, x + length * 0.6, y - 2, x + length, y + 1);
+              context.stroke();
+            }
+            context.fillStyle = "rgba(40, 24, 12, 0.6)";
+            context.fillRect(x, (row * h) / rows, 2, h / rows);
+            x += length;
+          }
+          context.fillStyle = "rgba(40, 24, 12, 0.55)";
+          context.fillRect(0, (row * h) / rows, w, 2);
+        }
+      }, disposables);
+      material.roughness = 0.42;
+    } else {
+      const mansion = layout.tier === "mansion";
+      material.albedoTexture = painted(scene, `${layout.tier} marble`, [512, 512], (context, w, h) => {
+        context.fillStyle = mansion ? "#f3efe8" : "#e7e5e1";
+        context.fillRect(0, 0, w, h);
+        for (let vein = 0; vein < (mansion ? 18 : 8); vein += 1) {
+          context.strokeStyle = mansion ? `rgba(${120 + random() * 40}, ${110 + random() * 30}, ${100 + random() * 20}, ${0.12 + random() * 0.25})` : `rgba(150, 150, 150, ${0.06 + random() * 0.1})`;
+          context.lineWidth = 0.6 + random() * (mansion ? 2.4 : 1.2);
+          let [x, y] = [random() * w, random() * h];
+          context.beginPath();
+          context.moveTo(x, y);
+          for (let step = 0; step < 12; step += 1) {
+            x += (random() - 0.3) * 70;
+            y += (random() - 0.5) * 50;
+            context.lineTo(x, y);
+          }
+          context.stroke();
+        }
+        context.fillStyle = "rgba(170, 160, 150, 0.55)";
+        for (const at of [0, w / 2]) {
+          context.fillRect(at, 0, 1.5, h);
+          context.fillRect(0, at, w, 1.5);
+        }
+      }, disposables);
+      material.roughness = mansion ? 0.16 : 0.24;
+    }
+  });
+  byKey.homeFloor = floor;
+  byKey.homeTrim = pbr("home trim", (material) => {
+    material.albedoColor = new Color3(0.96, 0.95, 0.92);
+    material.roughness = 0.3;
+  });
+  byKey.homeGold = pbr("home gold", (material) => {
+    material.albedoColor = new Color3(0.86, 0.68, 0.32);
+    material.metallic = 1;
+    material.roughness = 0.28;
+  });
+  byKey.homeWood = pbr("home walnut", (material) => {
+    material.albedoColor = new Color3(0.32, 0.2, 0.12);
+    material.roughness = 0.45;
+  });
+  byKey.homeGlass = pbr("home glass", (material) => {
+    material.albedoColor = new Color3(0.8, 0.9, 0.92);
+    material.roughness = 0.05;
+    material.alpha = 0.22;
+    material.backFaceCulling = false;
+  });
+  const view = new StandardMaterial("home view", scene);
+  view.disableLighting = true;
+  view.emissiveTexture = painted(scene, "home view", [1024, 256], (context, w, h) => {
+    const sky = context.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, "#7fb6e6");
+    sky.addColorStop(0.62, "#d9ecf7");
+    sky.addColorStop(0.63, "#5b8f8c");
+    sky.addColorStop(1, "#2f6563");
+    context.fillStyle = sky;
+    context.fillRect(0, 0, w, h);
+    const towers = seeded(41);
+    for (let x = 0; x < w; ) {
+      const width = 18 + towers() * 40;
+      const top = h * (0.18 + towers() * 0.36);
+      context.fillStyle = `rgb(${120 + towers() * 40}, ${140 + towers() * 30}, ${160 + towers() * 30})`;
+      context.fillRect(x, top, width, h * 0.63 - top);
+      context.fillStyle = "rgba(255, 255, 255, 0.35)";
+      for (let y = top + 6; y < h * 0.6; y += 9) for (let wx = x + 4; wx < x + width - 4; wx += 7) context.fillRect(wx, y, 3, 4);
+      x += width + towers() * 14;
+    }
+    if (layout.tier !== "apartment") {
+      context.fillStyle = "#3e7a3a";
+      for (let x = 0; x < w; x += 22 + towers() * 30) {
+        context.fillRect(x, h * 0.4, 3, h * 0.3);
+        context.beginPath();
+        context.ellipse(x + 1.5, h * 0.4, 18, 7, 0, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.fillStyle = "#57a9c7";
+      context.fillRect(0, h * 0.8, w, h * 0.2);
+    }
+  }, disposables);
+  disposables.push(view);
+  byKey.homeView = view;
+  return { byKey, floorKey: "homeFloor", floorTile: layout.tier === "house" ? 2.4 : layout.tier === "mansion" ? 1.6 : 2.4, wall };
+}
+
+type Dresser = {
+  get: Batch;
+  solid: Solid;
+  model: (id: PropId, x: number, z: number, yaw: number, scale?: number, y?: number) => TransformNode | null;
+  boxes: Array<{ x: number; z: number; hx: number; hz: number }>;
+};
+
+/**
+ * Built-in parts of the bigger homes: fitted kitchens, a hall console, art, plants, windows with a view, trim and
+ * lighting, and in a mansion a double-height hall with a grand staircase, gallery, chandeliers and a grand piano.
+ * Positions match the fixtures in HOME_LAYOUTS so bought furniture never lands on them.
+ */
+function dressHome(layout: HomeLayout, { get, solid, model, boxes }: Dresser) {
+  const [X0, X1, Z0, Z1, H] = [OX - layout.halfX, OX + layout.halfX, OZ + FRONT_WALL, OZ + layout.back, layout.height];
+  const wx = (x: number) => OX + x;
+  const wz = (z: number) => OZ + z;
+  const block = (x: number, z: number, hx: number, hz: number) => boxes.push({ x, z, hx, hz });
+  type Side = "north" | "east" | "west" | "south";
+  /** Point on the inside of a wall: `along` runs along it (x for north/south, z for east/west), `out` steps into the room. */
+  const onWall = (side: Side, along: number, y: number, out: number): [number, number, number] =>
+    side === "north" ? [wx(along), y, Z1 - out] : side === "south" ? [wx(along), y, Z0 + out] : side === "east" ? [X1 - out, y, wz(along)] : [X0 + out, y, wz(along)];
+  const facing = (side: Side) => (side === "north" ? Math.PI : side === "south" ? 0 : side === "east" ? -Math.PI / 2 : Math.PI / 2);
+  const span = (side: Side) => (side === "north" || side === "south" ? [-layout.halfX, layout.halfX] : [FRONT_WALL, layout.back]) as Vec2;
+  const strip = (key: string, side: Side, from: number, to: number, y: number, h: number, depth: number, color?: Rgb) => {
+    const [x, , z] = onWall(side, (from + to) / 2, y, depth / 2);
+    get(key).box(x, y, z, to - from, h, depth, side === "east" || side === "west" ? Math.PI / 2 : 0, 1, color);
+  };
+  const glazing = (side: Side, centre: number, width: number, y0: number, y1: number, panes = 1) => {
+    const [a0, a1] = span(side);
+    const u = (along: number) => (along - a0) / (a1 - a0);
+    const v = (y: number) => y / Math.max(H, 3.2);
+    const p = (along: number, y: number) => onWall(side, along, y, 0.02);
+    const normal: [number, number, number] = side === "north" ? [0, 0, -1] : side === "south" ? [0, 0, 1] : side === "east" ? [-1, 0, 0] : [1, 0, 0];
+    const [l, r] = [centre - width / 2, centre + width / 2];
+    get("homeView").quad(p(r, y0), p(l, y0), p(l, y1), p(r, y1), normal, [[u(r), v(y0)], [u(l), v(y0)], [u(l), v(y1)], [u(r), v(y1)]]);
+    for (const y of [y0, y1]) strip("darkFrame", side, l - 0.05, r + 0.05, y, 0.07, 0.08);
+    for (let pane = 0; pane <= panes; pane += 1) {
+      const at = l + (width * pane) / panes;
+      const [x, , z] = onWall(side, at, (y0 + y1) / 2, 0.04);
+      get("darkFrame").box(x, (y0 + y1) / 2, z, 0.06, y1 - y0, 0.06);
+    }
+    if (y0 > 0.3) strip("homeTrim", side, l - 0.12, r + 0.12, y0 - 0.04, 0.05, 0.18);
+  };
+  const art = (side: Side, along: number, y: number, scale: number) => {
+    const [x, , z] = onWall(side, along, y, 0.04);
+    if (!model("wall-art", x, z, facing(side), scale, y)) {
+      const [fx, , fz] = onWall(side, along, y + 0.7 * scale, 0.03);
+      get("homeGold").box(fx, y + 0.7 * scale, fz, 1.8 * scale, 1.3 * scale, 0.05, facing(side));
+    }
+  };
+  const palm = (x: number, z: number) => {
+    if (!model("potted-palm", wx(x), wz(z), 0)) solid("vertexPaint", wx(x), 0.3, wz(z), 0.5, 0.6, 0.5, 0, [0.72, 0.38, 0.24]);
+    block(wx(x), wz(z), 0.3, 0.3);
+  };
+  /** Marble-topped console on gold legs against the front wall, with the vase and round mirror model on it. */
+  const consoleTable = (x: number) => {
+    const z = Z0 + 0.25;
+    get("homeFloor").box(wx(x), 0.84, z, 1.5, 0.05, 0.42);
+    for (const lx of [-0.68, 0.68]) for (const lz of [-0.16, 0.16]) get("homeGold").box(wx(x + lx), 0.41, z + lz, 0.04, 0.82, 0.04);
+    get("homeGold").box(wx(x), 0.12, z, 1.4, 0.03, 0.34);
+    model("console-vase", wx(x), Z0 + 0.3, 0, 0.75, 0.86);
+    block(wx(x), z, 0.75, 0.25);
+  };
+  /** Fitted kitchen along the west wall; `scale` fits the 5 m Meshy run to the room. */
+  const kitchen = (z: number, scale: number, island: number | null) => {
+    const depth = 1.37 * scale;
+    if (!model("kitchen-wall", X0 + depth / 2, wz(z), Math.PI / 2, scale)) {
+      solid("concrete", X0 + 0.35, 0.45, wz(z), 0.7, 0.9, 5 * scale, 0, [0.2, 0.25, 0.38]);
+      get("vertexPaint").box(X0 + 0.36, 0.93, wz(z), 0.74, 0.05, 5 * scale, 0, 1, [0.95, 0.94, 0.92]);
+      get("concrete").box(X0 + 0.2, 2.1, wz(z), 0.4, 0.8, 5 * scale, 0, 1, [0.2, 0.25, 0.38]);
+    }
+    block(X0 + depth / 2, wz(z), depth / 2, 2.5 * scale);
+    if (island === null) return;
+    if (!model("kitchen-island", wx(island), wz(z), Math.PI / 2)) {
+      solid("concrete", wx(island), 0.45, wz(z), 1.0, 0.9, 2.8, 0, [0.2, 0.25, 0.38]);
+      get("vertexPaint").box(wx(island), 0.93, wz(z), 1.1, 0.06, 2.9, 0, 1, [0.97, 0.96, 0.94]);
+    }
+    block(wx(island), wz(z), 0.8, 1.5);
+  };
+  const trim = () => {
+    for (const side of ["north", "east", "west"] as const) {
+      const [a0, a1] = span(side);
+      strip("homeTrim", side, a0, a1, 0.07, 0.14, 0.03);
+      strip("homeTrim", side, a0, a1, H - 0.1, 0.16, 0.08);
+    }
+    for (const [from, to] of [[-layout.halfX, -0.9], [0.9, layout.halfX]] as const) {
+      strip("homeTrim", "south", from, to, 0.07, 0.14, 0.03);
+      strip("homeTrim", "south", from, to, H - 0.1, 0.16, 0.08);
+    }
+  };
+  const downlights = (z0: number, z1: number, y: number) => {
+    for (let x = -layout.halfX + 2; x <= layout.halfX - 2; x += 3) {
+      for (let z = z0; z <= z1; z += 3) get("lamp").box(wx(x), y - 0.01, wz(z), 0.22, 0.02, 0.22);
+    }
+  };
+
+  trim();
+  if (layout.tier === "house") {
+    for (const x of [-4.5, 0, 4.5]) glazing("north", x, 1.8, 0.9, 2.6, 2);
+    for (const z of [0, 4.5]) glazing("east", z, 1.6, 0.9, 2.6, 2);
+    glazing("west", 5.2, 1.6, 0.9, 2.6, 2);
+    strip("homeTrim", "east", FRONT_WALL, layout.back, 1.0, 0.05, 0.04);
+    strip("homeTrim", "north", -layout.halfX, layout.halfX, 1.0, 0.05, 0.04);
+    kitchen(-1.0, 0.88, null);
+    consoleTable(3.0);
+    art("east", -2.6, 1.1, 0.9);
+    art("south", -4.2, 1.1, 0.8);
+    palm(-layout.halfX + 0.6, layout.back - 0.6);
+    palm(layout.halfX - 0.6, FRONT_WALL + 0.6);
+    downlights(FRONT_WALL + 1.5, layout.back - 1, H);
+  } else if (layout.tier === "apartment") {
+    glazing("north", 0, 15, 0.05, H - 0.2, 10);
+    glazing("east", 1.5, 3.2, 0.05, H - 0.2, 2);
+    kitchen(-1.5, 0.96, -5.3);
+    consoleTable(3.2);
+    art("west", 6.0, 1.0, 1.0);
+    art("east", 7.0, 1.0, 0.9);
+    palm(-layout.halfX + 0.7, layout.back - 0.7);
+    palm(layout.halfX - 0.7, FRONT_WALL + 0.7);
+    downlights(FRONT_WALL + 1.5, layout.back - 1, H);
+  } else {
+    const gallery = { z: 15.6, y: 3.6 };
+    // Marble medallion under the foyer chandelier.
+    const ring = (radius: number, y: number, color: Rgb) => {
+      const points: Vec2[] = Array.from({ length: 40 }, (_, index) => [wx(Math.cos((index / 40) * Math.PI * 2) * radius), wz(1.5 + Math.sin((index / 40) * Math.PI * 2) * radius)]);
+      get("vertexPaint").polygon(points, y, 1, color);
+    };
+    ring(2.4, 0.024, [0.62, 0.48, 0.22]);
+    ring(2.2, 0.026, [0.1, 0.22, 0.18]);
+    ring(1.3, 0.028, [0.93, 0.9, 0.84]);
+    for (const side of ["east", "west"] as const) {
+      const [a0, a1] = span(side);
+      strip("homeTrim", side, a0, a1, 1.1, 0.06, 0.05);
+      strip("homeGold", side, a0, a1, gallery.y + 0.05, 0.08, 0.06);
+    }
+    strip("homeGold", "south", -layout.halfX, layout.halfX, gallery.y + 0.05, 0.08, 0.06);
+    // Tall windows on the side walls, a glazed wall to the pool terrace under the gallery, clerestory above it.
+    for (const z of [1, 9]) glazing("east", z, 2.2, 0.6, 6.4, 2);
+    for (const z of [7.5]) glazing("west", z, 2.2, 0.6, 6.4, 2);
+    glazing("north", 0, 14, 0.05, gallery.y - 0.4, 8);
+    for (const x of [-8.5, 8.5]) glazing("north", x, 3, gallery.y + 1.4, H - 0.6, 2);
+    glazing("south", 0, 2.4, 2.9, 4.6, 2);
+    // Grand staircase rising to the gallery: marble treads on a white carriage, glass balustrade, gold rail.
+    const steps = 18;
+    const [stairZ0, stairZ1, stairHalf] = [9.2, gallery.z, 2.0];
+    const run = (stairZ1 - stairZ0) / steps;
+    for (let step = 0; step < steps; step += 1) {
+      const top = ((step + 1) * gallery.y) / steps;
+      const z = wz(stairZ0 + (step + 0.5) * run);
+      get("homeTrim").box(OX, top / 2, z, stairHalf * 2 + 0.2, top, run);
+      get("homeFloor").box(OX, top - 0.02, z - 0.02, stairHalf * 2, 0.05, run + 0.04);
+    }
+    block(OX, wz((stairZ0 + stairZ1) / 2), stairHalf + 0.1, (stairZ1 - stairZ0) / 2);
+    for (const side of [-1, 1]) {
+      const x = OX + side * (stairHalf + 0.08);
+      const [z0, z1] = [wz(stairZ0), wz(stairZ1)];
+      const glass = get("homeGlass");
+      glass.quad([x, 0.05, z0], [x, gallery.y + 0.05, z1], [x, gallery.y + 1.0, z1], [x, 0.95, z0], [side, 0, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      const rail = get("homeGold");
+      rail.quad([x - 0.04, 0.99, z0], [x + 0.04, 0.99, z0], [x + 0.04, gallery.y + 1.04, z1], [x - 0.04, gallery.y + 1.04, z1], [0, 1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      get("homeGold").box(x, 0.5, z0 + 0.05, 0.12, 1.0, 0.12);
+    }
+    // Gallery landing across the back, on columns, with doors to the upstairs suites.
+    const slabZ = wz((gallery.z + layout.back) / 2);
+    const slabDepth = layout.back - gallery.z;
+    get("homeTrim").box(OX, gallery.y - 0.18, slabZ, layout.halfX * 2, 0.36, slabDepth);
+    get("homeFloor").box(OX, gallery.y + 0.01, slabZ, layout.halfX * 2, 0.02, slabDepth);
+    for (let x = -layout.halfX + 1.5; x <= layout.halfX - 1.5; x += 3) get("lamp").box(wx(x), gallery.y - 0.37, slabZ, 0.22, 0.02, 0.22);
+    for (const [from, to] of [[-layout.halfX, -stairHalf], [stairHalf, layout.halfX]] as const) {
+      const glass = get("homeGlass");
+      const z = wz(gallery.z) - 0.02;
+      glass.quad([wx(from), gallery.y, z], [wx(to), gallery.y, z], [wx(to), gallery.y + 1.0, z], [wx(from), gallery.y + 1.0, z], [0, 0, -1], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      get("homeGold").box(wx((from + to) / 2), gallery.y + 1.02, z, to - from, 0.06, 0.08);
+    }
+    for (const x of [-9, -4.5, 4.5, 9]) {
+      solid("homeTrim", wx(x), gallery.y / 2, wz(15.8), 0.5, gallery.y, 0.5);
+      get("homeGold").box(wx(x), 0.08, wz(15.8), 0.62, 0.16, 0.62);
+      get("homeGold").box(wx(x), gallery.y - 0.42, wz(15.8), 0.62, 0.1, 0.62);
+    }
+    for (const x of [-10.5, -5.5, 5.5, 10.5]) {
+      const [dx, , dz] = onWall("north", x, gallery.y + 1.25, 0.03);
+      get("homeWood").box(dx, gallery.y + 1.25, dz, 1.7, 2.5, 0.06);
+      get("homeGold").box(dx, gallery.y + 1.25, dz - 0.04, 0.05, 2.4, 0.02);
+      for (const side of [-0.18, 0.18]) get("homeGold").box(dx + side, gallery.y + 1.2, dz - 0.06, 0.04, 0.3, 0.04);
+    }
+    kitchen(0, 1, -9.73);
+    if (!model("grand-piano", wx(9.8), wz(0.5), -Math.PI / 2)) solid("darkFrame", wx(9.8), 0.5, wz(0.5), 2.6, 1.0, 1.6, 0, [0.03, 0.03, 0.04]);
+    block(wx(9.8), wz(0.5), 1.35, 0.95);
+    model("chandelier", OX, wz(1.5), 0, 1.5, H - 4.5);
+    for (const x of [-7, 7]) model("chandelier", wx(x), wz(8), 0, 0.85, H - 2.56);
+    consoleTable(-3.4);
+    consoleTable(3.4);
+    art("west", 4.3, 1.5, 1.5);
+    art("east", 5.0, 1.5, 1.5);
+    art("north", 0, gallery.y + 0.9, 1.6);
+    palm(-2.9, 8.7);
+    palm(2.9, 8.7);
+    palm(-layout.halfX + 0.8, FRONT_WALL + 0.8);
+    palm(layout.halfX - 0.8, FRONT_WALL + 0.8);
+  }
+}
 
 /**
  * Builders for the furniture catalogue beyond the original three pieces. Each takes the piece's centre and yaw;

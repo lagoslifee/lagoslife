@@ -42,7 +42,9 @@ import {
   defaultAppearance,
   districtAt,
   insideBuilding,
-  INTERIOR_HALF,
+  HOME_LAYOUTS,
+  homeLayout,
+  type HomeTier,
   INTERIOR_ORIGIN,
   MOVEMENT,
   PLACES,
@@ -143,7 +145,7 @@ import { MeshBuilderBatch } from "./geometry";
 import { buildMealTray, buildTrolley } from "./flight-scenes";
 import { Couriers } from "./couriers";
 import { ListingBoards, type BoardLabel } from "./listing-boards";
-import { buildInterior, type HomeRest, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
+import { buildInterior, interiorModels, type HomeRest, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
 import { createMaterials, type Materials, type Quality } from "./materials";
 import { SignAtlas } from "./sign-atlas";
 import { RoadNavigator, StreetTracker, type WorldData, type WorldTile } from "./street-index";
@@ -1545,11 +1547,12 @@ export class GameEngine {
    */
   private updateCamera(dt: number, bus: DanfoView | null) {
     if (this.planShare && this.interior && !this.travelView) {
-      const [ox, oz] = INTERIOR_ORIGIN;
+      const { minX, maxX, minZ, maxZ } = (this.interior as InteriorView).bounds;
+      const [ox, oz] = [(minX + maxX) / 2, (minZ + maxZ) / 2];
       const engine = this.scene.getEngine();
       const aspect = engine.getRenderWidth() / Math.max(1, engine.getRenderHeight() * this.planShare);
       const tan = Math.tan(this.camera.fov / 2);
-      const height = Math.max((INTERIOR_HALF[1] + 0.6) / tan, (INTERIOR_HALF[0] + 0.6) / (tan * aspect)) + 3;
+      const height = Math.max((maxZ - minZ) / 2 + 0.6, ((maxX - minX) / 2 + 0.6) / aspect) / tan + 3;
       this.camera.position.set(ox, height, oz - 0.01);
       this.camera.setTarget(new Vector3(ox, 0, oz));
       return;
@@ -1582,12 +1585,16 @@ export class GameEngine {
     let allowed = distance;
     if (this.interior) {
       const [ox, oz] = INTERIOR_ORIGIN;
-      const [limitX, limitZ] = travel ? [travel.half[0] - 0.2, travel.half[1] - 0.2] : [5.3, 4.5];
+      const room = travel ? null : (this.interior as InteriorView).bounds;
+      const [limitX, limitZ] = travel ? [travel.half[0] - 0.2, travel.half[1] - 0.2] : [0, 0];
       const open = travel?.kind === "rooftop" || travel?.kind === "dhow" || travel?.kind === "safari";
       for (let d = 0.4; d <= distance; d += 0.2) {
         const px = this.cameraTarget.x - dir.x * d;
         const pz = this.cameraTarget.z - dir.z * d;
-        if (!open && (Math.abs(px - ox) > limitX || Math.abs(pz - oz) > limitZ)) {
+        const outside = room
+          ? px < room.minX + 0.3 || px > room.maxX - 0.3 || pz < room.minZ + 0.3 || pz > room.maxZ - 0.3
+          : Math.abs(px - ox) > limitX || Math.abs(pz - oz) > limitZ;
+        if (!open && outside) {
           allowed = Math.max(0.5, d - 0.2);
           break;
         }
@@ -2884,14 +2891,19 @@ export class GameEngine {
     const kind: InteriorKind = club ? "club" : self.location.startsWith("starter:") ? "starter" : self.previewOnly ? "preview" : "home";
     const title = self.propertyId ? propertyTitle(self.propertyId) : "Home";
     let placements: Placement[] = [];
+    let layout = homeLayout(self.propertyId);
     if (kind === "home" && self.propertyId) {
       const response = await fetch(`${apiUrl}/api/properties/${self.propertyId}/interior`, { credentials: "include", headers: authHeaders() }).catch(() => null);
-      if (response?.ok) placements = ((await response.json()) as { furniture: Placement[] }).furniture;
-      else this.callbacks.notice({ tone: "error", text: "Could not load your furniture — showing an empty room." });
+      if (response?.ok) {
+        const body = (await response.json()) as { furniture: Placement[]; tier?: HomeTier };
+        placements = body.furniture;
+        if (body.tier) layout = HOME_LAYOUTS[body.tier];
+      } else this.callbacks.notice({ tone: "error", text: "Could not load your furniture — showing an empty room." });
     }
+    if (this.props) await this.props.ensure(interiorModels(kind, layout, placements));
     if (token !== this.interiorToken || this.self?.location !== self.location) return;
     this.interior?.dispose();
-    this.interior = buildInterior(this.scene, this.materials, this.atlas, kind, title, placements, club);
+    this.interior = buildInterior(this.scene, this.materials, this.atlas, kind, title, placements, club, { layout, props: this.props });
     this.interior.setCutaway(this.planShare !== null);
     this.staff.setDesks(club ? [{ id: "bar", at: CLUB_BARTENDER, yaw: Math.PI / 2, look: staffLook(70 + club.bpm, regionOf(self.x, self.z) === "dubai" || club.id === TRAVEL_PLACES.club, "hostess") }] : []);
     this.club = club ?? null;

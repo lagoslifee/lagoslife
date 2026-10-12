@@ -1,4 +1,4 @@
-import { BED_ITEM_IDS, furnitureItem, legacyCellPosition, nearestCell, placementProblem, propertyPlace, snapFloor, type PlacedPiece } from "@lagos-living/shared";
+import { BED_ITEM_IDS, furnitureItem, homeLayout, legacyCellPosition, nearestCell, placementProblem, propertyPlace, snapFloor, type PlacedPiece } from "@lagos-living/shared";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "./database.js";
@@ -412,6 +412,7 @@ export async function getInterior(userId: string, propertyId: string) {
   ]);
   return {
     ...property.rows[0],
+    tier: homeLayout(propertyId).tier,
     access,
     furniture: furniture.rows,
     home: home.rows[0] ?? { hunger: 70, energy: 70, cleanliness: 80 },
@@ -458,7 +459,7 @@ export async function placeFurniture(
       [userId, input.idempotencyKey],
     );
     if (existing.rowCount) return { id: existing.rows[0].id as string, replayed: true };
-    const problem = placementProblem({ itemId: input.itemId, x, z, rotation: input.rotation }, floor);
+    const problem = placementProblem({ itemId: input.itemId, x, z, rotation: input.rotation }, floor, homeLayout(propertyId));
     if (problem) throw new EconomyError(problem, 409);
     const inventory = await client.query(
       `SELECT quantity FROM inventory_item WHERE user_id = $1 AND item_id = $2 FOR UPDATE`,
@@ -498,7 +499,7 @@ export async function moveFurniture(
     const floor = await lockFloor(client, propertyId);
     const piece = floor.find((entry) => entry.id === input.placementId);
     if (!piece) throw new EconomyError("That furniture is not in this home.", 404);
-    const problem = placementProblem({ ...piece, x, z, rotation: input.rotation }, floor);
+    const problem = placementProblem({ ...piece, x, z, rotation: input.rotation }, floor, homeLayout(propertyId));
     if (problem) throw new EconomyError(problem, 409);
     const [gridX, gridZ] = nearestCell(x, z);
     await client.query(

@@ -54,6 +54,8 @@ import {
   INTERIOR_HALF,
   INTERIOR_ORIGIN,
   INTERIOR_SPAWN,
+  homeLayout,
+  insideHome,
   walkable,
   insideBuilding,
   MOVEMENT,
@@ -811,10 +813,12 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const inInterior = player.location !== "street";
     const travelKind = inInterior ? travelInteriorOf(player.location) : null;
     const half = travelKind ? TRAVEL_LAYOUTS[travelKind].half : INTERIOR_HALF;
-    const valid = inInterior
-      ? Math.abs(parsed.data.x - INTERIOR_ORIGIN[0]) <= half[0] &&
-        Math.abs(parsed.data.z - INTERIOR_ORIGIN[1]) <= half[1]
-      : walkable(parsed.data.x, parsed.data.z);
+    const home = !travelKind && (player.location.startsWith("home:") || player.location.startsWith("preview:"));
+    const valid = !inInterior
+      ? walkable(parsed.data.x, parsed.data.z)
+      : home
+        ? insideHome(homeLayout(player.propertyId), parsed.data.x - INTERIOR_ORIGIN[0], parsed.data.z - INTERIOR_ORIGIN[1])
+        : Math.abs(parsed.data.x - INTERIOR_ORIGIN[0]) <= half[0] && Math.abs(parsed.data.z - INTERIOR_ORIGIN[1]) <= half[1];
     if (distance > allowed || !valid) {
       client.send("correction", { x: player.x, z: player.z, yaw: player.yaw, sequence: parsed.data.sequence });
       player.lastAcceptedAt = now;

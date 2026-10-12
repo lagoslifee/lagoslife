@@ -1,7 +1,7 @@
 import type { CabinClass, CharacterAppearance, OutfitId, HotelBookingState, RoomType, TicketState, TravelStatus, VisaPlan, VisaState } from "@lagos-living/shared";
 import type { BottleItem, Citation, PoliceCase, StreetIncident, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
 import type { BusinessStatus, BusinessTypeId, CourseId, ExerciseId, GymStatus, RestResult } from "@lagos-living/shared";
-import type { FoodParcel, HomeStaffRole, HomeStaffState } from "@lagos-living/shared";
+import type { FoodParcel, HomeStaffRole, HomeStaffState, HomeTier } from "@lagos-living/shared";
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick, RepairAction } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
@@ -86,6 +86,7 @@ export type InteriorState = {
   id: string;
   name: string;
   storageSlots: number;
+  tier?: HomeTier;
   tenureType: string | null;
   nextPaymentAt: string | null;
   /** `x`/`z`: room-local metres from the middle of the room. */

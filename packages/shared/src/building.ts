@@ -236,6 +236,11 @@ function plotFootprintId(plotId: string) {
 }
 
 /** Registers or removes plot houses in the shared collision grid so client and server agree on what is solid. */
+/** Design standing on a plot once its walls are up (as last synced), or null. */
+export function plotDesignId(plotId: string) {
+  return (solidPlots.get(plotId) as HouseDesign["id"] | undefined) ?? null;
+}
+
 export function syncPlotFootprints(structures: PlotStructure[]) {
   const wanted = new Map<string, string>();
   for (const structure of structures) {

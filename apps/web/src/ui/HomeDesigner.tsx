@@ -2,10 +2,11 @@ import {
   findFreeSpot,
   FURNITURE,
   furnitureItem,
+  FRONT_WALL,
   furnitureRect,
-  HOME_FIXTURES,
+  HOME_LAYOUTS,
+  homeLayout,
   placementProblem,
-  ROOM_HALF,
   snapFloor,
   type FurnitureRotation,
   type Notice,
@@ -78,7 +79,8 @@ export function HomeDesigner({ engine, propertyId, homeName, economy, onClose, o
     drag && drag.id === piece.id ? { ...piece, x: drag.x, z: drag.z } : piece,
   );
   const selectedPiece = pieces.find((piece) => piece.id === selected) ?? null;
-  const problem = (piece: PlacedPiece) => placementProblem(piece, pieces);
+  const layout = interior?.tier ? HOME_LAYOUTS[interior.tier] : homeLayout(propertyId);
+  const problem = (piece: PlacedPiece) => placementProblem(piece, pieces, layout);
 
   const floorPoint = (event: ReactPointerEvent) => {
     const matrix = svg.current?.getScreenCTM();
@@ -104,8 +106,8 @@ export function HomeDesigner({ engine, propertyId, homeName, economy, onClose, o
     if (!drag) return;
     const at = floorPoint(event);
     if (!at) return;
-    const x = snapFloor(Math.max(-ROOM_HALF[0], Math.min(ROOM_HALF[0], at.x + drag.dx)));
-    const z = snapFloor(Math.max(-ROOM_HALF[1], Math.min(ROOM_HALF[1], at.z + drag.dz)));
+    const x = snapFloor(Math.max(-layout.halfX, Math.min(layout.halfX, at.x + drag.dx)));
+    const z = snapFloor(Math.max(FRONT_WALL, Math.min(layout.back, at.z + drag.dz)));
     if (x !== drag.x || z !== drag.z) setDrag({ ...drag, x, z, moved: true });
   };
 
@@ -114,7 +116,7 @@ export function HomeDesigner({ engine, propertyId, homeName, economy, onClose, o
     const piece = interior?.furniture.find((entry) => entry.id === drag.id);
     setDrag(null);
     if (!piece || !drag.moved) return;
-    const reason = placementProblem({ ...piece, x: drag.x, z: drag.z }, interior!.furniture);
+    const reason = placementProblem({ ...piece, x: drag.x, z: drag.z }, interior!.furniture, layout);
     if (reason) return onToast({ tone: "error", text: reason });
     setInterior({ ...interior!, furniture: interior!.furniture.map((entry) => (entry.id === piece.id ? { ...entry, x: drag.x, z: drag.z } : entry)) });
     void run(null, () => api.moveFurniture(propertyId, piece.id, drag.x, drag.z, piece.rotation as FurnitureRotation));
@@ -129,14 +131,14 @@ export function HomeDesigner({ engine, propertyId, homeName, economy, onClose, o
   };
 
   const placeNew = (itemId: string, name: string) => {
-    const spot = findFreeSpot(itemId, pieces);
+    const spot = findFreeSpot(itemId, pieces, layout);
     if (!spot) return onToast({ tone: "error", text: `No free floor left for the ${name.toLowerCase()}. Pick something up first.` });
     void run(`${name} placed. Drag it where you want it.`, () => api.placeFurnitureAt(propertyId, itemId, spot.x, spot.z, spot.rotation));
   };
 
   const buyAndPlace = (itemId: string) => {
     const item = furnitureItem(itemId)!;
-    const spot = findFreeSpot(itemId, pieces);
+    const spot = findFreeSpot(itemId, pieces, layout);
     if (!spot) return onToast({ tone: "error", text: `No free floor left for the ${item.name.toLowerCase()}. Pick something up first.` });
     void run(`${item.name} delivered and placed for ${naira(item.price)}.`, async () => {
       await api.purchase(itemId);
@@ -146,7 +148,8 @@ export function HomeDesigner({ engine, propertyId, homeName, economy, onClose, o
   };
 
   const balance = economy?.balance ?? 0;
-  const [hx, hz] = ROOM_HALF;
+  const hx = layout.halfX;
+  const [south, north] = [FRONT_WALL, layout.back];
   const owner = interior?.access.owner ?? false;
 
   return (
@@ -171,22 +174,22 @@ export function HomeDesigner({ engine, propertyId, homeName, economy, onClose, o
           <svg
             ref={svg}
             className="floor-plan"
-            viewBox={`${-hx - PAD} ${-hz - PAD} ${(hx + PAD) * 2} ${(hz + PAD) * 2}`}
+            viewBox={`${-hx - PAD} ${-north - PAD} ${(hx + PAD) * 2} ${north - south + PAD * 2}`}
             onPointerMove={moveDrag}
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
             onPointerDown={() => setSelected(null)}
             data-testid="floor-plan"
           >
-            <rect x={-hx} y={-hz} width={hx * 2} height={hz * 2} className="plan-floor" />
-            {[-3, 0, 3].map((x) => <rect key={x} x={x - 0.7} y={-hz - 0.08} width={1.4} height={0.16} className="plan-window" />)}
-            {HOME_FIXTURES.map((fixture) => (
-              <g key={fixture.label}>
+            <rect x={-hx} y={-north} width={hx * 2} height={north - south} className="plan-floor" />
+            {[-3, 0, 3].map((x) => <rect key={x} x={x - 0.7} y={-north - 0.08} width={1.4} height={0.16} className="plan-window" />)}
+            {layout.fixtures.map((fixture) => (
+              <g key={`${fixture.label} ${fixture.x} ${fixture.z}`}>
                 <rect x={fixture.x - fixture.hx} y={-fixture.z - fixture.hz} width={fixture.hx * 2} height={fixture.hz * 2} className="plan-fixture" />
                 <text x={fixture.x} y={-fixture.z} className="plan-fixture-label">{fixture.label}</text>
               </g>
             ))}
-            <rect x={-0.55} y={hz - 0.06} width={1.1} height={0.2} className="plan-door" />
+            <rect x={-0.55} y={-south - 0.06} width={1.1} height={0.2} className="plan-door" />
             {[...pieces].sort((a, b) => Number(Boolean(furnitureItem(b.itemId)?.floor)) - Number(Boolean(furnitureItem(a.itemId)?.floor))).map((piece) => {
               const item = furnitureItem(piece.itemId);
               if (!item) return null;

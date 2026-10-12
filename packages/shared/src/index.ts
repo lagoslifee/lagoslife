@@ -114,6 +114,7 @@ export * from "./safety.js";
 export * from "./homes.js";
 export * from "./building.js";
 export * from "./furniture.js";
+export * from "./home-layouts.js";
 export * from "./rides.js";
 export * from "./rentals.js";
 export * from "./towing.js";
@@ -294,8 +295,8 @@ export const defaultSettings: PlayerSettings = {
 };
 
 const furnitureRotation = z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]);
-/** Room-local metres from the middle of the room. */
-const floorCoordinate = z.number().finite().min(-6).max(6);
+/** Room-local metres from the interior origin; the largest plan (see HOME_LAYOUTS) fits inside. */
+const floorCoordinate = z.number().finite().min(-14).max(20);
 
 /** Free positions (`x`, `z`) are preferred; `gridX`/`gridZ` are the old 8 × 6 cells, still accepted. */
 export const placeFurnitureSchema = z

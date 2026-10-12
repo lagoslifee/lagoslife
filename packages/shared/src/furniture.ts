@@ -1,3 +1,4 @@
+import { FRONT_WALL, HOME_LAYOUTS, type HomeLayout } from "./home-layouts.js";
 import { INTERIOR_HALF, type Vec2 } from "./world.js";
 
 export type FurnitureRotation = 0 | 90 | 180 | 270;
@@ -54,12 +55,8 @@ export type FloorRect = { x: number; z: number; hx: number; hz: number };
 
 export const ROOM_HALF: Vec2 = INTERIOR_HALF;
 
-/** Parts of every home that must stay clear: the way in from the front door, the kitchen counter and the storage chest. */
-export const HOME_FIXTURES: Array<FloorRect & { label: string }> = [
-  { label: "Front door", x: 0, z: -ROOM_HALF[1] + 1.05, hx: 1.2, hz: 1.05 },
-  { label: "Kitchen", x: -ROOM_HALF[0] + 0.7, z: -1.2, hx: 0.7, hz: 1.7 },
-  { label: "Storage chest", x: ROOM_HALF[0] - 0.6, z: ROOM_HALF[1] - 1.05, hx: 0.6, hz: 1.05 },
-];
+/** Parts of a flat that must stay clear: the way in from the front door, the kitchen counter and the storage chest. */
+export const HOME_FIXTURES: Array<FloorRect & { label: string }> = HOME_LAYOUTS.flat.fixtures;
 
 /** Floor area a piece covers at a position and rotation. */
 export function furnitureRect(item: Pick<FurnitureItem, "size">, x: number, z: number, rotation: number): FloorRect {
@@ -93,16 +90,20 @@ export function snapFloor(value: number) {
 }
 
 /** Why a piece cannot stand here, or null if it can. `others` may include the piece itself (matched by id). */
-export function placementProblem(piece: PlacedPiece, others: PlacedPiece[]): string | null {
+export function placementProblem(piece: PlacedPiece, others: PlacedPiece[], layout: HomeLayout = HOME_LAYOUTS.flat): string | null {
   const item = furnitureItem(piece.itemId);
   if (!item) return "That is not furniture.";
   if (![0, 90, 180, 270].includes(piece.rotation)) return "Turn furniture in quarter turns.";
   const rect = furnitureRect(item, piece.x, piece.z, piece.rotation);
   const margin = 0.05;
-  for (const fixture of HOME_FIXTURES) {
+  for (const fixture of layout.fixtures) {
     if (overlaps(rect, fixture)) return fixture.label === "Front door" ? "Keep the doorway clear — furniture cannot block the exit." : `Leave the ${fixture.label.toLowerCase()} clear.`;
   }
-  if (Math.abs(rect.x) + rect.hx > ROOM_HALF[0] - margin + 1e-6 || Math.abs(rect.z) + rect.hz > ROOM_HALF[1] - margin + 1e-6) {
+  if (
+    Math.abs(rect.x) + rect.hx > layout.halfX - margin + 1e-6 ||
+    rect.z - rect.hz < FRONT_WALL + margin - 1e-6 ||
+    rect.z + rect.hz > layout.back - margin + 1e-6
+  ) {
     return "Keep it inside the walls.";
   }
   if (item.floor) return null;
@@ -116,15 +117,15 @@ export function placementProblem(piece: PlacedPiece, others: PlacedPiece[]): str
 }
 
 /** A free spot for a newly bought piece, scanning from the middle of the room outwards; null when the room is full. */
-export function findFreeSpot(itemId: string, others: PlacedPiece[]): { x: number; z: number; rotation: FurnitureRotation } | null {
+export function findFreeSpot(itemId: string, others: PlacedPiece[], layout: HomeLayout = HOME_LAYOUTS.flat): { x: number; z: number; rotation: FurnitureRotation } | null {
   const candidates: Array<[number, number]> = [];
-  for (let x = -ROOM_HALF[0]; x <= ROOM_HALF[0]; x += 0.2) {
-    for (let z = -ROOM_HALF[1]; z <= ROOM_HALF[1]; z += 0.2) candidates.push([snapFloor(x), snapFloor(z)]);
+  for (let x = -layout.halfX; x <= layout.halfX; x += 0.2) {
+    for (let z = FRONT_WALL; z <= layout.back; z += 0.2) candidates.push([snapFloor(x), snapFloor(z)]);
   }
   candidates.sort((a, b) => Math.hypot(a[0], a[1] - 0.6) - Math.hypot(b[0], b[1] - 0.6));
   for (const rotation of [0, 90] as const) {
     for (const [x, z] of candidates) {
-      if (!placementProblem({ itemId, x, z, rotation }, others)) return { x, z, rotation };
+      if (!placementProblem({ itemId, x, z, rotation }, others, layout)) return { x, z, rotation };
     }
   }
   return null;
