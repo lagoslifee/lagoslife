@@ -1373,6 +1373,7 @@ export function GameView({
           engine={engine}
           propertyId={designing}
           homeName={properties.find((listing) => listing.id === designing)?.name ?? "Your home"}
+          door={properties.find((listing) => listing.id === designing)?.door ?? null}
           economy={economy}
           onClose={() => setDesigning(null)}
           onToast={toast}

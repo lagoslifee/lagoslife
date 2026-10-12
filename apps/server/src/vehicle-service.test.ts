@@ -243,6 +243,12 @@ describe("vehicle ownership", () => {
     const out = await vehicleRow(vehicleId);
     expect(out.status).toBe("parked");
     expect(out.garage_property_id).toBeNull();
+
+    setPlayerPosition(driver.id, 5_000, 5_000, `home:${homeId}`);
+    await garageVehicle(driver.id, vehicleId, homeId);
+    expect((await vehicleRow(vehicleId)).status).toBe("garaged");
+    await retrieveVehicle(driver.id, vehicleId);
+    expect((await vehicleRow(vehicleId)).status).toBe("parked");
   });
 
   it("keeps other residents away from a car they do not own", async () => {

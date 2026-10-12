@@ -360,6 +360,8 @@ export const VEHICLE_RULES = {
   workshopRange: 18,
   /** Vehicle must be parked within this distance of a held home's kerb to be garaged. */
   garageRange: 25,
+  /** Cars one home's garage holds. */
+  garageCapacity: 2,
   routineServiceFee: 2_500,
   serviceIntervalMetres: 25_000,
   insuredExcess: 2_000,

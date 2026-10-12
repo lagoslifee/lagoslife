@@ -15,18 +15,21 @@ import {
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { api, naira, type EconomyState, type InteriorState } from "../api";
 import type { GameEngine } from "../game/engine";
+import { HomeParking } from "./HomeParking";
 
 type Props = {
   engine: GameEngine;
   propertyId: string;
   homeName: string;
+  /** Street door, for finding the cars parked outside. */
+  door: [number, number] | null;
   economy: EconomyState | null;
   onClose: () => void;
   onToast: (notice: Notice) => void;
   onRefresh: () => Promise<void>;
 };
 
-type Tab = "arrange" | "shop" | "guests";
+type Tab = "arrange" | "parking" | "shop" | "guests";
 type Drag = { id: string; dx: number; dz: number; x: number; z: number; moved: boolean };
 
 /** Share of the screen, from the top, left for the 3D view looking down into the room. */
@@ -35,9 +38,9 @@ const PAD = 0.25;
 
 /**
  * Home designer: a floor plan to drag, turn and pick up furniture, with the room itself seen from straight above
- * in the top of the screen. Also the furniture catalogue (delivered, so it can be bought from here) and the guest list.
+ * in the top of the screen. Also your cars in the garage and driveway, the furniture catalogue (delivered, so it can be bought from here) and the guest list.
  */
-export function HomeDesigner({ engine, propertyId, homeName, economy, onClose, onToast, onRefresh }: Props) {
+export function HomeDesigner({ engine, propertyId, homeName, door, economy, onClose, onToast, onRefresh }: Props) {
   const [interior, setInterior] = useState<InteriorState | null>(null);
   const [tab, setTab] = useState<Tab>("arrange");
   const [selected, setSelected] = useState<string | null>(null);
@@ -162,9 +165,9 @@ export function HomeDesigner({ engine, propertyId, homeName, economy, onClose, o
         <button className="primary" onClick={onClose}>Done</button>
       </header>
       <nav className="designer-tabs">
-        {(["arrange", "shop", "guests"] as const).map((entry) => (
+        {(["arrange", "parking", "shop", "guests"] as const).map((entry) => (
           <button key={entry} className={tab === entry ? "active" : ""} onClick={() => setTab(entry)}>
-            {entry === "arrange" ? "🛋 Arrange" : entry === "shop" ? "🛒 Furniture shop" : "👥 Invite friends"}
+            {entry === "arrange" ? "🛋 Arrange" : entry === "parking" ? "🚗 Cars & garage" : entry === "shop" ? "🛒 Furniture shop" : "👥 Invite friends"}
           </button>
         ))}
       </nav>
@@ -236,6 +239,8 @@ export function HomeDesigner({ engine, propertyId, homeName, economy, onClose, o
           )}
         </div>
       )}
+
+      {tab === "parking" && <HomeParking propertyId={propertyId} homeName={homeName} door={door} owner={owner} onToast={onToast} onRefresh={onRefresh} />}
 
       {tab === "shop" && (
         <ul className="designer-shop">

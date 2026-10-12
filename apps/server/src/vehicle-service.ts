@@ -26,7 +26,7 @@ import "./world-footprints.js";
 
 export const MAX_VEHICLES = 3;
 export const MAX_BICYCLES = 2;
-export const GARAGE_CAPACITY = 2;
+export const GARAGE_CAPACITY = VEHICLE_RULES.garageCapacity;
 const DESK_RANGE = 6;
 const KERB_RANGE = 12;
 const SLOT_CLEARANCE = 5;
@@ -113,6 +113,11 @@ export async function propertySpot(client: PoolClient, propertyId: string): Prom
 }
 
 /** The player must be at the business: its door or the kerb outside. */
+/** Owners can move cars between garage and driveway from the home designer while inside that home. */
+function insideHome(userId: string, propertyId: string) {
+  return getPlayerPosition(userId)?.location === `home:${propertyId}`;
+}
+
 function requireAtPlace(userId: string, place: Spot, message: string) {
   const position = getPlayerPosition(userId);
   const near =
@@ -328,7 +333,8 @@ export async function garageVehicle(userId: string, vehicleId: string, propertyI
       Math.hypot(Number(row.x) - place.door[0], Number(row.z) - place.door[1]) <= VEHICLE_RULES.garageRange;
     if (!atHome) throw new EconomyError(`Park outside ${place.name} to use its garage.`, 409);
     const position = getPlayerPosition(userId);
-    if (!position || position.location !== "street" || Math.hypot(position.x - Number(row.x), position.z - Number(row.z)) > 12) {
+    const beside = position?.location === "street" && Math.hypot(position.x - Number(row.x), position.z - Number(row.z)) <= 12;
+    if (!beside && !insideHome(userId, propertyId)) {
       throw new EconomyError("Stand next to the vehicle to put it away.", 409);
     }
     const used = await client.query(
@@ -367,7 +373,7 @@ export async function retrieveVehicle(userId: string, vehicleId: string) {
     const row = await lockOwnVehicle(client, userId, vehicleId);
     if (row.status !== "garaged" || !row.garage_property_id) throw new EconomyError("That vehicle is not garaged.");
     const place = await propertySpot(client, row.garage_property_id);
-    requireAtPlace(userId, place, `Go to ${place.name} to take the vehicle out.`);
+    if (!insideHome(userId, row.garage_property_id)) requireAtPlace(userId, place, `Go to ${place.name} to take the vehicle out.`);
     const slot = await freeKerbSlot(client, place, vehicleId);
     const updated = await client.query<VehicleRow>(
       `UPDATE player_vehicle SET status = 'parked', garage_property_id = NULL, x = $2, z = $3, yaw = $4, updated_at = NOW()
