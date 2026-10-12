@@ -65,7 +65,7 @@ import type { Express, NextFunction, Request, Response } from "express";
 import { businessStatus, collectBusiness, enrol, startBusiness, upgradeBusiness } from "./business-service.js";
 import { finishSet, gymStatus, joinGym, startSet } from "./gym-service.js";
 import { finishRest, startRest } from "./home-living-service.js";
-import { applyCleaner, dismissStaff, hireStaff, homeStaff, orderDelivery, partyUntil, staffByHome, startParty, stopParty } from "./home-services-service.js";
+import { applyCleaner, collectParcel, dismissStaff, eatParcel, hireStaff, homeStaff, openParcels, orderDelivery, partyUntil, staffByHome, startParty, stopParty } from "./home-services-service.js";
 import { cancelGig, completeGig, gigStatus, startGigWork, takeGig } from "./gig-service.js";
 import { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, marketStatus, sprayMoney, trade, transferMoney } from "./finance-service.js";
 import { auth } from "./auth.js";
@@ -545,8 +545,13 @@ export function configureRoutes(app: Express) {
 
   app.post("/api/delivery/order", requirePlayer, rateLimited, guarded("Order failed", (req, userId) => {
     const body = orderDeliverySchema.parse(req.body);
-    return orderDelivery(userId, body.itemId, body.idempotencyKey);
+    return orderDelivery(userId, body.itemId, body.idempotencyKey, body.destination);
   }));
+  app.get("/api/delivery/parcels", requirePlayer, guarded("Orders unavailable", (_req, userId) => openParcels(userId)));
+  app.post("/api/delivery/parcels/:parcelId/collect", requirePlayer, rateLimited, guarded("Could not take the order", (req, userId) =>
+    collectParcel(userId, z.string().uuid().parse(req.params.parcelId))));
+  app.post("/api/delivery/parcels/:parcelId/eat", requirePlayer, rateLimited, guarded("Could not eat", (req, userId) =>
+    eatParcel(userId, z.string().uuid().parse(req.params.parcelId))));
 
   app.post("/api/properties/:propertyId/furniture", requirePlayer, rateLimited, guarded("Furniture could not be placed", (req, userId) =>
     placeFurniture(userId, String(req.params.propertyId), placeFurnitureSchema.parse(req.body))));

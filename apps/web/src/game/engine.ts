@@ -16,7 +16,7 @@ import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
-import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
@@ -101,6 +101,7 @@ import {
   type AgberoEncounter,
   type Favourite,
   type TravelPrompt,
+  type FoodParcel,
   regionOf,
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
@@ -135,6 +136,7 @@ import { defaultBindings, InputState, LocomotionController, MAX_FRAME_DT, SUBSTE
 import { DanfoFactory, type DanfoView } from "./danfo";
 import { MeshBuilderBatch } from "./geometry";
 import { buildMealTray, buildTrolley } from "./flight-scenes";
+import { Couriers } from "./couriers";
 import { buildInterior, type HomeRest, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
 import { createMaterials, type Materials, type Quality } from "./materials";
 import { SignAtlas } from "./sign-atlas";
@@ -187,7 +189,8 @@ export type Interaction =
   | { kind: "interior"; spot: InteriorSpot["id"] }
   | { kind: "travel"; interior: TravelInterior; spot: string }
   | { kind: "plot"; plotId: string }
-  | { kind: "holdUp"; sessionId: string; name: string };
+  | { kind: "holdUp"; sessionId: string; name: string }
+  | { kind: "parcel"; parcelId: string };
 
 export type EngineCallbacks = {
   hud: (state: HudState) => void;
@@ -383,6 +386,8 @@ export class GameEngine {
   private workout: { station: GymStation; time: number } | null = null;
   private guideLine: Mesh | null = null;
   private homeStaff: HomeStaffView | null = null;
+  private couriers: Couriers | null = null;
+  private heldParcel: { id: string; node: TransformNode } | null = null;
   private staffPosts: StaffPost[] = [];
   private staffPostsAt = 0;
   private partyLights: PartyLights | null = null;
@@ -774,6 +779,7 @@ export class GameEngine {
     this.showroom = this.buildShowroom(this.vehicleFactory);
     this.bikeStations = new BikeStationsView(scene, this.materials, (x, z) => this.world.groundHeight(x, z), this.vehicleFactory, (meshes) => this.addCaster(meshes));
     this.entrances = new EntranceMarkers(scene, (x, z) => this.world.groundHeight(x, z));
+    this.couriers = new Couriers(scene, () => this.avatars, () => this.vehicleFactory, () => this.navigator ?? null, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) this.homeStaff = new HomeStaffView(this.avatars, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) this.crews = new StreetCrews(scene, this.avatars, this.vehicleFactory, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) {
@@ -1301,6 +1307,7 @@ export class GameEngine {
     this.interior?.update(now * 0.001);
     this.updateWaiters(dt);
     if (!this.staff.idle) this.staff.update(dt, [this.controller.x, this.controller.z], now * 0.001);
+    this.couriers?.update(dt, { x: this.controller.x, z: this.controller.z, location: this.self?.location ?? "street" });
     const leaderView = seatView && ride ? seatView : null;
     this.updateEscorts(dt, {
       x: leaderView ? leaderView.x : x,
@@ -1588,6 +1595,12 @@ export class GameEngine {
         this.interaction = () => this.playEmote("none");
         return;
       }
+      const parcel = this.couriers?.reachable({ x, z, location: this.self?.location ?? "street" });
+      if (parcel) {
+        this.prompt = { key: bind("interact"), label: `Take your ${parcel.emoji} ${parcel.name}`, detail: "The rider is at your door" };
+        this.interaction = () => this.callbacks.interact({ kind: "parcel", parcelId: parcel.id });
+        return;
+      }
       const reach = travel ? 2.2 : 1.6;
       let nearest: { spot: InteriorSpot | { id: string; point: Vec2; label: string }; distance: number } | null = null;
       for (const spot of this.interior.spots) {
@@ -1612,6 +1625,8 @@ export class GameEngine {
     const offer = (distance: number, prompt: Prompt, run: () => void) => {
       if (!best || distance < best.distance) best = { distance, prompt, run };
     };
+    const parcel = this.couriers?.reachable({ x, z, location: "street" });
+    if (parcel) offer(0.2, { key: bind("interact"), label: `Take your ${parcel.emoji} ${parcel.name}`, detail: "From the delivery rider" }, () => this.callbacks.interact({ kind: "parcel", parcelId: parcel.id }));
     for (const danfo of this.buses.values()) {
       const [dx, dz] = danfo.doorPoint();
       const distance = Math.hypot(dx - x, dz - z);
@@ -2023,10 +2038,47 @@ export class GameEngine {
   }
 
   /** A rider walks up and hands over a food or pharmacy order. */
-  deliveryRider(caption: string, onArrive?: () => void) {
-    const { x, z, yaw } = this.controller;
-    const from: Vec2 = [x - Math.sin(yaw) * 9 + Math.cos(yaw) * 3, z - Math.cos(yaw) * 9 - Math.sin(yaw) * 3];
-    this.staff.deliver(from, staffLook(Math.floor(Math.random() * 1000), regionOf(x, z) === "dubai", "waiter"), "bag", caption, onArrive);
+  /** Delivery orders on the way, waiting, or in hand; collected food is carried until eaten. */
+  setParcels(parcels: FoodParcel[]) {
+    this.couriers?.set(parcels);
+    const carried = parcels.find((parcel) => parcel.status === "collected" && parcel.shop === "food");
+    if (!carried && this.heldParcel) this.dropParcel();
+    else if (carried && this.heldParcel?.id !== carried.id) this.holdParcel(carried.id);
+  }
+
+  /** The rider hands over the bag; food goes into the player's hands. */
+  takeParcel(parcel: FoodParcel) {
+    this.couriers?.handOver(parcel.id);
+    if (parcel.shop === "food") this.holdParcel(parcel.id);
+    else this.player?.sip(1.4);
+  }
+
+  /** A few bites from the takeaway pack, then it's gone. */
+  eatParcel() {
+    const held = this.heldParcel;
+    if (!held || !this.player) return;
+    for (const delay of [0, 1_500, 3_000]) window.setTimeout(() => this.heldParcel === held && this.player?.sip(1.2), delay);
+    window.setTimeout(() => this.heldParcel === held && this.dropParcel(), 4_400);
+  }
+
+  private holdParcel(id: string) {
+    this.dropHeld();
+    this.dropParcel();
+    if (!this.player) return;
+    const node = new TransformNode(`takeaway ${id}`, this.scene);
+    const pack = MeshBuilder.CreateBox(`takeaway pack ${id}`, { width: 0.2, height: 0.07, depth: 0.16 }, this.scene);
+    pack.material = this.materials.plaster;
+    pack.parent = node;
+    pack.isPickable = false;
+    this.player.hold(node);
+    this.heldParcel = { id, node };
+  }
+
+  private dropParcel() {
+    if (!this.heldParcel) return;
+    this.player?.hold(null);
+    this.heldParcel.node.dispose();
+    this.heldParcel = null;
   }
 
   /** Dims the screen briefly for a home activity such as watching TV. */

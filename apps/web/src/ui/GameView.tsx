@@ -1,4 +1,4 @@
-import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL, EXERCISES, type ExerciseId } from "@lagos-living/shared";
+import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL, EXERCISES, type ExerciseId, type FoodParcel, SEATED_MEAL_ENERGY } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { noteFps, report, setReportedQuality } from "../diagnostics";
@@ -113,6 +113,8 @@ export function GameView({
   const [robTarget, setRobTarget] = useState<{ sessionId: string; name: string } | null>(null);
   const [plots, setPlots] = useState<PlotState[]>([]);
   const [workout, setWorkout] = useState<{ exercise: ExerciseId; endsAt: number } | null>(null);
+  const [parcels, setParcels] = useState<FoodParcel[]>([]);
+  const [, setClock] = useState(0);
   const [phone, setPhone] = useState<PhoneApp | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(() => !localStorage.getItem("lagos-help-seen"));
@@ -623,6 +625,17 @@ export function GameView({
       setRobTarget({ sessionId: interaction.sessionId, name: interaction.name });
       return;
     }
+    if (interaction.kind === "parcel") {
+      api.collectParcel(interaction.parcelId)
+        .then((result) => {
+          engine?.takeParcel(result.parcel);
+          setParcels((list) => (result.taken ? list.filter((entry) => entry.id !== result.parcel.id) : list.map((entry) => (entry.id === result.parcel.id ? result.parcel : entry))));
+          toast({ tone: "success", text: result.taken ? `${result.parcel.emoji} You took the ${result.parcel.name}. Energy ${result.needs.energy}/100.` : `${result.parcel.emoji} You took your ${result.parcel.name} from the rider. Eat it now, or sit at your dining table first for +${SEATED_MEAL_ENERGY} energy.` });
+          return refresh();
+        })
+        .catch((error: Error) => toast({ tone: "error", text: error.message }));
+      return;
+    }
     if (interaction.kind === "plot") {
       setPlotSheet(interaction.plotId);
       void refresh();
@@ -687,6 +700,32 @@ export function GameView({
       setClubTable(Number(interaction.spot.slice(6)));
     }
   };
+
+  useEffect(() => {
+    let live = true;
+    const load = () => api.parcels().then((list) => live && setParcels(list)).catch(() => undefined);
+    void load();
+    const timer = window.setInterval(load, 20_000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+  useEffect(() => engine?.setParcels(parcels), [engine, parcels]);
+  useEffect(() => {
+    if (!parcels.some((parcel) => parcel.status === "on_the_way")) return;
+    const timer = window.setInterval(() => setClock((tick) => tick + 1), 1_000);
+    return () => window.clearInterval(timer);
+  }, [parcels]);
+  const eatParcel = (parcel: FoodParcel) =>
+    api.eatParcel(parcel.id)
+      .then((result) => {
+        engine?.eatParcel();
+        setParcels((list) => list.filter((entry) => entry.id !== parcel.id));
+        toast({ tone: "success", text: `${parcel.emoji} You ate the ${result.name}${result.seated ? ` sitting down (+${SEATED_MEAL_ENERGY} energy)` : ""}. Hunger ${result.needs.hunger}/100 · energy ${result.needs.energy}/100.` });
+        return refresh();
+      })
+      .catch((error: Error) => toast({ tone: "error", text: error.message }));
 
   const inClub = Boolean(hud?.location === "interior" && hud.propertyId && CLUBS[hud.propertyId]);
   const homeId = hud?.location === "interior" && hud.propertyId && !CLUBS[hud.propertyId] && !hud.previewOnly ? hud.propertyId : null;
@@ -1184,6 +1223,29 @@ export function GameView({
           }}
         />
       )}
+      {parcels.length > 0 && !phone && (
+        <div className="parcel-cards" data-testid="parcels">
+          {parcels.map((parcel) => {
+            const left = Math.ceil((Date.parse(parcel.arrivesAt) - Date.now()) / 1000);
+            const where = parcel.destination === "home" ? "your front door" : "where you ordered";
+            return (
+              <div key={parcel.id} className="held-chip parcel-chip">
+                {parcel.status === "collected" ? (
+                  <>
+                    <span>{parcel.emoji} {parcel.name} · in your hands</span>
+                    <button className="primary small-button" onClick={() => void eatParcel(parcel)}>Eat</button>
+                  </>
+                ) : (
+                  <>
+                    <span>🚲 {parcel.emoji} {left > 0 ? `Rider on the way to ${where} · ${left}s` : `Rider waiting at ${where}`}</span>
+                    <button className="secondary small-button" onClick={() => setManualTarget({ point: parcel.drop, label: `Your ${parcel.name}` })} aria-label={`Directions to your ${parcel.name}`}>Go</button>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
       {holding && engine && inClub && (
         <div className="held-chip" data-testid="held-item">
           <span>{holding.food ? "🍢" : "🥤"} {holding.name}{holding.left ? ` · ${holding.left} left` : " · finished"}</span>
@@ -1268,6 +1330,7 @@ export function GameView({
           app={phone}
           setApp={setPhone}
           onClose={() => setPhone(null)}
+          onParcel={(parcel) => setParcels((list) => [...list.filter((entry) => entry.id !== parcel.id), parcel])}
           economy={economy}
           properties={properties}
           vehicles={vehicles}

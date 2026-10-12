@@ -1,7 +1,7 @@
 import type { CabinClass, CharacterAppearance, OutfitId, HotelBookingState, RoomType, TicketState, TravelStatus, VisaPlan, VisaState } from "@lagos-living/shared";
 import type { BottleItem, Citation, PoliceCase, StreetIncident, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
 import type { BusinessStatus, BusinessTypeId, CourseId, ExerciseId, GymStatus, RestResult } from "@lagos-living/shared";
-import type { HomeStaffRole, HomeStaffState } from "@lagos-living/shared";
+import type { FoodParcel, HomeStaffRole, HomeStaffState } from "@lagos-living/shared";
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
@@ -228,8 +228,11 @@ export const api = {
   dismissStaff: (propertyId: string, role: HomeStaffRole) => post<{ dismissed: boolean }>(`/api/properties/${propertyId}/staff/dismiss`, { role }),
   party: (propertyId: string, on: boolean) => post<{ partyUntil: string | null; invited?: number }>(`/api/properties/${propertyId}/party`, { on }),
   spray: (amount: number) => post<{ replayed: boolean; balance: number }>("/api/spray", { amount, idempotencyKey: crypto.randomUUID() }),
-  orderDelivery: (itemId: string) =>
-    post<{ balance: number; item: { id: string; name: string; emoji: string; shop: string }; needs: { hunger: number; energy: number } }>("/api/delivery/order", { itemId, idempotencyKey: crypto.randomUUID() }),
+  orderDelivery: (itemId: string, destination: "here" | "home") =>
+    post<{ balance: number; parcel: FoodParcel }>("/api/delivery/order", { itemId, destination, idempotencyKey: crypto.randomUUID() }),
+  parcels: () => request<FoodParcel[]>("/api/delivery/parcels"),
+  collectParcel: (parcelId: string) => post<{ parcel: FoodParcel; taken: boolean; needs: { hunger: number; energy: number } }>(`/api/delivery/parcels/${parcelId}/collect`),
+  eatParcel: (parcelId: string) => post<{ name: string; seated: boolean; needs: { hunger: number; energy: number } }>(`/api/delivery/parcels/${parcelId}/eat`),
   gigs: () => request<GigStatus>("/api/gigs"),
   takeGig: (gigId: string) => post<GigStatus>("/api/gigs/take", { gigId }),
   startGig: () => post<ActiveGig>("/api/gigs/start"),

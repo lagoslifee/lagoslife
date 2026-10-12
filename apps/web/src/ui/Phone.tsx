@@ -1,4 +1,4 @@
-import { BIKE_RENTAL, HOUSE_DESIGNS, DELIVERY_FEE, DELIVERY_MENU, HOME_STAFF, HOME_STAFF_ROLES, getPlace, type DeliveryItem, type GigStatus, nearestStop, plotById, readyBuiltPrice, ROUTES, type RideState, type TowState, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
+import { BIKE_RENTAL, HOUSE_DESIGNS, DELIVERY_FEE, DELIVERY_MENU, DELIVERY_SECONDS, HOME_DELIVERY_SECONDS, SEATED_MEAL_ENERGY, type FoodParcel, HOME_STAFF, HOME_STAFF_ROLES, getPlace, type DeliveryItem, type GigStatus, nearestStop, plotById, readyBuiltPrice, ROUTES, type RideState, type TowState, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import { api, naira, type EconomyState, type InteriorState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { actionLabels, keyLabel, type Action, type Bindings } from "../game/controller";
@@ -84,6 +84,7 @@ type Props = {
   engine: GameEngine | null;
   ride: RideState | null;
   tows: TowState[];
+  onParcel: (parcel: FoodParcel) => void;
 };
 
 function days(iso: string | null) {
@@ -483,19 +484,20 @@ function HomeServices({ propertyId, inside, onRefresh, onToast }: { propertyId: 
   );
 }
 
-function OrderApp({ engine, onRefresh, onToast, onClose }: Props) {
+function OrderApp({ properties, onRefresh, onToast, onClose, onParcel }: Props) {
   const [shop, setShop] = useState<"food" | "pharmacy">("food");
   const [busy, setBusy] = useState<string | null>(null);
+  const home = properties.find((listing) => listing.isHome && (listing.isMine || listing.hasGuestAccess));
+  const [destination, setDestination] = useState<"here" | "home">("here");
   const order = async (item: DeliveryItem) => {
     setBusy(item.id);
     try {
-      const result = await api.orderDelivery(item.id);
-      const caption = `${item.emoji} Your ${item.name} has arrived. Hunger ${result.needs.hunger}/100 · energy ${result.needs.energy}/100.`;
-      onToast({ tone: "info", text: `Order placed: ${item.name}. A rider is on the way.` });
+      const result = await api.orderDelivery(item.id, destination);
+      const seconds = destination === "home" ? HOME_DELIVERY_SECONDS : DELIVERY_SECONDS;
+      onToast({ tone: "info", text: destination === "home" ? `Order placed: ${item.name}. The rider will be at your front door in about ${seconds} s.` : `Order placed: ${item.name}. A rider is coming to where you are now (about ${seconds} s).` });
+      onParcel(result.parcel);
       await onRefresh();
       onClose();
-      if (engine) engine.deliveryRider(caption);
-      else onToast({ tone: "success", text: caption });
     } catch (error) {
       onToast({ tone: "error", text: (error as Error).message });
     } finally {
@@ -507,6 +509,11 @@ function OrderApp({ engine, onRefresh, onToast, onClose }: Props) {
       <div className="category-chips">
         <button className={`chip${shop === "food" ? " selected" : ""}`} onClick={() => setShop("food")}>🍛 Food</button>
         <button className={`chip${shop === "pharmacy" ? " selected" : ""}`} onClick={() => setShop("pharmacy")} data-testid="order-pharmacy">💊 Pharmacy</button>
+      </div>
+      <p className="muted small">Deliver to</p>
+      <div className="category-chips">
+        <button className={`chip${destination === "here" ? " selected" : ""}`} onClick={() => setDestination("here")}>📍 Where I am</button>
+        <button className={`chip${destination === "home" ? " selected" : ""}`} disabled={!home} onClick={() => setDestination("home")} data-testid="deliver-home">🏠 {home ? `My front door · ${home.name}` : "My front door (set a home first)"}</button>
       </div>
       <ul className="gig-board">
         {DELIVERY_MENU.filter((item) => item.shop === shop).map((item) => (
@@ -521,7 +528,7 @@ function OrderApp({ engine, onRefresh, onToast, onClose }: Props) {
           </li>
         ))}
       </ul>
-      <p className="muted small">Delivered to wherever you are, indoors or out · {naira(DELIVERY_FEE)} delivery fee. Medicine restores energy when you feel run-down. Fictional items, game naira only.</p>
+      <p className="muted small">A rider cycles your order over and waits; walk up and take it. Food stays in your hands until you eat it — sit at your dining table or sofa first for +{SEATED_MEAL_ENERGY} energy. Medicine is taken when you collect it. {naira(DELIVERY_FEE)} delivery fee · fictional items, game naira only.</p>
     </div>
   );
 }

@@ -29,7 +29,34 @@ export const DELIVERY_MENU = [
   { id: "zobo", shop: "food", name: "Chilled zobo", emoji: "🥤", price: 900, hunger: 10, energy: 10, blurb: "Hibiscus, ginger, pineapple" },
 ] as const;
 export type DeliveryItem = (typeof DELIVERY_MENU)[number];
-/** Seconds between ordering and the rider arriving. */
+/** Seconds between ordering and the rider arriving: where you are, or the door of your home. */
 export const DELIVERY_SECONDS = 25;
+export const HOME_DELIVERY_SECONDS = 40;
 export const DELIVERY_FEE = 1_000;
-export const orderDeliverySchema = z.object({ itemId: z.string().min(2).max(40), idempotencyKey: z.string().uuid() });
+/** You take the parcel from the rider, or off your doorstep, within this many metres of where it was dropped. */
+export const PARCEL_REACH = 25;
+/** Extra energy for eating a delivered meal sitting down at home (dining chair or sofa). */
+export const SEATED_MEAL_ENERGY = 5;
+export const orderDeliverySchema = z.object({
+  itemId: z.string().min(2).max(40),
+  idempotencyKey: z.string().uuid(),
+  destination: z.enum(["here", "home"]).default("here"),
+});
+
+/**
+ * A paid order on its way or waiting: the rider brings it to `drop` (where you stood, or your front door) and you take it
+ * from them. Food stays in your hands until you eat it; medicine is taken as you collect it.
+ */
+export type FoodParcel = {
+  id: string;
+  itemId: string;
+  name: string;
+  emoji: string;
+  shop: "food" | "pharmacy";
+  destination: "here" | "home";
+  propertyId: string | null;
+  drop: [number, number];
+  dropLocation: string;
+  status: "on_the_way" | "collected";
+  arrivesAt: string;
+};
