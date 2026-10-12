@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { boardGigs, gigBoard, GIG_BOARD_MS, GIG_RANGE, getPlace, type ActiveGig, type Gig, type GigStatus } from "@lagos-living/shared";
+import { BUSINESS, boardGigs, gigBoard, GIG_BOARD_MS, GIG_RANGE, getPlace, type ActiveGig, type Gig, type GigStatus } from "@lagos-living/shared";
+import { hasCertificate } from "./certificates.js";
 import { pool } from "./database.js";
 import { creditWallet, EconomyError, ensureWallet, withTransaction } from "./economy-service.js";
 import { fortune } from "./finance-service.js";
@@ -60,7 +61,7 @@ export async function takeGig(userId: string, gigId: string, now = Date.now()) {
   try {
     await pool.query(
       `INSERT INTO gig_run (id, user_id, gig_id, type_id, title, task, emoji, place_id, reward, work_seconds) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [randomUUID(), userId, gig.id, gig.typeId, gig.title, gig.task, gig.emoji, gig.placeId, gig.reward, gig.workSeconds],
+      [randomUUID(), userId, gig.id, gig.typeId, gig.title, gig.task, gig.emoji, gig.placeId, (await hasCertificate(pool, userId, "hospitality")) ? Math.round((gig.reward * (1 + BUSINESS.jobBoost)) / 50) * 50 : gig.reward, gig.workSeconds],
     );
   } catch (error) {
     if ((error as { code?: string }).code === "23505") throw new EconomyError("Finish or cancel your current gig first.", 409);

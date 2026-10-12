@@ -1,4 +1,7 @@
 import {
+  enrolSchema,
+  startBusinessSchema,
+  upgradeBusinessSchema,
   acquirePropertySchema,
   clubOrderSchema,
   tableBottleSchema,
@@ -58,6 +61,7 @@ import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
+import { businessStatus, collectBusiness, enrol, startBusiness, upgradeBusiness } from "./business-service.js";
 import { applyCleaner, dismissStaff, hireStaff, homeStaff, orderDelivery, partyUntil, staffByHome, startParty, stopParty } from "./home-services-service.js";
 import { cancelGig, completeGig, gigStatus, startGigWork, takeGig } from "./gig-service.js";
 import { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, marketStatus, sprayMoney, trade, transferMoney } from "./finance-service.js";
@@ -512,6 +516,20 @@ export function configureRoutes(app: Express) {
   app.post("/api/spray", requirePlayer, rateLimited, guarded("Could not spray", (req, userId) => {
     const body = spraySchema.parse(req.body);
     return sprayMoney(userId, body.amount, body.idempotencyKey);
+  }));
+
+  app.get("/api/business", requirePlayer, guarded("Business unavailable", (_req, userId) => businessStatus(userId)));
+  app.post("/api/business", requirePlayer, rateLimited, guarded("Business could not be registered", (req, userId) => {
+    const body = startBusinessSchema.parse(req.body);
+    return startBusiness(userId, body.type, body.name, body.idempotencyKey);
+  }));
+  app.post("/api/business/:businessId/upgrade", requirePlayer, rateLimited, guarded("Upgrade failed", (req, userId) =>
+    upgradeBusiness(userId, z.uuid().parse(req.params.businessId), upgradeBusinessSchema.parse(req.body).idempotencyKey)));
+  app.post("/api/business/:businessId/collect", requirePlayer, rateLimited, guarded("Collection failed", (req, userId) =>
+    collectBusiness(userId, z.uuid().parse(req.params.businessId))));
+  app.post("/api/school/enrol", requirePlayer, rateLimited, guarded("Enrolment failed", (req, userId) => {
+    const body = enrolSchema.parse(req.body);
+    return enrol(userId, body.course, body.idempotencyKey);
   }));
 
   app.post("/api/delivery/order", requirePlayer, rateLimited, guarded("Order failed", (req, userId) => {

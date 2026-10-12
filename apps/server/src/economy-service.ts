@@ -1,4 +1,5 @@
-import { BED_ITEM_IDS, getPlace, MOVEMENT, placeById } from "@lagos-living/shared";
+import { BED_ITEM_IDS, BUSINESS, getPlace, MOVEMENT, placeById } from "@lagos-living/shared";
+import { hasCertificate } from "./certificates.js";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { config } from "./config.js";
@@ -324,7 +325,8 @@ export async function startDelivery(userId: string) {
       DELIVERY_DESTINATIONS[completed.rows[0].count % DELIVERY_DESTINATIONS.length]!,
     );
     const distance = Math.hypot(destination.door[0] - hub.door[0], destination.door[1] - hub.door[1]);
-    const reward = Math.round((3_000 + distance * 14) / 50) * 50;
+    const boost = (await hasCertificate(client, userId, "logistics")) ? 1 + BUSINESS.jobBoost : 1;
+    const reward = Math.round(((3_000 + distance * 14) * boost) / 50) * 50;
     const job = {
       id: randomUUID(),
       reward,

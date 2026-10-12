@@ -1,5 +1,6 @@
 import type { CabinClass, CharacterAppearance, OutfitId, HotelBookingState, RoomType, TicketState, TravelStatus, VisaPlan, VisaState } from "@lagos-living/shared";
 import type { BottleItem, Citation, PoliceCase, StreetIncident, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
+import type { BusinessStatus, BusinessTypeId, CourseId } from "@lagos-living/shared";
 import type { HomeStaffRole, HomeStaffState } from "@lagos-living/shared";
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
@@ -131,6 +132,11 @@ export const api = {
   economy: () => request<EconomyState>("/api/economy"),
   properties: () => request<PropertyListing[]>("/api/properties"),
   interior: (id: string) => request<InteriorState>(`/api/properties/${id}/interior`),
+  business: () => request<BusinessStatus>("/api/business"),
+  startBusiness: (type: BusinessTypeId, name: string) => post<{ balance: number }>("/api/business", { type, name, idempotencyKey: crypto.randomUUID() }),
+  upgradeBusiness: (businessId: string) => post<{ balance: number }>(`/api/business/${businessId}/upgrade`, { idempotencyKey: crypto.randomUUID() }),
+  collectBusiness: (businessId: string) => post<{ collected: number; balance: number }>(`/api/business/${businessId}/collect`),
+  enrol: (course: CourseId) => post<{ balance: number }>("/api/school/enrol", { course, idempotencyKey: crypto.randomUUID() }),
   purchase: (itemId: string) => post<{ balance: number; replayed: boolean }>("/api/shop/purchase", { itemId, idempotencyKey: crypto.randomUUID() }),
   eat: (itemId: string) => post<{ name: string; needs: { hunger: number; energy: number } }>("/api/food/eat", { itemId }),
   sleep: () => post<{ hunger: number; energy: number }>("/api/needs/sleep"),
