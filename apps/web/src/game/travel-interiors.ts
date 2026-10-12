@@ -23,6 +23,7 @@ import {
   type TripState,
   type Vec2,
 } from "@lagos-living/shared";
+import { buildExitDoor } from "./exit-door";
 import { MeshBuilderBatch } from "./geometry";
 import type { InteriorSpot } from "./interior";
 import type { Materials } from "./materials";
@@ -210,9 +211,9 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
     }
   }
   const exit = layout.spots.exit;
-  if (exit && !open) {
-    get("glass").quad([OX + exit[0] + 0.9, 0.02, OZ - HZ + 0.03], [OX + exit[0] - 0.9, 0.02, OZ - HZ + 0.03], [OX + exit[0] - 0.9, 2.4, OZ - HZ + 0.03], [OX + exit[0] + 0.9, 2.4, OZ - HZ + 0.03], [0, 0, 1], [[0, 0], [1, 0], [1, 1], [0, 1]]);
-    deco("darkFrame", exit[0], 2.45, -HZ + 0.05, 2, 0.1, 0.1);
+  if (exit) {
+    const label = kind === "airport-dxb" ? "Taxis · car hire · Dubai" : kind === "airport-los" ? "Out to Lagos" : kind === "hotel" ? "Corridor · lift" : kind === "consulate" ? "Back to the street" : "Way out";
+    buildExitDoor(scene, OX + exit[0], OZ + (open ? exit[1] - 0.6 : -HZ + 0.02), 0, disposables, { label, freestanding: open, width: kind.startsWith("airport") ? 2.4 : 1.8 });
   }
 
   let animate: (seconds: number) => void = () => {};

@@ -10,6 +10,7 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { buildExitDoor } from "./exit-door";
 import { MeshBuilderBatch } from "./geometry";
 import type { Materials } from "./materials";
 import { SignAtlas } from "./sign-atlas";
@@ -75,8 +76,8 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   if (kind !== "club") get("lamp").quad([OX + HX - 0.02, 1.0, OZ - 0.8], [OX + HX - 0.02, 1.0, OZ + 0.8], [OX + HX - 0.02, 2.3, OZ + 0.8], [OX + HX - 0.02, 2.3, OZ - 0.8], [-1, 0, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
   // Exit door on the south wall.
   const [exitX, exitZ] = INTERIOR_EXIT;
-  get("wood").quad([exitX - 0.55, 0.02, OZ - HZ + 0.03], [exitX + 0.55, 0.02, OZ - HZ + 0.03], [exitX + 0.55, 2.2, OZ - HZ + 0.03], [exitX - 0.55, 2.2, OZ - HZ + 0.03], [0, 0, 1], [[0, 0], [1, 0], [1, 2], [0, 2]]);
-  get("darkFrame").box(exitX, 2.25, OZ - HZ + 0.05, 1.3, 0.1, 0.1);
+  const exitDisposables: Array<{ dispose(): void }> = [];
+  buildExitDoor(scene, exitX, OZ - HZ + 0.02, 0, exitDisposables, { label: kind === "club" ? "Back to the street" : "Out to the street", width: 1.4 });
   const subtitle = club ? `Tonight: ${club.dj}` : kind === "preview" ? "Show flat preview" : kind === "starter" ? "Starter room" : "Your home";
   const uv = atlas.get(title, "plate", subtitle);
   const signs = new MeshBuilderBatch("interior title");
@@ -113,7 +114,7 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     ...moreFurniture(get, solid, (point) => spots.push({ id: "bed", point, label: "Sleep" })),
   };
 
-  const disposables: Array<{ dispose(): void }> = [];
+  const disposables: Array<{ dispose(): void }> = [...exitDisposables];
   let animate: (seconds: number) => void = () => {};
   let clubView: ReturnType<typeof buildClub> | null = null;
   if (kind === "club") {
