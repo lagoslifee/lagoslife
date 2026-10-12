@@ -41,7 +41,12 @@ export const ROBBERY = {
   witnessRange: 60,
   /** Reports must be made within this long of the robbery. */
   reportWindowMs: 24 * 3_600_000,
+  /** How long a victim's hired guards chase a robber off before falling back in behind them. */
+  chaseMs: 4_500,
 } as const;
+
+/** A victim's guards chasing a would-be robber off, sent to everyone nearby. */
+export type GuardsChase = { robberyId: string; victimSessionId: string; robberSessionId: string; until: number };
 
 export type Checkpoint = { id: string; name: string; point: Vec2; yaw: number };
 
@@ -74,7 +79,7 @@ export type RobberyRecord = {
   role: "victim" | "robber";
   otherName: string;
   amount: number;
-  outcome: "robbed" | "escaped" | "caught";
+  outcome: "robbed" | "escaped" | "caught" | "repelled";
   at: string;
   reported: boolean;
 };

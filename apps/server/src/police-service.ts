@@ -116,8 +116,9 @@ export function policeWitness(x: number, z: number) {
 }
 
 /**
- * Starts a hold-up. Refused for residents in their first hour, anyone with hired security, residents who block each
- * other, and within the robber's and victim's cooldowns. The amount is fixed now and taken only when it resolves.
+ * Starts a hold-up. Refused for residents in their first hour, residents who block each other, and within the robber's
+ * and victim's cooldowns. The amount is fixed now and taken only when it resolves. A victim with hired guards is never
+ * robbed: the attempt is recorded as repelled straight away, which still counts towards the robber's cooldown.
  */
 export async function startRobbery(robberId: string, victimId: string, x: number, z: number) {
   if (robberId === victimId) throw new EconomyError("You can't rob yourself.", 409);
@@ -134,14 +135,23 @@ export async function startRobbery(robberId: string, victimId: string, x: number
   const row = victim.rows[0];
   if (!row) throw new EconomyError("No such resident.", 404);
   if (Date.now() - new Date(row.created_at).getTime() < ROBBERY.newResidentMs) throw new EconomyError("They only just arrived in Lagos. Leave them be.", 409);
-  if (guards.guards > 0) throw new EconomyError("They have armed security with them.", 409);
   if (robberRecent.rowCount) throw new EconomyError("Lie low for a while before trying that again.", 429);
+  const id = randomUUID();
+  if (guards.guards > 0) {
+    await pool.query(`INSERT INTO robbery (id, robber_id, victim_id, amount, x, z, outcome, resolved_at) VALUES ($1, $2, $3, 0, $4, $5, 'repelled', NOW())`, [
+      id,
+      robberId,
+      victimId,
+      x,
+      z,
+    ]);
+    return { id, amount: 0, repelledBy: guards.guards };
+  }
   if (victimRecent.rowCount) throw new EconomyError("They were robbed recently and have nothing left on them.", 409);
   const amount = Math.min(ROBBERY.cap, Math.floor(Number(row.balance ?? 0) * ROBBERY.share));
   if (amount <= 0) throw new EconomyError("They have no money on them.", 409);
-  const id = randomUUID();
   await pool.query(`INSERT INTO robbery (id, robber_id, victim_id, amount, x, z) VALUES ($1, $2, $3, $4, $5, $6)`, [id, robberId, victimId, amount, x, z]);
-  return { id, amount };
+  return { id, amount, repelledBy: 0 };
 }
 
 /** Ends a pending hold-up once. Money moves only on "robbed"; "caught" means officers saw it and charged the robber. */

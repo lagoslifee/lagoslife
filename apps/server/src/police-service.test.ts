@@ -87,11 +87,20 @@ describe("checkpoints", () => {
 });
 
 describe("robbery", () => {
-  it("protects new residents and people with guards", async () => {
+  it("protects new residents", async () => {
     await expect(startRobbery(robber.id, newcomer.id, 0, 0)).rejects.toThrow("only just arrived");
+  });
+
+  it("lets hired guards chase a robber off without anything being taken", async () => {
     setPlayerPosition(guarded.id, ...getPlace("eko-shield-security").door);
     await hireSecurity(guarded.id, "pair", randomUUID());
-    await expect(startRobbery(robber.id, guarded.id, 0, 0)).rejects.toThrow("security");
+    const before = await balance(guarded.id);
+    const attempt = await startRobbery(newcomer.id, guarded.id, 0, 0);
+    expect(attempt).toMatchObject({ amount: 0, repelledBy: SECURITY_PLANS.pair.guards });
+    expect(await resolveRobbery(attempt.id, "robbed", where)).toBeNull();
+    expect(await balance(guarded.id)).toBe(before);
+    expect((await policeRecords(guarded.id)).robberies[0]).toMatchObject({ role: "victim", outcome: "repelled", amount: 0 });
+    await expect(startRobbery(newcomer.id, guarded.id, 0, 0)).rejects.toThrow("Lie low");
   });
 
   it("takes a capped share only when the victim hands it over", async () => {

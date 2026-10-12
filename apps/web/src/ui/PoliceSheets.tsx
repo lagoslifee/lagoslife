@@ -41,7 +41,7 @@ function useBusy(onToast: (notice: Notice) => void, onRefresh: () => Promise<voi
   return [busy, run] as const;
 }
 
-const OUTCOME: Record<RobberyRecord["outcome"], string> = { robbed: "Robbed", escaped: "Got away", caught: "Stopped by police" };
+const OUTCOME: Record<RobberyRecord["outcome"], string> = { robbed: "Robbed", escaped: "Got away", caught: "Stopped by police", repelled: "Chased off by guards" };
 
 const INCIDENT: Record<StreetIncident["outcome"], string> = { paid: "You paid", drove_off: "You drove off", police: "You called the police", guards: "Your guards warned him off", ignored: "He gave up" };
 

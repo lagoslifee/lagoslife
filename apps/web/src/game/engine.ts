@@ -103,6 +103,7 @@ import {
   type Favourite,
   type TravelPrompt,
   type FoodParcel,
+  type GuardsChase,
   propertyPlace,
   regionOf,
 } from "@lagos-living/shared";
@@ -382,6 +383,7 @@ export class GameEngine {
   private remotes = new Map<string, Remote>();
   /** Hired escorts by session id; "self" is the player's own. */
   private escorts = new Map<string, Escort>();
+  private guardChases: GuardsChase[] = [];
   private ownGuards = 0;
   private crews: StreetCrews | null = null;
   private entrances: EntranceMarkers | null = null;
@@ -609,6 +611,7 @@ export class GameEngine {
           this.crews?.setFlagged(null);
           this.flaggedDown = false;
         }
+        if (event.type === "guardsChase") this.guardChases.push(event.chase);
         this.callbacks.police(event);
       },
       trip: (trip) => this.onTrip(trip),
@@ -1828,8 +1831,8 @@ export class GameEngine {
       const { x: rx, z: rz } = remote.avatar.root.position;
       const distance = Math.hypot(rx - x, rz - z);
       if (distance > ROBBERY.range) continue;
-      offer(distance + 1.5, { key: bind("interact"), label: `Hold up ${remote.name}`, detail: remote.guards ? "They have armed guards" : "Rob them at gunpoint", disabled: remote.guards > 0 }, () =>
-        remote.guards === 0 && this.callbacks.interact({ kind: "holdUp", sessionId, name: remote.name }),
+      offer(distance + 1.5, { key: bind("interact"), label: `Hold up ${remote.name}`, detail: remote.guards ? "They have armed guards with them" : "Rob them at gunpoint" }, () =>
+        this.callbacks.interact({ kind: "holdUp", sessionId, name: remote.name }),
       );
     }
     if (this.repairSite && !this.repairing) {
@@ -2226,8 +2229,21 @@ export class GameEngine {
     return doors;
   }
 
+  /** Where the robber a victim's guards are chasing off is standing, while the chase lasts. */
+  private chaseTarget(victimSessionId: string | null, own: EscortLeader): Vec2 | null {
+    const chase = this.guardChases.find((entry) => entry.victimSessionId === victimSessionId);
+    if (!chase) return null;
+    if (chase.robberSessionId === this.net.sessionId) return [own.x, own.z];
+    const robber = this.remotes.get(chase.robberSessionId)?.avatar?.root.position;
+    return robber ? [robber.x, robber.z] : null;
+  }
+
   private updateEscorts(dt: number, own: EscortLeader) {
     if (!this.avatars || !this.vehicleFactory) return;
+    if (this.guardChases.length) {
+      const now = Date.now();
+      this.guardChases = this.guardChases.filter((chase) => chase.until > now);
+    }
     const wanted = new Map<string, { count: number; leader: EscortLeader }>();
     const inDubai = regionOf(own.x, own.z) === "dubai";
     if (this.ownGuards && !inDubai) wanted.set("self", { count: this.ownGuards, leader: own });
@@ -2251,6 +2267,7 @@ export class GameEngine {
         this.escorts.set(id, escort);
       }
       if (escort.count !== count) escort.setCount(count);
+      escort.chase(this.chaseTarget(id === "self" ? this.net.sessionId : id, own));
       escort.update(dt, leader);
     }
   }

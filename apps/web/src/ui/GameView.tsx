@@ -1211,7 +1211,7 @@ export function GameView({
             <p>
               You'd demand {Math.round(ROBBERY.share * 100)}% of their cash (at most {naira(ROBBERY.cap)}). They can run. The city records every hold-up:
               near a police station or checkpoint officers charge you on the spot, and if they report you within a day you pay it back plus a{" "}
-              {naira(OFFENCES.armed_robbery.fine)} fine.
+              {naira(OFFENCES.armed_robbery.fine)} fine. Anyone with hired guards is never robbed: the guards chase you off.
             </p>
             <div className="row">
               <button className="danger" data-testid="rob-go" onClick={() => { engine.holdUp(robTarget.sessionId); setRobTarget(null); }}>Pull the gun</button>

@@ -18,10 +18,12 @@ import {
   type TowState,
   type CheckpointStop,
   type HoldUp,
+  type GuardsChase,
   type TripState,
   type FastTravelState,
   type TravelPrompt,
   type AgberoEncounter,
+  ROBBERY,
 } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
@@ -34,7 +36,8 @@ export type PoliceEvent =
   | { type: "checkpoint"; stop: CheckpointStop }
   | { type: "checkpointEnd"; checkpointId: string }
   | { type: "holdUp"; holdUp: HoldUp }
-  | { type: "holdUpEnd"; robberyId: string };
+  | { type: "holdUpEnd"; robberyId: string }
+  | { type: "guardsChase"; chase: GuardsChase };
 
 /** Another player standing at this player's car (or booked cab) asks to ride along. */
 export type RideAsk = { sessionId: string; name: string; vehicleId: string; cab: boolean; share: number };
@@ -153,6 +156,10 @@ export class MultiplayerConnection {
       room.onMessage("checkpointEnd", (end: { checkpointId?: unknown }) => this.handlers.police({ type: "checkpointEnd", checkpointId: String(end?.checkpointId ?? "") }));
       room.onMessage("holdUp", (holdUp: HoldUp) => typeof holdUp?.robberyId === "string" && this.handlers.police({ type: "holdUp", holdUp }));
       room.onMessage("holdUpEnd", (end: { robberyId?: unknown }) => this.handlers.police({ type: "holdUpEnd", robberyId: String(end?.robberyId ?? "") }));
+      room.onMessage("guardsChase", (chase: GuardsChase) => {
+        if (typeof chase?.victimSessionId !== "string" || typeof chase.robberSessionId !== "string") return;
+        this.handlers.police({ type: "guardsChase", chase: { ...chase, until: Date.now() + ROBBERY.chaseMs } });
+      });
       room.onMessage("trip", (trip: TripState) => typeof trip?.stage === "string" && this.handlers.trip(trip));
       room.onMessage("react", (reaction: { sessionId?: unknown; emoji?: unknown }) =>
         this.handlers.react({ sessionId: String(reaction?.sessionId ?? ""), emoji: String(reaction?.emoji ?? "") }),

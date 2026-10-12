@@ -2328,6 +2328,17 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     robber.robbing = true;
     try {
       const robbery = await startRobbery(robber.userId, victim.userId, robber.x, robber.z);
+      if (robbery.repelledBy > 0) {
+        robber.robbing = false;
+        const chase = { robberyId: robbery.id, victimSessionId: victim.sessionId, robberSessionId: robber.sessionId, until: Date.now() + ROBBERY.chaseMs };
+        const watchers = new Set([...this.chatRecipients(victim), robber]);
+        for (const watcher of watchers) this.clientFor(watcher)?.send("guardsChase", chase);
+        const guards = robbery.repelledBy === 1 ? "guard" : `${robbery.repelledBy} guards`;
+        this.notify(client, { tone: "error", text: `You pull a gun on ${victim.name} and their ${guards} come running at you. You back off empty-handed. Lie low for a while.` });
+        const victimClient = this.clientFor(victim);
+        if (victimClient) this.notify(victimClient, { tone: "success", text: `${robber.name} pulled a gun on you. Your ${guards} chased them off. Nothing was taken.` });
+        return;
+      }
       if (policeWitness(robber.x, robber.z)) {
         await resolveRobbery(robbery.id, "caught", this.policeWhere(robber));
         robber.robbing = false;

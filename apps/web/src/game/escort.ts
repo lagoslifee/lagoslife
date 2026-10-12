@@ -83,6 +83,7 @@ export class Escort {
   private guards: Guard[] = [];
   private wasDriving: boolean | null = null;
   private gate: { point: Vec2 } | null = null;
+  private chasing: Vec2 | null = null;
   /** The entrance the leader walked in by; guards stand either side of it until the leader walks away. */
   private post: Crumb | null = null;
   private lenses: { mesh: Mesh; red: boolean }[] = [];
@@ -166,6 +167,11 @@ export class Escort {
     const [bx, bz] = BED_RIDERS[slot]!;
     const yaw = this.truck.yaw;
     return { x: this.truck.x + Math.cos(yaw) * bx + Math.sin(yaw) * bz, z: this.truck.z - Math.sin(yaw) * bx + Math.cos(yaw) * bz, yaw };
+  }
+
+  /** Sends the guards running at a robber standing at `point`; `null` lets them fall back in. */
+  chase(point: Vec2 | null) {
+    this.chasing = point;
   }
 
   /** Sends the first guard to stand at `point` (a gate); `null` calls them back into formation. */
@@ -263,6 +269,17 @@ export class Escort {
     this.truck.track(dt);
     this.strobe(dt, false);
     this.wasDriving = false;
+    if (this.chasing) {
+      const [rx, rz] = this.chasing;
+      const facing = Math.atan2(rx - leader.x, rz - leader.z);
+      for (const [index, guard] of this.guards.entries()) {
+        // Fan out on the leader's side of the robber, 1.6 m short of them, rifles towards them.
+        const angle = facing + Math.PI + (index - (this.guards.length - 1) / 2) * 0.6;
+        const target: Vec2 = [rx + Math.sin(angle) * 1.6, rz + Math.cos(angle) * 1.6];
+        this.walkGuard(guard, index, target, Math.atan2(rx - target[0], rz - target[1]), dt, true);
+      }
+      return;
+    }
     if (this.post && Math.hypot(this.post.x - leader.x, this.post.z - leader.z) > 4) this.post = null;
     if (this.post) {
       for (const [index, guard] of this.guards.entries()) this.walkGuard(guard, index, this.postSpot(index), this.post.yaw + Math.PI, dt, false);
