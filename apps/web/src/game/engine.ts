@@ -147,7 +147,7 @@ import { MeshBuilderBatch } from "./geometry";
 import { buildMealTray, buildTrolley } from "./flight-scenes";
 import { Couriers } from "./couriers";
 import { ListingBoards, type BoardLabel } from "./listing-boards";
-import { buildInterior, interiorModels, type HomeRest, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
+import { buildInterior, interiorModels, type ClubSeat, type HomeRest, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
 import { createMaterials, type Materials, type Quality } from "./materials";
 import { SignAtlas } from "./sign-atlas";
 import { RoadNavigator, StreetTracker, type WorldData, type WorldTile } from "./street-index";
@@ -2097,6 +2097,10 @@ export class GameEngine {
 
   private updateRemotes(now: number, dt: number) {
     const renderTime = now - 120;
+    // Residents sitting indoors are sent from where they stood; draw them on the nearest free seat instead.
+    const seats = this.interior && !this.travelView && "seats" in this.interior ? this.interior.seats : [];
+    const claimed = new Set<ClubSeat>();
+    const own = this.sitting?.seat;
     for (const remote of this.remotes.values()) {
       const samples = remote.samples;
       if (!samples.length) continue;
@@ -2129,8 +2133,23 @@ export class GameEngine {
         remote.avatar.update(0, driver && !bike ? "drive" : "sit", dt);
         if (bike && driver) remote.avatar.pedal(seatView.crank);
       } else if (remote.avatar) {
-        remote.avatar.root.position.set(x, this.interior ? (this.travelView && b.motion === "sit" ? TRAVEL_SEAT_Y : (this.travelView?.floor(x, z) ?? 0.02)) : this.world.groundHeight(x, z), z);
-        remote.avatar.root.rotation.y = a.yaw + dyaw * t;
+        const seat = b.motion === "sit" || b.motion === "dance"
+          ? seats
+            .filter((entry) => !claimed.has(entry) && entry.rest !== "bed" && !(own && own[0] === entry.at[0] && own[1] === entry.at[1]) && (b.motion === "sit" || entry.stool))
+            .reduce<ClubSeat | null>((best, entry) => {
+              const distance = Math.hypot(entry.at[0] - x, entry.at[1] - z);
+              return distance < (b.motion === "sit" ? 2.6 : 0.9) && (!best || distance < Math.hypot(best.at[0] - x, best.at[1] - z)) ? entry : best;
+            }, null)
+          : null;
+        if (seat) {
+          claimed.add(seat);
+          const lean = b.motion === "sit" && seat.rest !== "bed" ? 0.08 : 0;
+          remote.avatar.root.position.set(seat.at[0] + Math.sin(seat.yaw) * lean, seat.y, seat.at[1] + Math.cos(seat.yaw) * lean);
+          remote.avatar.root.rotation.y = seat.yaw;
+        } else {
+          remote.avatar.root.position.set(x, this.interior ? (this.travelView && b.motion === "sit" ? TRAVEL_SEAT_Y : (this.travelView?.floor(x, z) ?? 0.02)) : this.world.groundHeight(x, z), z);
+          remote.avatar.root.rotation.y = a.yaw + dyaw * t;
+        }
         remote.avatar.root.setEnabled(!b.busId && !b.vehicleId);
         remote.avatar.update(remote.speed, b.motion, dt);
       }
