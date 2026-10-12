@@ -177,8 +177,8 @@ export function ClubTableSheet({
         ) : !table.ownerName ? (
           <>
             <p>
-              A velvet booth by the dance floor for tonight: you and up to {TABLE_GUESTS_MAX} friends you invite, with bottle service brought to the
-              table.
+              A velvet booth by the dance floor: you and up to {TABLE_GUESTS_MAX} friends you invite, with bottle service brought to the
+              table and your name on the LED wall. It is yours while you stay; a minute after you leave the club it is cleared for the next party.
             </p>
             <button
               className="primary"
@@ -195,7 +195,7 @@ export function ClubTableSheet({
         ) : (
           <>
             <p data-testid="table-owner">
-              {table.mine ? "Your table tonight." : `${table.ownerName}'s table.`}
+              {table.mine ? "Your table while you're here. Leave the club and it's cleared after a minute." : `${table.ownerName}'s table.`}
               {table.guests.length ? ` Guests: ${table.guests.join(", ")}.` : ""}
             </p>
             {!party && <p className="muted">Ask {table.ownerName} to invite you to sit and order here.</p>}

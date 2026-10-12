@@ -3,6 +3,7 @@ import { RedisDriver } from "@colyseus/redis-driver";
 import { RedisPresence } from "@colyseus/redis-presence";
 import express from "express";
 import { buildingEvents, refreshPlotFootprints, releaseIdleGuestPlots } from "./building-service.js";
+import { releaseAbandonedTables } from "./club-service.js";
 import { bridgeEmitter, joinCluster } from "./cluster.js";
 import { config } from "./config.js";
 import { installCrashHandlers } from "./diagnostics.js";
@@ -49,6 +50,7 @@ purgeChat();
 setInterval(purgeChat, 6 * 3_600_000).unref();
 setInterval(() => void purgeExpiredRates().catch((error) => console.error("Rate-limit purge failed", error)), 3_600_000).unref();
 setInterval(() => void releaseIdleGuestPlots().catch((error) => console.error("Idle guest plot release failed", error)), 3_600_000).unref();
+setInterval(() => void releaseAbandonedTables().catch((error) => console.error("VIP table release failed", error)), 15_000).unref();
 
 await gameServer.listen(config.PORT);
 console.log(`Naija World server listening on ${config.BETTER_AUTH_URL}`);

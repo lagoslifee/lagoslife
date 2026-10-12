@@ -1,7 +1,7 @@
 import { CLUB_LAYOUT, CLUB_TABLES, clubLocation, CLUBS, getPlace } from "@lagos-living/shared";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { bookTable, buyWristband, getClubStatus, hasWristband, listTables, orderAtBar, orderBottle, setTableGuest } from "./club-service.js";
+import { bookTable, buyWristband, getClubStatus, hasWristband, listTables, orderAtBar, orderBottle, releaseAbandonedTables, setTableGuest, TABLE_ABSENCE_MS } from "./club-service.js";
 import { pool } from "./database.js";
 import { getEconomyState } from "./economy-service.js";
 import { setPlayerPosition } from "./player-presence.js";
@@ -130,5 +130,19 @@ describe("VIP tables", () => {
 
     await setTableGuest(raver.id, club.id, table.no, friend.username, false);
     await expect(orderBottle(friend.id, club.id, table.no, "moet", randomUUID())).rejects.toThrow("invite you");
+  });
+
+  it("clears the table a minute after its owner leaves the club, so someone else can book it", async () => {
+    const now = Date.now();
+    inClub(raver.id);
+    await releaseAbandonedTables(now);
+    setPlayerPosition(raver.id, ...club.door);
+    await releaseAbandonedTables(now);
+    expect((await listTables(friend.id, club.id)).find((entry) => entry.no === table.no)!.ownerName).not.toBeNull();
+    await releaseAbandonedTables(now + TABLE_ABSENCE_MS + 1_000);
+    const cleared = (await listTables(friend.id, club.id)).find((entry) => entry.no === table.no)!;
+    expect(cleared).toMatchObject({ ownerName: null, guests: [], bottles: [] });
+    inClub(friend.id);
+    expect((await bookTable(friend.id, club.id, table.no)).charged).toBe(CLUBS["eko-nights"]!.tablePrice);
   });
 });

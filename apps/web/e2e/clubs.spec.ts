@@ -69,7 +69,7 @@ test("pays the cover at Eko Nights, orders at the bar and dances", async ({ page
   await page.evaluate(() => window.__lagos.interact());
   const table = page.getByTestId("club-table");
   await table.getByRole("button", { name: "Book for ₦60,000" }).click();
-  await expect(table.getByTestId("table-owner")).toContainText("Your table tonight");
+  await expect(table.getByTestId("table-owner")).toContainText("Your table while you're here");
   await table.locator("li", { hasText: "Moët" }).getByRole("button").click();
   await expect(page.getByText(/on its way to table 2/)).toBeVisible();
   await table.getByRole("button", { name: "Close" }).click();

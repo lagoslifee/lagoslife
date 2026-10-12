@@ -18,7 +18,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "./database.js";
 import { debitWallet, EconomyError, ensureProfile, ensureWallet, VENDOR_RANGE, withTransaction } from "./economy-service.js";
-import { isNear } from "./player-presence.js";
+import { getPlayerPosition, isNear } from "./player-presence.js";
 import { findResident, hiddenPlayers } from "./safety-service.js";
 
 /** How close to a table's standing spot a resident must be to book it or order to it. */
@@ -240,3 +240,36 @@ export async function orderBottle(userId: string, placeId: string, no: number, i
     return { replayed: false, item, balance, tables: await listTables(userId, placeId, client) };
   });
 }
+
+/** How long a table's owner can be out of the club (stepping out, or a dropped connection) before the table is cleared. */
+export const TABLE_ABSENCE_MS = 60_000;
+const absentSince = new Map<string, number>();
+
+/**
+ * Clears tonight's VIP tables whose owner has left the club: the booking, its guest list and the bottles go, so
+ * another resident can book the table. A short absence is forgiven so a dropped connection doesn't lose the table.
+ */
+export async function releaseAbandonedTables(now = Date.now()) {
+  const bookings = await pool.query<{ id: string; place_id: string; owner_user_id: string }>(
+    `SELECT id, place_id, owner_user_id FROM club_table_booking WHERE lagos_night = $1::date`,
+    [lagosNight(now)],
+  );
+  const live = new Set<string>();
+  let released = 0;
+  for (const booking of bookings.rows) {
+    live.add(booking.id);
+    if (getPlayerPosition(booking.owner_user_id)?.location === clubLocation(booking.place_id)) {
+      absentSince.delete(booking.id);
+      continue;
+    }
+    const since = absentSince.get(booking.id) ?? now;
+    absentSince.set(booking.id, since);
+    if (now - since < TABLE_ABSENCE_MS) continue;
+    await pool.query(`DELETE FROM club_table_booking WHERE id = $1`, [booking.id]);
+    absentSince.delete(booking.id);
+    released += 1;
+  }
+  for (const id of absentSince.keys()) if (!live.has(id)) absentSince.delete(id);
+  return released;
+}
+
