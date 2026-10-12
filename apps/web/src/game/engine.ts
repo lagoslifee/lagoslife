@@ -117,7 +117,8 @@ import { MultiplayerConnection, type MultiplayerStatus, type PoliceEvent, type R
 import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, MAX_AUTO_SCALING, qualityStep } from "./adaptive-quality";
 import { CityAudio } from "./audio";
 import { appearanceFor, Avatar, AvatarFactory, dubaiDriverLook, taxiDriverLook } from "./avatar";
-import { CLUB_BARTENDER, deskStaffFor, seatsFor, serviceOrigin, ServiceStaff, staffLook, type StaffProp } from "./service-staff";
+import { CLUB_BARTENDER, clubWaitress, deskStaffFor, seatsFor, serviceOrigin, ServiceStaff, staffLook, type StaffProp } from "./service-staff";
+import { buildMenuItem, buildServingTray } from "./drinks";
 import { addTaxiLivery } from "./taxi-livery";
 import { CarController } from "./car-controller";
 import { VehicleFactory, type VehicleView } from "./vehicles";
@@ -215,6 +216,8 @@ export type EngineCallbacks = {
   agbero: (encounter: AgberoEncounter | null) => void;
   /** The player reached the waypoint; the route has already been cleared. */
   arrived: (label: string) => void;
+  /** What the player has in hand (a drink or a plate from the club bar) and how many sips or bites are left; null when empty. */
+  holding: (item: { name: string; left: number; food: boolean } | null) => void;
 };
 
 type Remote = {
@@ -433,7 +436,9 @@ export class GameEngine {
   private frameTimes: number[] = [];
   private readonly adaptive = new AdaptiveQuality();
   private baseScaling = 1;
-  private sitting: { seat: Vec2; yaw: number } | null = null;
+  /** Seated (or, on a club stool, standing up and dancing) on a fixed seat; `y` is the cushion height. */
+  private sitting: { seat: Vec2; yaw: number; y: number; pose: "sit" | "dance"; stool?: boolean } | null = null;
+  private heldItem: { node: TransformNode; name: string; left: number; food: boolean } | null = null;
   private autopilot: { path: Vec2[]; index: number; sprint: boolean; resolve: (ok: boolean) => void; lastProgress: number; lastPoint: Vec2; deadline: number } | null = null;
   private forcedInput: [number, number] | null = null;
   private readyFired = false;
@@ -1201,9 +1206,10 @@ export class GameEngine {
       this.player.update(0, ride.seat === 0 && !bike ? "drive" : "sit", dt);
       if (bike && ride.seat === 0) this.player.pedal(seatView.crank);
     } else if (this.player) {
-      if (this.sitting && (speed > 0.1 || this.emote !== "sit" || !this.interior)) this.sitting = null;
+      if (this.sitting && (speed > 0.1 || this.emote !== this.sitting.pose || !this.interior)) this.sitting = null;
       const chair = this.sitting;
-      if (chair) this.player.root.position.set(chair.seat[0] + Math.sin(chair.yaw) * 0.08, TRAVEL_SEAT_Y, chair.seat[1] + Math.cos(chair.yaw) * 0.08);
+      const lean = chair?.pose === "sit" ? 0.08 : 0;
+      if (chair) this.player.root.position.set(chair.seat[0] + Math.sin(chair.yaw) * lean, chair.y, chair.seat[1] + Math.cos(chair.yaw) * lean);
       else this.player.root.position.set(x, seatedTravel ? TRAVEL_SEAT_Y : this.groundY + this.controller.hop, z);
       this.player.root.rotation.y = chair ? chair.yaw : seatedTravel ? this.seatYaw : this.controller.yaw;
       this.player.root.setEnabled(!bus && !inCar);
@@ -1506,17 +1512,35 @@ export class GameEngine {
     }
     if (this.interior) {
       const travel = this.travelView;
+      const chair = this.sitting;
+      if (chair?.stool) {
+        const dancing = chair.pose === "dance";
+        this.prompt = { key: bind("interact"), label: dancing ? "Climb down" : "Climb up and dance", detail: dancing ? "Back to your seat" : "Stand on the stool" };
+        this.interaction = () => this.stoolDance(!dancing);
+        return;
+      }
+      if (chair) {
+        this.prompt = { key: bind("interact"), label: "Stand up" };
+        this.interaction = () => this.playEmote("none");
+        return;
+      }
+      const reach = travel ? 2.2 : 1.6;
+      let nearest: { spot: InteriorSpot | { id: string; point: Vec2; label: string }; distance: number } | null = null;
       for (const spot of this.interior.spots) {
-        if (Math.hypot(spot.point[0] - x, spot.point[1] - z) < (travel ? 2.2 : 1.6)) {
-          this.prompt = { key: bind("interact"), label: spot.label };
-          this.interaction =
-            spot.id === "exit"
-              ? () => this.exitProperty()
+        const distance = Math.hypot(spot.point[0] - x, spot.point[1] - z);
+        if (distance < reach && (!nearest || distance < nearest.distance)) nearest = { spot, distance };
+      }
+      if (nearest) {
+        const spot = nearest.spot;
+        this.prompt = { key: bind("interact"), label: spot.label };
+        this.interaction =
+          spot.id === "exit"
+            ? () => this.exitProperty()
+            : spot.id === "stool" && !travel
+              ? () => this.clubSeat("stool")
               : travel
                 ? () => this.callbacks.interact({ kind: "travel", interior: travel.kind, spot: spot.id })
-                : () => this.callbacks.interact({ kind: "interior", spot: spot.id });
-          return;
-        }
+                : () => this.callbacks.interact({ kind: "interior", spot: spot.id as InteriorSpot["id"] });
       }
       return;
     }
@@ -2100,8 +2124,12 @@ export class GameEngine {
       this.club = null;
       this.audio.setClub(null);
       this.clearWaiters();
+      this.dropHeld();
     }
-    if (enteringInterior) void this.loadInterior(self);
+    if (enteringInterior) {
+      this.dropHeld();
+      void this.loadInterior(self);
+    }
     const seat = self.vehicleSeat ?? 0;
     if (self.vehicleId && seat === 0 && self.vehicleId !== this.driving?.vehicleId) this.startDriving(self.vehicleId);
     if ((!self.vehicleId || seat > 0) && (this.driving || this.pendingDrive)) this.stopDriving();
@@ -2417,7 +2445,7 @@ export class GameEngine {
         this.controller.yaw = seat.yaw;
         this.emote = "sit";
         this.net.send("emote", { emote: "sit" });
-        this.sitting = { seat: seat.at, yaw: seat.yaw };
+        this.sitting = { seat: seat.at, yaw: seat.yaw, y: TRAVEL_SEAT_Y, pose: "sit" };
       },
       lastProgress: performance.now(),
       lastPoint: here,
@@ -2439,14 +2467,97 @@ export class GameEngine {
     this.staff.deliver(place.door, staffLook(91, regionOf(place.door[0], place.door[1]) === "dubai", "agent"), "keys", caption);
   }
 
-  deliverOrder(itemName: string, drink: boolean) {
+  deliverOrder(itemName: string, drink: boolean, itemId?: string) {
     const kind = this.travelView?.kind;
     const from = kind ? serviceOrigin(kind) : this.club ? CLUB_BARTENDER : null;
     const dubai = regionOf(this.controller.x, this.controller.z) === "dubai" || kind === "hotel" || kind === "rooftop" || kind === "airport-dxb";
     const caption = kind === "hotel" ? `Room service: your ${itemName} is here. Enjoy.` : `Your ${itemName} is served. Enjoy.`;
     if (!from) return this.callbacks.notice({ tone: "success", text: caption });
+    if (this.club && itemId) {
+      const club = this.club;
+      const food = !drink;
+      const tray = buildServingTray(this.scene, itemId);
+      const seed = 300 + Math.floor(Math.random() * 500);
+      this.staff.deliver([from[0] + 1.0, from[1]], clubWaitress(seed, club.id === TRAVEL_PLACES.club), tray, `Your ${itemName} is here. ${food ? "Tap Eat for a bite." : "Tap Sip to drink it."}`, () => {
+        if (this.club !== club) return;
+        this.holdItem(itemId, itemName, food);
+      });
+      return;
+    }
     if (this.club) return this.handOver("bar", "drink", `The bartender hands you your ${itemName}.`);
     this.staff.deliver(from, staffLook(80 + itemName.length, dubai, kind === "hotel" ? "waiter" : "hostess"), drink ? "drink" : "tray", caption);
+  }
+
+  private holdItem(itemId: string, name: string, food: boolean) {
+    this.dropHeld();
+    if (!this.player) return;
+    const node = buildMenuItem(this.scene, itemId);
+    this.player.hold(node);
+    this.heldItem = { node, name, left: food ? 4 : 3, food };
+    this.callbacks.holding({ name, left: this.heldItem.left, food });
+  }
+
+  /** One sip or bite of what the player is holding; the glass or plate goes once it is finished. */
+  sipHeld() {
+    const item = this.heldItem;
+    if (!item || !this.player) return;
+    this.player.sip(item.food ? 1.2 : 1.6);
+    item.left -= 1;
+    if (item.left > 0) return this.callbacks.holding({ name: item.name, left: item.left, food: item.food });
+    window.setTimeout(() => {
+      if (this.heldItem !== item) return;
+      this.dropHeld();
+      this.callbacks.notice({ tone: "success", text: item.food ? `You finished the ${item.name}.` : `You finished your ${item.name}.` });
+    }, 1_700);
+    this.callbacks.holding({ name: item.name, left: 0, food: item.food });
+  }
+
+  dropHeld() {
+    if (!this.heldItem) return;
+    this.player?.hold(null);
+    this.heldItem.node.dispose();
+    this.heldItem = null;
+    this.callbacks.holding(null);
+  }
+
+  /** Walks to the nearest free bar stool, or a sofa at VIP table `table`, and sits down. */
+  clubSeat(kind: "stool" | "sofa", table?: number) {
+    const view = this.interior && "seats" in this.interior ? this.interior : null;
+    const seats = (view?.seats ?? []).filter((seat) => seat.stool === (kind === "stool") && (table === undefined || seat.table === table));
+    if (!seats.length || !this.club) return false;
+    const here: Vec2 = [this.controller.x, this.controller.z];
+    const taken = [...this.remotes.values()].map((remote) => remote.avatar?.root.position).filter((at): at is NonNullable<typeof at> => Boolean(at));
+    const free = seats.filter((seat) => !taken.some((at) => Math.hypot(at.x - seat.at[0], at.z - seat.at[1]) < 0.35));
+    const pool = free.length ? free : seats;
+    const seat = pool.reduce((best, entry) => (Math.hypot(entry.at[0] - here[0], entry.at[1] - here[1]) < Math.hypot(best.at[0] - here[0], best.at[1] - here[1]) ? entry : best));
+    const front: Vec2 = kind === "stool" ? [seat.at[0] + 0.55, seat.at[1]] : (CLUB_TABLES.find((entry) => entry.no === seat.table)?.spot ?? seat.at);
+    this.autopilot?.resolve(false);
+    this.autopilot = {
+      path: [front],
+      index: 0,
+      sprint: false,
+      resolve: (ok) => {
+        if (!ok || !this.club) return;
+        this.controller.yaw = seat.yaw;
+        this.emote = "sit";
+        this.net.send("emote", { emote: "sit" });
+        this.sitting = { seat: seat.at, yaw: seat.yaw, y: seat.y, pose: "sit", stool: seat.stool };
+      },
+      lastProgress: performance.now(),
+      lastPoint: here,
+      deadline: performance.now() + 15_000,
+    };
+    return true;
+  }
+
+  /** On a bar stool: stand up on it and dance, or sit back down. */
+  stoolDance(up: boolean) {
+    const chair = this.sitting;
+    if (!chair?.stool) return;
+    const pose = up ? "dance" : "sit";
+    this.emote = pose;
+    this.net.send("emote", { emote: pose });
+    this.sitting = { ...chair, pose };
   }
 
   private async loadInterior(self: SelfState) {

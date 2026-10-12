@@ -96,7 +96,7 @@ export function ClubDoorSheet({ place, economy, onClose, onRefresh, onToast, onE
 }
 
 /** At the bar inside a club. */
-export function ClubBarSheet({ place, economy, onClose, onRefresh, onToast, onServed }: Common & { place: Place; onServed?: (name: string) => void }) {
+export function ClubBarSheet({ place, economy, onClose, onRefresh, onToast, onServed }: Common & { place: Place; onServed?: (item: { id: string; name: string }) => void }) {
   const [busy, run] = useRun({ onRefresh, onToast });
   const balance = economy?.balance ?? 0;
   return (
@@ -127,8 +127,8 @@ export function ClubBarSheet({ place, economy, onClose, onRefresh, onToast, onSe
                   disabled={busy || balance < item.price}
                   onClick={() => void run(async () => {
                     const result = await api.clubOrder(place.id, item.id);
-                    onServed?.(item.name);
-                    return `${item.name}, ${naira(item.price)}. Hunger ${result.needs.hunger}/100 · energy ${result.needs.energy}/100.`;
+                    onServed?.(item);
+                    return `${item.name}, ${naira(item.price)}. A waitress is bringing it over. Hunger ${result.needs.hunger}/100 · energy ${result.needs.energy}/100.`;
                   })}
                 >
                   {naira(item.price)}
@@ -200,7 +200,7 @@ export function ClubTableSheet({
             </p>
             {!party && <p className="muted">Ask {table.ownerName} to invite you to sit and order here.</p>}
             {party && (
-              <button className="secondary" onClick={() => { onClose(); onSit(); }}>Dance at the table</button>
+              <button className="secondary" onClick={() => { onClose(); onSit(); }}>Sit at the table</button>
             )}
             {table.mine && (
               <div className="table-guests">

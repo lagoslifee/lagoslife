@@ -42,6 +42,12 @@ function staffLook(seed: number, dubai: boolean, role: "agent" | "officer" | "wa
   return { body: female ? "female" : "male", skinTone: tones[(seed + 1) % tones.length]!, hairstyle: female ? "long" : "parted", outfit: female ? "office-skirt" : "office-smart", accessory: "none" };
 }
 
+/** Club waitresses: a fitted red dress and braids in Lagos, wine lace and long hair in Dubai. */
+export function clubWaitress(seed: number, dubai: boolean): CharacterAppearance {
+  const base = staffLook(seed, dubai, "hostess");
+  return { ...base, body: "female", hairstyle: dubai ? "long" : "braids", outfit: dubai ? "lace-wine" : "corporate-red", accessory: "none" };
+}
+
 /** Who stands behind each counter of a travel interior, as world points with the way they face. */
 export function deskStaffFor(kind: TravelInterior): DeskStaff[] {
   const dubai = kind === "airport-dxb" || kind === "rooftop" || kind === "hotel" || kind === "pool";
@@ -216,16 +222,17 @@ export class ServiceStaff {
   }
 
   /** A runner walks from `from` to the player carrying `prop`, serves it, and goes back. */
-  deliver(from: Vec2, look: CharacterAppearance, prop: StaffProp, caption: string, onArrive?: () => void) {
+  deliver(from: Vec2, look: CharacterAppearance, prop: StaffProp | TransformNode, caption: string, onArrive?: () => void) {
     const factory = this.avatars();
     if (!factory) {
+      if (typeof prop !== "string") prop.dispose();
       this.notice(caption);
       onArrive?.();
       return;
     }
     const avatar = factory.create(`runner ${this.runners.length} ${Date.now()}`, look);
     avatar.root.position.set(from[0], this.ground(from[0], from[1]), from[1]);
-    const node = this.buildProp(prop);
+    const node = typeof prop === "string" ? this.buildProp(prop) : prop;
     node.parent = avatar.root;
     node.position.set(0.05, 1.08, 0.36);
     this.runners.push({ avatar, prop: node, home: from, phase: "out", serveUntil: 0, caption, onArrive });

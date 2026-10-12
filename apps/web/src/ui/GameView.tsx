@@ -103,6 +103,7 @@ export function GameView({
   const [checkpoint, setCheckpoint] = useState<CheckpointStop | null>(null);
   const [travelPrompts, setTravelPrompts] = useState<TravelPrompt[]>([]);
   const [rideAsks, setRideAsks] = useState<RideAsk[]>([]);
+  const [holding, setHolding] = useState<{ name: string; left: number; food: boolean } | null>(null);
   const [agbero, setAgbero] = useState<AgberoEncounter | null>(null);
   const [holdUp, setHoldUp] = useState<HoldUp | null>(null);
   const [robTarget, setRobTarget] = useState<{ sessionId: string; name: string } | null>(null);
@@ -338,6 +339,7 @@ export function GameView({
             return false;
           }
         },
+        holding: (item) => setHolding(item),
         rideAsk: (ask) => setRideAsks((list) => [...list.filter((entry) => entry.sessionId !== ask.sessionId), ask].slice(-3)),
         travelPrompt: (prompt) => setTravelPrompts((list) => [...list.filter((entry) => entry.requestId !== prompt.requestId), prompt].slice(-3)),
         ride: (next) => {
@@ -1049,11 +1051,28 @@ export function GameView({
           onRefresh={refresh}
           onToast={toast}
           onTables={showClubTables}
-          onSit={() => engine?.playEmote("dance")}
+          onSit={() => engine?.clubSeat("sofa", clubTable)}
         />
       )}
       {clubBar && hud?.propertyId === clubBar.id && (
-        <ClubBarSheet place={clubBar} economy={economy} onClose={() => setClubBar(null)} onRefresh={refresh} onToast={toast} onServed={(name) => engine?.deliverOrder(name, true)} />
+        <ClubBarSheet
+          place={clubBar}
+          economy={economy}
+          onClose={() => setClubBar(null)}
+          onRefresh={refresh}
+          onToast={toast}
+          onServed={(item) => {
+            engine?.deliverOrder(item.name, item.id !== "small-chops" && item.id !== "suya", item.id);
+            setClubBar(null);
+          }}
+        />
+      )}
+      {holding && engine && inClub && (
+        <div className="held-chip" data-testid="held-item">
+          <span>{holding.food ? "🍢" : "🥤"} {holding.name}{holding.left ? ` · ${holding.left} left` : " · finished"}</span>
+          <button className="primary small-button" disabled={!holding.left} onClick={() => engine.sipHeld()}>{holding.food ? "Eat" : "Sip"}</button>
+          <button className="secondary small-button" onClick={() => engine.dropHeld()} aria-label="Put it down">✕</button>
+        </div>
       )}
       {sheet && engine && TRAVEL_SHEET_KINDS.has(sheet.kind) && (
         <TravelPlaceSheet

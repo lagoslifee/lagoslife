@@ -860,6 +860,8 @@ table.departures td { padding: 6px 10px; border-bottom: 1px solid #23413d; }
 .spotter-card .row { display: flex; gap: 6px; flex-wrap: wrap; }
 .spotter-card .row + .row { margin-top: 6px; }
 .spotter-card button.spray { background: linear-gradient(180deg, #3f9a55, #2a6e3b); color: #fff; border: 1px solid #8fd6a0; font-weight: 700; }
+.held-chip { position: absolute; bottom: calc(150px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 12; display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-radius: 999px; color: #fff; background: rgba(24, 16, 36, .9); border: 1px solid rgba(255, 255, 255, .18); pointer-events: auto; white-space: nowrap; font-size: 14px; }
+.held-chip button { min-height: 36px; padding: 0 14px; border-radius: 999px; }
 .agbero-prompt { background: rgba(52, 34, 10, .95); border-top-color: #e7a33e; }
 .agbero-prompt .row { display: flex; flex-wrap: wrap; gap: 6px; }
 .agbero-prompt p.small { margin: 0 0 6px; font-size: 12px; }

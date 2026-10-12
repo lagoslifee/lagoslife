@@ -126,12 +126,13 @@ export class AvatarFactory {
       leftArm: node("upperarm_l"),
       rightArm: node("upperarm_r"),
       rightFore: node("lowerarm_r"),
+      rightHand: node("hand_r"),
     };
     return { holder, meshes, body, brows, skirt, garments, hair, anchor, groups, all: entries.animationGroups, limbs };
   }
 }
 
-type Limbs = Record<"leftUp" | "leftLow" | "rightUp" | "rightLow" | "leftArm" | "rightArm" | "rightFore", TransformNode | null>;
+type Limbs = Record<"leftUp" | "leftLow" | "rightUp" | "rightLow" | "leftArm" | "rightArm" | "rightFore" | "rightHand", TransformNode | null>;
 type Instance = ReturnType<AvatarFactory["instantiate"]>;
 
 const flex = new Quaternion();
@@ -149,6 +150,9 @@ export class Avatar {
   private current: CharacterAppearance;
   private visible = true;
   private props: TransformNode[] = [];
+  private held: TransformNode | null = null;
+  private heldLift = 0;
+  private sipUntil = 0;
   private waveTime = 0;
   /** Receives the meshes of each body instance, e.g. to register shadow casters again after a body change. */
   private meshListener: ((meshes: AbstractMesh[]) => void) | null = null;
@@ -262,6 +266,7 @@ export class Avatar {
     }
     if (motion === "wave") this.wave(dt);
     else this.waveTime = 0;
+    if (this.held) this.holdPose(dt, motion);
   }
 
   /** The animation library has no wave, so the right arm is raised and the forearm swings on top of idle. */
@@ -286,6 +291,45 @@ export class Avatar {
     }
     bend(limbs.leftArm, -0.55);
     bend(limbs.rightArm, -0.55);
+  }
+
+  /** Puts a drink or other small item in the right hand; null empties it (the caller disposes the node). */
+  hold(node: TransformNode | null) {
+    this.held = node;
+    this.heldLift = 0;
+    if (node) node.parent = null;
+  }
+
+  /** Lifts the held item to the mouth for a moment. */
+  sip(seconds = 1.6) {
+    this.sipUntil = performance.now() + seconds * 1_000;
+  }
+
+  /** Forearm up holding the item, raised to the mouth while sipping; the item follows the hand. */
+  private holdPose(dt: number, motion: MotionState) {
+    const target = performance.now() < this.sipUntil ? 1 : 0;
+    this.heldLift += (target - this.heldLift) * Math.min(1, dt * 7);
+    const limbs = this.instance.limbs;
+    if (motion !== "dance") {
+      bend(limbs.rightArm, 0.9 * this.heldLift);
+      bend(limbs.rightFore, 1.4 + 0.4 * this.heldLift);
+    }
+    const hand = limbs.rightHand;
+    const node = this.held!;
+    node.setEnabled(this.visible);
+    if (!hand) {
+      const yaw = this.root.rotation.y;
+      node.position.set(this.root.position.x + Math.sin(yaw) * 0.3 + Math.cos(yaw) * 0.2, this.root.position.y + 1.05 + this.heldLift * 0.4, this.root.position.z + Math.cos(yaw) * 0.3 - Math.sin(yaw) * 0.2);
+      return;
+    }
+    hand.computeWorldMatrix(true);
+    const at = hand.getAbsolutePosition();
+    const yaw = this.root.rotation.y;
+    const head = this.current.body === "female" ? 1.42 : 1.5;
+    const mouth = [this.root.position.x + Math.sin(yaw) * 0.14, this.root.position.y + head - 0.07, this.root.position.z + Math.cos(yaw) * 0.14];
+    const f = this.heldLift * 0.5;
+    node.position.set(at.x + (mouth[0]! - at.x) * f, at.y - 0.04 + (mouth[1]! - at.y + 0.04) * f, at.z + (mouth[2]! - at.z) * f);
+    node.rotation.set(0, yaw, -this.heldLift * 0.6);
   }
 
   /** Carries a prop (vest, tray, rifle) with the body: it shows and hides with the avatar and survives body changes. */
