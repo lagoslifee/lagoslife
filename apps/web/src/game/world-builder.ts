@@ -39,6 +39,7 @@ import {
   worshipDoor,
 } from "./landmarks";
 import { SignAtlas, type SignStyle, type UvRect } from "./sign-atlas";
+import { PLACE_KIND } from "../place-kinds";
 import { findJunctions, waterSampler, type WorldArea, type WorldBuilding, type WorldData, type WorldRoad, type WorldTile } from "./street-index";
 
 type Color = [number, number, number];
@@ -1247,6 +1248,13 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       const canopy = detail.get(cx, cz, "concrete");
       canopy.box(doorX + doorNx * 0.55, 3.0, doorZ + doorNz * 0.55, doorWidth + 1.0, 0.14, 1.1, doorYaw, 1, trim);
       canopy.box(doorX + doorNx * 0.4, 0.3, doorZ + doorNz * 0.4, doorWidth + 0.8, 0.3, 0.8, doorYaw, 1, [0.7, 0.68, 0.64], true);
+      if (place && place.kind !== "delivery" && place.kind !== "rental" && place.kind !== "sale") {
+        const info = PLACE_KIND[place.kind];
+        const signWidth = Math.max(2.4, Math.min(doorLength - 0.6, 4.4));
+        const signY = 3.2 + signWidth / SignAtlas.aspect / 2 + 0.12;
+        base.get(cx, cz, "darkFrame").box(doorX + doorNx * 0.1, signY, doorZ + doorNz * 0.1, signWidth + 0.2, signWidth / SignAtlas.aspect + 0.16, 0.14, doorYaw, 1, undefined, true);
+        textQuad(base.get(cx, cz, "signs"), doorX + doorNx * 0.18, signY, doorZ + doorNz * 0.18, doorYaw, signWidth, signWidth / SignAtlas.aspect, signUv(place.name, "banner", info.label, info.colour));
+      }
       if (landmark === "modern") modernFront(landmarkGet, facade, doorLength, doorT * doorLength - doorLength / 2);
     }
     if (landmark === "church") churchTower(landmarkGet, doorA, doorB, doorT, facade, height, paint);
@@ -1754,6 +1762,44 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       board(dx + rx * 4.5, dz + rz * 4.5, yaw);
     }
     placeSigns.push({ placeId: place.id, point: place.door });
+  }
+
+  // Roadside banner for every mapped venue: a pylon on the pavement, its panel across the street so drivers read it
+  // from either direction before they reach the door.
+  for (const place of PLACES.filter((candidate) => candidate.buildingId !== null && candidate.kind !== "delivery" && inTile(candidate.door[0], candidate.door[1]))) {
+    const [dx, dz] = place.door;
+    const [kx, kz] = place.kerb;
+    const span = Math.hypot(kx - dx, kz - dz);
+    if (span < 2) continue;
+    const tx = Math.sin(place.kerbYaw);
+    const tz = Math.cos(place.kerbYaw);
+    let spot: Vec2 | null = null;
+    for (const along of [0.55, 0.4, 0.7, 0.25]) {
+      for (const side of [3.2, -3.2, 5.5, -5.5]) {
+        const x = dx + (kx - dx) * along + tx * side;
+        const z = dz + (kz - dz) * along + tz * side;
+        if (!roads.onAsphalt(x, z, 1.7) && !insideBuilding(x, z, 1.7) && !overWater(x, z)) {
+          spot = [x, z];
+          break;
+        }
+      }
+      if (spot) break;
+    }
+    if (!spot) continue;
+    const [px, pz] = spot;
+    const info = PLACE_KIND[place.kind];
+    const width = 3.2;
+    const tall = width / SignAtlas.aspect;
+    const y = 3.2;
+    const yaw = place.kerbYaw;
+    const get = (key: string) => base.get(px, pz, key);
+    get("pole").box(px, (y - tall / 2) / 2, pz, 0.16, y - tall / 2, 0.16, yaw);
+    get("darkFrame").box(px, y, pz, width + 0.16, tall + 0.16, 0.12, yaw);
+    get("darkFrame").box(px, y + tall / 2 + 0.12, pz, width + 0.3, 0.07, 0.2, yaw);
+    const uv = signUv(place.name, "banner", `${info.label} · ${place.street}`, info.colour);
+    textQuad(get("signs"), px + tx * 0.065, y, pz + tz * 0.065, yaw, width, tall, uv);
+    textQuad(get("signs"), px - tx * 0.065, y, pz - tz * 0.065, yaw + Math.PI, width, tall, uv);
+    addObstacle([px, pz], [px, pz], 0.12);
   }
 
   // Dunes round the desert camp, kept clear of the track and the camp; inside the district they are solid.

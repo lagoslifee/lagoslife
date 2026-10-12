@@ -3159,6 +3159,7 @@ export class GameEngine {
           this.carPilot = { path: path.length ? path : [[x, z]], index: 0, resolve, deadline: performance.now() + timeoutMs, stuckSince: null, recovery: null, recoveries: 0 };
         }),
       fps: () => this.engine.getFps(),
+      signAtlasLive: () => Boolean(this.atlas.texture.getInternalTexture()),
       gpu: () => ({
         lost: (this.engine as unknown as { _gl: WebGLRenderingContext })._gl.isContextLost(),
         textures: this.scene.textures.length,

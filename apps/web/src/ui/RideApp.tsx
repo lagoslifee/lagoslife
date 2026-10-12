@@ -10,6 +10,8 @@ type Props = {
   engine: GameEngine | null;
   ride: RideState | null;
   properties: PropertyListing[];
+  /** Destination picked elsewhere (Places → Cab), shown straight away with its fare. */
+  initial?: Destination | null;
   onNavigate: (target: { point: Vec2; label: string } | null) => void;
   onClose: () => void;
 };
@@ -31,11 +33,11 @@ function useNow(active: boolean) {
 }
 
 /** Lagos Living Ride: book an NPC driver to any mapped place reachable by road. */
-export function RideApp({ engine, ride, properties, onNavigate, onClose }: Props) {
+export function RideApp({ engine, ride, properties, initial, onNavigate, onClose }: Props) {
   const active = ride && (ride.status === "approaching" || ride.status === "waiting" || ride.status === "riding");
   const now = useNow(Boolean(active));
   const [query, setQuery] = useState("");
-  const [chosen, setChosen] = useState<Destination | null>(null);
+  const [chosen, setChosen] = useState<Destination | null>(initial ?? null);
   const [booking, setBooking] = useState(false);
   useEffect(() => setBooking(false), [ride?.id, ride?.status]);
 

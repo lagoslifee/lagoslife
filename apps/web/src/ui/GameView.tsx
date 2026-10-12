@@ -766,6 +766,7 @@ export function GameView({
 
           <div className="hud-buttons">
             <button onClick={() => setPhone("home")} aria-label="Open phone">📱<span> Phone</span> <kbd>{keyLabel(bindings.phone)}</kbd></button>
+            <button onClick={() => setPhone("places")} aria-label="Places">📍<span> Places</span></button>
             <button onClick={() => setMapOpen(true)} aria-label="Open map">🗺<span> Map</span> <kbd>{keyLabel(bindings.map)}</kbd></button>
             {touch && <button onClick={() => setChatOpen(true)} aria-label="Open chat">💬<span> Chat</span></button>}
             {!touch && <button onClick={() => setHelpOpen((open) => !open)} aria-label="Controls">⌨<span> Controls</span> <kbd>{keyLabel(bindings.help)}</kbd></button>}

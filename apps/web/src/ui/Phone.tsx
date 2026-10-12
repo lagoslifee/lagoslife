@@ -9,11 +9,13 @@ import { TravelApp } from "./TravelApp";
 import { VehiclesApp } from "./VehicleSheets";
 import { JusticeApp, SafetyApp, type ReportTarget } from "./SafetyUI";
 import { GoApp } from "./GoApp";
+import { PlacesApp, type CabDestination } from "./PlacesApp";
 
-export type PhoneApp = "home" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
+export type PhoneApp = "home" | "places" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
 
 const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
-  { id: "go", label: "Go", icon: "📍" },
+  { id: "places", label: "Places", icon: "📍" },
+  { id: "go", label: "Go", icon: "⚡" },
   { id: "map", label: "Map", icon: "🗺" },
   { id: "ride", label: "Ride", icon: "🚕" },
   { id: "travel", label: "Travel", icon: "✈" },
@@ -79,6 +81,7 @@ function dueText(iso: string | null) {
 
 export function Phone(props: Props) {
   const { app, setApp, onClose } = props;
+  const [cabTo, setCabTo] = useState<CabDestination | null>(null);
   const title = APPS.find((entry) => entry.id === app)?.label ?? "Phone";
   return (
     <aside className="phone" role="dialog" aria-label="Phone">
@@ -103,8 +106,11 @@ export function Phone(props: Props) {
             ))}
           </div>
         )}
+        {app === "places" && (
+          <PlacesApp engine={props.engine} hud={props.hud} onNavigate={props.onNavigate} onCab={(destination) => { setCabTo(destination); setApp("ride"); }} onClose={onClose} />
+        )}
         {app === "go" && <GoApp engine={props.engine} onClose={onClose} />}
-        {app === "ride" && <RideApp engine={props.engine} ride={props.ride} properties={props.properties} onNavigate={props.onNavigate} onClose={onClose} />}
+        {app === "ride" && <RideApp key={cabTo?.key ?? "ride"} engine={props.engine} ride={props.ride} properties={props.properties} initial={cabTo} onNavigate={props.onNavigate} onClose={onClose} />}
         {app === "travel" && <TravelApp engine={props.engine} economy={props.economy} onNavigate={props.onNavigate} onRefresh={props.onRefresh} onToast={props.onToast} onClose={onClose} />}
         {app === "transport" && <TransportApp {...props} />}
         {app === "jobs" && <JobsApp {...props} />}
