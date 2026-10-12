@@ -147,6 +147,7 @@ export function GameView({
   const suspendedRef = useRef(onSuspended);
   suspendedRef.current = onSuspended;
 
+  const previewVehicle = useCallback((choice: { modelId: string; colour: string } | null) => engine?.showcaseVehicle(choice), [engine]);
   const toast = useCallback((notice: Notice) => {
     const id = ++toastId.current;
     const at = Date.now();
@@ -640,7 +641,7 @@ export function GameView({
             <div className="save-state" data-testid="save-state">✓ {ago(savedAt, now)}</div>
           </section>
 
-          {objective && !guideHidden && !(hud.location === "interior" && (trip?.flight || trip?.excursion)) && (
+          {objective && !guideHidden && sheet?.kind !== "dealership" && !(hud.location === "interior" && (trip?.flight || trip?.excursion)) && (
             <section className={`objective ${guideOpen ? "open" : "collapsed"}`} data-testid="objective">
               <div className="objective-head">
                 <button className="objective-toggle" onClick={() => setGuideOpen((open) => !open)} aria-expanded={guideOpen} aria-label={guideOpen ? "Collapse guide" : "Expand guide"}>
@@ -825,6 +826,7 @@ export function GameView({
             if (vehicle.x !== null && vehicle.z !== null) setManualTarget({ point: [vehicle.x, vehicle.z], label: `Your ${vehicle.modelName}` });
           }}
           onTestDrive={(modelId, colour) => { setSheet(null); engine?.testDrive(modelId, colour); }}
+          onPreview={previewVehicle}
         />
       )}
       {sheet?.kind === "mechanic" && (

@@ -390,6 +390,9 @@ export class GameEngine {
   private bikeStations: BikeStationsView | null = null;
   /** Lekki Motors' forecourt display cars (client-only, but solid). */
   private showroom: VehicleView[] = [];
+  private showcaseAngle = 0;
+  /** The car being browsed at the dealership, shown on the forecourt with the camera circling it. */
+  private showcase: { view: VehicleView | null; modelId: string; colour: string; point: Vec2; yaw: number; request: number } | null = null;
   private rideCar: { vehicleId: string; car: CarController; pilot: RoutePilot; stopping: boolean; sentAt: number } | null = null;
   private tows = new Map<string, TowState>();
   private rideApproach: { rideId: string; view: VehicleView; driver: Avatar | null; path: Vec2[]; along: number[]; startAt: number; arrivesAt: number } | null = null;
@@ -1143,7 +1146,8 @@ export class GameEngine {
     }
 
     this.updateFlight(dt);
-    this.updateCamera(dt, bus);
+    if (this.showcase) this.updateShowcaseCamera(dt);
+    else this.updateCamera(dt, bus);
     if (!bus && !seatedTravel && now - this.lastSend > 66) {
       const moved = Math.hypot(x - this.lastSent.x, z - this.lastSent.z) > 0.02 || motion !== this.lastSent.motion;
       if (moved || now - this.lastSend > 1000) {
@@ -2871,6 +2875,56 @@ export class GameEngine {
       else this.net.send("rideCancel", { reason: result === "failed" ? "stuck" : "rider" });
     }
     return car;
+  }
+
+  /**
+   * Shows a dealership model on the forecourt and circles the camera round it, in the game's own scene (a second
+   * WebGL preview canvas runs phones out of graphics memory). Pass null to put the camera back.
+   */
+  showcaseVehicle(choice: { modelId: string; colour: string } | null) {
+    if (!choice) {
+      this.showcase?.view?.dispose();
+      this.showcase = null;
+      return;
+    }
+    if (!this.vehicleFactory) return;
+    const place = getPlace(TEST_DRIVE.dealerPlaceId);
+    const [dx, dz] = place.door;
+    const point: Vec2 = [dx + Math.sin(place.facing) * 5.6, dz + Math.cos(place.facing) * 5.6];
+    const current = this.showcase;
+    if (current && current.modelId === choice.modelId && current.colour === choice.colour) return;
+    const request = (current?.request ?? 0) + 1;
+    const next = { view: current?.view ?? null, modelId: choice.modelId, colour: choice.colour, point, yaw: place.facing + Math.PI * 0.75, request };
+    this.showcase = next;
+    const factory = this.vehicleFactory;
+    void factory.ensure(choice.modelId).then(() => {
+      if (this.showcase !== next || this.disposed) return;
+      next.view?.dispose();
+      const view = factory.create(`showcase ${choice.modelId}`, choice.modelId, choice.colour);
+      view.setDetail(true);
+      view.setPose(point[0], this.world.groundHeight(point[0], point[1]), point[1], next.yaw);
+      next.view = view;
+    });
+  }
+
+  private updateShowcaseCamera(dt: number) {
+    const showcase = this.showcase!;
+    const model = getVehicleModel(showcase.modelId);
+    const ground = this.world.groundHeight(showcase.point[0], showcase.point[1]);
+    // Sweep back and forth on the street side; a full circle would pass through the showroom wall.
+    this.showcaseAngle += dt * 0.3;
+    const facing = getPlace(TEST_DRIVE.dealerPlaceId).facing;
+    const angle = facing + Math.sin(this.showcaseAngle) * 1.05;
+    const radius = Math.max(5.5, model.length * 1.45 + 1.5);
+    // The dealership sheet covers the lower half, so aim below the car to lift it into the top half of the view.
+    const height = Math.max(1.8, model.height + 0.9);
+    const aim = height - Math.tan(0.42) * radius;
+    const target = new Vector3(showcase.point[0], ground + aim, showcase.point[1]);
+    const position = new Vector3(target.x + Math.sin(angle) * radius, ground + height, target.z + Math.cos(angle) * radius);
+    this.cameraTarget.copyFrom(target);
+    this.cameraPosition.copyFrom(position);
+    this.camera.position.copyFrom(position);
+    this.camera.setTarget(target);
   }
 
   testDrive(modelId: string, colour: string) {

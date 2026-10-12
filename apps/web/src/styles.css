@@ -319,6 +319,7 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 
 /* ---------- Sheets ---------- */
 .sheet-backdrop { position: absolute; inset: 0; z-index: 12; display: grid; place-items: end center; background: rgba(0,0,0,.25); }
+.sheet-backdrop.see-through { background: linear-gradient(to bottom, transparent 40%, rgba(0,0,0,.3)); }
 .sheet { width: min(560px, 96vw); max-height: 78vh; overflow-y: auto; margin-bottom: 24px; padding: 20px 22px; border-radius: 16px; color: #17312e; background: #f6f3ea; box-shadow: 0 20px 60px rgba(0,0,0,.4); font-size: calc(14px * var(--text-scale)); }
 .sheet header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
 .sheet h2 { margin: 4px 0 0; font-size: calc(24px * var(--text-scale)); }
@@ -815,3 +816,7 @@ table.departures td { padding: 6px 10px; border-bottom: 1px solid #23413d; }
 .agbero-prompt .row { display: flex; flex-wrap: wrap; gap: 6px; }
 .agbero-prompt p.small { margin: 0 0 6px; font-size: 12px; }
 .world-tag.agbero-tag { background: rgba(255, 236, 200, .96); }
+
+/* The dealership shows the car in the game view above, so its sheet stays in the lower half everywhere. */
+.sheet.wide.showcase-sheet { max-height: 52dvh; }
+@media (max-height: 520px) { .sheet.wide.showcase-sheet { max-height: 62dvh; width: min(560px, 60vw); justify-self: end; } }

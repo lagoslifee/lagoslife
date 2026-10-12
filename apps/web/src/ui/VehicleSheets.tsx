@@ -17,7 +17,6 @@ import {
 } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PropertyListing } from "../api";
-import { VehiclePreview } from "./VehiclePreview";
 import type { GameEngine } from "../game/engine";
 
 const kmh = (metresPerSecond: number) => Math.round(metresPerSecond * 3.6);
@@ -58,7 +57,12 @@ type SheetProps = {
   onToast: (notice: Notice) => void;
 };
 
-export function DealershipSheet({ place, economy, vehicles, onClose, onRefresh, onToast, onBought, onTestDrive }: SheetProps & { onBought: (vehicle: MyVehicle) => void; onTestDrive: (modelId: string, colour: string) => void }) {
+export function DealershipSheet({ place, economy, vehicles, onClose, onRefresh, onToast, onBought, onTestDrive, onPreview }: SheetProps & {
+  onBought: (vehicle: MyVehicle) => void;
+  onTestDrive: (modelId: string, colour: string) => void;
+  /** Shows the selected model on the forecourt in the game view; null when the sheet closes. */
+  onPreview: (choice: { modelId: string; colour: string } | null) => void;
+}) {
   const [selected, setSelected] = useState(VEHICLE_MODELS[0]!.id);
   const { busy, run } = useRunner(onToast, onRefresh);
   const [colours, setColours] = useState<Record<string, string>>(() => Object.fromEntries(VEHICLE_MODELS.map((model) => [model.id, model.colours[0]!])));
@@ -69,10 +73,15 @@ export function DealershipSheet({ place, economy, vehicles, onClose, onRefresh, 
   const balance = economy?.balance ?? 0;
   const bicycles = vehicles.filter((owned) => vehicleModelById.get(owned.modelId)?.body === "bicycle").length;
   const isFull = (model: { body: string }) => (model.body === "bicycle" ? bicycles >= 2 : vehicles.length - bicycles >= 3);
+  const selectedColour = colours[selected]!;
+  useEffect(() => {
+    onPreview({ modelId: selected, colour: selectedColour });
+  }, [selected, selectedColour, onPreview]);
+  useEffect(() => () => onPreview(null), [onPreview]);
 
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
-      <section className="sheet wide" role="dialog" aria-label={place.name} onClick={(event) => event.stopPropagation()}>
+    <div className="sheet-backdrop see-through" onClick={onClose}>
+      <section className="sheet wide showcase-sheet" role="dialog" aria-label={place.name} onClick={(event) => event.stopPropagation()}>
         <header>
           <div>
             <p className="eyebrow">{place.street.toUpperCase()} · DEALERSHIP</p>
@@ -80,9 +89,8 @@ export function DealershipSheet({ place, economy, vehicles, onClose, onRefresh, 
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close">✕</button>
         </header>
-        <p className="muted">Real-world favourites from Toyota to Lamborghini, plus Lekki Motors' own budget range, all paid in game naira. Your car is parked outside on Admiralty Way the moment you sign. Up to 3 motor vehicles and 2 bicycles each.</p>
-        <VehiclePreview modelId={selected} colour={colours[selected]!} />
-        <p className="muted small preview-name">{vehicleModelById.get(selected)!.name} · the exact model and colour you will get</p>
+        <p className="muted small">Tap a car to see it outside. It is parked on Admiralty Way the moment you sign · up to 3 motor vehicles and 2 bicycles.</p>
+        <p className="muted small preview-name">Showing on the forecourt: <strong>{vehicleModelById.get(selected)!.name}</strong> · the exact model and colour you will get</p>
         <div className="category-chips" role="tablist" aria-label="Vehicle category">
           {(["all", ...offered] as const).map((key) => (
             <button
