@@ -167,8 +167,8 @@ export function SecuritySheet({ place, economy, onClose, onRefresh, onToast }: S
           <button className="icon-button" onClick={onClose} aria-label="Close">✕</button>
         </header>
         <p className="muted">
-          Uniformed guards for {hours} hours. They walk behind you, follow your car in a black Hilux, open your gate when you get home, and nobody
-          will try to rob you while they're with you.
+          Uniformed guards for {hours} hours. They walk behind you, follow your car in a black Hilux, open your gate when you get home, and chase off
+          anyone who pulls a gun on you.
         </p>
         {status?.plan && (
           <p data-testid="security-active">
