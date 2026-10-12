@@ -712,6 +712,10 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .nav-line b { display: inline-block; min-width: 22px; color: #2fd3ff; font-size: 18px; }
 .nav-line small { color: #c9c3b6; font-weight: 600; }
 .nav-line.warn { color: #ffb4a3; }
+.airport-step { display: grid; gap: 2px; margin: 6px 0 0; padding: 8px 10px; border-radius: 10px; background: rgba(15, 60, 80, 0.72); border: 1px solid #3fd8ff; color: #f5f2e8; }
+.airport-step small { color: #9fe8ff; font-weight: 700; font-size: 11px; letter-spacing: 0.02em; }
+.airport-step strong { font-size: 17px; color: #3fd8ff; }
+.airport-step span { font-size: 12.5px; line-height: 1.35; }
 .nav-end { float: right; margin-left: 8px; padding: 2px 9px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .28); background: rgba(0, 0, 0, .25); color: #f5f2e8; font: inherit; font-size: 11px; cursor: pointer; }
 .game-view.touch .nav-line { font-size: 12px; }
 .game-view.touch .nav-line small { display: none; }

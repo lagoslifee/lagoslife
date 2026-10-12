@@ -1,4 +1,4 @@
-import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TravelPrompt, type AgberoEncounter, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
+import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { noteFps, report, setReportedQuality } from "../diagnostics";
@@ -18,6 +18,7 @@ import { ClubRadio } from "./ClubRadio";
 import { ClubBarSheet, ClubDoorSheet, ClubTableSheet } from "./ClubSheets";
 import { COMMUNITY_KINDS, CommunitySheet } from "./CommunitySheets";
 import { PlaceSheet } from "./Sheets";
+import { airportStep } from "./airport-guide";
 import { ExcursionPanel, FlightPanel, LOCAL_PHOTOS_KEY, TRAVEL_SHEET_KINDS, TravelPlaceSheet, TravelSpotSheet, loadLocalPhotos, tripHint } from "./TravelSheets";
 import { PlotSheet } from "./PlotSheet";
 import { HomeDesigner } from "./HomeDesigner";
@@ -484,6 +485,25 @@ export function GameView({
     toast({ tone: "success", text: `You have arrived at ${arrival.label}` });
   }, [arrival]);
 
+  const travelKind = hud?.location === "interior" ? (engine?.travelKind() ?? null) : null;
+  const inTerminal = travelKind === "airport-los" || travelKind === "airport-dxb";
+  const [airportTicket, setAirportTicket] = useState<TicketState | null>(null);
+  useEffect(() => {
+    if (!inTerminal) return;
+    let live = true;
+    const load = () => void api.travel().then((status) => live && setAirportTicket(status.ticket)).catch(() => undefined);
+    load();
+    const timer = window.setInterval(load, 5_000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [inTerminal, trip?.stage, trip?.ticketId, travelSpot === null]);
+  const airportGuide = airportStep(travelKind, trip, airportTicket);
+  useEffect(() => {
+    engine?.setIndoorGuide(airportGuide ? { spot: airportGuide.spot, label: airportGuide.label } : null);
+  }, [engine, airportGuide?.spot, airportGuide?.label]);
+
   const warnings = safety?.warnings ?? [];
   const blocking = Boolean(welcomeOpen || designing || sheet || plotSheet || travelSpot || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length || holdUp || robTarget);
 
@@ -548,6 +568,10 @@ export function GameView({
       return;
     }
     if (interaction.kind === "travel") {
+      if (interaction.interior === "airport-dxb" && trip?.stage === "arrived" && !trip.immigrationDone && interaction.spot !== "immigration") {
+        toast({ tone: "info", text: "Pass immigration first — follow the blue line to the desks straight ahead." });
+        return;
+      }
       setTravelSpot({ interior: interaction.interior, spot: interaction.spot });
       void refresh();
       return;
@@ -733,7 +757,15 @@ export function GameView({
                 {tow.stageEndsAt && tow.stageEndsAt > now ? ` · ${Math.ceil((tow.stageEndsAt - now) / 1000)}s` : ""}
               </button>
             ))}
-            {tripHint(trip, hud.location) && <p className="nav-line" data-testid="trip-hint">✈ {tripHint(trip, hud.location)}</p>}
+            {airportGuide ? (
+              <div className="airport-step" data-testid="airport-step">
+                <small>✈ Step {airportGuide.step} of {airportGuide.total} · follow the blue line</small>
+                <strong>{airportGuide.label}</strong>
+                <span>{airportGuide.detail}</span>
+              </div>
+            ) : (
+              tripHint(trip, hud.location) && <p className="nav-line" data-testid="trip-hint">✈ {tripHint(trip, hud.location)}</p>
+            )}
             <NavLine engine={engine} onEnd={rideTarget ? null : endRoute} />
           </section>
 

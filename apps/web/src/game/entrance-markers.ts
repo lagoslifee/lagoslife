@@ -7,7 +7,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
 import type { Vec2 } from "@lagos-living/shared";
 
-export type EntranceCandidate = { key: string; point: Vec2; name: string };
+export type EntranceCandidate = { key: string; point: Vec2; name: string; title?: string };
 
 type Marker = { root: TransformNode; arrow: Mesh; texture: DynamicTexture; accent: string; key: string | null };
 
@@ -28,6 +28,7 @@ export class EntranceMarkers {
   private readonly destination: Marker;
   private destinationRing: Mesh | null = null;
   private destinationName: string | null = null;
+  private destinationBoard: Mesh | null = null;
   private elapsed = 0;
   private sinceChoose = 1;
 
@@ -53,7 +54,7 @@ export class EntranceMarkers {
     pad.rotation.x = Math.PI / 2;
     pad.position.y = 0.05;
     pad.isPickable = false;
-    for (const child of this.destination.root.getChildMeshes()) if (child.name.endsWith("board")) child.position.y = 4.4;
+    this.destinationBoard = (this.destination.root.getChildMeshes().find((child) => child.name.endsWith("board")) as Mesh | undefined) ?? null;
   }
 
   private material(name: string, color: Color3) {
@@ -120,14 +121,18 @@ export class EntranceMarkers {
   update(dt: number, player: Vec2, outdoors: boolean, candidates: () => EntranceCandidate[], exit: Vec2 | null, destination: EntranceCandidate | null = null) {
     this.elapsed += dt;
     const bob = 2.3 + Math.sin(this.elapsed * 3) * 0.18;
-    const target = outdoors && destination && Math.hypot(destination.point[0] - player[0], destination.point[1] - player[1]) < DESTINATION_RANGE ? destination : null;
+    const target = destination && (!outdoors || Math.hypot(destination.point[0] - player[0], destination.point[1] - player[1]) < DESTINATION_RANGE) ? destination : null;
     if (target) {
-      if (this.destinationName !== target.name) {
-        this.destinationName = target.name;
-        this.draw(this.destination, "YOUR DESTINATION", `Walk in here · ${target.name}`);
+      const title = target.title ?? "YOUR DESTINATION";
+      const line = target.title ? target.name : `Walk in here · ${target.name}`;
+      if (this.destinationName !== `${title}|${line}`) {
+        this.destinationName = `${title}|${line}`;
+        this.draw(this.destination, title, line);
       }
-      this.place(this.destination, target.point);
-      this.destination.arrow.position.y = bob + 0.6;
+      if (this.destinationBoard) this.destinationBoard.position.y = outdoors ? 4.4 : 3.3;
+      if (outdoors) this.place(this.destination, target.point);
+      else this.place(this.destination, target.point, 0);
+      this.destination.arrow.position.y = outdoors ? bob + 0.6 : bob;
       const pulse = 1 + Math.sin(this.elapsed * 4) * 0.08;
       this.destinationRing?.scaling.set(pulse, 1, pulse);
     } else this.destination.root.setEnabled(false);

@@ -366,6 +366,9 @@ export class GameEngine {
   private ownGuards = 0;
   private crews: StreetCrews | null = null;
   private entrances: EntranceMarkers | null = null;
+  /** The desk the HUD wants the player to walk to next inside a terminal or other travel interior. */
+  private indoorGuide: { spot: string; label: string } | null = null;
+  private guideLine: Mesh | null = null;
   private homeStaff: HomeStaffView | null = null;
   private staffPosts: StaffPost[] = [];
   private staffPostsAt = 0;
@@ -1268,7 +1271,10 @@ export class GameEngine {
       this.homeStaff.update(dt, this.staffPosts);
     }
     this.partyLights?.update(now * 0.001);
-    this.entrances?.update(dt, [x, z], !this.interior && !bus && !seatedTravel, () => this.entranceCandidates(), this.interior && !seatedTravel ? (this.interior.spots.find((spot) => spot.id === "exit")?.point ?? null) : null, this.waypointDoor);
+    const guideSpot = this.interior && !seatedTravel && this.indoorGuide ? this.interior.spots.find((spot) => spot.id === this.indoorGuide!.spot) : undefined;
+    const indoorTarget = guideSpot && guideSpot.id !== "exit" ? { key: guideSpot.id, point: guideSpot.point, name: this.indoorGuide!.label, title: "NEXT STEP" } : null;
+    this.entrances?.update(dt, [x, z], !this.interior && !bus && !seatedTravel, () => this.entranceCandidates(), this.interior && !seatedTravel ? (this.interior.spots.find((spot) => spot.id === "exit")?.point ?? null) : null, this.interior ? indoorTarget : this.waypointDoor);
+    this.updateGuideLine([x, z], guideSpot?.point ?? null);
     this.spotters?.update(dt, now, this.spottedCar(x, z), [x, z], !this.interior && !bus);
     this.updateTout(dt, now, x, z);
     this.plotsView?.animate(dt);
@@ -2815,6 +2821,40 @@ export class GameEngine {
   /** Road distance and route between two points, for fares and ETAs. */
   planRoute(from: Vec2, to: Vec2) {
     return this.navigator.plan(from, to);
+  }
+
+  /** Which travel interior the player is standing in (terminal, hotel, deck…), or null on the street and at home. */
+  travelKind() {
+    return this.self && this.interior ? travelInteriorOf(this.self.location) : null;
+  }
+
+  setIndoorGuide(guide: { spot: string; label: string } | null) {
+    this.indoorGuide = guide;
+  }
+
+  /** A glowing strip on the floor from the player to the next desk; hidden once they are standing at it. */
+  private updateGuideLine(from: Vec2, to: Vec2 | null) {
+    const length = to ? Math.hypot(to[0] - from[0], to[1] - from[1]) : 0;
+    if (!to || length < 2.2) {
+      this.guideLine?.setEnabled(false);
+      return;
+    }
+    if (!this.guideLine) {
+      this.guideLine = MeshBuilder.CreateBox("indoor guide line", { width: 0.32, height: 0.02, depth: 1 }, this.scene);
+      const material = new PBRMaterial("indoor guide", this.scene);
+      material.unlit = true;
+      material.albedoColor = Color3.FromHexString("#3fd8ff");
+      material.alpha = 0.55;
+      this.guideLine.material = material;
+      this.guideLine.isPickable = false;
+    }
+    const run = length - 1.4;
+    const dx = (to[0] - from[0]) / length;
+    const dz = (to[1] - from[1]) / length;
+    this.guideLine.setEnabled(true);
+    this.guideLine.scaling.z = run;
+    this.guideLine.rotation.y = Math.atan2(dx, dz);
+    this.guideLine.position.set(from[0] + dx * (0.3 + run / 2), 0.035, from[1] + dz * (0.3 + run / 2));
   }
 
   setWaypoint(target: { point: Vec2; label: string } | null) {

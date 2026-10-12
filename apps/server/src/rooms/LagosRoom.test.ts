@@ -992,6 +992,17 @@ describe("LagosRoom shared flights", () => {
   };
   const board = (room: Internals, client: FakeClient) => room.handleTravelCounter(client, { action: "board" });
 
+  it("turns Dubai arrivals away from every desk until they have passed immigration", async () => {
+    const { room, join, player, notices } = setup();
+    const internals = room as Internals;
+    const ada = join("ada");
+    const checkin = travelSpot("airport-dxb", "checkin")!;
+    Object.assign(player(ada), { location: "airport:dxb", x: checkin[0], z: checkin[1], trip: { stage: "arrived", ticketId: "t-ada", leg: "outbound", flight: null, immigrationDone: false, bagCollected: false, excursion: null, room: null } });
+    await internals.handleTravelCounter(ada, { action: "checkin" });
+    expect(travel.advanceLeg).not.toHaveBeenCalled();
+    expect(notices(ada).at(-1)).toMatch(/Pass immigration first/);
+  });
+
   it("puts everyone boarding in the window on one flight with unique seats and one departure time", async () => {
     const { room, join, player } = setup();
     const internals = room as Internals;

@@ -378,6 +378,8 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
         get("glass").box(OX + ix + dx, 1.6, OZ + iz + 1.2, 1.4, 0.8, 0.04);
       }
       sign("Immigration", "Fictional · game roleplay", ix, 2.6, iz + 1.8, 2.6);
+      hang("sign immigration", ix, iz - 1.0, 6, [{ text: "A  IMMIGRATION", colour: Y, size: 40 }, { text: "All arrivals start here · passport control", size: 20 }], "north");
+      hang("sign baggage", layout.spots.baggage![0] - 0.6, layout.spots.baggage![1] + 3.4, 3.4, [{ text: "B  BAGGAGE", colour: Y, size: 40 }, { text: "After immigration · then EXIT", size: 20 }], "north");
       const [bx, bz] = layout.spots.baggage!;
       solid("chrome", bx + 1.4, 0.35, bz, 1.4, 0.7, 5.5, [0.45, 0.47, 0.5]);
       const belt = MeshBuilder.CreateBox("baggage belt", { width: 1.1, height: 0.05, depth: 5.2 }, scene);

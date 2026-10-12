@@ -2894,6 +2894,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     }
     if (kind !== "airport-los" && kind !== "airport-dxb") return;
     const leg: Leg = kind === "airport-los" ? "outbound" : "return";
+    if (kind === "airport-dxb" && player.trip.stage === "arrived" && !player.trip.immigrationDone && action !== "immigration") {
+      return fail("Pass immigration first: the desks are straight ahead of the arrivals gate.");
+    }
     player.entering = true;
     try {
       if (action === "checkin") {
