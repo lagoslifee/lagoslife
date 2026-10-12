@@ -780,7 +780,7 @@ export class GameEngine {
     ];
     return lots.map(({ modelId, side }, index) => {
       const model = getVehicleModel(modelId);
-      const view = factory.create(`showroom-${index}`, modelId, model.colours[0]!);
+      const view = factory.create(`showroom-${index}`, modelId, model.colours[(index * 3 + 3) % model.colours.length]!);
       const x = dx + fx * 4.2 + rx * side * 5.4;
       const z = dz + fz * 4.2 + rz * side * 5.4;
       view.setPose(x, this.world.groundHeight(x, z), z, place.facing + side * 0.55);

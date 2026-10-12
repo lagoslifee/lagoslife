@@ -269,6 +269,56 @@ function buildWheel(scene: Scene, model: VehicleModel) {
   return wheel;
 }
 
+/**
+ * A smooth alloy wheel in one vertex-coloured mesh, used in place of a modelled car's own low-poly wheel: round tyre
+ * with bulged sidewalls, dark barrel, bright rim lip, five twin spokes, hub, lug nuts, brake disc and caliper. The
+ * face is on the -x side once rotated (like the modelled wheels), so right-hand wheels are turned about Y.
+ */
+function buildAlloyWheel(scene: Scene, radius: number, width: number, sporty: boolean) {
+  const R = radius;
+  const W = Math.max(0.12, width);
+  const rimR = R * 0.68;
+  const face = W / 2;
+  const colour = (mesh: Mesh, hex: string) => {
+    const c = Color4.FromHexString(`${hex}ff`);
+    const count = mesh.getTotalVertices();
+    const colours = new Float32Array(count * 4);
+    for (let index = 0; index < count; index += 1) colours.set([c.r, c.g, c.b, 1], index * 4);
+    mesh.setVerticesData("color", colours);
+    return mesh;
+  };
+  const at = (mesh: Mesh, matrix: Matrix) => {
+    mesh.bakeTransformIntoVertices(matrix);
+    return mesh;
+  };
+  const spokeHex = sporty ? "#3b3e44" : "#c9cdd3";
+  const pieces: Mesh[] = [
+    colour(MeshBuilder.CreateCylinder("tyre tread", { diameter: R * 2, height: W * 0.78, tessellation: 40 }, scene), "#131313"),
+    ...[-1, 1].map((side) =>
+      colour(at(MeshBuilder.CreateTorus("tyre wall", { diameter: R * 2 - W * 0.22, thickness: W * 0.22, tessellation: 40 }, scene), Matrix.Translation(0, side * W * 0.36, 0)), "#161616"),
+    ),
+    colour(MeshBuilder.CreateCylinder("tyre wall face", { diameter: R * 1.86, height: W * 0.96, tessellation: 40 }, scene), "#1b1b1b"),
+    colour(MeshBuilder.CreateCylinder("rim barrel", { diameter: rimR * 2, height: W * 0.98, tessellation: 32 }, scene), "#24262a"),
+    colour(at(MeshBuilder.CreateTorus("rim lip", { diameter: rimR * 2, thickness: R * 0.05, tessellation: 36 }, scene), Matrix.Translation(0, face, 0)), "#e3e6ea"),
+    colour(at(MeshBuilder.CreateCylinder("brake disc", { diameter: rimR * 1.55, height: 0.025, tessellation: 28 }, scene), Matrix.Translation(0, face - W * 0.4, 0)), "#7a7c80"),
+    colour(at(MeshBuilder.CreateBox("caliper", { width: rimR * 0.35, height: 0.06, depth: rimR * 0.5 }, scene), Matrix.Translation(0, face - W * 0.32, rimR * 0.58)), sporty ? "#c8102e" : "#3a3a3d"),
+    colour(at(MeshBuilder.CreateCylinder("hub", { diameter: rimR * 0.42, height: 0.05, tessellation: 18 }, scene), Matrix.Translation(0, face - 0.01, 0)), spokeHex),
+    colour(at(MeshBuilder.CreateCylinder("centre cap", { diameter: rimR * 0.2, height: 0.06, tessellation: 14 }, scene), Matrix.Translation(0, face, 0)), "#1c1d20"),
+  ];
+  for (let index = 0; index < 5; index += 1) {
+    const angle = (index / 5) * Math.PI * 2;
+    for (const offset of [-0.15, 0.15]) {
+      const spoke = MeshBuilder.CreateBox("spoke", { width: rimR * 0.17, height: 0.045, depth: rimR * 0.8 }, scene);
+      pieces.push(colour(at(spoke, Matrix.Translation(0, face - 0.012, rimR * 0.58).multiply(Matrix.RotationY(angle + offset))), spokeHex));
+    }
+    const nut = MeshBuilder.CreateCylinder("lug nut", { diameter: rimR * 0.06, height: 0.07, tessellation: 6 }, scene);
+    pieces.push(colour(at(nut, Matrix.Translation(0, face, rimR * 0.13).multiply(Matrix.RotationY(angle + Math.PI / 5))), "#e8eaed"));
+  }
+  const wheel = Mesh.MergeMeshes(pieces, true, true)!;
+  wheel.bakeTransformIntoVertices(Matrix.RotationZ(Math.PI / 2));
+  return wheel;
+}
+
 const PARTS: Part[] = ["glass", "trim", "chrome", "interior", "plate", "headOff", "headOn", "tailOff", "tailOn", "tailBrake", "reverse", "wheel", "steer", "fork"];
 
 function steeringWheel(scene: Scene) {
@@ -330,7 +380,14 @@ function assetTemplate(scene: Scene, model: VehicleModel, container: AssetContai
   sources.trim = take("trim", "trim");
   sources.plate = take("plate", "plate");
   sources.interior = take("interior", "interior");
-  sources.wheel = take("wheel", "wheel");
+  const modelledWheel = meshes.get("wheel");
+  if (modelledWheel) {
+    const { minimum, maximum } = modelledWheel.refreshBoundingInfo().getBoundingInfo().boundingBox;
+    const wheel = buildAlloyWheel(scene, Math.max(maximum.y - minimum.y, maximum.z - minimum.z) / 2, maximum.x - minimum.x, model.category === "sports");
+    wheel.bakeTransformIntoVertices(Matrix.Translation((minimum.x + maximum.x) / 2, (minimum.y + maximum.y) / 2, (minimum.z + maximum.z) / 2));
+    modelledWheel.dispose();
+    sources.wheel = templateSource(wheel, `${model.id} wheel`);
+  }
   sources.headOn = take("headlamp", "headOn", true);
   sources.headOff = take("headlamp", "headOff");
   sources.tailOn = take("taillamp", "tailOn", true);
@@ -340,7 +397,7 @@ function assetTemplate(scene: Scene, model: VehicleModel, container: AssetContai
   const body = templateSource(meshes.get("paint")!, `${model.id} paint`);
   body.setEnabled(false);
   const textured = looks.paint ? { headOff: looks.palette, tailOff: looks.palette } : {};
-  return { body, sources, looks: { trim: looks.palette, wheel: looks.palette, interior: looks.cabin, glass: looks.glass, ...textured }, modelled: true, paint: looks.paint };
+  return { body, sources, looks: { trim: looks.palette, interior: looks.cabin, glass: looks.glass, ...textured }, modelled: true, paint: looks.paint };
 }
 
 /** Baked paint detail (white) that the chosen colour tints, with the model's own normal map. */
@@ -738,7 +795,7 @@ export class VehicleFactory {
       const source = template.sources[part];
       if (!source) continue;
       source.material = template.looks[part] ?? this.looks[part];
-      if (part === "wheel" && !template.modelled) source.useVertexColors = true;
+      if (part === "wheel") source.useVertexColors = true;
     }
   }
 

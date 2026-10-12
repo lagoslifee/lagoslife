@@ -1,5 +1,5 @@
 import type { Scene } from "@babylonjs/core/scene";
-import { getPlace, getVehicleModel, STOPS, VEHICLE_MODELS, type Vec2 } from "@lagos-living/shared";
+import { getPlace, getVehicleModel, POLICE_CHECKPOINTS, STOPS, VEHICLE_MODELS, type Vec2 } from "@lagos-living/shared";
 import { appearanceFor, type Avatar, type AvatarFactory } from "./avatar";
 import type { DanfoView } from "./danfo";
 import { densify, hash, pointAt, polylineLength } from "./geometry";
@@ -20,7 +20,14 @@ type Car = {
   lane: number;
   stoppedFor: number;
   yaw: number;
+  /** Police checkpoint this car has already been waved through, and how long it has waited at the current one. */
+  checked: string | null;
+  checkWait: number;
 };
+
+/** Cars crawl within this distance of a police checkpoint and stop briefly at the officers' line. */
+const CHECKPOINT_ZONE = 30;
+const CHECKPOINT_WAIT = 2.5;
 
 type Walker = {
   avatar: Avatar;
@@ -84,7 +91,7 @@ export class AmbientLife {
       const colours = getVehicleModel(modelId).colours;
       const view = vehicles.create(`traffic-${index}`, modelId, colours[Math.floor(hash(index * 13 + 5) * colours.length)]!);
       view.setDetail(false);
-      const car: Car = { view, road: this.roads[0]!, points: [], length: 0, s: 0, direction: 1, speed: 0, cruise: 8, lane: 1.9, stoppedFor: 0, yaw: 0 };
+      const car: Car = { view, road: this.roads[0]!, points: [], length: 0, s: 0, direction: 1, speed: 0, cruise: 8, lane: 1.9, stoppedFor: 0, yaw: 0, checked: null, checkWait: 0 };
       this.spawnCar(car, index * 7.31, null);
       this.cars.push(car);
     }
@@ -223,6 +230,26 @@ export class AmbientLife {
       for (const bus of buses) if (blockedBy(bus.root.position.x, bus.root.position.z, 2.0, 12 + gap)) target = 0;
       for (const other of this.cars) {
         if (other !== car && blockedBy(other.view.x, other.view.z, 1.6, 7 + gap + other.view.model.length / 2 + car.view.model.length / 2)) target = Math.min(target, 0);
+      }
+      for (const checkpoint of POLICE_CHECKPOINTS) {
+        const dx = checkpoint.point[0] - x;
+        const dz = checkpoint.point[1] - z;
+        const distance = Math.hypot(dx, dz);
+        if (distance > CHECKPOINT_ZONE + 10) {
+          if (car.checked === checkpoint.id) car.checked = null;
+          continue;
+        }
+        if (distance > CHECKPOINT_ZONE) continue;
+        target = Math.min(target, 3.5);
+        const ahead = dx * dirX + dz * dirZ;
+        const lateral = Math.abs(dx * dirZ - dz * dirX);
+        if (car.checked === checkpoint.id || ahead < 0 || ahead > 4 || lateral > 8) continue;
+        target = 0;
+        if (car.speed < 0.3) car.checkWait += dt;
+        if (car.checkWait > CHECKPOINT_WAIT) {
+          car.checked = checkpoint.id;
+          car.checkWait = 0;
+        }
       }
       const accel = target > car.speed ? 4 : 9;
       car.speed += Math.max(-accel * dt, Math.min(accel * dt, target - car.speed));

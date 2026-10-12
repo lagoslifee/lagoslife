@@ -268,10 +268,14 @@ const REAL_CATALOGUE: RealCar[] = [
   { id: "bentley-continental-gt", name: "Bentley Continental GT", category: "luxury", body: "saloon", price: 9_200_000, topSpeed: 26, acceleration: 6, mass: 2_250, seats: 4, colours: [WHITE, BLACK, "#1d3b2f", "#23324a", "#7a1c1c"], description: "Hand-built British grand tourer. Fast, plush and very, very green." },
 ];
 
+/** Popular Lagos paint options offered on every real model alongside its own colours. */
+const POPULAR_PAINTS = ["#8a1c1c", "#1f3a5f", "#2e4d2c", "#5b6770", "#c8102e", "#1f5fbf", "#e0b02a", "#6b2d5c", "#0f6b6b", "#b5651d"];
+
 const realModels: VehicleModel[] = REAL_CATALOGUE.filter((car) => REAL_VEHICLE_ASSETS[car.id]).map((car) => ({
   braking: 10,
   maxSteer: 0.52,
   ...car,
+  colours: [...new Set([...car.colours, ...POPULAR_PAINTS])],
   reverseSpeed: 5,
   wheelbase: 0,
   length: 0,
