@@ -17,6 +17,7 @@ import {
   pickOf,
   roundFixtures,
   spinMultiplier,
+  spinSlice,
   spinReturn,
   spinRound,
   spinStopsAt,
@@ -257,7 +258,7 @@ export async function bettingStatus(userId: string, now = Date.now()): Promise<B
       round,
       stopsAt: spinStopsAt(round),
       closesAt: spinStopsAt(round) - SPIN_CLOSE_MS,
-      last: Array.from({ length: 12 }, (_, index) => round - 1 - index).map((past) => ({ round: past, multiplier: spinResult(past) })),
+      last: rows.filter((row) => row.game === "spin" && row.status !== "pending").slice(0, 12).map((row, index) => ({ round: index, multiplier: row.odds === null ? spinResult(Number(row.round)) : Number(row.odds) })),
     },
     football: {
       upcoming: fixturesFor(current + 1),
@@ -270,7 +271,7 @@ export async function bettingStatus(userId: string, now = Date.now()): Promise<B
       const result = fixture && row.status !== "pending" ? matchResult(fixture, fortune) : null;
       const detail =
         row.game === "spin"
-          ? row.status === "pending" ? "Wheel spinning…" : `Wheel stopped on ${spinResult(Number(row.round))}×`
+          ? row.status === "pending" ? "Wheel spinning…" : `Wheel stopped on ${row.odds === null ? spinResult(Number(row.round)) : Number(row.odds)}×`
           : fixture
             ? `${fixtureName(fixture)} · ${row.selection === "draw" ? "Draw" : footballClub(row.selection === "home" ? fixture.home : fixture.away)?.name} to win${result ? ` · FT ${result.home}–${result.away}` : ""}`
             : row.selection;
@@ -307,11 +308,31 @@ async function placeBet(userId: string, bet: { game: "spin" | "football"; round:
   });
 }
 
+/** Your own spin: the result is drawn the moment you bet, settled and paid in the same transaction. */
 export async function betSpin(userId: string, input: { stake: number; idempotencyKey: string }, now = Date.now()) {
-  let round = spinRound(now);
-  if (now > spinStopsAt(round) - SPIN_CLOSE_MS) round += 1;
-  const result = await placeBet(userId, { game: "spin", round, fixtureId: null, selection: "wheel", stake: input.stake, odds: null, settlesAt: spinStopsAt(round), label: "Spin the wheel", idempotencyKey: input.idempotencyKey });
-  return { ...result, round, stopsAt: spinStopsAt(round) };
+  if (input.stake < BET_LIMITS.min || input.stake > BET_LIMITS.max) throw new EconomyError("Stake out of range.");
+  return withTransaction(async (client) => {
+    await ensureWallet(client, userId);
+    await client.query(`SELECT 1 FROM wallet WHERE user_id = $1 FOR UPDATE`, [userId]);
+    const key = `bet:${input.idempotencyKey}`;
+    if (await replayed(client, userId, key)) {
+      const previous = await client.query<{ odds: string; payout: string; id: string }>(`SELECT id, odds, payout FROM bet WHERE user_id = $1 AND game = 'spin' ORDER BY created_at DESC LIMIT 1`, [userId]);
+      const row = previous.rows[0];
+      const multiplier = Number(row?.odds ?? 0);
+      return { replayed: true, balance: await balanceOf(client, userId), multiplier, payout: Number(row?.payout ?? 0), slice: spinSlice(multiplier, now) };
+    }
+    const id = randomUUID();
+    const multiplier = spinMultiplier(fortune(`spin-bet:${id}`));
+    const payout = Math.floor(input.stake * multiplier);
+    let balance = await debitWallet(client, userId, input.stake, "bet_stake", "Spin the wheel", key, { game: "spin" });
+    await client.query(
+      `INSERT INTO bet (id, user_id, game, round, fixture_id, selection, stake, odds, settles_at, status, payout, settled_at)
+       VALUES ($1, $2, 'spin', $3, NULL, 'wheel', $4, $5, NOW(), $6, $7, NOW())`,
+      [id, userId, spinRound(now), input.stake, multiplier, payout > 0 ? "won" : "lost", payout],
+    );
+    if (payout > 0) balance = await creditWallet(client, userId, payout, "bet_win", `Spin win · ${multiplier}×`, `bet-win:${id}`);
+    return { replayed: false, balance, multiplier, payout, slice: spinSlice(multiplier, now) };
+  });
 }
 
 export async function betFootball(userId: string, input: { fixtureId: string; pick: Pick; stake: number; idempotencyKey: string }, now = Date.now()) {

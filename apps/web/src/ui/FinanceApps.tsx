@@ -324,48 +324,44 @@ function Wheel({ rotation, spinning }: { rotation: number; spinning: boolean }) 
 
 type TabProps = { status: BettingStatus; offset: number; reload: () => Promise<void> } & Omit<MoneyProps, "economy">;
 
-function SpinTab({ status, offset, reload, onToast, onRefresh }: TabProps) {
-  const now = useNow(250);
+function SpinTab({ status, reload, onToast, onRefresh }: TabProps) {
   const [stake, setStake] = useState(1_000);
   const [busy, setBusy] = useState(false);
+  const [spinning, setSpinning] = useState(false);
   const [rotation, setRotation] = useState(0);
-  const shown = useRef<number | null>(null);
-  const last = status.spin.last[0];
-  useEffect(() => {
-    if (!last || shown.current === last.round) return;
-    const first = shown.current === null;
-    shown.current = last.round;
-    const target = -spinSlice(last.multiplier, last.round) * SLICE;
-    setRotation((current) => (first ? target : current - (((current - target) % 360) + 360) % 360 - 360 * 4));
-  }, [last]);
-  useEffect(() => {
-    const wait = status.spin.stopsAt + offset - Date.now() + 400;
-    const timer = window.setTimeout(() => void reload().then(onRefresh), Math.max(400, wait));
-    return () => window.clearTimeout(timer);
-  }, [status.spin.stopsAt, offset, reload, onRefresh]);
-  const left = Math.max(0, Math.ceil((status.spin.stopsAt - (now - offset)) / 1000));
-  const closed = now - offset > status.spin.closesAt;
-  const mine = status.bets.filter((bet) => bet.game === "spin" && bet.status === "pending");
+  const [result, setResult] = useState<{ multiplier: number; payout: number } | null>(null);
   const place = async () => {
     setBusy(true);
+    setResult(null);
     try {
-      const result = await api.betSpin(stake);
-      onToast({ tone: "info", text: `${naira(stake)} on the wheel. It stops in ${Math.max(1, Math.ceil((result.stopsAt + offset - Date.now()) / 1000))} s.` });
+      const spin = await api.betSpin(stake);
+      const target = -spin.slice * SLICE;
+      setSpinning(true);
+      setRotation((current) => current - ((((current - target) % 360) + 360) % 360) - 360 * 5);
+      await new Promise((resolve) => window.setTimeout(resolve, 3_200));
+      setSpinning(false);
+      setResult({ multiplier: spin.multiplier, payout: spin.payout });
+      onToast(spin.payout > 0 ? { tone: "success", text: `${spin.multiplier}×! You won ${naira(spin.payout)}.` } : { tone: "info", text: `0× — the wheel kept ${naira(stake)}.` });
       await reload();
       await onRefresh();
     } catch (error) {
       onToast({ tone: "error", text: message(error) });
     } finally {
       setBusy(false);
+      setSpinning(false);
     }
   };
   return (
     <div className="spin-tab">
-      <Wheel rotation={rotation} spinning={closed && last?.round !== status.spin.round} />
-      <p className="spin-timer" data-testid="spin-timer">{closed ? `No more bets · wheel stops in ${left}s` : `Wheel stops in ${left}s`}</p>
-      <div className="spin-history">
-        {status.spin.last.map((entry) => <span key={entry.round} style={{ background: segmentColour(entry.multiplier) }}>{entry.multiplier}×</span>)}
-      </div>
+      <Wheel rotation={rotation} spinning={false} />
+      <p className="spin-timer" data-testid="spin-timer">
+        {spinning ? "Spinning…" : result ? (result.payout > 0 ? `${result.multiplier}× · you won ${naira(result.payout)}` : "0× · try again") : "Your own wheel: tap spin and see the result straight away."}
+      </p>
+      {status.spin.last.length > 0 && (
+        <div className="spin-history">
+          {status.spin.last.map((entry) => <span key={entry.round} style={{ background: segmentColour(entry.multiplier) }}>{entry.multiplier}×</span>)}
+        </div>
+      )}
       <label className="field"><span>Stake (₦)</span><input type="number" inputMode="numeric" min={BET_LIMITS.min} max={BET_LIMITS.max} value={stake} onChange={(event) => setStake(Math.floor(Number(event.target.value)))} /></label>
       <div className="category-chips">
         {[500, 1_000, 5_000, 20_000, 100_000].map((value) => <button key={value} className="chip" onClick={() => setStake(value)}>₦{value / 1000}k</button>)}
@@ -373,10 +369,9 @@ function SpinTab({ status, offset, reload, onToast, onRefresh }: TabProps) {
         <button className="chip" onClick={() => setStake((value) => Math.max(BET_LIMITS.min, Math.floor(value / 2)))}>½</button>
       </div>
       <button className="primary" disabled={busy || stake < BET_LIMITS.min || stake > BET_LIMITS.max} onClick={() => void place()} data-testid="spin-bet">
-        {busy ? "Placing…" : closed ? `Bet ${naira(stake)} on the next spin` : `Bet ${naira(stake)} on this spin`}
+        {busy ? "Spinning…" : `Spin for ${naira(stake)}`}
       </button>
-      {mine.length > 0 && <p className="small">Your stake on the wheel: {naira(mine.reduce((sum, bet) => sum + bet.stake, 0))}</p>}
-      <p className="muted small">One wheel for everyone: it spins every 20 seconds and every resident sees the same result. Land on 2× and your stake doubles; 0× loses it. On average the wheel pays back about {Math.round(status.returnToPlayer * 100)}% of stakes.</p>
+      <p className="muted small">Land on 2× and your stake doubles; 0× loses it. On average the wheel pays back about {Math.round(status.returnToPlayer * 100)}% of stakes. Game naira only.</p>
     </div>
   );
 }

@@ -91,17 +91,18 @@ describe("market", () => {
 });
 
 describe("betting", () => {
-  it("settles a spin with the round's shared result", async () => {
-    const placedAt = Date.UTC(2030, 4, 1, 9, 0, 1);
+  it("settles your own spin instantly and pays the drawn multiplier once", async () => {
     const start = await balance(bob.id);
-    const placed = await betSpin(bob.id, { stake: 1_000, idempotencyKey: randomUUID() }, placedAt);
-    expect(placed.round).toBe(spinRound(placedAt));
-    const status = await bettingStatus(bob.id, placed.stopsAt + 1);
+    const key = randomUUID();
+    const placed = await betSpin(bob.id, { stake: 1_000, idempotencyKey: key });
+    const again = await betSpin(bob.id, { stake: 1_000, idempotencyKey: key });
+    expect(again.balance).toBe(placed.balance);
+    expect(placed.payout).toBe(Math.floor(1_000 * placed.multiplier));
+    expect(await balance(bob.id)).toBe(start - 1_000 + placed.payout);
+    const status = await bettingStatus(bob.id);
     const bet = status.bets.find((entry) => entry.game === "spin")!;
-    const multiplier = spinResult(placed.round);
-    expect(bet.status).toBe(multiplier > 0 ? "won" : "lost");
-    expect(await balance(bob.id)).toBe(start - 1_000 + Math.floor(1_000 * multiplier));
-    expect(SPIN_ROUND_MS).toBe(20_000);
+    expect(bet.status).toBe(placed.multiplier > 0 ? "won" : "lost");
+    expect(status.spin.last[0]!.multiplier).toBe(placed.multiplier);
   });
 
   it("only takes football bets on the next round and pays the fixture's real result", async () => {
