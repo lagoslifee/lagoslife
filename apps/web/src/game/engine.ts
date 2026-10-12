@@ -1814,7 +1814,8 @@ export class GameEngine {
         let label = `${plot.name} · lease or buy land`;
         let detail: string | undefined = `₦${PLOT_TERMS.leaseRent.toLocaleString()}/week or ₦${PLOT_TERMS.purchasePrice.toLocaleString()}`;
         if (state?.status === "mine") {
-          if (!construction) [label, detail] = [`${plot.name} · choose a house to build`, "Your land"];
+          if (state.business) [label, detail] = [`${state.business.name}`, "Your business premises"];
+          else if (!construction) [label, detail] = [`${plot.name} · build a house or business`, "Your land"];
           else if (construction.completed) [label, detail] = [`${plot.name} · manage your land`, design?.name];
           else {
             const progress = buildProgress(construction, Date.now());

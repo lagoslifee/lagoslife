@@ -132,14 +132,17 @@ export function currentObjective(
         step: 1,
         total: TOTAL,
         title: `Lease or buy ${plot.name}`,
-        detail: `Walk to the red “For lease or sale” sign and press E. Lease ₦15,000/week, or buy for ₦120,000.`,
+        detail: `Walk to the red “Land for sale” sign and press E. The land comes empty: lease ₦15,000/week, or buy for ₦120,000.`,
         target: { point: plot.gate, label: plot.name },
       };
     }
     const plot = PLOTS.find((entry) => entry.id === myPlot.id)!;
     const construction = myPlot.construction;
+    if (myPlot.business && !construction) {
+      return { step: 2, total: TOTAL, title: `${myPlot.business.name} is open`, detail: "Your land holds your business. Collect its takings in Phone → Business, and rent or buy a flat to live in.", target: null, choose: true };
+    }
     if (!construction) {
-      return { step: 2, total: TOTAL, title: "Choose a house to build", detail: `At ${plot.name}'s sign, pick a cottage, bungalow or duplex and pay for the foundation.`, target: { point: plot.gate, label: plot.name } };
+      return { step: 2, total: TOTAL, title: "Choose a house to build", detail: `At ${plot.name}'s sign, pick a house (cottage up to the helipad sky mansion) and pay for the foundation, or build a business there.`, target: { point: plot.gate, label: plot.name } };
     }
     if (!construction.completed) {
       const design = houseDesign(construction.designId)!;

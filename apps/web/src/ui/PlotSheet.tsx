@@ -98,7 +98,7 @@ export function PlotSheet({ plotId, state, economy, now, onClose, onRefresh, onT
       </>
     );
   } else if (state.status === "taken") {
-    body = <p className="muted">Another resident holds this land. Look for a red “For lease or sale” sign on another plot.</p>;
+    body = <p className="muted">Another resident holds this land. Look for a red “Land for sale” sign on another plot.</p>;
   } else if (state.business) {
     const spec = BUSINESS_TYPES[state.business.type];
     body = (
