@@ -102,6 +102,7 @@ import {
   type Favourite,
   type TravelPrompt,
   type FoodParcel,
+  propertyPlace,
   regionOf,
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
@@ -137,6 +138,7 @@ import { DanfoFactory, type DanfoView } from "./danfo";
 import { MeshBuilderBatch } from "./geometry";
 import { buildMealTray, buildTrolley } from "./flight-scenes";
 import { Couriers } from "./couriers";
+import { ListingBoards, type BoardLabel } from "./listing-boards";
 import { buildInterior, type HomeRest, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
 import { createMaterials, type Materials, type Quality } from "./materials";
 import { SignAtlas } from "./sign-atlas";
@@ -387,6 +389,9 @@ export class GameEngine {
   private guideLine: Mesh | null = null;
   private homeStaff: HomeStaffView | null = null;
   private couriers: Couriers | null = null;
+  private listingBoards: ListingBoards | null = null;
+  private listingLabels = new Map<string, BoardLabel>();
+  private boardsAt = 0;
   private heldParcel: { id: string; node: TransformNode } | null = null;
   private staffPosts: StaffPost[] = [];
   private staffPostsAt = 0;
@@ -779,6 +784,7 @@ export class GameEngine {
     this.showroom = this.buildShowroom(this.vehicleFactory);
     this.bikeStations = new BikeStationsView(scene, this.materials, (x, z) => this.world.groundHeight(x, z), this.vehicleFactory, (meshes) => this.addCaster(meshes));
     this.entrances = new EntranceMarkers(scene, (x, z) => this.world.groundHeight(x, z));
+    this.listingBoards = new ListingBoards(scene);
     this.couriers = new Couriers(scene, () => this.avatars, () => this.vehicleFactory, () => this.navigator ?? null, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) this.homeStaff = new HomeStaffView(this.avatars, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) this.crews = new StreetCrews(scene, this.avatars, this.vehicleFactory, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
@@ -1307,6 +1313,10 @@ export class GameEngine {
     this.interior?.update(now * 0.001);
     this.updateWaiters(dt);
     if (!this.staff.idle) this.staff.update(dt, [this.controller.x, this.controller.z], now * 0.001);
+    if (now - this.boardsAt > 1_000) {
+      this.boardsAt = now;
+      this.listingBoards?.update(this.world.placeSigns, this.listingLabels);
+    }
     this.couriers?.update(dt, { x: this.controller.x, z: this.controller.z, location: this.self?.location ?? "street" });
     const leaderView = seatView && ride ? seatView : null;
     this.updateEscorts(dt, {
@@ -1741,7 +1751,8 @@ export class GameEngine {
         }
         continue;
       }
-      offer(distance, { key: bind("interact"), label: `${PLACE_ACTIONS[place.kind]} · ${place.name}`, detail: place.street }, () =>
+      const yours = this.listingLabels.get(place.id) === "mine";
+      offer(distance, { key: bind("interact"), label: yours ? `Your home · ${place.name}` : `${PLACE_ACTIONS[place.kind]} · ${place.name}`, detail: place.street }, () =>
         place.kind === "starter_home" ? this.enterProperty("starter-home", "enter") : this.callbacks.interact({ kind: "place", place }),
       );
     }
@@ -2038,6 +2049,25 @@ export class GameEngine {
   }
 
   /** A rider walks up and hands over a food or pharmacy order. */
+  /** Which For Sale / For Rent boards are yours or taken, from the live listings (flats share one board per building). */
+  setListings(listings: Array<{ id: string; isMine: boolean; available: boolean }>) {
+    const byPlace = new Map<string, { mine: boolean; open: boolean }>();
+    for (const listing of listings) {
+      const place = propertyPlace(listing.id);
+      if (!place || (place.kind !== "sale" && place.kind !== "rental")) continue;
+      const entry = byPlace.get(place.id) ?? { mine: false, open: false };
+      entry.mine ||= listing.isMine;
+      entry.open ||= listing.available && !listing.isMine;
+      byPlace.set(place.id, entry);
+    }
+    this.listingLabels = new Map();
+    for (const [placeId, entry] of byPlace) {
+      if (entry.mine) this.listingLabels.set(placeId, "mine");
+      else if (!entry.open) this.listingLabels.set(placeId, placeById.get(placeId)?.kind === "rental" ? "let" : "sold");
+    }
+    this.boardsAt = 0;
+  }
+
   /** Delivery orders on the way, waiting, or in hand; collected food is carried until eaten. */
   setParcels(parcels: FoodParcel[]) {
     this.couriers?.set(parcels);

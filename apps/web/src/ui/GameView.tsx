@@ -712,6 +712,7 @@ export function GameView({
     };
   }, []);
   useEffect(() => engine?.setParcels(parcels), [engine, parcels]);
+  useEffect(() => engine?.setListings(properties), [engine, properties]);
   useEffect(() => {
     if (!parcels.some((parcel) => parcel.status === "on_the_way")) return;
     const timer = window.setInterval(() => setClock((tick) => tick + 1), 1_000);

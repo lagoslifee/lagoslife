@@ -369,7 +369,8 @@ export type BuiltWorld = {
   obstacles: ObstacleGrid;
   /** Signs in currently loaded tiles. */
   junctionSigns: Array<{ point: Vec2; names: string[]; yaw: number }>;
-  placeSigns: Array<{ placeId: string; point: Vec2 }>;
+  /** `board` is the For Rent / For Sale signboard: its centre, facing and the way its front faces. */
+  placeSigns: Array<{ placeId: string; point: Vec2; board?: { at: Vec2; yaw: number; normal: Vec2 } }>;
   groundHeight: (x: number, z: number) => number;
   updateDetail: (x: number, z: number) => void;
   /** Queues tiles near the point for loading and releases distant ones. */
@@ -1268,12 +1269,13 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     }
 
     if (place) {
-      placeSigns.push({ placeId: place.id, point: place.door });
-      if (place.kind === "rental" || place.kind === "sale") {
+      const listing = place.kind === "rental" || place.kind === "sale";
+      const px = place.door[0] + doorNx * 0.6 + ex * 1.8;
+      const pz = place.door[1] + doorNz * 0.6 + ez * 1.8;
+      placeSigns.push({ placeId: place.id, point: place.door, ...(listing ? { board: { at: [px, pz] as Vec2, yaw: doorYaw, normal: [doorNx, doorNz] as Vec2 } } : {}) });
+      if (listing) {
         const style = place.kind === "rental" ? "rent" : "sale";
         const uv = signUv(place.kind === "rental" ? "FOR RENT" : "FOR SALE", style, place.name);
-        const px = place.door[0] + doorNx * 0.6 + ex * 1.8;
-        const pz = place.door[1] + doorNz * 0.6 + ez * 1.8;
         const posts = base.get(cx, cz, "pole");
         posts.box(px - ex * 0.7, 1.0, pz - ez * 0.7, 0.07, 2.0, 0.07, doorYaw);
         posts.box(px + ex * 0.7, 1.0, pz + ez * 0.7, 0.07, 2.0, 0.07, doorYaw);
