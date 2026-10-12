@@ -53,6 +53,21 @@ export async function releaseBelongings(client: PoolClient, propertyId: string) 
   );
 }
 
+/** A released private copy has nothing left to keep; the listing it copies stays on the market. */
+async function dropCopy(client: PoolClient, propertyId: string) {
+  await client.query(`DELETE FROM property_listing WHERE id = $1 AND template_id IS NOT NULL`, [propertyId]);
+}
+
+/** The resident's own home at a listing (the listing itself or their private copy of it), if they hold one. */
+async function heldCopy(client: PoolClient | typeof pool, userId: string, templateId: string): Promise<string | null> {
+  const held = await client.query(
+    `SELECT copy.id FROM property_listing copy JOIN property_tenure tenure ON tenure.property_id = copy.id
+     WHERE (copy.id = $1 OR copy.template_id = $1) AND tenure.owner_user_id = $2 LIMIT 1`,
+    [templateId, userId],
+  );
+  return held.rows[0]?.id ?? null;
+}
+
 /** Ends tenancies whose grace period has passed, preserving belongings. */
 export async function settleExpiredTenancies() {
   const expired = await pool.query(
@@ -68,6 +83,7 @@ export async function settleExpiredTenancies() {
       if (!locked.rowCount) return;
       await releaseBelongings(client, propertyId);
       await client.query(`DELETE FROM property_tenure WHERE property_id = $1`, [propertyId]);
+      await dropCopy(client, propertyId);
     });
   }
 }
@@ -79,8 +95,11 @@ export async function listProperties(userId: string) {
     [userId],
   );
   const homeId = profile.rows[0]?.home_property_id ?? null;
+  // One row per mapped listing. Its id is the resident's own copy when they hold one (or the copy they are a guest
+  // of), so entering, renewing and designing address their home rather than a neighbour's.
   const result = await pool.query(
-    `SELECT listing.id, listing.name, listing.district,
+    `SELECT COALESCE(held.id, guest_of.id, listing.id) AS id, listing.id AS "listingId",
+            listing.name, listing.district,
             listing.address_label AS "addressLabel",
             listing.street_name AS "street", listing.description,
             listing.listing_type AS "listingType",
@@ -89,22 +108,29 @@ export async function listProperties(userId: string) {
             listing.deposit, listing.rent_interval_days AS "intervalDays",
             listing.grace_days AS "graceDays", listing.storage_slots AS "storageSlots",
             listing.world_x, listing.world_z,
-            tenure.tenure_type AS "tenureType",
-            tenure.owner_user_id = $1 AS "isMine",
-            tenure.owner_user_id IS NULL AS available,
-            tenure.next_payment_at AS "nextPaymentAt",
-            tenure.expires_at AS "accessEndsAt",
-            tenure.deposit_paid AS "depositPaid",
-            EXISTS (
-              SELECT 1 FROM property_guest guest
-              WHERE guest.property_id = listing.id AND guest.guest_user_id = $1
-            ) AS "hasGuestAccess"
+            held.tenure_type AS "tenureType",
+            held.id IS NOT NULL AS "isMine",
+            listing.listing_type <> 'built' AND held.id IS NULL AS available,
+            held.next_payment_at AS "nextPaymentAt",
+            held.expires_at AS "accessEndsAt",
+            held.deposit_paid AS "depositPaid",
+            guest_of.id IS NOT NULL AS "hasGuestAccess",
+            (SELECT COUNT(*) FROM property_listing copy JOIN property_tenure tenure ON tenure.property_id = copy.id
+             WHERE copy.id = listing.id OR copy.template_id = listing.id)::INTEGER AS residents
      FROM property_listing listing
-     LEFT JOIN property_tenure tenure ON tenure.property_id = listing.id
-     WHERE listing.active = TRUE AND (
-       listing.listing_type <> 'built' OR tenure.owner_user_id = $1
-       OR EXISTS (SELECT 1 FROM property_guest guest WHERE guest.property_id = listing.id AND guest.guest_user_id = $1)
-     )
+     LEFT JOIN LATERAL (
+       SELECT copy.id, tenure.tenure_type, tenure.next_payment_at, tenure.expires_at, tenure.deposit_paid
+       FROM property_listing copy JOIN property_tenure tenure ON tenure.property_id = copy.id
+       WHERE (copy.id = listing.id OR copy.template_id = listing.id) AND tenure.owner_user_id = $1
+       LIMIT 1
+     ) held ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT copy.id FROM property_listing copy JOIN property_guest guest ON guest.property_id = copy.id
+       WHERE (copy.id = listing.id OR copy.template_id = listing.id) AND guest.guest_user_id = $1
+       LIMIT 1
+     ) guest_of ON TRUE
+     WHERE listing.active = TRUE AND listing.template_id IS NULL
+       AND (listing.listing_type <> 'built' OR held.id IS NOT NULL OR guest_of.id IS NOT NULL)
      ORDER BY listing.monthly_rent`,
     [userId],
   );
@@ -144,14 +170,18 @@ export async function acquireProperty(
       [userId, idempotencyKey],
     );
     if (replay.rowCount) return { balance: Number(wallet.rows[0].balance), replayed: true };
+    // Copies resolve to the listing they copy; locking it queues residents signing for the same home.
     const listing = await client.query(
       `SELECT id, name, purchase_price, monthly_rent, deposit, rent_interval_days, grace_days,
               listing_type, world_x, world_z
-       FROM property_listing WHERE id = $1 AND active = TRUE FOR UPDATE`,
+       FROM property_listing
+       WHERE id = (SELECT COALESCE(template_id, id) FROM property_listing WHERE id = $1) AND active = TRUE
+       FOR UPDATE`,
       [propertyId],
     );
     if (!listing.rowCount) throw new EconomyError("Property is unavailable", 404);
     const row = listing.rows[0];
+    const templateId: string = row.id;
     if (row.listing_type === "built") throw new EconomyError("This house belongs to the resident who built it.", 409);
     if (tenure === "owned" && row.listing_type === "rental") {
       throw new EconomyError("This property is offered for rent only.");
@@ -160,26 +190,35 @@ export async function acquireProperty(
       throw new EconomyError("This property is offered for sale only.");
     }
     requireAtListing(userId, row);
-    const occupied = await client.query(
-      `SELECT owner_user_id FROM property_tenure WHERE property_id = $1`,
-      [propertyId],
-    );
-    if (occupied.rowCount) throw new EconomyError("Another resident already holds this property", 409);
+    if (await heldCopy(client, userId, templateId)) throw new EconomyError("You already have a home here.", 409);
+    const occupied = await client.query(`SELECT 1 FROM property_tenure WHERE property_id = $1`, [templateId]);
+    const homeId = occupied.rowCount ? `${templateId}~${randomUUID().slice(0, 8)}` : templateId;
+    if (homeId !== templateId) {
+      await client.query(
+        `INSERT INTO property_listing
+          (id, template_id, name, district, address_label, purchase_price, monthly_rent, world_x, world_z, active,
+           listing_type, deposit, rent_interval_days, grace_days, storage_slots, street_name, description)
+         SELECT $2, id, name, district, address_label, purchase_price, monthly_rent, world_x, world_z, active,
+                listing_type, deposit, rent_interval_days, grace_days, storage_slots, street_name, description
+         FROM property_listing WHERE id = $1`,
+        [templateId, homeId],
+      );
+    }
 
     let balance: number;
     if (tenure === "owned") {
       balance = await debitWallet(client, userId, Number(row.purchase_price), "property_purchase",
-        row.name, idempotencyKey, { propertyId, tenure });
+        row.name, idempotencyKey, { propertyId: homeId, tenure });
       await client.query(
         `INSERT INTO property_tenure (property_id, owner_user_id, tenure_type) VALUES ($1, $2, 'owned')`,
-        [propertyId, userId],
+        [homeId, userId],
       );
     } else {
       balance = await debitWallet(client, userId, Number(row.monthly_rent), "property_rent",
-        `${row.name} · rent`, idempotencyKey, { propertyId, tenure });
+        `${row.name} · rent`, idempotencyKey, { propertyId: homeId, tenure });
       if (Number(row.deposit) > 0) {
         balance = await debitWallet(client, userId, Number(row.deposit), "property_deposit",
-          `${row.name} · refundable deposit`, `${idempotencyKey}:deposit`, { propertyId });
+          `${row.name} · refundable deposit`, `${idempotencyKey}:deposit`, { propertyId: homeId });
       }
       await client.query(
         `INSERT INTO property_tenure
@@ -187,20 +226,20 @@ export async function acquireProperty(
          VALUES ($1, $2, 'rented',
                  NOW() + make_interval(days => $3),
                  NOW() + make_interval(days => $3 + $4), $5)`,
-        [propertyId, userId, row.rent_interval_days, row.grace_days, row.deposit],
+        [homeId, userId, row.rent_interval_days, row.grace_days, row.deposit],
       );
     }
     await client.query(
       `INSERT INTO home_state (property_id) VALUES ($1) ON CONFLICT (property_id) DO NOTHING`,
-      [propertyId],
+      [homeId],
     );
     await ensureProfile(client, userId);
     await client.query(
       `UPDATE player_profile SET home_property_id = COALESCE(home_property_id, $2) WHERE user_id = $1`,
-      [userId, propertyId],
+      [userId, homeId],
     );
     await markProgress(client, userId, tenure === "owned" ? "first_purchase_home" : "first_rental");
-    return { balance, replayed: false };
+    return { balance, replayed: false, propertyId: homeId };
   });
 }
 
@@ -261,6 +300,7 @@ export async function cancelTenancy(userId: string, propertyId: string, idempote
     }
     await releaseBelongings(client, propertyId);
     await client.query(`DELETE FROM property_tenure WHERE property_id = $1`, [propertyId]);
+    await dropCopy(client, propertyId);
     return { cancelled: true, refunded };
   });
 }
@@ -297,15 +337,26 @@ export async function requirePropertyAccess(userId: string, propertyId: string) 
   };
 }
 
-export async function isPropertyAvailable(propertyId: string) {
+/**
+ * Where "look inside" at a listing's door takes this resident: their own home if they hold one there, the home they
+ * were invited into for a built house, otherwise an empty preview of the listing.
+ */
+export async function previewTarget(userId: string, propertyId: string): Promise<{ home: string } | { preview: string }> {
   await settleExpiredTenancies();
-  const result = await pool.query(
-    `SELECT listing.id FROM property_listing listing
-     LEFT JOIN property_tenure tenure ON tenure.property_id = listing.id
-     WHERE listing.id = $1 AND listing.active = TRUE AND tenure.property_id IS NULL`,
+  const listing = await pool.query(
+    `SELECT id, listing_type FROM property_listing
+     WHERE id = (SELECT COALESCE(template_id, id) FROM property_listing WHERE id = $1) AND active = TRUE`,
     [propertyId],
   );
-  return Boolean(result.rowCount);
+  if (!listing.rowCount) throw new EconomyError("Property is unavailable", 404);
+  const templateId: string = listing.rows[0].id;
+  const held = await heldCopy(pool, userId, templateId);
+  if (held) return { home: held };
+  if (listing.rows[0].listing_type === "built") {
+    await requirePropertyAccess(userId, propertyId);
+    return { home: propertyId };
+  }
+  return { preview: templateId };
 }
 
 export async function getInterior(userId: string, propertyId: string) {

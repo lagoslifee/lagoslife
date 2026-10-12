@@ -18,7 +18,7 @@ vi.mock("../economy-service.js", async () => {
   return { ...economy, EconomyError };
 });
 vi.mock("../database.js", () => ({ pool: {} }));
-vi.mock("../property-service.js", () => ({ isPropertyAvailable: vi.fn(), requirePropertyAccess: vi.fn() }));
+vi.mock("../property-service.js", () => ({ previewTarget: vi.fn(), requirePropertyAccess: vi.fn() }));
 
 const vehicles = vi.hoisted(() => ({
   claimVehicle: vi.fn(async (..._args: unknown[]): Promise<{ condition: number } | null> => ({ condition: 100 })),

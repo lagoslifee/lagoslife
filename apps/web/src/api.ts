@@ -49,7 +49,12 @@ export type PropertyListing = {
   storageSlots: number;
   tenureType: "owned" | "rented" | null;
   isMine: boolean;
+  /** True unless you already hold this home: every resident can have their own copy of a mapped listing. */
   available: boolean;
+  /** The mapped listing; differs from `id` when `id` is your private copy of it. */
+  listingId: string;
+  /** Residents holding this listing or a copy of it, you included. */
+  residents: number;
   nextPaymentAt: string | null;
   accessEndsAt: string | null;
   hasGuestAccess: boolean;

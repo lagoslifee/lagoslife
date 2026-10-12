@@ -18,19 +18,26 @@ export const HOME_UNITS: HomeUnit[] = [
 
 const unitById = new Map(HOME_UNITS.map((unit) => [unit.id, unit]));
 
+/** A resident's private copy of a listing is "<listing>~<suffix>"; this returns the listing it copies. */
+export function listingTemplateId(propertyId: string) {
+  const cut = propertyId.indexOf("~");
+  return cut < 0 ? propertyId : propertyId.slice(0, cut);
+}
+
 export function homeUnit(propertyId: string) {
-  return unitById.get(propertyId) ?? null;
+  return unitById.get(listingTemplateId(propertyId)) ?? null;
 }
 
 /** The mapped building a property belongs to, or null for listings without one (such as test listings). */
 export function propertyPlace(propertyId: string) {
-  return placeById.get(unitById.get(propertyId)?.placeId ?? propertyId) ?? null;
+  const id = listingTemplateId(propertyId);
+  return placeById.get(unitById.get(id)?.placeId ?? id) ?? null;
 }
 
 /** "Adebayo Court · Flat 3" for a unit, the place name otherwise. */
 export function propertyTitle(propertyId: string) {
   const place = propertyPlace(propertyId);
-  const unit = unitById.get(propertyId);
+  const unit = homeUnit(propertyId);
   if (!place) return "Home";
   return unit ? `${place.name} · ${unit.unit}` : place.name;
 }

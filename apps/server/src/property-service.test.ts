@@ -50,6 +50,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await pool.query(`DELETE FROM property_tenure WHERE property_id LIKE $1`, [`${propertyId}~%`]);
   await pool.query(`DELETE FROM property_storage WHERE property_id = ANY($1)`, [[propertyId, rentalId]]);
   await pool.query(`DELETE FROM furniture_placement WHERE property_id = ANY($1)`, [[propertyId, rentalId]]);
   await pool.query(`UPDATE player_profile SET home_property_id = NULL WHERE home_property_id = ANY($1)`, [[propertyId, rentalId]]);
@@ -73,15 +74,16 @@ describe("property ownership and access", () => {
     );
   });
 
-  it("allows exactly one winner during a concurrent property purchase", async () => {
+  it("gives one concurrent buyer the listing and the other a private copy of it", async () => {
     for (const user of users) setPlayerPosition(user.id, 1, 1);
-    const attempts = await Promise.allSettled(
+    const attempts = await Promise.all(
       users.slice(0, 2).map((user) =>
         acquireProperty(user.id, propertyId, "owned", randomUUID()),
       ),
     );
-    expect(attempts.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
-    expect(attempts.filter(({ status }) => status === "rejected")).toHaveLength(1);
+    const homes = attempts.map((attempt) => attempt.propertyId!).sort();
+    expect(homes[0]).toBe(propertyId);
+    expect(homes[1]!.startsWith(`${propertyId}~`)).toBe(true);
 
     const tenure = await pool.query(
       `SELECT owner_user_id FROM property_tenure WHERE property_id = $1`,
@@ -225,11 +227,22 @@ describe("rental agreements", () => {
     await expect(renewTenancy(tenant().id, rentalId, randomUUID())).rejects.toThrow("well in advance");
   });
 
-  it("prevents a second resident from renting an occupied flat", async () => {
+  it("gives a second resident their own copy of an occupied flat, released when they leave", async () => {
     setPlayerPosition(users[1]!.id, 0, 0);
-    await expect(acquireProperty(users[1]!.id, rentalId, "rented", randomUUID())).rejects.toThrow(
-      "already holds",
-    );
+    const result = await acquireProperty(users[1]!.id, rentalId, "rented", randomUUID());
+    const copyId = result.propertyId!;
+    expect(copyId.startsWith(`${rentalId}~`)).toBe(true);
+    const theirs = (await listProperties(users[1]!.id)).find(({ listingId }) => listingId === rentalId)!;
+    expect(theirs).toMatchObject({ id: copyId, isMine: true, available: false, residents: 2 });
+    const mine = (await listProperties(tenant().id)).find(({ listingId }) => listingId === rentalId)!;
+    expect(mine).toMatchObject({ id: rentalId, isMine: true });
+    const copy = await getInterior(users[1]!.id, copyId);
+    expect(copy).toMatchObject({ furniture: [], guests: [], access: { owner: true } });
+    await expect(getInterior(users[1]!.id, rentalId)).rejects.toThrow("do not have access");
+    await expect(acquireProperty(users[1]!.id, rentalId, "rented", randomUUID())).rejects.toThrow("already have a home here");
+    await cancelTenancy(users[1]!.id, copyId, randomUUID());
+    const gone = await pool.query(`SELECT 1 FROM property_listing WHERE id = $1`, [copyId]);
+    expect(gone.rowCount).toBe(0);
   });
 
   it("cancels with a deposit refund and frees the flat", async () => {
@@ -289,7 +302,7 @@ describe("rental agreements", () => {
       tenants.forEach((tenant, index) => rented.push({ userId: tenant.id, propertyId: free[index]!.id }));
       const seen = await listProperties(users[0]!.id);
       expect(seen.find(({ id }) => id === free[0]!.id)).toMatchObject({ isMine: true, available: false });
-      expect(seen.find(({ id }) => id === free[1]!.id)).toMatchObject({ isMine: false, available: false });
+      expect(seen.find(({ id }) => id === free[1]!.id)).toMatchObject({ isMine: false, available: true, residents: 1 });
       expect(propertyPlace(free[1]!.id)?.id).toBe(court.id);
     } finally {
       for (const { userId, propertyId } of rented) await cancelTenancy(userId, propertyId, randomUUID());

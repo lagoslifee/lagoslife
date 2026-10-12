@@ -497,6 +497,10 @@ export async function resetTestProgress(userId: string) {
     await client.query(`DELETE FROM property_storage WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM property_guest WHERE guest_user_id = $1 OR granted_by = $1`, [userId]);
     await client.query(`DELETE FROM property_tenure WHERE owner_user_id = $1`, [userId]);
+    await client.query(
+      `DELETE FROM property_listing copy
+       WHERE copy.template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM property_tenure tenure WHERE tenure.property_id = copy.id)`,
+    );
     await client.query(`DELETE FROM transport_journey WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM job_run WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM inventory_item WHERE user_id = $1`, [userId]);

@@ -156,7 +156,7 @@ import { clearProgressReset, removePlayerPosition, setPlayerPosition, wasProgres
 import { homeEvents } from "../home-events.js";
 import { playerEvents } from "../player-events.js";
 import { splitCabFare } from "../finance-service.js";
-import { isPropertyAvailable, requirePropertyAccess } from "../property-service.js";
+import { previewTarget, requirePropertyAccess } from "../property-service.js";
 import { vehicleEvents } from "../vehicle-events.js";
 import { issueCitation } from "../justice-service.js";
 import { activeMute, activeSuspension, hiddenPlayers, recordChat, safetyEvents } from "../safety-service.js";
@@ -988,7 +988,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
     if (player.location !== "street" || player.busId) return;
     if (player.vehicleId) return this.notify(client, { tone: "info", text: "Park and step out of your car first." });
-    const { propertyId, mode } = parsed.data;
+    const { mode } = parsed.data;
+    let { propertyId } = parsed.data;
     const club = CLUBS[propertyId] ? getPlace(propertyId) : null;
     const place = club ?? (propertyId === "starter-home" ? getPlace("starter-home") : (propertyPlace(propertyId) ?? builtHomePlace(propertyId)));
     if (!place) return this.notify(client, { tone: "error", text: "That home is not on the map." });
@@ -1006,10 +1007,12 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       } else if (propertyId === "starter-home") {
         location = `starter:${player.userId}`;
       } else if (mode === "preview") {
-        if (!(await isPropertyAvailable(propertyId))) {
-          await requirePropertyAccess(player.userId, propertyId);
+        const target = await previewTarget(player.userId, propertyId);
+        if ("home" in target) {
+          propertyId = target.home;
           location = `home:${propertyId}`;
         } else {
+          propertyId = target.preview;
           location = `preview:${propertyId}:${player.userId}`;
           previewOnly = true;
         }

@@ -21,13 +21,20 @@ const unitOrder = new Map(HOME_UNITS.map((unit, index) => [unit.id, index]));
 export function buildingUnits(properties: PropertyListing[], placeId: string, focusListingId?: string | null) {
   const units = properties
     .filter((listing) => (listing.placeId ?? listing.id) === placeId)
-    .sort((a, b) => (unitOrder.get(a.id) ?? 0) - (unitOrder.get(b.id) ?? 0));
+    .sort((a, b) => (unitOrder.get(a.listingId) ?? 0) - (unitOrder.get(b.listingId) ?? 0));
   const offered =
-    units.find((listing) => listing.id === focusListingId) ??
+    units.find((listing) => listing.id === focusListingId || listing.listingId === focusListingId) ??
     units.find((listing) => listing.isMine) ??
     units.find((listing) => listing.available) ??
     units[0];
   return { units, offered, free: units.filter((listing) => listing.available).length };
+}
+
+/** Everyone can hold the same mapped home, each with their own interior behind the shared door. */
+function residentLine(residents: number, mine: boolean) {
+  const others = residents - (mine ? 1 : 0);
+  if (others <= 0) return mine ? "Just you so far · others can get their own" : "Nobody yet · you would be the first";
+  return `${others} other resident${others === 1 ? "" : "s"} ${others === 1 ? "has" : "have"} their own · yours would be private`;
 }
 
 export function PlaceSheet({ place, economy, properties, onClose, onRefresh, onToast, onEnter, onJobStarted, focusListingId }: Props) {
@@ -130,7 +137,7 @@ export function PlaceSheet({ place, economy, properties, onClose, onRefresh, onT
           <div className="listing">
             {units.length > 1 && (
               <p className="unit-line" data-testid="unit-availability">
-                <strong>{listing.name}</strong> · {free} of {units.length} {noun}s {place.kind === "rental" ? "free to rent" : "for sale"}
+                <strong>{listing.name}</strong> · {free} of {units.length} {noun}s {place.kind === "rental" ? "you can rent" : "you can buy"}
               </p>
             )}
             <p className="muted">{listing.description}</p>
@@ -148,7 +155,8 @@ export function PlaceSheet({ place, economy, properties, onClose, onRefresh, onT
                 </>
               )}
               <dt>Storage</dt><dd>{listing.storageSlots} item slots</dd>
-              <dt>Status</dt><dd>{listing.isMine ? (listing.tenureType === "owned" ? "You own this" : "You rent this") : listing.available ? "Available" : `All ${units.length} ${noun}s are taken`}</dd>
+              <dt>Status</dt><dd>{listing.isMine ? (listing.tenureType === "owned" ? "You own this" : "You rent this") : listing.available ? "Available" : "Not on offer"}</dd>
+              <dt>Residents</dt><dd>{residentLine(listing.residents, listing.isMine)}</dd>
             </dl>
             <p className="muted small">Your balance: {naira(balance)}</p>
             <div className="row wrap">
@@ -188,7 +196,7 @@ export function PlaceSheet({ place, economy, properties, onClose, onRefresh, onT
                   )}
                 </>
               ) : (
-                <p className="warning">Every {noun} here is taken right now. Check back later or try another listing on the map.</p>
+                <p className="warning">This {noun} is not on offer.</p>
               )}
             </div>
           </div>
