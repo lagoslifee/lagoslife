@@ -33,6 +33,7 @@ import {
   blockedByWater,
   builtHomeId,
   houseDesign,
+  GIG_RANGE,
   houseDoor,
   PLOT_TERMS,
   PLOTS,
@@ -173,6 +174,7 @@ export type HudState = {
 export type Interaction =
   | { kind: "place"; place: Place }
   | { kind: "delivery" }
+  | { kind: "gig" }
   | { kind: "interior"; spot: InteriorSpot["id"] }
   | { kind: "travel"; interior: TravelInterior; spot: string }
   | { kind: "plot"; plotId: string }
@@ -388,6 +390,7 @@ export class GameEngine {
   private secondary: Prompt | null = null;
   private interaction: (() => void) | null = null;
   private deliveryTarget: { point: Vec2; label: string } | null = null;
+  private gigTarget: { point: Vec2; title: string; place: string } | null = null;
   private waypoint: { point: Vec2; label: string } | null = null;
   private beacon: Mesh | null = null;
   private routeMesh: Mesh | null = null;
@@ -1587,6 +1590,10 @@ export class GameEngine {
         remote.guards === 0 && this.callbacks.interact({ kind: "holdUp", sessionId, name: remote.name }),
       );
     }
+    if (this.gigTarget) {
+      const distance = Math.hypot(this.gigTarget.point[0] - x, this.gigTarget.point[1] - z);
+      if (distance < GIG_RANGE - 1) offer(distance - 1, { key: bind("interact"), label: `Start job · ${this.gigTarget.title}`, detail: this.gigTarget.place }, () => this.callbacks.interact({ kind: "gig" }));
+    }
     for (const place of PLACES) {
       const distance = place.kind === "delivery" ? Math.hypot(place.door[0] - x, place.door[1] - z) : placeDistance(place, x, z);
       if (distance > INTERACTION_RANGE + (place.kind === "rental" || place.kind === "sale" ? 2 : 0)) continue;
@@ -2593,6 +2600,11 @@ export class GameEngine {
       this.routePlan = null;
       this.guidance = null;
     }
+  }
+
+  /** The door of the player's gig while they are travelling to it; `null` once the work has started or the gig ended. */
+  setGigTarget(target: { point: Vec2; title: string; place: string } | null) {
+    this.gigTarget = target;
   }
 
   setDeliveryTarget(target: { point: Vec2; label: string } | null) {

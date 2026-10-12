@@ -1,4 +1,4 @@
-import { BIKE_RENTAL, HOUSE_DESIGNS, nearestStop, plotById, readyBuiltPrice, ROUTES, type RideState, type TowState, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
+import { BIKE_RENTAL, HOUSE_DESIGNS, getPlace, type GigStatus, nearestStop, plotById, readyBuiltPrice, ROUTES, type RideState, type TowState, type Notice, type PlayerSettings, type Vec2 } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import { api, naira, type EconomyState, type InteriorState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { actionLabels, keyLabel, type Action, type Bindings } from "../game/controller";
@@ -264,10 +264,71 @@ function TransportApp(props: Props) {
   );
 }
 
-function JobsApp({ economy, onNavigate, onClose, onRefresh, onToast }: Props) {
+function GigBoard({ onNavigate, onClose, onRefresh, onToast }: Props) {
+  const [status, setStatus] = useState<GigStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.gigs().then(setStatus).catch(() => setStatus(null));
+  }, []);
+  if (!status) return <p className="muted">Loading gigs…</p>;
+  const go = (placeId: string) => {
+    const place = getPlace(placeId);
+    onNavigate({ point: place.door, label: place.name });
+    onClose();
+  };
+  const run = async (work: () => Promise<unknown>, after?: () => void) => {
+    setBusy(true);
+    try {
+      await work();
+      setStatus(await api.gigs());
+      await onRefresh();
+      after?.();
+    } catch (error) {
+      onToast({ tone: "error", text: (error as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const active = status.active;
+  const minutes = Math.max(1, Math.ceil((status.nextBoardAt - Date.now()) / 60_000));
+  return (
+    <section>
+      <h3>Gig board · big-money jobs</h3>
+      {active ? (
+        <div className="job-card" data-testid="gig-active">
+          <p>{active.emoji} <strong>{active.title}</strong> · {naira(active.reward)}</p>
+          <p>{active.task} <strong>{getPlace(active.placeId).name}</strong>. {active.status === "working" ? "You're on the job — stay at the place until the timer ends." : `Go there and tap “Start job” at the door, then stay ${active.workSeconds} s.`}</p>
+          <div className="row">
+            <button className="primary" onClick={() => go(active.placeId)}>Directions</button>
+            <button className="secondary" disabled={busy} onClick={() => void run(() => api.cancelGig(), () => onToast({ tone: "info", text: "Gig cancelled." }))}>Cancel gig</button>
+          </div>
+        </div>
+      ) : (
+        <ul className="gig-board">
+          {status.board.map((gig) => (
+            <li key={gig.id}>
+              <span>{gig.emoji}</span>
+              <div>
+                <strong>{gig.title}</strong>
+                <small>{gig.task} {getPlace(gig.placeId).name} · {gig.workSeconds} s on site</small>
+                <b>{naira(gig.reward)}</b>
+              </div>
+              <button className="primary" disabled={busy} data-testid={`gig-take-${gig.typeId}`} onClick={() => void run(() => api.takeGig(gig.id), () => { onToast({ tone: "success", text: `Gig taken: ${gig.title}. Directions are on.` }); go(gig.placeId); })}>Take</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="muted small">New gigs in {minutes} min. Every resident sees the same board. Completed: {status.completed} · earned {naira(status.earned)}.</p>
+    </section>
+  );
+}
+
+function JobsApp(props: Props) {
+  const { economy, onNavigate, onClose, onRefresh, onToast } = props;
   const job = economy?.activeJob;
   return (
     <div className="app-section">
+      <GigBoard {...props} />
       <h3>Swift Parcel Hub</h3>
       <p className="muted">Fictional courier service · Adebayo Doherty Road</p>
       {job ? (

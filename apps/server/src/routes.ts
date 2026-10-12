@@ -13,6 +13,7 @@ import {
   spinBetSchema,
   tradeRequestSchema,
   transferRequestSchema,
+  takeGigSchema,
   tenancyActionSchema,
   homeActionSchema,
   inviteGuestSchema,
@@ -54,6 +55,7 @@ import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
+import { cancelGig, completeGig, gigStatus, startGigWork, takeGig } from "./gig-service.js";
 import { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, marketStatus, trade, transferMoney } from "./finance-service.js";
 import { auth } from "./auth.js";
 import { acquirePlot, buildingEvents, buyReadyBuilt, listPlots, payNextStage, releasePlotsOf, renewPlotLease, startConstruction } from "./building-service.js";
@@ -582,6 +584,12 @@ export function configureRoutes(app: Express) {
   app.get("/api/betting", requirePlayer, guarded("Betting unavailable", (_req, userId) => bettingStatus(userId)));
   app.post("/api/betting/spin", requirePlayer, rateLimited, guarded("Bet failed", (req, userId) => betSpin(userId, spinBetSchema.parse(req.body))));
   app.post("/api/betting/football", requirePlayer, rateLimited, guarded("Bet failed", (req, userId) => betFootball(userId, footballBetSchema.parse(req.body))));
+
+  app.get("/api/gigs", requirePlayer, guarded("Gigs unavailable", (_req, userId) => gigStatus(userId)));
+  app.post("/api/gigs/take", requirePlayer, rateLimited, guarded("Gig could not be taken", (req, userId) => takeGig(userId, takeGigSchema.parse(req.body).gigId)));
+  app.post("/api/gigs/start", requirePlayer, rateLimited, guarded("Job could not start", (_req, userId) => startGigWork(userId)));
+  app.post("/api/gigs/complete", requirePlayer, rateLimited, guarded("Job could not be finished", (_req, userId) => completeGig(userId)));
+  app.post("/api/gigs/cancel", requirePlayer, rateLimited, guarded("Gig could not be cancelled", (_req, userId) => cancelGig(userId)));
 
   app.get("/api/security", requirePlayer, guarded("Security unavailable", (_req, userId) =>
     getSecurityStatus(userId)));

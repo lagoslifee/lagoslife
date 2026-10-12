@@ -1,4 +1,4 @@
-import { CLUBS, OFFENCES, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TravelPrompt, type AgberoEncounter, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
+import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TravelPrompt, type AgberoEncounter, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { noteFps, report, setReportedQuality } from "../diagnostics";
@@ -190,9 +190,12 @@ export function GameView({
     }
   }, []);
 
+  const [gig, setGig] = useState<ActiveGig | null>(null);
+  const [gigNow, setGigNow] = useState(Date.now());
   const refresh = useCallback(async () => {
     try {
       const [nextEconomy, nextProperties, nextVehicles] = await Promise.all([api.economy(), api.properties(), api.vehicles(), refreshPlots()]);
+      api.gigs().then((status) => setGig(status.active)).catch(() => undefined);
       setEconomy(nextEconomy);
       setProperties(nextProperties);
       setVehicles(nextVehicles);
@@ -424,6 +427,37 @@ export function GameView({
   }, [engine, target?.point[0], target?.point[1], target?.label]);
 
   useEffect(() => {
+    if (!gig || gig.status !== "travelling") {
+      engine?.setGigTarget(null);
+      return;
+    }
+    const place = getPlace(gig.placeId);
+    engine?.setGigTarget({ point: place.door, title: gig.title, place: place.name });
+  }, [engine, gig?.runId, gig?.status]);
+
+  const gigEndsAt = gig?.status === "working" && gig.startedWorkAt ? new Date(gig.startedWorkAt).getTime() + gig.workSeconds * 1000 : null;
+  useEffect(() => {
+    if (!gigEndsAt) return;
+    const tick = window.setInterval(() => setGigNow(Date.now()), 500);
+    const finish = window.setTimeout(() => {
+      api.completeGig()
+        .then((result) => {
+          toast({ tone: "success", text: `${result.title} done! +${naira(result.reward)} · balance ${naira(result.balance)}` });
+          setGig(null);
+          return refresh();
+        })
+        .catch((error: Error) => {
+          toast({ tone: "error", text: error.message });
+          api.gigs().then((status) => setGig(status.active)).catch(() => undefined);
+        });
+    }, Math.max(0, gigEndsAt - Date.now()) + 600);
+    return () => {
+      window.clearInterval(tick);
+      window.clearTimeout(finish);
+    };
+  }, [gigEndsAt, refresh, toast]);
+
+  useEffect(() => {
     const job = economy?.activeJob;
     engine?.setDeliveryTarget(job ? { point: [job.destinationX, job.destinationZ], label: job.destinationLabel ?? "Delivery" } : null);
   }, [engine, economy?.activeJob?.id]);
@@ -510,6 +544,15 @@ export function GameView({
     if (interaction.kind === "plot") {
       setPlotSheet(interaction.plotId);
       void refresh();
+      return;
+    }
+    if (interaction.kind === "gig") {
+      api.startGig()
+        .then((active) => {
+          setGig(active);
+          toast({ tone: "info", text: `${active.emoji} ${active.task} ${getPlace(active.placeId).name}. Stay here for ${active.workSeconds} s.` });
+        })
+        .catch((error: Error) => toast({ tone: "error", text: error.message }));
       return;
     }
     if (interaction.kind === "delivery") {
@@ -686,6 +729,19 @@ export function GameView({
             <button className="guide-tab" onClick={() => { setGuideHidden(false); setGuideOpen(true); localStorage.removeItem("lagos-guide-hidden"); }}>Guide</button>
           )}
 
+          {gig && (
+            <button className="job-chip gig-chip" data-testid="gig-status" onClick={() => setPhone("jobs")}>
+              {gig.emoji} {gig.title} · {naira(gig.reward)}
+              {gigEndsAt ? (
+                <>
+                  <small>Working · {Math.max(0, Math.ceil((gigEndsAt - gigNow) / 1000))} s left — stay here</small>
+                  <i style={{ width: `${Math.min(100, (1 - Math.max(0, gigEndsAt - gigNow) / (gig.workSeconds * 1000)) * 100)}%` }} />
+                </>
+              ) : (
+                <small>Go to {getPlace(gig.placeId).name} and tap Start job at the door</small>
+              )}
+            </button>
+          )}
           {economy?.activeJob && (
             <div className="job-chip" data-testid="job-status">📦 Parcel for {economy.activeJob.destinationLabel} · {naira(economy.activeJob.reward)}</div>
           )}

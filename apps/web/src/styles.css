@@ -973,3 +973,13 @@ button.wide { width: 100%; margin: 6px 0; }
 .id-card dd { margin: 0; font-weight: 700; font-size: 13px; }
 .id-card footer { margin-top: 10px; font-family: ui-monospace, monospace; font-size: 10px; letter-spacing: .08em; opacity: .75; overflow: hidden; white-space: nowrap; }
 .id-card .watermark { position: absolute; inset: 40% -10% auto; transform: rotate(-14deg); text-align: center; font-style: normal; font-weight: 800; font-size: 13px; letter-spacing: .15em; opacity: .16; pointer-events: none; }
+.gig-chip { display: grid; gap: 2px; text-align: left; max-width: min(320px, calc(100% - 120px)); color: #f5f2e8; overflow: hidden; }
+.gig-chip small { font-weight: 500; opacity: .85; font-size: calc(11px * var(--text-scale)); }
+.gig-chip i { display: block; height: 4px; border-radius: 2px; background: #e6bd62; transition: width .5s linear; }
+.game-view.touch .gig-chip { display: grid; top: 112px; left: 10px; }
+.gig-board { list-style: none; padding: 0; margin: 0; }
+.gig-board li { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; align-items: center; padding: 9px 0; border-bottom: 1px solid #ebe7dc; }
+.gig-board li > span { font-size: 24px; text-align: center; }
+.gig-board li div { display: grid; }
+.gig-board li small { color: #6b7d79; }
+.gig-board li b { color: #116c60; }

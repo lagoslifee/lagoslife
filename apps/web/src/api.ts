@@ -1,6 +1,6 @@
 import type { CabinClass, CharacterAppearance, OutfitId, HotelBookingState, RoomType, TicketState, TravelStatus, VisaPlan, VisaState } from "@lagos-living/shared";
 import type { BottleItem, Citation, PoliceCase, StreetIncident, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
-import type { BettingStatus, DailyStatus, MarketStatus, Pick } from "@lagos-living/shared";
+import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -207,6 +207,11 @@ export const api = {
   betSpin: (stake: number) => post<{ replayed: boolean; balance: number; round: number; stopsAt: number }>("/api/betting/spin", { stake, idempotencyKey: crypto.randomUUID() }),
   betFootball: (fixtureId: string, pick: Pick, stake: number) =>
     post<{ replayed: boolean; balance: number; odds: number }>("/api/betting/football", { fixtureId, pick, stake, idempotencyKey: crypto.randomUUID() }),
+  gigs: () => request<GigStatus>("/api/gigs"),
+  takeGig: (gigId: string) => post<GigStatus>("/api/gigs/take", { gigId }),
+  startGig: () => post<ActiveGig>("/api/gigs/start"),
+  completeGig: () => post<{ reward: number; balance: number; title: string }>("/api/gigs/complete"),
+  cancelGig: () => post<{ cancelled: boolean }>("/api/gigs/cancel"),
   security: () => request<SecurityStatus>("/api/security"),
   hireSecurity: (plan: SecurityPlanId) =>
     post<{ replayed: boolean; balance: number; status: SecurityStatus }>("/api/security/hire", { plan, idempotencyKey: crypto.randomUUID() }),
