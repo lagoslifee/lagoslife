@@ -288,9 +288,9 @@ const ASSETS: Record<string, VehicleAsset> = { ...VEHICLE_ASSETS, ...REAL_VEHICL
 
 /**
  * The catalogue figures are real-world-ish; the map is a compact Lagos, so motor vehicles run faster than life to
- * keep any cross-town drive to a few minutes. Bicycles stay at their natural pace.
+ * keep most drives to two or three minutes (Lekki to Ikoyi about 3 in a saloon). Bicycles stay at their natural pace.
  */
-export const SPEED_SCALE = { topSpeed: 2, acceleration: 1.8, braking: 1.35 } as const;
+export const SPEED_SCALE = { topSpeed: 2.5, acceleration: 2.2, braking: 1.6 } as const;
 
 function scaled(model: VehicleModel): VehicleModel {
   if (model.body === "bicycle") return model;
