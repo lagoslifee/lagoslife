@@ -92,6 +92,12 @@ function PasswordField({ label, value, onChange, autoComplete }: { label: string
 
 const placeholderEmail = (username: string) => `${username.toLowerCase()}.${Math.random().toString(36).slice(2, 10)}@${NO_EMAIL_DOMAIN}`;
 
+// The session cookie is blocked when the site and game server are on different domains, so the bearer token is kept.
+function enterWithToken(token: string | null | undefined) {
+  if (token) sessionToken.set(token);
+  location.assign("/");
+}
+
 function AuthScreen() {
   const query = new URLSearchParams(location.search);
   const token = query.get("token");
@@ -115,10 +121,14 @@ function AuthScreen() {
         const result = await authClient.signUp.email({ email: email.trim() || placeholderEmail(username), password, name: name.trim(), username: username.trim() });
         if (result.error) throw new Error(result.error.message);
         localStorage.setItem("lagos-new-account", "1");
+        enterWithToken(result.data?.token);
+        return;
       } else if (mode === "login") {
         const id = identifier.trim();
         const result = id.includes("@") ? await authClient.signIn.email({ email: id, password }) : await authClient.signIn.username({ username: id.replace(/^@/, ""), password });
         if (result.error) throw new Error(result.error.message === "Invalid username or password" || /invalid/i.test(result.error.message ?? "") ? "That username/email and password don't match." : result.error.message);
+        enterWithToken(result.data?.token);
+        return;
       } else if (mode === "forgot") {
         const response = await fetch(`${apiUrl}/api/account/forgot`, {
           method: "POST",

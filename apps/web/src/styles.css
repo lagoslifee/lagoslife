@@ -152,7 +152,7 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .guest-entry > span::after { right: 0; }
 .guest-entry .secondary { width: 100%; }
 
-.goals-backdrop { position: fixed; z-index: 40; overflow-y: auto; place-items: start center; padding: max(16px, env(safe-area-inset-top)) 12px calc(16px + env(safe-area-inset-bottom, 0px)); }
+.modal-backdrop.goals-backdrop { position: fixed; z-index: 40; overflow-y: auto; place-items: start center; padding: max(16px, env(safe-area-inset-top)) 12px calc(16px + env(safe-area-inset-bottom, 0px)); }
 .goals-card { width: min(680px, 100%); margin: auto 0; padding: 26px 24px 20px; border-radius: 22px; background: #fbf9f2; color: #142b29; box-shadow: 0 30px 90px rgba(0, 0, 0, .45); }
 .goals-card h2 { margin: 8px 0 6px; font: 800 28px/1.15 Inter, "Segoe UI", Arial, sans-serif; letter-spacing: -.03em; }
 .goals-card .muted { margin-bottom: 8px; font-size: 14px; }

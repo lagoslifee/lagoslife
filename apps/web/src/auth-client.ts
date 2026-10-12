@@ -36,6 +36,10 @@ export const authClient = createAuthClient({
   fetchOptions: {
     credentials: "include",
     auth: { type: "Bearer", token: () => sessionToken.get() ?? "" },
+    onSuccess: ({ response }) => {
+      const token = response.headers.get("set-auth-token");
+      if (token) sessionToken.set(token);
+    },
   },
   plugins: [usernameClient()],
 });
