@@ -97,6 +97,19 @@ import {
   regionOf,
   placeById,
   placeDistance,
+  PLACES,
+  FAST_TRAVEL,
+  FAVOURITES,
+  FAVOURITE_LABEL,
+  fastTravelSchema,
+  travelAnswerSchema,
+  joinRequestSchema,
+  isFastTravelKind,
+  type Favourite,
+  type FastTravelState,
+  type Happening,
+  type TravelPrompt,
+  type TravelRegion,
   FLIGHT_CAPACITY,
   REACTIONS,
   type Leg,
@@ -148,6 +161,7 @@ import {
 } from "../vehicle-service.js";
 import { loadAppearance, profileEvents } from "../profile-service.js";
 import { buildingEvents } from "../building-service.js";
+import { homePropertyOf, loadDiscoveries, recordDiscovery } from "../fast-travel-service.js";
 import { chargeRide, closeRide, refundOrphanedRides, refundRide } from "../ride-service.js";
 import { activeRental, parkRental, returnRental, startRental, type ActiveRental } from "../bike-service.js";
 import { requestTow } from "../tow-service.js";
@@ -242,6 +256,22 @@ type Player = {
   /** True while this player is holding someone up, so they can't start a second one. */
   robbing: boolean;
   trip: TripState;
+  /** Public places this player has stood at; fast travel only goes to these and the favourites. */
+  discovered: Set<string>;
+  fastTravelAt: number;
+  homePropertyId: string | null;
+};
+
+type TravelRequest = {
+  id: string;
+  kind: "together" | "join";
+  fromSessionId: string;
+  toSessionId: string;
+  /** Together: where the inviter went. Join: filled in from the host's position when they accept. */
+  point: [number, number] | null;
+  label: string;
+  region: TravelRegion;
+  expiresAt: number;
 };
 
 type Flight = {
@@ -320,6 +350,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private joinCounter = 0;
   private vehicles = new Map<string, RoomVehicle>();
   private flights = new Map<string, Flight>();
+  private travelRequests = new Map<string, TravelRequest>();
   private excursions = new Map<string, Excursion>();
   private tows = new TowDispatcher({
     vehicles: this.vehicles,
@@ -432,6 +463,13 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("carRent", (client, payload) => void this.handleCarRent(client, payload));
     this.onMessage("carReturn", (client) => void this.handleCarReturn(client));
     this.onMessage("photo", (client, payload) => void this.handlePhoto(client, payload));
+    this.onMessage("fastTravel", (client, payload) => this.handleFastTravel(client, payload));
+    this.onMessage("travelAnswer", (client, payload) => this.handleTravelAnswer(client, payload));
+    this.onMessage("joinRequest", (client, payload) => this.handleJoinRequest(client, payload));
+    this.onMessage("goState", (client) => {
+      const player = this.players.get(client.sessionId);
+      if (player && !this.limited(player.actionRate, 6)) client.send("goState", this.goState(player));
+    });
     this.onMessage("requestTrip", (client) => {
       const player = this.players.get(client.sessionId);
       if (player) this.sendTrip(player);
@@ -461,12 +499,14 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   async onJoin(client: LagosClient) {
     const ticket = ++this.joinCounter;
     this.joinTickets.set(client.auth.userId, ticket);
-    const [suspension, mute, hidden, appearance, security] = await Promise.all([
+    const [suspension, mute, hidden, appearance, security, discovered, homePropertyId] = await Promise.all([
       activeSuspension(client.auth.userId).catch(() => null),
       activeMute(client.auth.userId).catch(() => null),
       hiddenPlayers(client.auth.userId).catch(() => new Set<string>()),
       loadAppearance(client.auth.userId).catch(() => defaultAppearance),
       getSecurityStatus(client.auth.userId).catch(() => ({ guards: 0, until: null })),
+      loadDiscoveries(client.auth.userId).catch(() => new Set<string>()),
+      homePropertyOf(client.auth.userId).catch(() => null),
     ]);
     if (suspension) throw new Error("This account is suspended.");
     clearProgressReset(client.auth.userId);
@@ -529,6 +569,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       heldUp: null,
       robbing: false,
       trip: emptyTrip(),
+      discovered,
+      fastTravelAt: 0,
+      homePropertyId,
     };
     for (const [sessionId, existing] of this.players) {
       if (existing.userId === player.userId) {
@@ -1944,6 +1987,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.state.tick = (this.state.tick + 1) >>> 0;
     this.tows.tick(seconds, now);
     if (this.state.tick % 5 === 0 && this.flights.size) this.checkFlights(now);
+    if (this.state.tick % 100 === 0) this.checkDiscoveries(now);
     if (this.state.tick % 25 === 0) {
       this.checkTestDrives(now);
       this.checkRides(now);
@@ -2202,6 +2246,294 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     }
   }
 
+
+  /* ---------- Go now: fast travel, travelling together, joining a friend, and what's on ---------- */
+
+  /** Street position, or the door of the building the player is in. */
+  private standingAt(player: Player): [number, number] {
+    return player.location === "street" ? [player.x, player.z] : player.returnPoint;
+  }
+
+  private fastTravelBlock(player: Player) {
+    if (player.busId) return "Get off the danfo first.";
+    if (player.vehicleId) return "Park and step out first. Your car stays parked where you leave it, and you can find it from Phone → Vehicles.";
+    if (player.ride && ["approaching", "waiting", "riding"].includes(player.ride.status)) return "You have a ride booked. Cancel it or finish the trip first.";
+    if (player.heldUp || player.robbing || player.checkpoint) return "Not right now — deal with what's in front of you first.";
+    if (player.location !== "street" && !/^(home|starter|preview|club):/.test(player.location)) {
+      return "Go now works from the street, a home or a club. Finish this part of your trip first.";
+    }
+    return null;
+  }
+
+  /** The place's entrance on the public side; open-air spots use their kerb. */
+  private arrivalPoint(place: Place): [number, number] {
+    if (place.buildingId !== null && walkable(place.door[0], place.door[1])) return [place.door[0], place.door[1]];
+    return [place.kerb[0], place.kerb[1]];
+  }
+
+  /** A free spot beside `point` so a group does not stand inside each other. */
+  private besides(point: [number, number], index: number): [number, number] {
+    if (index === 0) return point;
+    const angle = index * 2.1;
+    const spot: [number, number] = [point[0] + Math.cos(angle) * 1.4, point[1] + Math.sin(angle) * 1.4];
+    return walkable(spot[0], spot[1]) ? spot : point;
+  }
+
+  private resolveTravelTarget(player: Player, target: { placeId: string } | { favourite: Favourite }): { point: [number, number]; placeId: string; label: string } | string {
+    const at = (place: Place, label = place.name) => ({ point: this.arrivalPoint(place), placeId: place.id, label });
+    const region = regionOf(...this.standingAt(player));
+    if ("favourite" in target) {
+      const favourite = target.favourite;
+      if (favourite === "home" || favourite === "garage") {
+        const homeId = player.homePropertyId;
+        if (favourite === "garage" && !homeId) return "You need a home of your own for a garage. Set one from Phone → My Home.";
+        const mapped = homeId ? propertyPlace(homeId) : getPlace("starter-home");
+        const built = homeId && !mapped ? builtHomePlace(homeId) : null;
+        const door = mapped ? this.arrivalPoint(mapped) : built ? ([built.door[0], built.door[1]] as [number, number]) : null;
+        const name = mapped?.name ?? built?.name;
+        if (!door || !name) return "Your home is not on the map.";
+        if (regionOf(door[0], door[1]) !== region) return "Your home is in Lagos. Fly back from Dubai International first.";
+        return { point: door, placeId: homeId ?? "starter-home", label: favourite === "garage" ? `your garage at ${name}` : name };
+      }
+      if (favourite === "airport") {
+        const place = placeById.get(region === "dubai" ? TRAVEL_PLACES.dubaiAirport : TRAVEL_PLACES.lagosAirport);
+        return place ? at(place) : "The airport is not on the map.";
+      }
+      const [x, z] = this.standingAt(player);
+      const clubs = PLACES.filter((place) => (region === "dubai" ? place.kind === "lounge" : place.kind === "club") && regionOf(place.door[0], place.door[1]) === region);
+      const nearest = clubs.sort((a, b) => Math.hypot(a.door[0] - x, a.door[1] - z) - Math.hypot(b.door[0] - x, b.door[1] - z))[0];
+      return nearest ? at(nearest) : "There is no club in this city yet.";
+    }
+    const place = placeById.get(target.placeId);
+    if (!place || !isFastTravelKind(place.kind)) return "You can only Go now to public places.";
+    if (!player.discovered.has(place.id)) return `Visit ${place.name} once first; after that you can Go now there.`;
+    if (regionOf(place.door[0], place.door[1]) !== region) return region === "dubai" ? `${place.name} is in Lagos. Fly home from Dubai International first.` : `${place.name} is in Dubai. Fly there from the Lagos Air Terminal.`;
+    return at(place);
+  }
+
+  /** Moves a player who agreed to go: out of any interior, to a public point. Never into a building. */
+  private moveByTravel(player: Player, point: [number, number], text: string) {
+    const client = this.clientFor(player);
+    player.location = "street";
+    player.previewOnly = false;
+    player.propertyId = null;
+    [player.x, player.z] = point;
+    player.returnPoint = [...point];
+    player.motion = "idle";
+    player.travel = [];
+    player.lastAcceptedAt = Date.now();
+    player.fastTravelAt = Date.now();
+    setPlayerPosition(player.userId, player.x, player.z, "street");
+    void this.persist(player).catch(() => undefined);
+    if (client) {
+      this.sendSelf(client, player, "teleported");
+      this.notify(client, { tone: "success", text });
+    }
+  }
+
+  private handleFastTravel(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = fastTravelSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
+    const fail = (text: string) => this.notify(client, { tone: "error", text });
+    const block = this.fastTravelBlock(player);
+    if (block) return fail(block);
+    const now = Date.now();
+    const wait = player.fastTravelAt + FAST_TRAVEL.cooldownMs - now;
+    if (wait > 0) return fail(`Go now is cooling down — ${Math.ceil(wait / 1_000)} s. Walking, danfos and rides still work.`);
+    const target = this.resolveTravelTarget(player, parsed.data.target);
+    if (typeof target === "string") return fail(target);
+    const [ox, oz] = this.standingAt(player);
+    const companions = [...new Set(parsed.data.with)]
+      .map((sessionId) => this.players.get(sessionId))
+      .filter((other): other is Player => {
+        if (!other || other === player || !other.connected || player.hidden.has(other.userId)) return false;
+        const [x, z] = this.standingAt(other);
+        return Math.hypot(x - ox, z - oz) <= FAST_TRAVEL.togetherRadius;
+      });
+    const { point } = target;
+    this.moveByTravel(player, point, `You're at ${target.label}.${companions.length ? ` Asked ${companions.map((other) => other.name).join(", ")} to come along.` : ""}`);
+    companions.forEach((other, index) => {
+      const request: TravelRequest = {
+        id: randomUUID(),
+        kind: "together",
+        fromSessionId: player.sessionId,
+        toSessionId: other.sessionId,
+        point: this.besides(point, index + 1),
+        label: target.label,
+        region: regionOf(point[0], point[1]),
+        expiresAt: now + FAST_TRAVEL.answerMs,
+      };
+      this.travelRequests.set(request.id, request);
+      this.sendPrompt(other, request, player.name);
+    });
+  }
+
+  private sendPrompt(to: Player, request: TravelRequest, fromName: string) {
+    const prompt: TravelPrompt = { requestId: request.id, kind: request.kind, fromName, label: request.label, expiresAt: request.expiresAt };
+    this.clientFor(to)?.send("travelPrompt", prompt);
+  }
+
+  private handleJoinRequest(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = joinRequestSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
+    const fail = (text: string) => this.notify(client, { tone: "error", text });
+    const host = this.players.get(parsed.data.sessionId);
+    if (!host || host === player || !host.connected || player.hidden.has(host.userId)) return fail("That resident is not available.");
+    const block = this.fastTravelBlock(player);
+    if (block) return fail(block);
+    const wait = player.fastTravelAt + FAST_TRAVEL.cooldownMs - Date.now();
+    if (wait > 0) return fail(`Go now is cooling down — ${Math.ceil(wait / 1_000)} s.`);
+    for (const [id, existing] of this.travelRequests) if (existing.kind === "join" && existing.fromSessionId === player.sessionId) this.travelRequests.delete(id);
+    const request: TravelRequest = {
+      id: randomUUID(),
+      kind: "join",
+      fromSessionId: player.sessionId,
+      toSessionId: host.sessionId,
+      point: null,
+      label: "wants to join you",
+      region: regionOf(...this.standingAt(player)),
+      expiresAt: Date.now() + FAST_TRAVEL.answerMs,
+    };
+    this.travelRequests.set(request.id, request);
+    this.sendPrompt(host, request, player.name);
+    this.notify(client, { tone: "info", text: `Asked ${host.name} if you can join them. Nobody moves unless they agree.` });
+  }
+
+  private handleTravelAnswer(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = travelAnswerSchema.safeParse(payload);
+    if (!player || !parsed.success) return;
+    const request = this.travelRequests.get(parsed.data.requestId);
+    if (!request || request.toSessionId !== client.sessionId) return;
+    this.travelRequests.delete(request.id);
+    const asker = this.players.get(request.fromSessionId);
+    const askerClient = asker ? this.clientFor(asker) : undefined;
+    if (request.expiresAt < Date.now()) return this.notify(client, { tone: "info", text: "That request has expired." });
+    if (!parsed.data.accept) {
+      if (askerClient) this.notify(askerClient, { tone: "info", text: request.kind === "join" ? `${player.name} said not now.` : `${player.name} is staying put.` });
+      return;
+    }
+    if (request.kind === "together") {
+      const block = this.fastTravelBlock(player);
+      if (block) return this.notify(client, { tone: "error", text: block });
+      if (regionOf(...this.standingAt(player)) !== request.region) return this.notify(client, { tone: "error", text: "That's in another city now." });
+      this.moveByTravel(player, request.point!, `You came along to ${request.label}${asker ? ` with ${asker.name}` : ""}.`);
+      if (askerClient) this.notify(askerClient, { tone: "success", text: `${player.name} joined you.` });
+      return;
+    }
+    // Join: the host (this player) agreed; move the asker next to them, or to the door of the building they're in.
+    if (!asker || !askerClient) return;
+    const block = this.fastTravelBlock(asker);
+    if (block) return this.notify(askerClient, { tone: "error", text: block });
+    if (regionOf(...this.standingAt(player)) !== regionOf(...this.standingAt(asker))) {
+      return this.notify(askerClient, { tone: "error", text: `${player.name} is in another city. Fly there first.` });
+    }
+    if (player.location === "street") {
+      if (player.vehicleId || player.busId) return this.notify(askerClient, { tone: "error", text: `${player.name} is on the move. Try again when they've stopped.` });
+      this.moveByTravel(asker, this.besides([player.x, player.z], 1 + randomInt(4)), `You joined ${player.name}.`);
+    } else if (/^(home|starter|preview|club):/.test(player.location)) {
+      const place = player.propertyId ? (CLUBS[player.propertyId] ? getPlace(player.propertyId) : propertyPlace(player.propertyId) ?? builtHomePlace(player.propertyId)) : null;
+      const name = place?.name ?? "the building";
+      this.moveByTravel(asker, this.besides(player.returnPoint, 1), `${player.name} is inside ${name}. You're at the door — go in if you have access (a wristband for clubs, an invite for homes).`);
+    } else {
+      return this.notify(askerClient, { tone: "error", text: `${player.name} is travelling right now. Try again when they're back on the street.` });
+    }
+    this.notify(client, { tone: "success", text: `${asker.name} is on their way to you.` });
+  }
+
+  /** Marks public places discovered as players pass them, and expires unanswered travel requests. */
+  private checkDiscoveries(now: number) {
+    for (const [id, request] of this.travelRequests) if (request.expiresAt < now) this.travelRequests.delete(id);
+    for (const player of this.players.values()) {
+      if (!player.connected || player.location !== "street") continue;
+      for (const place of PLACES) {
+        if (player.discovered.has(place.id) || !isFastTravelKind(place.kind) || placeDistance(place, player.x, player.z) > FAST_TRAVEL.discoverRadius) continue;
+        player.discovered.add(place.id);
+        void recordDiscovery(player.userId, place.id).catch(() => undefined);
+        const client = this.clientFor(player);
+        if (client) this.notify(client, { tone: "info", text: `Discovered ${place.name}. You can now Go now here from Phone → Go.` });
+      }
+    }
+  }
+
+  private whereIs(player: Player) {
+    if (player.location.startsWith("flight:")) return "on a flight";
+    if (player.location.startsWith("club:")) return `at ${getPlace(player.location.slice(5))?.name ?? "a club"}`;
+    if (/^(home|starter|preview):/.test(player.location)) return "at home";
+    if (player.location !== "street") return "travelling";
+    if (player.busId) return "on a danfo";
+    if (player.vehicleId) return "driving";
+    return districtAt(player.x, player.z)?.name ?? "around the city";
+  }
+
+  /** Live activity in this world instance: busy clubs, boarding flights, and groups of residents at public places. */
+  private happenings(now: number): Happening[] {
+    const list: Happening[] = [];
+    for (const clubId of Object.keys(CLUBS)) {
+      const inside = [...this.players.values()].filter((player) => player.location === clubLocation(clubId)).length;
+      const place = getPlace(clubId);
+      if (inside > 0 && place) list.push({ id: `club:${clubId}`, kind: "club", title: `${place.name} is open`, detail: `${inside} inside · cover at the door`, people: inside, placeId: clubId });
+    }
+    for (const flight of this.flights.values()) {
+      const aboard = [...flight.seats.keys()].filter((key) => !key.startsWith("held:")).length;
+      const to = flight.leg === "outbound" ? "Dubai" : "Lagos";
+      if (flight.departAt > now) {
+        list.push({ id: `flight:${flight.id}`, kind: "flight", title: `Flight to ${to} boarding`, detail: `${aboard} aboard · doors close in ${Math.ceil((flight.departAt - now) / 1_000)} s · needs a ticket`, people: aboard, placeId: flight.leg === "outbound" ? TRAVEL_PLACES.lagosAirport : TRAVEL_PLACES.dubaiAirport });
+      } else if (flight.arriveAt > now) {
+        list.push({ id: `flight:${flight.id}`, kind: "flight", title: `${aboard} in the air to ${to}`, detail: `Lands in ${Math.ceil((flight.arriveAt - now) / 1_000)} s`, people: aboard, placeId: null });
+      }
+    }
+    const groups = new Map<string, { place: Place; people: number; riders: number }>();
+    for (const player of this.players.values()) {
+      if (!player.connected || player.location !== "street" || player.busId) continue;
+      const vehicle = player.vehicleId ? this.vehicles.get(player.vehicleId) : undefined;
+      if (vehicle && !vehicle.rental) continue;
+      let best: Place | null = null;
+      let bestDistance = 60;
+      for (const place of PLACES) {
+        if (!isFastTravelKind(place.kind)) continue;
+        const distance = placeDistance(place, player.x, player.z);
+        if (distance < bestDistance) [best, bestDistance] = [place, distance];
+      }
+      if (!best) continue;
+      const group = groups.get(best.id) ?? { place: best, people: 0, riders: 0 };
+      group.people += 1;
+      if (vehicle?.rental) group.riders += 1;
+      groups.set(best.id, group);
+    }
+    for (const { place, people, riders } of groups.values()) {
+      if (people < 2) continue;
+      const kind = riders >= 2 ? "ride" : place.kind === "beach" ? "beach" : "gathering";
+      const title = kind === "ride" ? `Bike ride near ${place.name}` : kind === "beach" ? `Beach hangout at ${place.name}` : `Residents hanging out at ${place.name}`;
+      list.push({ id: `group:${place.id}`, kind, title, detail: `${people} here now`, people, placeId: place.id });
+    }
+    return list.sort((a, b) => b.people - a.people).slice(0, 12);
+  }
+
+  private goState(player: Player): FastTravelState {
+    const [ox, oz] = this.standingAt(player);
+    const others = [...this.players.values()].filter((other) => other !== player && other.connected && !player.hidden.has(other.userId));
+    return {
+      discovered: [...player.discovered],
+      favourites: FAVOURITES.map((id) => {
+        const target = this.resolveTravelTarget(player, { favourite: id });
+        return typeof target === "string"
+          ? { id, label: FAVOURITE_LABEL[id], placeId: null, note: target }
+          : { id, label: FAVOURITE_LABEL[id], placeId: target.placeId, note: null };
+      }),
+      cooldownUntil: player.fastTravelAt + FAST_TRAVEL.cooldownMs,
+      nearby: others
+        .map((other) => {
+          const [x, z] = this.standingAt(other);
+          return { sessionId: other.sessionId, name: other.name, distance: Math.round(Math.hypot(x - ox, z - oz)) };
+        })
+        .filter((entry) => entry.distance <= FAST_TRAVEL.togetherRadius),
+      online: others.slice(0, 40).map((other) => ({ sessionId: other.sessionId, name: other.name, where: this.whereIs(other) })),
+      happenings: this.happenings(Date.now()),
+    };
+  }
 
   /* ---------- Travel: consulate, airports, flights, Dubai ---------- */
 

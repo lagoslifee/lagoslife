@@ -19,6 +19,8 @@ import {
   type CheckpointStop,
   type HoldUp,
   type TripState,
+  type FastTravelState,
+  type TravelPrompt,
 } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
@@ -54,6 +56,8 @@ export type MultiplayerHandlers = {
   trip: (trip: TripState) => void;
   photo: (photo: { spot: string; companions: string[] }) => void;
   react: (reaction: { sessionId: string; emoji: string }) => void;
+  goState: (state: FastTravelState) => void;
+  travelPrompt: (prompt: TravelPrompt) => void;
 };
 
 export class MultiplayerConnection {
@@ -144,6 +148,8 @@ export class MultiplayerConnection {
       room.onMessage("react", (reaction: { sessionId?: unknown; emoji?: unknown }) =>
         this.handlers.react({ sessionId: String(reaction?.sessionId ?? ""), emoji: String(reaction?.emoji ?? "") }),
       );
+      room.onMessage("goState", (state: FastTravelState) => Array.isArray(state?.discovered) && this.handlers.goState(state));
+      room.onMessage("travelPrompt", (prompt: TravelPrompt) => typeof prompt?.requestId === "string" && this.handlers.travelPrompt(prompt));
       room.onMessage("photo", (photo: { spot?: unknown; companions?: unknown }) =>
         this.handlers.photo({ spot: String(photo?.spot ?? ""), companions: Array.isArray(photo?.companions) ? photo.companions.map(String) : [] }),
       );
@@ -188,6 +194,10 @@ export class MultiplayerConnection {
   send(
     type:
       | "react"
+      | "fastTravel"
+      | "travelAnswer"
+      | "joinRequest"
+      | "goState"
       | "board"
       | "alight"
       | "requestStop"

@@ -1,4 +1,4 @@
-import { blockedByWater, cabinSeats, seatPoint, travelSpot, TRAVEL, getPlace, getRoute, ROUTES, sampleRoute, type RideState, type TransitRoute } from "@lagos-living/shared";
+import { blockedByWater, cabinSeats, seatPoint, travelSpot, TRAVEL, getPlace, placeById, getRoute, ROUTES, sampleRoute, type RideState, type TransitRoute } from "@lagos-living/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const economy = vi.hoisted(() => ({
@@ -46,6 +46,7 @@ const justice = vi.hoisted(() => ({
 vi.mock("../justice-service.js", () => justice);
 const rides = vi.hoisted(() => ({ chargeRide: vi.fn(async () => 1_000), refundRide: vi.fn(async () => 1_000), closeRide: vi.fn(async () => undefined), refundOrphanedRides: vi.fn(async () => 0) }));
 vi.mock("../ride-service.js", () => rides);
+vi.mock("../fast-travel-service.js", () => ({ loadDiscoveries: vi.fn(async () => new Set()), recordDiscovery: vi.fn(async () => undefined), homePropertyOf: vi.fn(async () => null) }));
 const travel = vi.hoisted(() => ({
   tripRecord: vi.fn(async (_userId: string): Promise<Record<string, unknown> | null> => null),
   advanceLeg: vi.fn(async (..._args: unknown[]): Promise<Record<string, unknown>> => ({})),
@@ -154,6 +155,9 @@ function setup(route: TransitRoute = lekki, stopIndex = 1) {
       hidden: new Set<string>(),
       travel: [],
       kicked: false,
+      discovered: new Set<string>(),
+      fastTravelAt: 0,
+      homePropertyId: null,
     });
     return client;
   };
@@ -1038,5 +1042,81 @@ describe("LagosRoom shared flights", () => {
     expect(travel.advanceLeg).toHaveBeenCalledTimes(2);
     const seats = [...flight.seats.values()].map((entry) => entry.seat);
     expect(new Set(seats).size).toBe(seats.length);
+  });
+});
+
+describe("LagosRoom Go now", () => {
+  type Internals = RoomInternals & {
+    handleFastTravel(client: FakeClient, payload: unknown): void;
+    handleTravelAnswer(client: FakeClient, payload: unknown): void;
+    handleJoinRequest(client: FakeClient, payload: unknown): void;
+    checkDiscoveries(now: number): void;
+  };
+  const prompts = (client: FakeClient) => client.send.mock.calls.filter(([type]) => type === "travelPrompt").map(([, prompt]) => prompt as { requestId: string; kind: string });
+  const park = placeById.get("muri-okunola-park")!;
+  const mechanic = placeById.get("ade-auto-works")!;
+
+  it("only goes to discovered public places, arrives outside, and cools down", () => {
+    const { room, join, notices, player } = setup();
+    const internals = room as Internals;
+    const ada = join("ada");
+    internals.handleFastTravel(ada, { target: { placeId: park.id } });
+    expect(player(ada).x).not.toBe(park.kerb[0]);
+    expect(notices(ada).at(-1)).toContain("Visit");
+    Object.assign(player(ada), { x: park.kerb[0], z: park.kerb[1] });
+    internals.checkDiscoveries(Date.now());
+    expect((player(ada).discovered as Set<string>).has(park.id)).toBe(true);
+    Object.assign(player(ada), { x: mechanic.kerb[0], z: mechanic.kerb[1] });
+    internals.handleFastTravel(ada, { target: { placeId: park.id } });
+    expect(player(ada).location).toBe("street");
+    expect(Math.hypot((player(ada).x as number) - park.kerb[0], (player(ada).z as number) - park.kerb[1])).toBeLessThan(1);
+    internals.handleFastTravel(ada, { target: { favourite: "airport" } });
+    expect(notices(ada).at(-1)).toContain("cooling down");
+  });
+
+  it("refuses while driving and never goes to private homes or another city", () => {
+    const { room, join, notices, player } = setup();
+    const internals = room as Internals;
+    const ada = join("ada");
+    (player(ada).discovered as Set<string>).add("lekki-chief-okoro-house").add("jbr-beach");
+    internals.handleFastTravel(ada, { target: { placeId: "lekki-chief-okoro-house" } });
+    expect(notices(ada).at(-1)).toContain("public places");
+    internals.handleFastTravel(ada, { target: { placeId: "jbr-beach" } });
+    expect(notices(ada).at(-1)).toContain("in Dubai");
+    player(ada).vehicleId = "car-1";
+    internals.handleFastTravel(ada, { target: { favourite: "home" } });
+    expect(notices(ada).at(-1)).toContain("Park and step out");
+  });
+
+  it("moves companions only when each one accepts", () => {
+    const { room, join, player } = setup();
+    const internals = room as Internals;
+    const [ada, bayo, chi] = [join("ada"), join("bayo"), join("chi")];
+    const before = [player(chi).x, player(chi).z];
+    internals.handleFastTravel(ada, { target: { favourite: "airport" }, with: [bayo.sessionId, chi.sessionId] });
+    const [bayoPrompt] = prompts(bayo);
+    const [chiPrompt] = prompts(chi);
+    expect(bayoPrompt?.kind).toBe("together");
+    expect(player(bayo).x).not.toBe(player(ada).x);
+    internals.handleTravelAnswer(bayo, { requestId: bayoPrompt!.requestId, accept: true });
+    internals.handleTravelAnswer(chi, { requestId: chiPrompt!.requestId, accept: false });
+    expect(Math.hypot((player(bayo).x as number) - (player(ada).x as number), (player(bayo).z as number) - (player(ada).z as number))).toBeLessThan(2);
+    expect([player(chi).x, player(chi).z]).toEqual(before);
+    internals.handleTravelAnswer(bayo, { requestId: bayoPrompt!.requestId, accept: true });
+    expect(prompts(bayo)).toHaveLength(1);
+  });
+
+  it("joins a friend inside a club at the door, never inside", () => {
+    const { room, join, player } = setup();
+    const internals = room as Internals;
+    const [ada, host] = [join("ada"), join("host")];
+    const club = placeById.get("eko-nights")!;
+    Object.assign(player(host), { location: "club:eko-nights", propertyId: "eko-nights", returnPoint: [...club.door], x: 0, z: 0 });
+    internals.handleJoinRequest(ada, { sessionId: host.sessionId });
+    expect(player(ada).location).toBe("street");
+    const [prompt] = prompts(host);
+    internals.handleTravelAnswer(host, { requestId: prompt!.requestId, accept: true });
+    expect(player(ada).location).toBe("street");
+    expect(Math.hypot((player(ada).x as number) - club.door[0], (player(ada).z as number) - club.door[1])).toBeLessThan(2);
   });
 });

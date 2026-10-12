@@ -1,4 +1,4 @@
-import { CLUBS, OFFENCES, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
+import { CLUBS, OFFENCES, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TravelPrompt, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { noteFps, report, setReportedQuality } from "../diagnostics";
@@ -10,6 +10,7 @@ import { FullMap, Minimap } from "./MapView";
 import { currentObjective, housingPath, type HousingPath } from "./objectives";
 import { Welcome } from "./Welcome";
 import { Phone, type PhoneApp } from "./Phone";
+import { TravelPromptCard } from "./GoApp";
 import { ClubRadio } from "./ClubRadio";
 import { ClubBarSheet, ClubDoorSheet, ClubTableSheet } from "./ClubSheets";
 import { COMMUNITY_KINDS, CommunitySheet } from "./CommunitySheets";
@@ -85,6 +86,7 @@ export function GameView({
   const [clubTable, setClubTable] = useState<number | null>(null);
   const [clubTables, setClubTables] = useState<ClubTable[]>([]);
   const [checkpoint, setCheckpoint] = useState<CheckpointStop | null>(null);
+  const [travelPrompts, setTravelPrompts] = useState<TravelPrompt[]>([]);
   const [holdUp, setHoldUp] = useState<HoldUp | null>(null);
   const [robTarget, setRobTarget] = useState<{ sessionId: string; name: string } | null>(null);
   const [plots, setPlots] = useState<PlotState[]>([]);
@@ -298,6 +300,7 @@ export function GameView({
           void refresh();
         },
         photo: (photo) => void savePhoto(photo),
+        travelPrompt: (prompt) => setTravelPrompts((list) => [...list.filter((entry) => entry.requestId !== prompt.requestId), prompt].slice(-3)),
         ride: (next) => {
           setRide(next);
           if (next && (next.status === "approaching" || next.status === "completed" || next.status === "cancelled")) void refresh();
@@ -829,6 +832,17 @@ export function GameView({
       )}
       {sheet?.kind === "security" && (
         <SecuritySheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} />
+      )}
+      {travelPrompts[0] && engine && (
+        <TravelPromptCard
+          key={travelPrompts[0].requestId}
+          prompt={travelPrompts[0]}
+          onAnswer={(accept) => {
+            const prompt = travelPrompts[0]!;
+            engine.answerTravel(prompt.requestId, accept);
+            setTravelPrompts((list) => list.filter((entry) => entry.requestId !== prompt.requestId));
+          }}
+        />
       )}
       {checkpoint && engine && (
         <CheckpointPrompt

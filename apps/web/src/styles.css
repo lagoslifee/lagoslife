@@ -743,6 +743,19 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .police-records h3 { margin: 14px 0 6px; }
 .game-view.touch .police-prompt { top: 70px; }
 
+/* Go now */
+.go-app h3 { margin: 14px 0 6px; font-size: calc(15px * var(--text-scale)); }
+.go-list { list-style: none; padding: 0; margin: 0; }
+.go-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(0, 0, 0, .06); }
+.go-list li > span { min-width: 0; }
+.go-favourites { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.go-favourites button { display: grid; gap: 2px; text-align: left; }
+.go-favourites small { font-size: 11px; opacity: .75; font-weight: normal; }
+.go-filter { width: 100%; margin-bottom: 6px; }
+.travel-prompt { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 13; width: min(380px, calc(100% - 180px)); padding: 10px 12px; border-radius: 10px; color: #fff; background: rgba(18, 38, 32, .94); border-top: 3px solid #3fb07a; box-shadow: 0 8px 24px rgba(0, 0, 0, .4); }
+.travel-prompt p { margin: 0 0 8px; }
+.travel-prompt .muted { color: rgba(255, 255, 255, .7); }
+
 /* Travel: consulate, airports, hotels, flights */
 .travel-sheet h3, .travel-app h3 { margin: 14px 0 6px; font-size: calc(15px * var(--text-scale)); }
 .travel-card { display: grid; gap: 4px; margin: 8px 0; padding: 10px 12px; border-radius: 10px; border: 1px solid #ddd6c6; background: #fffdf7; }

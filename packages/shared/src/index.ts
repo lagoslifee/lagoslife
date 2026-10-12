@@ -82,6 +82,7 @@ export * from "./nightlife.js";
 export * from "./club-music.js";
 export * from "./police.js";
 export * from "./travel.js";
+export * from "./fast-travel.js";
 import { worldVehicleSchema } from "./vehicles.js";
 
 export const motionStates = ["idle", "walk", "jog", "sprint", "sit", "wave", "dance", "drive"] as const;

@@ -88,6 +88,9 @@ import {
   type FlightPhase,
   type TravelInterior,
   type TripState,
+  type FastTravelState,
+  type Favourite,
+  type TravelPrompt,
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
 import { Escort, type EscortLeader } from "./escort";
@@ -185,6 +188,8 @@ export type EngineCallbacks = {
   police: (event: PoliceEvent) => void;
   trip: (trip: TripState) => void;
   photo: (photo: { spot: string; companions: string[]; image: string | null }) => void;
+  /** Someone asks this player to travel with them, or to join them; nothing happens unless they accept. */
+  travelPrompt: (prompt: TravelPrompt) => void;
 };
 
 type Remote = {
@@ -428,7 +433,7 @@ export class GameEngine {
         this.callbacks.notice(notice);
         if (notice.tone === "error" && this.transitionAt) {
           this.transitionAt = 0;
-          if (this.transfer?.el.classList.contains("plain") && !this.transfer.arrivedAt) this.transfer.arrivedAt = performance.now() - 6_000;
+          if (this.transfer && this.transfer.minMs < 900 && !this.transfer.arrivedAt) this.transfer.arrivedAt = performance.now() - 6_000;
         }
         if (notice.announcement) {
           if (this.settings.subtitles) this.callbacks.subtitle(notice.announcement);
@@ -484,6 +489,8 @@ export class GameEngine {
         this.callbacks.police(event);
       },
       trip: (trip) => this.onTrip(trip),
+      goState: (state) => this.goListener?.(state),
+      travelPrompt: (prompt) => this.callbacks.travelPrompt(prompt),
       react: ({ sessionId, emoji }) => {
         if (sessionId === this.net.sessionId) return;
         const remote = this.remotes.get(sessionId);
@@ -2013,6 +2020,30 @@ export class GameEngine {
     this.cabinAudio = next;
     localStorage.setItem("lagos-cabin-audio", JSON.stringify(next));
     this.audio.setCabinHum(this.travelView?.kind === "cabin" && next.hum ? 1 : 0);
+  }
+
+  /** Set by the phone's Go app while it is open. */
+  goListener: ((state: FastTravelState) => void) | null = null;
+
+  requestGoState() {
+    this.net.send("goState");
+  }
+
+  /** Go now: fades out, and the server places the player at the public entrance (or refuses with a reason). */
+  fastTravel(target: { placeId: string } | { favourite: Favourite }, label: string, companions: string[] = []) {
+    const now = performance.now();
+    if (now - this.transitionAt < 3_000) return;
+    this.transitionAt = now;
+    this.showVeil("📍", `Going to ${label}…`, "Go now", 700);
+    this.net.send("fastTravel", { target, with: companions });
+  }
+
+  answerTravel(requestId: string, accept: boolean) {
+    this.net.send("travelAnswer", { requestId, accept });
+  }
+
+  askToJoin(sessionId: string) {
+    this.net.send("joinRequest", { sessionId });
   }
 
   /** Seated reactions, shown over this player's avatar to everyone in the same cabin or boat. */

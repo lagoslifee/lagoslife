@@ -8,10 +8,12 @@ import { CommunityApp } from "./CommunitySheets";
 import { TravelApp } from "./TravelApp";
 import { VehiclesApp } from "./VehicleSheets";
 import { JusticeApp, SafetyApp, type ReportTarget } from "./SafetyUI";
+import { GoApp } from "./GoApp";
 
-export type PhoneApp = "home" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
+export type PhoneApp = "home" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
 
 const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
+  { id: "go", label: "Go", icon: "📍" },
   { id: "map", label: "Map", icon: "🗺" },
   { id: "ride", label: "Ride", icon: "🚕" },
   { id: "travel", label: "Travel", icon: "✈" },
@@ -101,6 +103,7 @@ export function Phone(props: Props) {
             ))}
           </div>
         )}
+        {app === "go" && <GoApp engine={props.engine} onClose={onClose} />}
         {app === "ride" && <RideApp engine={props.engine} ride={props.ride} properties={props.properties} onNavigate={props.onNavigate} onClose={onClose} />}
         {app === "travel" && <TravelApp engine={props.engine} economy={props.economy} onNavigate={props.onNavigate} onRefresh={props.onRefresh} onToast={props.onToast} onClose={onClose} />}
         {app === "transport" && <TransportApp {...props} />}
@@ -127,7 +130,7 @@ export function Phone(props: Props) {
         {app === "friends" && (
           <div className="app-section">
             <p><strong>{props.hud?.online ?? 1}</strong> resident{props.hud?.online === 1 ? "" : "s"} online in this world.</p>
-            <p className="muted">Name tags show nearby residents. Press Enter to chat with anyone within 40 m. Friend lists are not available yet.</p>
+            <p className="muted">Name tags show nearby residents. Press Enter to chat with anyone within 40 m. To travel together or join someone, open Phone → Go. Saved friend lists are not available yet.</p>
           </div>
         )}
         {app === "notifications" && (
