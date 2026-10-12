@@ -8,7 +8,7 @@ const ROLLING_DRAG = 1.8;
 const AERO_DRAG = 0.004;
 const SLIDE_DRAG = 3;
 /** Sideways acceleration the tyres can hold (m/s²); caps how sharply a fast vehicle can turn. */
-const CAR_GRIP = 7;
+const CAR_GRIP = 12;
 const BIKE_GRIP = 4.5;
 
 /**
@@ -103,9 +103,9 @@ export class CarController {
     this.accel = dt > 0 ? (next - before) / dt : 0;
 
     // Heavier vehicles turn the wheel more slowly; the wheel recentres a little faster than it turns.
-    const steerLimit = model.maxSteer / (1 + Math.abs(this.speed) / 10);
+    const steerLimit = model.maxSteer / (1 + Math.abs(this.speed) / 22);
     const targetSteer = Math.max(-1, Math.min(1, input.steer)) * steerLimit;
-    const rate = model.maxSteer * Math.max(1.8, Math.min(4.5, 4.5 - model.mass / 1000)) * (targetSteer === 0 ? 1.5 : 1);
+    const rate = model.maxSteer * Math.max(2.8, Math.min(5.5, 5.5 - model.mass / 1000)) * (targetSteer === 0 ? 1.5 : 1);
     const delta = targetSteer - this.steer;
     this.steer += Math.sign(delta) * Math.min(Math.abs(delta), rate * dt);
     let yawRate = (this.speed * Math.tan(this.steer)) / model.wheelbase;

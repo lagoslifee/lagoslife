@@ -1344,10 +1344,12 @@ function DriveControls({ engine, lights, canExit, bicycle }: { engine: GameEngin
       engine.setTouchDrive(null);
     };
   }, [engine]);
+  // Steering follows how far the finger has moved from where it first touched, so a short drag is full lock.
+  const anchor = useRef(0);
   const steerTo = (event: React.PointerEvent) => {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const offset = (event.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
-    update({ steer: Math.max(-1, Math.min(1, offset * 1.25)) });
+    const offset = (event.clientX - anchor.current) / Math.max(40, rect.width * 0.28);
+    update({ steer: Math.max(-1, Math.min(1, offset)) });
   };
   const pedal = (key: "gas" | "brake") => ({
     onPointerDown: (event: React.PointerEvent) => {
@@ -1375,6 +1377,10 @@ function DriveControls({ engine, lights, canExit, bicycle }: { engine: GameEngin
           if (fingers.current.steer !== null) return;
           fingers.current.steer = event.pointerId;
           (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+          const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+          const centre = rect.left + rect.width / 2;
+          // A tap well off-centre still turns that way at once; a tap near the middle starts straight.
+          anchor.current = Math.abs(event.clientX - centre) > rect.width * 0.3 ? centre : event.clientX;
           steerTo(event);
         }}
         onPointerMove={(event) => fingers.current.steer === event.pointerId && steerTo(event)}
