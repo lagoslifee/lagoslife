@@ -1317,14 +1317,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       const pz = place.door[1] + doorNz * 0.6 + ez * 1.8;
       placeSigns.push({ placeId: place.id, point: place.door, ...(listing ? { board: { at: [px, pz] as Vec2, yaw: doorYaw, normal: [doorNx, doorNz] as Vec2 } } : {}) });
       if (listing) {
-        const style = place.kind === "rental" ? "rent" : "sale";
-        const uv = signUv(place.kind === "rental" ? "FOR RENT" : "FOR SALE", style, place.name);
-        const posts = base.get(cx, cz, "pole");
-        posts.box(px - ex * 0.7, 1.0, pz - ez * 0.7, 0.07, 2.0, 0.07, doorYaw);
-        posts.box(px + ex * 0.7, 1.0, pz + ez * 0.7, 0.07, 2.0, 0.07, doorYaw);
-        base.get(cx, cz, "concrete").box(px, 1.75, pz, 1.7, 0.4, 0.04, doorYaw, 1, [0.95, 0.95, 0.95]);
-        textQuad(base.get(cx, cz, "signs"), px + doorNx * 0.025, 1.75, pz + doorNz * 0.025, doorYaw, 1.62, 1.62 / SignAtlas.aspect, uv);
-        textQuad(base.get(cx, cz, "signs"), px - doorNx * 0.025, 1.75, pz - doorNz * 0.025, doorYaw + Math.PI, 1.62, 1.62 / SignAtlas.aspect, uv);
+        // The board itself is drawn by ListingBoards so it can come down once the home is sold to you.
         addObstacle([px - ex * 0.7, pz - ez * 0.7], [px - ex * 0.7, pz - ez * 0.7], 0.08);
         addObstacle([px + ex * 0.7, pz + ez * 0.7], [px + ex * 0.7, pz + ez * 0.7], 0.08);
       } else if (!shopfront) {
