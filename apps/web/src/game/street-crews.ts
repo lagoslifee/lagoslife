@@ -10,7 +10,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
 import { CLUBS, PLACES, POLICE_CHECKPOINTS, type CharacterAppearance, type Vec2 } from "@lagos-living/shared";
 import type { Avatar, AvatarFactory } from "./avatar";
-import { equipSecurity } from "./security-kit";
+import { equipPolice, equipSecurity } from "./security-kit";
 import type { VehicleFactory, VehicleView } from "./vehicles";
 
 /** Crews are built when the player comes this close and removed past SHOW + 80 m. */
@@ -33,7 +33,7 @@ type Crew = {
 const OFFICER: CharacterAppearance = { body: "male", skinTone: "rich", hairstyle: "low-fade", outfit: "police-uniform", accessory: "cap" };
 const OFFICER_2: CharacterAppearance = { body: "female", skinTone: "deep", hairstyle: "buns", outfit: "police-uniform", accessory: "cap" };
 const OFFICER_3: CharacterAppearance = { body: "male", skinTone: "deep", hairstyle: "low-fade", outfit: "police-uniform", accessory: "cap" };
-const OFFICER_4: CharacterAppearance = { body: "male", skinTone: "warm", hairstyle: "low-fade", outfit: "police-uniform", accessory: "beard" };
+const OFFICER_4: CharacterAppearance = { body: "male", skinTone: "warm", hairstyle: "low-fade", outfit: "police-uniform", accessory: "cap" };
 const STOPPED_CARS = [["toyota-corolla", "#7a1f2b"], ["toyota-camry", "#2f4a6d"], ["honda-accord", "#5b5f63"], ["lexus-rx350", "#1f3d2b"]] as const;
 const BOUNCER: CharacterAppearance = { body: "male", skinTone: "deep", hairstyle: "low-fade", outfit: "security-uniform", accessory: "glasses" };
 const BOUNCER_2: CharacterAppearance = { body: "male", skinTone: "rich", hairstyle: "low-fade", outfit: "security-uniform", accessory: "beard" };
@@ -265,6 +265,7 @@ export class StreetCrews {
     const scanner = this.person(`officer ${site.id} c`, OFFICER_3, kx, kz, site.yaw + Math.PI);
     const guard = this.person(`officer ${site.id} d`, OFFICER_4, qx, qz, site.yaw + Math.PI);
     crew.people.push(flagger, window, scanner, guard);
+    for (const officer of crew.people) equipPolice(this.scene, officer.avatar);
     const torch = this.part(MeshBuilder.CreateCylinder(`torch ${site.id}`, { diameterTop: 0.04, diameterBottom: 0.5, height: 1.1, tessellation: 12 }, this.scene), this.torch, window.avatar.root as unknown as TransformNode);
     torch.rotation.x = -Math.PI / 2 + 0.25;
     torch.position.set(0.22, 1.25, 0.65);

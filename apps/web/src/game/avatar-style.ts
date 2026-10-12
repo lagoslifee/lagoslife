@@ -68,7 +68,10 @@ function onScalp(point: Vector3) {
   return point.y > -0.2 && !(point.z > 0.55 && point.y < 0.45);
 }
 
-function build(scene: Scene, body: Body, style: Hairstyle | Accessory): Mesh | null {
+/** Hairstyles, accessories, and the peaked cap that replaces the plain cap on a police uniform. */
+export type HeadStyle = Hairstyle | Accessory | "police-cap";
+
+function build(scene: Scene, body: Body, style: HeadStyle): Mesh | null {
   const hair = () => material(scene, "hair", "#17120f", 0.85);
   const { centre, radius } = HEADS[body].skull;
   const EYES = HEADS[body].eyes;
@@ -138,6 +141,33 @@ function build(scene: Scene, body: Body, style: Hairstyle | Accessory): Mesh | n
       parts.forEach((part) => (part.material = fabric));
       return merged(parts, "cap");
     }
+    case "police-cap": {
+      const cloth = material(scene, "police cap", "#121318", 0.8);
+      const band = material(scene, "police cap band", "#1d2b4f", 0.7);
+      const visor = material(scene, "police cap visor", "#050506", 0.25);
+      const gold = material(scene, "police cap badge", "#d4a537", 0.35);
+      gold.metallic = 0.8;
+      const ring = CreateCylinder("cap band", { height: 0.3, diameter: radius * 2.18, tessellation: 24 }, scene);
+      ring.position = centre.add(new Vector3(0, 0.22, 0.02));
+      ring.material = band;
+      const crown = CreateCylinder("cap crown", { height: 0.16, diameterBottom: radius * 2.2, diameterTop: radius * 2.6, tessellation: 24 }, scene);
+      crown.position = centre.add(new Vector3(0, 0.44, 0.02));
+      crown.material = cloth;
+      const peak = CreateCylinder("cap peak", { height: 0.035, diameter: radius * 1.9, tessellation: 20 }, scene);
+      peak.scaling = new Vector3(1, 1, 0.75);
+      peak.rotation.x = 0.28;
+      peak.position = centre.add(new Vector3(0, 0.1, radius * 0.55));
+      peak.material = visor;
+      const badge = CreateCylinder("cap badge", { height: 0.03, diameter: 0.2, tessellation: 12 }, scene);
+      badge.rotation.x = Math.PI / 2;
+      badge.position = centre.add(new Vector3(0, 0.27, radius * 1.1 + 0.02));
+      badge.material = gold;
+      const mesh = Mesh.MergeMeshes([ring, crown, peak, badge], true, true, undefined, false, true)!;
+      mesh.name = "police cap";
+      mesh.setEnabled(false);
+      mesh.isPickable = false;
+      return mesh;
+    }
     case "headwrap": {
       const fabric = material(scene, "headwrap", "#b3261c", 0.6);
       const wrap = CreateSphere("wrap", { diameter: radius * 2.2, segments: 16 }, scene);
@@ -162,7 +192,7 @@ function build(scene: Scene, body: Body, style: Hairstyle | Accessory): Mesh | n
   }
 }
 
-function template(scene: Scene, body: Body, style: Hairstyle | Accessory) {
+function template(scene: Scene, body: Body, style: HeadStyle) {
   let cache = templates.get(scene);
   if (!cache) templates.set(scene, (cache = {}));
   const key = `${body}:${style}`;
@@ -201,7 +231,7 @@ export function headAnchor(scene: Scene, name: string, mesh: AbstractMesh, bones
 }
 
 /** Replaces the hairstyle and accessory meshes under a head anchor. */
-export function dressHead(scene: Scene, anchor: TransformNode, appearance: CharacterAppearance, styles: Array<Hairstyle | Accessory>) {
+export function dressHead(scene: Scene, anchor: TransformNode, appearance: CharacterAppearance, styles: HeadStyle[]) {
   for (const child of anchor.getChildMeshes(true)) child.dispose();
   for (const style of styles) {
     const source = template(scene, appearance.body, style);
