@@ -115,6 +115,8 @@ export function drawMap(
     markers: Marker[];
     buses: Array<{ x: number; z: number; yaw: number; state: string }>;
     vehicles?: Array<{ x: number; z: number }>;
+    /** Other residents online in this world, from the live room. */
+    residents?: Array<{ name: string; x: number; z: number; driving: boolean }>;
     /** Buildings and areas of the streamed tiles currently loaded. */
     layer: { buildings: WorldBuilding[]; areas: WorldArea[] };
     showPlaces: boolean;
@@ -349,6 +351,30 @@ export function drawMap(
     ctx.fillText("C", sx, sy + 0.5);
   }
 
+  for (const person of options.residents ?? []) {
+    if (!visible(person.x, person.z, 12)) continue;
+    const [sx, sy] = toScreen(view, person.x, person.z);
+    ctx.fillStyle = person.driving ? "#e8590c" : "#7048e8";
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (person.driving) ctx.roundRect(sx - 6, sy - 5, 12, 10, 3);
+    else ctx.arc(sx, sy, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    if (!options.compact) {
+      ctx.font = "600 11px system-ui, sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(255,255,255,.9)";
+      const label = person.driving ? `${person.name} · driving` : person.name;
+      ctx.strokeText(label, sx + 9, sy);
+      ctx.fillStyle = "#2b1d63";
+      ctx.fillText(label, sx + 9, sy);
+    }
+  }
+
   for (const marker of options.markers) {
     const [sx, sy] = toScreen(view, marker.point[0], marker.point[1]);
     const clampedX = Math.max(10, Math.min(width - 10, sx));
@@ -428,6 +454,7 @@ export function Minimap({ engine, data, markers, onOpen }: { engine: GameEngine;
         markers: markersRef.current,
         buses: engine.busPositions(),
         vehicles: engine.myVehicles().filter((car) => car.id !== engine.drivingVehicleId()),
+        residents: engine.residentPositions(),
         layer: engine.mapLayer(),
         showPlaces: true,
         compact: true,
@@ -507,6 +534,7 @@ export function FullMap({
         markers: markersRef.current,
         buses: engine.busPositions(),
         vehicles: engine.myVehicles().filter((car) => car.id !== engine.drivingVehicleId()),
+        residents: engine.residentPositions(),
         layer: engine.mapLayer(),
         showPlaces: true,
         compact: false,

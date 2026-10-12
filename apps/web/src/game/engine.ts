@@ -2501,6 +2501,15 @@ export class GameEngine {
     return [...this.buses.values()].map((bus) => ({ id: bus.id, x: bus.root.position.x, z: bus.root.position.z, yaw: bus.yaw, state: bus.state?.state ?? "driving" }));
   }
 
+  /** Other online residents in this world; passengers on a danfo are left to the bus marker. */
+  residentPositions() {
+    return [...this.remotes.values()].flatMap((remote) => {
+      const sample = remote.samples[remote.samples.length - 1];
+      if (!sample || sample.busId) return [];
+      return [{ name: remote.name, x: sample.x, z: sample.z, driving: Boolean(sample.vehicleId) }];
+    });
+  }
+
   setInputEnabled(enabled: boolean) {
     this.input?.setEnabled(enabled);
   }
