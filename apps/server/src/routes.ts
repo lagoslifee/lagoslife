@@ -332,7 +332,8 @@ export function configureRoutes(app: Express) {
       return;
     }
     try {
-      if (!(await withinRate(`guest:${req.ip ?? "unknown"}`, 20, 3_600_000))) {
+      // Nigerian mobile networks put many phones behind one carrier address, so the cap is per address, not per person.
+      if (!(await withinRate(`guest:${req.ip ?? "unknown"}`, 60, 3_600_000))) {
         res.status(429).json({ error: "Too many guest accounts from this address. Try again later." });
         return;
       }

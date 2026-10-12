@@ -307,6 +307,9 @@ run in tmux, notices within about three minutes, starts a new tunnel, restarts t
 pushes `netlify.toml` to `main`, after which Netlify rebuilds in about a minute. A named Cloudflare tunnel or the
 Render server (`render.yaml`) avoids this entirely.
 
+`cloudflared` connects from localhost, so the server must run with `TRUSTED_PROXIES=loopback`. Without it every
+visitor looks like `::1`, and the per-address guest cap (60 an hour) turns everyone away once it fills.
+
 ### Testing money
 
 `TEST_FUNDS=20000000` refills every wallet to ₦20,000,000 whenever the game reads it (after each purchase, on the

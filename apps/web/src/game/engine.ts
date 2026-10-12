@@ -587,7 +587,8 @@ export class GameEngine {
     }
 
     this.materials = createMaterials(scene, this.quality);
-    this.atlas = new SignAtlas(scene);
+    this.atlas = new SignAtlas(scene, this.quality === "low" ? 0.5 : 1);
+    MeshBuilderBatch.keepCpuCopies = this.quality !== "low";
     this.callbacks.loading("Loading Lagos streets…", 0.25);
     const response = await fetch("/assets/world/lagos.world.json");
     if (!response.ok) throw new Error("World data could not be loaded");
@@ -687,7 +688,8 @@ export class GameEngine {
       }
       this.updateMs = this.updateMs * 0.9 + (performance.now() - t0) * 0.1;
     });
-    engine.onContextLostObservable.add(() => this.callbacks.graphics("lost"));
+    // Without CPU copies of the world's vertices a restored context would come back empty.
+    engine.onContextLostObservable.add(() => this.callbacks.graphics(MeshBuilderBatch.keepCpuCopies ? "lost" : "failed"));
     engine.onContextRestoredObservable.add(() => this.callbacks.graphics("restored"));
     // Babylon only queues the next frame after this callback returns, so one thrown error would freeze the game for good.
     engine.runRenderLoop(() => {

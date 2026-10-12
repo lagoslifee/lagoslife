@@ -39,13 +39,24 @@ export class SignAtlas {
   private cache = new Map<string, { rect: UvRect; slot: number; owners: Set<string> | null }>();
   private owned = new Map<string, Set<string>>();
   private ctx: CanvasRenderingContext2D;
+  private dirty = false;
 
-  constructor(scene: Scene) {
-    this.texture = new DynamicTexture("sign atlas", { width: WIDTH, height: HEIGHT }, scene, true);
+  /**
+   * `scale` shrinks the canvas, not the layout: a full-size atlas is 32 MB of canvas plus 43 MB of mipmapped texture,
+   * more than an iPhone tab can spare on low graphics.
+   */
+  constructor(scene: Scene, private readonly scale = 1) {
+    this.texture = new DynamicTexture("sign atlas", { width: WIDTH * scale, height: HEIGHT * scale }, scene, true);
     this.texture.hasAlpha = false;
     this.ctx = this.texture.getContext() as unknown as CanvasRenderingContext2D;
     this.ctx.fillStyle = "#808080";
-    this.ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    this.ctx.fillRect(0, 0, WIDTH * scale, HEIGHT * scale);
+    // Every upload copies the whole canvas, so a district streaming in 80 signs uploads once, not 80 times.
+    scene.onBeforeRenderObservable.add(() => {
+      if (!this.dirty) return;
+      this.dirty = false;
+      this.texture.update(true);
+    });
     this.material = new PBRMaterial("signs", scene);
     this.material.albedoTexture = this.texture;
     this.material.emissiveTexture = this.texture;
@@ -79,6 +90,7 @@ export class SignAtlas {
     const palette = palettes[style];
     const ctx = this.ctx;
     ctx.save();
+    ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
     ctx.fillStyle = color ?? palette.bg;
     ctx.fillRect(x, y, SLOT_W, SLOT_H);
     if (palette.border) {
@@ -104,9 +116,9 @@ export class SignAtlas {
       ctx.fillText(text, x + SLOT_W / 2, y + SLOT_H / 2 + 2);
     }
     ctx.restore();
-    this.texture.update(true);
+    this.dirty = true;
     // Inset half a texel so neighbouring slots never bleed under mipmapping.
-    const inset = 2;
+    const inset = 2 / this.scale;
     const rect = {
       u0: (x + inset) / WIDTH,
       u1: (x + SLOT_W - inset) / WIDTH,

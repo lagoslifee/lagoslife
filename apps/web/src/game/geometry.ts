@@ -8,17 +8,24 @@ export type V3 = [number, number, number];
 
 /** Collects many quads/boxes into one mesh so a whole district is a few draw calls. */
 export class MeshBuilderBatch {
+  /**
+   * Off on low graphics: static world chunks then keep their vertices only on the GPU, roughly halving a phone's
+   * memory. Such a scene cannot survive a WebGL context restore, so the engine rebuilds instead.
+   */
+  static keepCpuCopies = true;
   positions: number[] = [];
   normals: number[] = [];
   uvs: number[] = [];
   colors: number[] = [];
   indices: number[] = [];
   private useColors = false;
+  private packed: VertexData | null = null;
+  private packedVertices = 0;
 
   constructor(readonly name: string) {}
 
   get vertexCount() {
-    return this.positions.length / 3;
+    return this.packed ? this.packedVertices : this.positions.length / 3;
   }
 
   private push(p: V3, n: V3, uv: [number, number], color: [number, number, number, number]) {
@@ -198,16 +205,37 @@ export class MeshBuilderBatch {
     }
   }
 
-  build(scene: Scene, material: Material) {
+  /**
+   * Moves the vertices into typed arrays; further quads cannot be added afterwards. Babylon keeps vertex arrays for a
+   * mesh's lifetime and deferred batches wait a long time to build, so number[] (8 bytes plus growth slack per value)
+   * was most of a phone's JS heap.
+   */
+  compact() {
+    if (this.packed) return this.packed;
+    const data = new VertexData();
+    data.positions = new Float32Array(this.positions);
+    data.normals = new Float32Array(this.normals);
+    data.uvs = new Float32Array(this.uvs);
+    data.indices = this.positions.length / 3 > 65535 ? new Uint32Array(this.indices) : new Uint16Array(this.indices);
+    if (this.useColors) data.colors = new Float32Array(this.colors);
+    this.packedVertices = this.positions.length / 3;
+    this.positions = [];
+    this.normals = [];
+    this.uvs = [];
+    this.colors = [];
+    this.indices = [];
+    this.packed = data;
+    return data;
+  }
+
+  /** `worldStatic`: a mesh that never moves, merges or instances, so it may drop its CPU copy (see keepCpuCopies). */
+  build(scene: Scene, material: Material, worldStatic = false) {
     if (this.vertexCount === 0) return null;
     const mesh = new Mesh(this.name, scene);
-    const data = new VertexData();
-    data.positions = this.positions;
-    data.normals = this.normals;
-    data.uvs = this.uvs;
-    data.indices = this.indices;
-    if (this.useColors) data.colors = this.colors;
+    const data = this.compact();
+    this.packed = null;
     data.applyToMesh(mesh, false);
+    if (worldStatic && !MeshBuilderBatch.keepCpuCopies) mesh.geometry?.clearCachedData();
     mesh.material = material;
     if (this.useColors) mesh.useVertexColors = true;
     mesh.isPickable = false;

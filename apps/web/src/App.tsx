@@ -10,7 +10,7 @@ import {
   type CharacterAppearance,
   type OutfitId,
 } from "@lagos-living/shared";
-import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
+import { FormEvent, lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ACCESSORY_LABELS, BODY_LABELS, HAIR_LABELS, OUTFITS } from "./game/wardrobe";
 import { apiConfigured, apiUrl, authClient, authHeaders, guestMode, signOut, startGuestSession } from "./auth-client";
 
@@ -351,6 +351,7 @@ function Main() {
   const session = authClient.useSession();
   const [autoSignIn, setAutoSignIn] = useState<"idle" | "pending" | "failed">("idle");
   const [guestError, setGuestError] = useState("");
+  const guestAttempts = useRef(0);
   const query = new URLSearchParams(location.search);
   const manual = query.has("manual") || query.has("reset") || query.has("token");
   const local = ["localhost", "127.0.0.1"].includes(location.hostname);
@@ -374,6 +375,12 @@ function Main() {
     startGuestSession()
       .then(() => location.reload())
       .catch((error: Error) => {
+        // A phone switching networks or a server mid-restart usually answers a few seconds later.
+        if (guestAttempts.current < 3) {
+          guestAttempts.current += 1;
+          setTimeout(() => setAutoSignIn("idle"), 2_500 * guestAttempts.current);
+          return;
+        }
         setGuestError(error.message);
         setAutoSignIn("failed");
       });

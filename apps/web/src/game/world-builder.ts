@@ -264,7 +264,7 @@ class ChunkSet {
       const [cx, cz] = key.split(":").map(Number) as [number, number];
       const meshes: Mesh[] = [];
       for (const [materialKey, batch] of chunk) {
-        const mesh = batch.build(scene, materials[materialKey]!);
+        const mesh = batch.build(scene, materials[materialKey]!, true);
         if (mesh) meshes.push(mesh);
       }
       chunks.push({ x: (cx + 0.5) * this.size, z: (cz + 0.5) * this.size, meshes });
@@ -276,6 +276,7 @@ class ChunkSet {
   deferred(scene: Scene, materials: Record<string, Material>): DetailChunk[] {
     return [...this.batches].map(([key, chunk]) => {
       const [cx, cz] = key.split(":").map(Number) as [number, number];
+      for (const batch of chunk.values()) batch.compact();
       const entry: DetailChunk = {
         x: (cx + 0.5) * this.size,
         z: (cz + 0.5) * this.size,
@@ -284,7 +285,7 @@ class ChunkSet {
           if (entry.meshes) return entry.meshes;
           entry.meshes = [];
           for (const [materialKey, batch] of chunk) {
-            const mesh = batch.build(scene, materials[materialKey]!);
+            const mesh = batch.build(scene, materials[materialKey]!, true);
             if (mesh) entry.meshes.push(mesh);
           }
           return entry.meshes;

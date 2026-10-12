@@ -33,7 +33,7 @@ export function Welcome({ playerName, economy, properties, touch, bindings, onCh
       icon: "🏠",
       title: "Buy a house",
       cost: sale ? naira(sale.purchasePrice) : "Okoro Terrace",
-      detail: "Yours outright, no rent — but it takes almost all your money.",
+      detail: sale && sale.purchasePrice > balance / 2 ? "Yours outright, no rent — but it takes most of your money." : "Yours outright: no rent, ever.",
     },
     {
       path: "build",
@@ -46,11 +46,20 @@ export function Welcome({ playerName, economy, properties, touch, bindings, onCh
   return (
     <div className="modal-backdrop welcome-backdrop">
       <section className="welcome" role="dialog" aria-labelledby="welcome-title" data-testid="welcome">
-        <p className="eyebrow">WELCOME TO LEKKI, {playerName.toUpperCase()}</p>
-        <h2 id="welcome-title">First, find a place to live</h2>
+        <p className="eyebrow">WELCOME TO LAGOS LIVING, {playerName.toUpperCase()}</p>
+        <h2 id="welcome-title">Live a life in Lagos — with real people</h2>
         <p className="welcome-lead">
-          You have <strong>{naira(balance)}</strong> game naira and a room for tonight. Choose how to settle — the guide will walk you there.
+          Everyone you see walking or driving with a name over their head is another real player. You have <strong>{naira(balance)}</strong> game naira
+          and a room for tonight in Lekki.
         </p>
+        <ul className="welcome-things" aria-label="Things to do">
+          <li><span aria-hidden>🏠</span>Get a home</li>
+          <li><span aria-hidden>🚗</span>Buy or rent a car</li>
+          <li><span aria-hidden>🍾</span>Clubs at night</li>
+          <li><span aria-hidden>✈️</span>Fly to Dubai</li>
+          <li><span aria-hidden>📍</span>Phone → Go now to travel fast</li>
+        </ul>
+        <h3 className="welcome-step">Start here: where will you live?</h3>
         <div className="welcome-options">
           {options.map((option) => (
             <button key={option.path} className="welcome-option" onClick={() => onChoose(option.path)} data-testid={`welcome-${option.path}`}>
