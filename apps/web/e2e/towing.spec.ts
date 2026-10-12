@@ -44,9 +44,9 @@ test("tows, repairs and returns the same car to the player's current location", 
   const request = phone.getByTestId("tow-request");
   await expect(request).toContainText("Where should we return your car?");
   await expect(request).toContainText("₦4,000");
-  await request.getByLabel(/My current location/).check();
+  await request.getByLabel(/Right where I am/).check();
   await shot("tow-request");
-  await request.getByRole("button", { name: /Send the truck/ }).click();
+  await request.getByRole("button", { name: /^Standard/ }).click();
   await expect(phone.getByTestId("tow-arriving")).toBeVisible({ timeout: 10_000 });
   await until(async () => (await apiGet<Economy>(page, "/api/economy")).balance === before - 4_000, 10_000, "charged once");
   await page.keyboard.press("Escape");
