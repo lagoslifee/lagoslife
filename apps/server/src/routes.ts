@@ -12,6 +12,7 @@ import {
   tenancyActionSchema,
   homeActionSchema,
   inviteGuestSchema,
+  moveFurnitureSchema,
   placeFurnitureSchema,
   purchaseRequestSchema,
   saveCharacterSchema,
@@ -50,7 +51,7 @@ import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
 import { auth } from "./auth.js";
-import { acquirePlot, buildingEvents, listPlots, payNextStage, releasePlotsOf, renewPlotLease, startConstruction } from "./building-service.js";
+import { acquirePlot, buildingEvents, buyReadyBuilt, listPlots, payNextStage, releasePlotsOf, renewPlotLease, startConstruction } from "./building-service.js";
 import { matchMaker } from "@colyseus/core";
 import { config } from "./config.js";
 import { pool } from "./database.js";
@@ -124,6 +125,8 @@ import {
   cancelTenancy,
   getInterior,
   invitePropertyGuest,
+  moveFurniture,
+  removePropertyGuest,
   listProperties,
   moveStorage,
   performHomeAction,
@@ -455,6 +458,11 @@ export function configureRoutes(app: Express) {
     return startConstruction(userId, String(req.params.plotId), body.designId, body.idempotencyKey);
   }));
 
+  app.post("/api/plots/:plotId/buy-built", requirePlayer, rateLimited, guarded("The house could not be bought", (req, userId) => {
+    const body = z.object({ designId: z.string().min(1).max(40), idempotencyKey: z.string().min(8).max(80) }).parse(req.body);
+    return buyReadyBuilt(userId, String(req.params.plotId), body.designId, body.idempotencyKey);
+  }));
+
   app.post("/api/plots/:plotId/next-stage", requirePlayer, rateLimited, guarded("The builders could not be paid", (req, userId) =>
     payNextStage(userId, String(req.params.plotId), tenancyActionSchema.parse(req.body).idempotencyKey)));
 
@@ -478,6 +486,9 @@ export function configureRoutes(app: Express) {
   app.post("/api/properties/:propertyId/furniture", requirePlayer, rateLimited, guarded("Furniture could not be placed", (req, userId) =>
     placeFurniture(userId, String(req.params.propertyId), placeFurnitureSchema.parse(req.body))));
 
+  app.post("/api/properties/:propertyId/furniture/move", requirePlayer, rateLimited, guarded("Furniture could not be moved", (req, userId) =>
+    moveFurniture(userId, String(req.params.propertyId), moveFurnitureSchema.parse(req.body))));
+
   app.post("/api/properties/:propertyId/furniture/remove", requirePlayer, rateLimited, guarded("Furniture could not be moved", (req, userId) =>
     removeFurniture(userId, String(req.params.propertyId), z.object({ placementId: z.uuid() }).parse(req.body).placementId)));
 
@@ -491,6 +502,9 @@ export function configureRoutes(app: Express) {
 
   app.post("/api/properties/:propertyId/guests", requirePlayer, rateLimited, guarded("Guest could not be invited", (req, userId) =>
     invitePropertyGuest(userId, String(req.params.propertyId), inviteGuestSchema.parse(req.body).username)));
+
+  app.post("/api/properties/:propertyId/guests/remove", requirePlayer, rateLimited, guarded("Guest list unchanged", (req, userId) =>
+    removePropertyGuest(userId, String(req.params.propertyId), inviteGuestSchema.parse(req.body).username)));
 
   app.get("/api/vehicles", requirePlayer, guarded("Vehicles unavailable", (_req, userId) =>
     listVehicles(userId)));

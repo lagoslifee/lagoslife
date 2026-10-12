@@ -513,6 +513,7 @@ export class GameEngine {
       suspended: (info) => this.callbacks.suspended(info),
       looks: (looks) => this.onLooks(looks),
       plots: () => this.callbacks.plotsChanged(),
+      interior: () => void this.refreshInterior(),
       ride: (ride) => this.onRide(ride),
       bikeStock: (stock) => {
         this.bikeStock = stock;

@@ -1,11 +1,11 @@
-import { builtHomeId, designTotal, houseDesign, houseFootprint, insideBuilding, plotById, PLOT_TERMS, PLOTS } from "@lagos-living/shared";
+import { builtHomeId, designTotal, houseDesign, houseFootprint, insideBuilding, plotById, PLOT_TERMS, PLOTS, readyBuiltPrice } from "@lagos-living/shared";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { acquirePlot, listPlots, payNextStage, refreshPlotFootprints, releaseIdleGuestPlots, renewPlotLease, settleExpiredPlotLeases, startConstruction } from "./building-service.js";
+import { acquirePlot, buyReadyBuilt, listPlots, payNextStage, refreshPlotFootprints, releaseIdleGuestPlots, renewPlotLease, settleExpiredPlotLeases, startConstruction } from "./building-service.js";
 import { pool } from "./database.js";
 import { getEconomyState } from "./economy-service.js";
 import { setPlayerPosition } from "./player-presence.js";
-import { acquireProperty, listProperties } from "./property-service.js";
+import { acquireProperty, invitePropertyGuest, listProperties } from "./property-service.js";
 
 const users = [0, 1].map(() => ({ id: `build-user-${randomUUID()}`, username: `bld${randomUUID().replaceAll("-", "").slice(0, 12)}` }));
 const guest = { id: `build-guest-${randomUUID()}`, username: `Guest_${randomUUID().slice(0, 6)}` };
@@ -152,5 +152,33 @@ describe("land and building", () => {
     expect(await releaseIdleGuestPlots()).toBeGreaterThanOrEqual(1);
     expect((await listPlots(guest.id)).find((entry) => entry.id === plotA)?.status).toBe("available");
     expect((await listPlots(buyer!.id)).find((entry) => entry.id === plotB)?.status).toBe("mine");
+  });
+
+  it("sells a modern house ready-built with its land, and lets the owner invite a friend round", async () => {
+    const [builder, buyer] = users;
+    const design = houseDesign("pool-villa")!;
+    expect(design.pool).not.toBeNull();
+    expect(design.parking).toBeGreaterThanOrEqual(2);
+    await pool.query(`UPDATE wallet SET balance = 3000000 WHERE user_id = $1`, [builder!.id]);
+    setPlayerPosition(builder!.id, 0, 0, "street");
+    await expect(buyReadyBuilt(builder!.id, plotA, design.id, key())).rejects.toMatchObject({ status: 409 });
+    atGate(builder!.id, plotB);
+    await expect(buyReadyBuilt(builder!.id, plotB, design.id, key())).rejects.toThrow(/Another resident/);
+    atGate(builder!.id, plotA);
+    const idempotencyKey = key();
+    const bought = await buyReadyBuilt(builder!.id, plotA, design.id, idempotencyKey);
+    expect(bought).toMatchObject({ replayed: false, homeId: builtHomeId(plotA) });
+    await expect(buyReadyBuilt(builder!.id, plotA, design.id, idempotencyKey)).resolves.toMatchObject({ replayed: true });
+    const price = readyBuiltPrice(design, false);
+    expect(price).toBeGreaterThan(PLOT_TERMS.purchasePrice + designTotal(design));
+    expect(await balance(builder!.id)).toBe(3_000_000 - price);
+    const plot = (await listPlots(builder!.id)).find((entry) => entry.id === plotA)!;
+    expect(plot).toMatchObject({ status: "mine", tenureType: "owned", construction: { designId: "pool-villa", completed: true } });
+    expect((await getEconomyState(builder!.id)).homePropertyId).toBe(builtHomeId(plotA));
+
+    expect((await listProperties(buyer!.id)).some((listing) => listing.id === builtHomeId(plotA))).toBe(false);
+    await invitePropertyGuest(builder!.id, builtHomeId(plotA), buyer!.username);
+    const visit = (await listProperties(buyer!.id)).find((listing) => listing.id === builtHomeId(plotA));
+    expect(visit).toMatchObject({ isMine: false, hasGuestAccess: true });
   });
 });

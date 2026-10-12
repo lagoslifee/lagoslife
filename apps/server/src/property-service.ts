@@ -1,4 +1,4 @@
-import { propertyPlace } from "@lagos-living/shared";
+import { BED_ITEM_IDS, furnitureItem, legacyCellPosition, nearestCell, placementProblem, propertyPlace, snapFloor, type PlacedPiece } from "@lagos-living/shared";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "./database.js";
@@ -11,10 +11,9 @@ import {
   markProgress,
   withTransaction,
 } from "./economy-service.js";
+import { homeEvents } from "./home-events.js";
 import { getPlayerPosition } from "./player-presence.js";
 
-/** Grid cells in front of the interior exit door must stay clear. */
-export const BLOCKED_EXIT_CELLS = new Set(["3:0", "4:0"]);
 const LISTING_RANGE = 7;
 
 export function listingDoor(listing: { id: string; world_x: number; world_z: number }): [number, number] {
@@ -102,7 +101,10 @@ export async function listProperties(userId: string) {
             ) AS "hasGuestAccess"
      FROM property_listing listing
      LEFT JOIN property_tenure tenure ON tenure.property_id = listing.id
-     WHERE listing.active = TRUE AND (listing.listing_type <> 'built' OR tenure.owner_user_id = $1)
+     WHERE listing.active = TRUE AND (
+       listing.listing_type <> 'built' OR tenure.owner_user_id = $1
+       OR EXISTS (SELECT 1 FROM property_guest guest WHERE guest.property_id = listing.id AND guest.guest_user_id = $1)
+     )
      ORDER BY listing.monthly_rent`,
     [userId],
   );
@@ -321,7 +323,8 @@ export async function getInterior(userId: string, propertyId: string) {
     ),
     pool.query(
       `SELECT placement.id, placement.item_id AS "itemId", catalog.name,
-              placement.grid_x AS "gridX", placement.grid_z AS "gridZ", placement.rotation
+              placement.grid_x AS "gridX", placement.grid_z AS "gridZ", placement.rotation,
+              placement.pos_x AS x, placement.pos_z AS z
        FROM furniture_placement placement
        JOIN shop_catalog catalog ON catalog.id = placement.item_id
        WHERE placement.property_id = $1 ORDER BY placement.created_at`,
@@ -368,65 +371,94 @@ export async function getInterior(userId: string, propertyId: string) {
   };
 }
 
+/** Locks the home's tenancy so concurrent edits are checked against each other, and returns what is on the floor. */
+async function lockFloor(client: PoolClient, propertyId: string): Promise<PlacedPiece[]> {
+  await client.query(`SELECT 1 FROM property_tenure WHERE property_id = $1 FOR UPDATE`, [propertyId]);
+  const rows = await client.query(
+    `SELECT id, item_id, pos_x, pos_z, rotation FROM furniture_placement WHERE property_id = $1`,
+    [propertyId],
+  );
+  return rows.rows.map((row) => ({ id: row.id, itemId: row.item_id, x: Number(row.pos_x), z: Number(row.pos_z), rotation: Number(row.rotation) }));
+}
+
 export async function placeFurniture(
   userId: string,
   propertyId: string,
   input: {
     itemId: string;
-    gridX: number;
-    gridZ: number;
+    x?: number | undefined;
+    z?: number | undefined;
+    gridX?: number | undefined;
+    gridZ?: number | undefined;
     rotation: 0 | 90 | 180 | 270;
     idempotencyKey: string;
   },
 ) {
   const access = await requirePropertyAccess(userId, propertyId);
   if (!access.owner) throw new EconomyError("Only the owner can place furniture", 403);
-  if (BLOCKED_EXIT_CELLS.has(`${input.gridX}:${input.gridZ}`)) {
-    throw new EconomyError("Keep the doorway clear — furniture cannot block the exit.");
-  }
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const inventory = await client.query(
-      `SELECT quantity FROM inventory_item
-       WHERE user_id = $1 AND item_id = $2 FOR UPDATE`,
-      [userId, input.itemId],
-    );
+  if (!furnitureItem(input.itemId)) throw new EconomyError("That is not furniture.");
+  const [x, z] = input.x !== undefined && input.z !== undefined
+    ? [snapFloor(input.x), snapFloor(input.z)]
+    : legacyCellPosition(input.gridX ?? 0, input.gridZ ?? 0);
+  const placed = await withTransaction(async (client) => {
+    const floor = await lockFloor(client, propertyId);
     const existing = await client.query(
-      `SELECT id FROM furniture_placement
-       WHERE placed_by = $1 AND idempotency_key = $2`,
+      `SELECT id FROM furniture_placement WHERE placed_by = $1 AND idempotency_key = $2`,
       [userId, input.idempotencyKey],
     );
-    if (existing.rowCount) {
-      await client.query("COMMIT");
-      return { id: existing.rows[0].id, replayed: true };
-    }
-    const placed = await client.query(
-      `SELECT COUNT(*)::INTEGER AS count FROM furniture_placement
-       WHERE placed_by = $1 AND item_id = $2`,
+    if (existing.rowCount) return { id: existing.rows[0].id as string, replayed: true };
+    const problem = placementProblem({ itemId: input.itemId, x, z, rotation: input.rotation }, floor);
+    if (problem) throw new EconomyError(problem, 409);
+    const inventory = await client.query(
+      `SELECT quantity FROM inventory_item WHERE user_id = $1 AND item_id = $2 FOR UPDATE`,
       [userId, input.itemId],
     );
-    if (!inventory.rowCount || Number(inventory.rows[0].quantity) <= Number(placed.rows[0].count)) {
+    const used = await client.query(
+      `SELECT COUNT(*)::INTEGER AS count FROM furniture_placement WHERE placed_by = $1 AND item_id = $2`,
+      [userId, input.itemId],
+    );
+    if (!inventory.rowCount || Number(inventory.rows[0].quantity) <= Number(used.rows[0].count)) {
       throw new EconomyError("Buy this furniture before placing it.");
     }
     const id = randomUUID();
+    const [gridX, gridZ] = nearestCell(x, z);
     await client.query(
       `INSERT INTO furniture_placement
-        (id, property_id, placed_by, item_id, grid_x, grid_z, rotation, idempotency_key)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [id, propertyId, userId, input.itemId, input.gridX, input.gridZ, input.rotation, input.idempotencyKey],
+        (id, property_id, placed_by, item_id, grid_x, grid_z, rotation, pos_x, pos_z, idempotency_key)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [id, propertyId, userId, input.itemId, gridX, gridZ, input.rotation, x, z, input.idempotencyKey],
     );
-    await client.query("COMMIT");
     return { id, replayed: false };
-  } catch (error) {
-    await client.query("ROLLBACK");
-    if ((error as { code?: string }).code === "23505") {
-      throw new EconomyError("That floor position is already occupied", 409);
-    }
-    throw error;
-  } finally {
-    client.release();
-  }
+  });
+  if (!placed.replayed) homeEvents.emit("furniture", propertyId);
+  return placed;
+}
+
+/** Slides or turns a piece already in the room. */
+export async function moveFurniture(
+  userId: string,
+  propertyId: string,
+  input: { placementId: string; x: number; z: number; rotation: 0 | 90 | 180 | 270 },
+) {
+  const access = await requirePropertyAccess(userId, propertyId);
+  if (!access.owner) throw new EconomyError("Only the owner can move furniture", 403);
+  const [x, z] = [snapFloor(input.x), snapFloor(input.z)];
+  const moved = await withTransaction(async (client) => {
+    const floor = await lockFloor(client, propertyId);
+    const piece = floor.find((entry) => entry.id === input.placementId);
+    if (!piece) throw new EconomyError("That furniture is not in this home.", 404);
+    const problem = placementProblem({ ...piece, x, z, rotation: input.rotation }, floor);
+    if (problem) throw new EconomyError(problem, 409);
+    const [gridX, gridZ] = nearestCell(x, z);
+    await client.query(
+      `UPDATE furniture_placement SET pos_x = $3, pos_z = $4, rotation = $5, grid_x = $6, grid_z = $7
+       WHERE id = $1 AND property_id = $2`,
+      [input.placementId, propertyId, x, z, input.rotation, gridX, gridZ],
+    );
+    return { id: input.placementId, x, z, rotation: input.rotation };
+  });
+  homeEvents.emit("furniture", propertyId);
+  return moved;
 }
 
 export async function removeFurniture(userId: string, propertyId: string, placementId: string) {
@@ -437,6 +469,7 @@ export async function removeFurniture(userId: string, propertyId: string, placem
     [placementId, propertyId, userId],
   );
   if (!removed.rowCount) throw new EconomyError("That furniture is not yours to move", 404);
+  homeEvents.emit("furniture", propertyId);
   return { removed: true };
 }
 
@@ -524,8 +557,8 @@ export async function performHomeAction(
   if (action === "sleep") {
     const bed = await pool.query(
       `SELECT 1 FROM furniture_placement
-       WHERE property_id = $1 AND item_id = 'island-bed'`,
-      [propertyId],
+       WHERE property_id = $1 AND item_id = ANY($2)`,
+      [propertyId, BED_ITEM_IDS],
     );
     if (!bed.rowCount) throw new EconomyError("Place a bed before sleeping.");
   }
@@ -561,5 +594,22 @@ export async function invitePropertyGuest(
      ON CONFLICT (property_id, guest_user_id) DO NOTHING`,
     [propertyId, guest.rows[0].id, ownerUserId],
   );
+  const [host, home] = await Promise.all([
+    pool.query(`SELECT username FROM "user" WHERE id = $1`, [ownerUserId]),
+    pool.query(`SELECT name FROM property_listing WHERE id = $1`, [propertyId]),
+  ]);
+  homeEvents.emit("invited", guest.rows[0].id, host.rows[0]?.username ?? "A resident", home.rows[0]?.name ?? "their home");
   return { invited: true };
+}
+
+/** Takes a guest off the list; they can no longer let themselves in. */
+export async function removePropertyGuest(ownerUserId: string, propertyId: string, username: string) {
+  const access = await requirePropertyAccess(ownerUserId, propertyId);
+  if (!access.owner) throw new EconomyError("Only the owner can change the guest list", 403);
+  await pool.query(
+    `DELETE FROM property_guest WHERE property_id = $1
+       AND guest_user_id = (SELECT id FROM "user" WHERE LOWER(username) = LOWER($2))`,
+    [propertyId, username],
+  );
+  return { removed: true };
 }

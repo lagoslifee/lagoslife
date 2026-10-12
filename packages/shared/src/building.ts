@@ -48,7 +48,7 @@ export const STAGE_LABELS: Record<ConstructionStage, string> = {
 };
 
 export type HouseDesign = {
-  id: "self-contain" | "bungalow" | "duplex";
+  id: "self-contain" | "bungalow" | "duplex" | "pool-villa" | "estate-mansion";
   name: string;
   description: string;
   bedrooms: number;
@@ -57,6 +57,10 @@ export type HouseDesign = {
   width: number;
   depth: number;
   storageSlots: number;
+  /** Covered car spaces in the compound, parked nose to tail under carports beside the house. */
+  parking: number;
+  /** Swimming pool in the back garden, width along the street by length into the plot, in metres. */
+  pool: [number, number] | null;
   /** Builders' fee and time for each stage, in order. Testing-scale minutes, not real construction time. */
   stages: Record<ConstructionStage, { cost: number; minutes: number }>;
 };
@@ -71,6 +75,8 @@ export const HOUSE_DESIGNS: HouseDesign[] = [
     width: 8,
     depth: 7,
     storageSlots: 20,
+    parking: 1,
+    pool: null,
     stages: {
       foundation: { cost: 20_000, minutes: 1 },
       blockwork: { cost: 25_000, minutes: 2 },
@@ -87,6 +93,8 @@ export const HOUSE_DESIGNS: HouseDesign[] = [
     width: 12,
     depth: 10,
     storageSlots: 30,
+    parking: 0,
+    pool: null,
     stages: {
       foundation: { cost: 40_000, minutes: 2 },
       blockwork: { cost: 60_000, minutes: 3 },
@@ -103,11 +111,49 @@ export const HOUSE_DESIGNS: HouseDesign[] = [
     width: 13,
     depth: 12,
     storageSlots: 45,
+    parking: 0,
+    pool: null,
     stages: {
       foundation: { cost: 80_000, minutes: 3 },
       blockwork: { cost: 140_000, minutes: 5 },
       roofing: { cost: 110_000, minutes: 3 },
       finishing: { cost: 120_000, minutes: 3 },
+    },
+  },
+  {
+    id: "pool-villa",
+    name: "Modern pool villa",
+    description: "Two storeys of glass and white render, a two-car carport and a pool in the back garden.",
+    bedrooms: 3,
+    floors: 2,
+    width: 10,
+    depth: 10,
+    storageSlots: 55,
+    parking: 2,
+    pool: [6, 3.2],
+    stages: {
+      foundation: { cost: 150_000, minutes: 3 },
+      blockwork: { cost: 250_000, minutes: 5 },
+      roofing: { cost: 180_000, minutes: 3 },
+      finishing: { cost: 220_000, minutes: 4 },
+    },
+  },
+  {
+    id: "estate-mansion",
+    name: "Three-storey estate mansion",
+    description: "Five bedrooms over three floors, carports for four cars on both sides and a long lap pool.",
+    bedrooms: 5,
+    floors: 3,
+    width: 10.6,
+    depth: 11,
+    storageSlots: 80,
+    parking: 4,
+    pool: [8, 3.4],
+    stages: {
+      foundation: { cost: 300_000, minutes: 4 },
+      blockwork: { cost: 520_000, minutes: 6 },
+      roofing: { cost: 380_000, minutes: 4 },
+      finishing: { cost: 500_000, minutes: 5 },
     },
   },
 ];
@@ -120,6 +166,14 @@ export function houseDesign(id: string) {
 
 export function designTotal(design: HouseDesign) {
   return constructionStages.reduce((sum, stage) => sum + design.stages[stage].cost, 0);
+}
+
+/** Builders charge this much more to hand over a design finished at once instead of stage by stage. */
+export const READY_BUILT_MARKUP = 0.2;
+
+/** Land (unless already held) plus the whole design, finished on the spot. */
+export function readyBuiltPrice(design: HouseDesign, holdsLand: boolean) {
+  return (holdsLand ? 0 : PLOT_TERMS.purchasePrice) + Math.round((designTotal(design) * (1 + READY_BUILT_MARKUP)) / 1000) * 1000;
 }
 
 /** Property id given to the finished house on a plot. */

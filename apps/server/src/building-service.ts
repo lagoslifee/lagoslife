@@ -7,6 +7,7 @@ import {
   plotById,
   PLOT_TERMS,
   PLOTS,
+  readyBuiltPrice,
   STAGE_LABELS,
   syncPlotFootprints,
   type HouseDesign,
@@ -301,6 +302,47 @@ export async function startConstruction(userId: string, plotId: string, designId
     await markProgress(client, userId, "first_construction");
     return { balance, replayed: false };
   }));
+}
+
+/**
+ * Buys a finished house in one go: the freehold (unless the resident already holds this plot) and the whole design,
+ * handed over at once for a markup instead of waiting on each stage.
+ */
+export async function buyReadyBuilt(userId: string, plotId: string, designId: string, idempotencyKey: string) {
+  const plot = requirePlot(plotId);
+  const design = requireDesign(designId);
+  await settleExpiredPlotLeases();
+  const result = await announce(withTransaction(async (client) => {
+    const balanceBefore = await lockWallet(client, userId);
+    const replay = await replayed(client, userId, idempotencyKey);
+    if (replay !== null) return { balance: replay, replayed: true };
+    requireAtGate(userId, plot, "buy a house here");
+    const tenure = await client.query(`SELECT owner_user_id FROM plot_tenure WHERE plot_id = $1 FOR UPDATE`, [plotId]);
+    const holdsLand = tenure.rows[0]?.owner_user_id === userId;
+    if (tenure.rowCount && !holdsLand) throw new EconomyError("Another resident already holds this plot.", 409);
+    if (!holdsLand) {
+      const held = await client.query(`SELECT plot_id FROM plot_tenure WHERE owner_user_id = $1`, [userId]);
+      if (held.rowCount) throw new EconomyError("You already hold another plot. One plot per resident.", 409);
+    }
+    const existing = await client.query(`SELECT 1 FROM construction WHERE plot_id = $1`, [plotId]);
+    if (existing.rowCount) throw new EconomyError("Building has already started on this plot.", 409);
+    const price = readyBuiltPrice(design, holdsLand);
+    if (balanceBefore < price) throw new EconomyError("Insufficient game naira", 402);
+    const balance = await debitWallet(client, userId, price, "construction",
+      `${plot.name} · ${design.name} · ready-built${holdsLand ? "" : " with freehold"}`, idempotencyKey, { plotId, designId, readyBuilt: true });
+    if (!holdsLand) {
+      await client.query(`INSERT INTO plot_tenure (plot_id, owner_user_id, tenure_type) VALUES ($1, $2, 'owned')`, [plotId, userId]);
+      await markProgress(client, userId, "first_plot");
+    }
+    await client.query(
+      `INSERT INTO construction (plot_id, owner_user_id, design_id, stages_paid, stage_started_at, stage_ready_at)
+       VALUES ($1, $2, $3, $4, NOW(), NOW())`,
+      [plotId, userId, design.id, constructionStages.length],
+    );
+    return { balance, replayed: false };
+  }));
+  await completeReadyHouses(userId);
+  return { ...result, homeId: builtHomeId(plotId) };
 }
 
 /** Pays the builders for the next stage once the current one is finished. */

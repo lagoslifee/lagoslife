@@ -14,6 +14,7 @@ import {
   invitePropertyGuest,
   performHomeAction,
   placeFurniture,
+  moveFurniture,
 } from "./property-service.js";
 
 const propertyId = `property-test-${randomUUID()}`;
@@ -166,6 +167,30 @@ describe("property ownership and access", () => {
         idempotencyKey: randomUUID(),
       }),
     ).rejects.toThrow("doorway");
+  });
+
+  it("places furniture anywhere on the floor, never on top of other pieces, and moves it", async () => {
+    setPlayerPosition(owner.id, 0, 0, "street");
+    await pool.query(`UPDATE wallet SET balance = 500000 WHERE user_id = $1`, [owner.id]);
+    await purchaseItem(owner.id, "velvet-armchair", randomUUID());
+    await purchaseItem(owner.id, "aso-rug", randomUUID());
+    const sofa = (await getInterior(owner.id, propertyId)).furniture.find((piece: { itemId: string }) => piece.itemId === "lagoon-sofa")!;
+    expect([sofa.x, sofa.z]).toEqual([expect.closeTo(-2.1, 3), expect.closeTo(0.8, 3)]);
+    await expect(
+      placeFurniture(owner.id, propertyId, { itemId: "velvet-armchair", x: -2.1, z: 0.9, rotation: 0, idempotencyKey: randomUUID() }),
+    ).rejects.toThrow(/on top of the lagoon sofa/);
+    await expect(
+      placeFurniture(owner.id, propertyId, { itemId: "aso-rug", x: -2.0, z: 0.8, rotation: 0, idempotencyKey: randomUUID() }),
+    ).resolves.toMatchObject({ replayed: false });
+    const chair = await placeFurniture(owner.id, propertyId, { itemId: "velvet-armchair", x: 0.33, z: 2.04, rotation: 180, idempotencyKey: randomUUID() });
+    let placed = (await getInterior(owner.id, propertyId)).furniture.find((piece: { id: string }) => piece.id === chair.id)!;
+    expect(placed).toMatchObject({ rotation: 180, x: expect.closeTo(0.3, 3), z: expect.closeTo(2.0, 3) });
+    await expect(moveFurniture(owner.id, propertyId, { placementId: chair.id, x: -5.0, z: -1.2, rotation: 0 })).rejects.toThrow(/kitchen/);
+    await expect(moveFurniture(owner.id, propertyId, { placementId: chair.id, x: 9, z: 0, rotation: 0 })).rejects.toThrow(/inside the walls/);
+    await moveFurniture(owner.id, propertyId, { placementId: chair.id, x: 3.5, z: 3.9, rotation: 90 });
+    placed = (await getInterior(owner.id, propertyId)).furniture.find((piece: { id: string }) => piece.id === chair.id)!;
+    expect(placed).toMatchObject({ rotation: 90, x: expect.closeTo(3.5, 3), z: expect.closeTo(3.9, 3) });
+    await expect(moveFurniture(users[2]!.id, propertyId, { placementId: chair.id, x: 3.5, z: 3.0, rotation: 0 })).rejects.toThrow("Only the owner");
   });
 });
 

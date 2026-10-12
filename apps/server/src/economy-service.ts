@@ -1,4 +1,4 @@
-import { getPlace, MOVEMENT, placeById } from "@lagos-living/shared";
+import { BED_ITEM_IDS, getPlace, MOVEMENT, placeById } from "@lagos-living/shared";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { config } from "./config.js";
@@ -285,8 +285,8 @@ export async function restAtHome(userId: string) {
   if (position.location.startsWith("home:")) {
     const propertyId = position.location.slice(5);
     const bed = await pool.query(
-      `SELECT 1 FROM furniture_placement WHERE property_id = $1 AND item_id = 'island-bed'`,
-      [propertyId],
+      `SELECT 1 FROM furniture_placement WHERE property_id = $1 AND item_id = ANY($2)`,
+      [propertyId, BED_ITEM_IDS],
     );
     if (!bed.rowCount) throw new EconomyError("Place a bed here before sleeping.");
   }

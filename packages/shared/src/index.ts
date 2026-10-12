@@ -108,6 +108,7 @@ export * from "./community.js";
 export * from "./safety.js";
 export * from "./homes.js";
 export * from "./building.js";
+export * from "./furniture.js";
 export * from "./rides.js";
 export * from "./rentals.js";
 export * from "./towing.js";
@@ -277,12 +278,28 @@ export const defaultSettings: PlayerSettings = {
   needsEnabled: true,
 };
 
-export const placeFurnitureSchema = z.object({
-  itemId: z.string().min(1).max(80),
-  gridX: z.number().int().min(0).max(7),
-  gridZ: z.number().int().min(0).max(5),
-  rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
-  idempotencyKey: z.uuid(),
+const furnitureRotation = z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]);
+/** Room-local metres from the middle of the room. */
+const floorCoordinate = z.number().finite().min(-6).max(6);
+
+/** Free positions (`x`, `z`) are preferred; `gridX`/`gridZ` are the old 8 × 6 cells, still accepted. */
+export const placeFurnitureSchema = z
+  .object({
+    itemId: z.string().min(1).max(80),
+    x: floorCoordinate.optional(),
+    z: floorCoordinate.optional(),
+    gridX: z.number().int().min(0).max(7).optional(),
+    gridZ: z.number().int().min(0).max(5).optional(),
+    rotation: furnitureRotation,
+    idempotencyKey: z.uuid(),
+  })
+  .refine((body) => (body.x !== undefined && body.z !== undefined) || (body.gridX !== undefined && body.gridZ !== undefined), "Give a floor position.");
+
+export const moveFurnitureSchema = z.object({
+  placementId: z.uuid(),
+  x: floorCoordinate,
+  z: floorCoordinate,
+  rotation: furnitureRotation,
 });
 
 export const homeActionSchema = z.object({

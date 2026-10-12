@@ -60,6 +60,8 @@ export type MultiplayerHandlers = {
   goState: (state: FastTravelState) => void;
   travelPrompt: (prompt: TravelPrompt) => void;
   agbero: (encounter: AgberoEncounter | null) => void;
+  /** The owner rearranged the home this player is standing in. */
+  interior: () => void;
 };
 
 export class MultiplayerConnection {
@@ -137,6 +139,7 @@ export class MultiplayerConnection {
         if (parsed.success) this.handlers.looks(parsed.data);
       });
       room.onMessage("plots", () => this.handlers.plots());
+      room.onMessage("interior", () => this.handlers.interior());
       room.onMessage("ride", (ride: RideState | null) => this.handlers.ride(ride));
       room.onMessage("bikeStock", (stock: Record<string, number>) => this.handlers.bikeStock(stock));
       room.onMessage("bikeReturned", () => undefined);
