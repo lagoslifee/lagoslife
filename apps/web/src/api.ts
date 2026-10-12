@@ -1,5 +1,5 @@
 import type { CabinClass, HotelBookingState, RoomType, TicketState, TravelStatus, VisaPlan, VisaState } from "@lagos-living/shared";
-import type { BottleItem, Citation, PoliceCase, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
+import type { BottleItem, Citation, PoliceCase, StreetIncident, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -90,7 +90,7 @@ export type MyVehicle = OwnedVehicle & {
   insured: boolean;
   premium: number;
   serviceDue: boolean;
-  serviceQuote: { repair: number; fullRepair: number; total: number };
+  serviceQuote: { repair: number; fullRepair: number; total: number; dents: number; dentRepair: number };
 };
 type VehicleResult = { vehicle: MyVehicle; balance?: number; replayed?: boolean; charged?: number };
 
@@ -186,7 +186,7 @@ export const api = {
   hireSecurity: (plan: SecurityPlanId) =>
     post<{ replayed: boolean; balance: number; status: SecurityStatus }>("/api/security/hire", { plan, idempotencyKey: crypto.randomUUID() }),
   dismissSecurity: () => post<SecurityStatus>("/api/security/dismiss"),
-  policeRecords: () => request<{ robberies: RobberyRecord[]; cases: PoliceCase[] }>("/api/police/records"),
+  policeRecords: () => request<{ robberies: RobberyRecord[]; cases: PoliceCase[]; incidents: StreetIncident[] }>("/api/police/records"),
   policeReport: (userName: string, details: string) =>
     post<{ status: "charged" | "no_record"; accused: string; restitution: number; station: string }>("/api/police/report", { userName, details }),
   standing: () => request<{ suspension: Suspension | null }>("/api/account/standing"),

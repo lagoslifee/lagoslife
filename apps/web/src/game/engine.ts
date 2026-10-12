@@ -89,6 +89,8 @@ import {
   type TravelInterior,
   type TripState,
   type FastTravelState,
+  type AgberoChoice,
+  type AgberoEncounter,
   type Favourite,
   type TravelPrompt,
 } from "@lagos-living/shared";
@@ -191,6 +193,8 @@ export type EngineCallbacks = {
   photo: (photo: { spot: string; companions: string[]; image: string | null }) => void;
   /** Someone asks this player to travel with them, or to join them; nothing happens unless they accept. */
   travelPrompt: (prompt: TravelPrompt) => void;
+  /** A roadside tout asks this driver for change; null when it is over. */
+  agbero: (encounter: AgberoEncounter | null) => void;
 };
 
 type Remote = {
@@ -493,6 +497,10 @@ export class GameEngine {
       trip: (trip) => this.onTrip(trip),
       goState: (state) => this.goListener?.(state),
       travelPrompt: (prompt) => this.callbacks.travelPrompt(prompt),
+      agbero: (encounter) => {
+        this.showTout(encounter);
+        this.callbacks.agbero(encounter);
+      },
       react: ({ sessionId, emoji }) => {
         if (sessionId === this.net.sessionId) return;
         const remote = this.remotes.get(sessionId);
@@ -1142,6 +1150,7 @@ export class GameEngine {
     });
     this.crews?.update(dt, x, z, !this.interior);
     this.spotters?.update(dt, now, this.spottedCar(x, z), [x, z], !this.interior && !bus);
+    this.updateTout(dt, now, x, z);
     this.plotsView?.animate(dt);
     this.updateGates(x, z);
     if (!this.interior) {
@@ -2052,6 +2061,55 @@ export class GameEngine {
     this.net.send("fastTravel", { target, with: companions });
   }
 
+  answerAgbero(encounterId: string, choice: AgberoChoice) {
+    this.net.send("agberoAnswer", { encounterId, choice });
+  }
+
+  /** One tout NPC stands on the kerb by the driver's window for the encounter, then walks off and is removed. */
+  private tout: { avatar: Avatar; tag: HTMLDivElement; at: Vec2; leaveAt: number | null } | null = null;
+
+  private showTout(encounter: AgberoEncounter | null) {
+    if (!encounter) {
+      if (this.tout && this.tout.leaveAt === null) {
+        this.tout.leaveAt = performance.now() + 2_500;
+        this.tout.tag.textContent = "…";
+      }
+      return;
+    }
+    if (this.tout) {
+      this.tout.tag.textContent = `"Oga, settle the boys — ₦${encounter.ask}"`;
+      return;
+    }
+    if (!this.avatars) return;
+    const [px, pz] = encounter.point;
+    const yaw = this.car && this.driving ? this.car.yaw : this.controller.yaw;
+    const side: Vec2 = [px + Math.cos(yaw) * 2.2, pz - Math.sin(yaw) * 2.2];
+    const at: Vec2 = walkable(side[0], side[1]) ? side : [px - Math.cos(yaw) * 2.2, pz + Math.sin(yaw) * 2.2];
+    const avatar = this.avatars.create("agbero", { ...appearanceFor(1_337), outfit: "athleisure", accessory: "cap" });
+    avatar.root.position.set(at[0], this.world.groundHeight(at[0], at[1]), at[1]);
+    const tag = document.createElement("div");
+    tag.className = "world-tag spotter-tag agbero-tag";
+    tag.textContent = `"Oga, settle the boys — ₦${encounter.ask}"`;
+    this.overlay.appendChild(tag);
+    this.tout = { avatar, tag, at, leaveAt: null };
+  }
+
+  private updateTout(dt: number, now: number, x: number, z: number) {
+    const tout = this.tout;
+    if (!tout) return;
+    if (this.interior || (tout.leaveAt !== null && now > tout.leaveAt) || Math.hypot(tout.at[0] - x, tout.at[1] - z) > 60) {
+      tout.avatar.dispose();
+      tout.tag.remove();
+      this.tout = null;
+      return;
+    }
+    tout.avatar.root.rotation.y = Math.atan2(x - tout.at[0], z - tout.at[1]);
+    tout.avatar.update(0, tout.leaveAt === null ? "wave" : "idle", dt);
+    const screen = this.project(tout.at[0], this.world.groundHeight(tout.at[0], tout.at[1]) + 2.1, tout.at[1]);
+    tout.tag.style.display = screen.visible ? "block" : "none";
+    if (screen.visible) tout.tag.style.transform = `translate(${screen.x}px, ${screen.y}px) translate(-50%, -100%)`;
+  }
+
   answerTravel(requestId: string, accept: boolean) {
     this.net.send("travelAnswer", { requestId, accept });
   }
@@ -2929,6 +2987,7 @@ export class GameEngine {
     syncPlotFootprints([]);
     for (const remote of this.remotes.values()) remote.tag.remove();
     this.spotters?.clear();
+    this.tout?.tag.remove();
     for (const tag of this.busTags.values()) tag.remove();
     for (const { tag } of this.vehicles.values()) tag.remove();
     this.engine?.stopRenderLoop();

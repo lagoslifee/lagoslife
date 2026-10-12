@@ -21,6 +21,7 @@ import {
   type TripState,
   type FastTravelState,
   type TravelPrompt,
+  type AgberoEncounter,
 } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
@@ -58,6 +59,7 @@ export type MultiplayerHandlers = {
   react: (reaction: { sessionId: string; emoji: string }) => void;
   goState: (state: FastTravelState) => void;
   travelPrompt: (prompt: TravelPrompt) => void;
+  agbero: (encounter: AgberoEncounter | null) => void;
 };
 
 export class MultiplayerConnection {
@@ -148,6 +150,7 @@ export class MultiplayerConnection {
       room.onMessage("react", (reaction: { sessionId?: unknown; emoji?: unknown }) =>
         this.handlers.react({ sessionId: String(reaction?.sessionId ?? ""), emoji: String(reaction?.emoji ?? "") }),
       );
+      room.onMessage("agbero", (encounter: AgberoEncounter | null) => this.handlers.agbero(encounter && typeof encounter.id === "string" ? encounter : null));
       room.onMessage("goState", (state: FastTravelState) => Array.isArray(state?.discovered) && this.handlers.goState(state));
       room.onMessage("travelPrompt", (prompt: TravelPrompt) => typeof prompt?.requestId === "string" && this.handlers.travelPrompt(prompt));
       room.onMessage("photo", (photo: { spot?: unknown; companions?: unknown }) =>
@@ -195,6 +198,7 @@ export class MultiplayerConnection {
     type:
       | "react"
       | "fastTravel"
+      | "agberoAnswer"
       | "travelAnswer"
       | "joinRequest"
       | "goState"

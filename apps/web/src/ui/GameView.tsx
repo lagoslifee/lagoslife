@@ -1,4 +1,4 @@
-import { CLUBS, OFFENCES, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TravelPrompt, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
+import { CLUBS, OFFENCES, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TravelPrompt, type AgberoEncounter, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { noteFps, report, setReportedQuality } from "../diagnostics";
@@ -11,6 +11,7 @@ import { currentObjective, housingPath, type HousingPath } from "./objectives";
 import { Welcome } from "./Welcome";
 import { Phone, type PhoneApp } from "./Phone";
 import { TravelPromptCard } from "./GoApp";
+import { AgberoPrompt } from "./AgberoPrompt";
 import { ClubRadio } from "./ClubRadio";
 import { ClubBarSheet, ClubDoorSheet, ClubTableSheet } from "./ClubSheets";
 import { COMMUNITY_KINDS, CommunitySheet } from "./CommunitySheets";
@@ -87,6 +88,7 @@ export function GameView({
   const [clubTables, setClubTables] = useState<ClubTable[]>([]);
   const [checkpoint, setCheckpoint] = useState<CheckpointStop | null>(null);
   const [travelPrompts, setTravelPrompts] = useState<TravelPrompt[]>([]);
+  const [agbero, setAgbero] = useState<AgberoEncounter | null>(null);
   const [holdUp, setHoldUp] = useState<HoldUp | null>(null);
   const [robTarget, setRobTarget] = useState<{ sessionId: string; name: string } | null>(null);
   const [plots, setPlots] = useState<PlotState[]>([]);
@@ -300,6 +302,10 @@ export function GameView({
           void refresh();
         },
         photo: (photo) => void savePhoto(photo),
+        agbero: (encounter) => {
+          setAgbero(encounter);
+          if (!encounter) void refresh();
+        },
         travelPrompt: (prompt) => setTravelPrompts((list) => [...list.filter((entry) => entry.requestId !== prompt.requestId), prompt].slice(-3)),
         ride: (next) => {
           setRide(next);
@@ -833,6 +839,7 @@ export function GameView({
       {sheet?.kind === "security" && (
         <SecuritySheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} />
       )}
+      {agbero && engine && !travelPrompts[0] && <AgberoPrompt encounter={agbero} onAnswer={(choice) => engine.answerAgbero(agbero.id, choice)} />}
       {travelPrompts[0] && engine && (
         <TravelPromptCard
           key={travelPrompts[0].requestId}

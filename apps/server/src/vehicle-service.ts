@@ -9,6 +9,7 @@ import {
   plotForHome,
   builtHomePlace,
   repairCost,
+  dentQuote,
   VEHICLE_RULES,
   vehicleModelById,
   type OwnedVehicle,
@@ -33,10 +34,11 @@ export const DEALERSHIP_ID = "lekki-motors";
 export const MECHANIC_ID = "ade-auto-works";
 
 export const vehicleColumns = `id, owner_user_id, model_id, colour, plate, condition, odometer_m, service_odometer_m,
-  status, driver_session_id, x, z, yaw, garage_property_id, insured_until, locked`;
+  status, driver_session_id, x, z, yaw, garage_property_id, insured_until, locked, dents`;
 
 export type VehicleRow = {
   id: string;
+  dents?: number;
   owner_user_id: string;
   model_id: string;
   colour: string;
@@ -62,7 +64,8 @@ export function serviceQuote(row: VehicleRow) {
   const model = getVehicleModel(row.model_id);
   const fullRepair = repairCost(model, Number(row.condition));
   const repair = fullRepair > 0 && isInsured(row) ? Math.min(VEHICLE_RULES.insuredExcess, fullRepair) : fullRepair;
-  return { repair, fullRepair, total: VEHICLE_RULES.routineServiceFee + repair };
+  const dents = dentQuote(Number(row.dents ?? 0), isInsured(row));
+  return { repair, fullRepair, dents: Number(row.dents ?? 0), dentRepair: dents.pay, total: VEHICLE_RULES.routineServiceFee + repair + dents.pay };
 }
 
 export function toOwned(row: VehicleRow) {
@@ -264,14 +267,14 @@ export async function serviceVehicle(userId: string, vehicleId: string, idempote
       throw new EconomyError(`Park the vehicle outside ${mechanic.name} first.`, 409);
     }
     const sinceService = Number(row.odometer_m) - Number(row.service_odometer_m);
-    if (Number(row.condition) >= 100 && sinceService < 500) {
+    if (Number(row.condition) >= 100 && sinceService < 500 && !Number(row.dents ?? 0)) {
       throw new EconomyError("The mechanic checked it over: nothing needs doing yet.");
     }
     const quote = serviceQuote(row);
     const balance = await debitWallet(client, userId, quote.total, "vehicle_service",
       `${mechanic.name} · ${row.plate}`, idempotencyKey, { vehicleId, ...quote });
     const updated = await client.query<VehicleRow>(
-      `UPDATE player_vehicle SET condition = 100, service_odometer_m = odometer_m, updated_at = NOW()
+      `UPDATE player_vehicle SET condition = 100, dents = 0, service_odometer_m = odometer_m, updated_at = NOW()
        WHERE id = $1 RETURNING ${vehicleColumns}`,
       [vehicleId],
     );

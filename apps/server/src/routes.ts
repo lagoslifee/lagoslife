@@ -88,6 +88,7 @@ import { loadCharacter, saveAppearance, wardrobe } from "./profile-service.js";
 import { getCommunityStatus, visitQuietPlace, volunteerShift } from "./community-service.js";
 import { bookTable, buyWristband, getClubStatus, listTables, orderAtBar, orderBottle, setTableGuest } from "./club-service.js";
 import { dismissSecurity, getSecurityStatus, hireSecurity, policeRecords, reportRobbery } from "./police-service.js";
+import { encounterIncidents } from "./street-encounter-service.js";
 import {
   answerInvite,
   applyVisa,
@@ -564,8 +565,10 @@ export function configureRoutes(app: Express) {
   app.post("/api/security/dismiss", requirePlayer, rateLimited, guarded("Guards could not be dismissed", (_req, userId) =>
     dismissSecurity(userId)));
 
-  app.get("/api/police/records", requirePlayer, guarded("Police records unavailable", (_req, userId) =>
-    policeRecords(userId)));
+  app.get("/api/police/records", requirePlayer, guarded("Police records unavailable", async (_req, userId) => ({
+    ...(await policeRecords(userId)),
+    incidents: await encounterIncidents(userId),
+  })));
 
   app.post("/api/police/report", requirePlayer, rateLimited, guarded("Report could not be filed", (req, userId) => {
     const { userName, details } = policeReportSchema.parse(req.body);

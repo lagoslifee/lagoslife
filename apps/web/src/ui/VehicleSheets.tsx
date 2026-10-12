@@ -195,6 +195,7 @@ export function MechanicSheet({ place, vehicles, onClose, onRefresh, onToast }: 
                 <div>
                   <strong>{vehicle.modelName} · {vehicle.plate}</strong>
                   <ConditionBar value={vehicle.condition} />
+                  {vehicle.serviceQuote.dents > 0 && <span className="muted small">{vehicle.serviceQuote.dents} cosmetic dent{vehicle.serviceQuote.dents === 1 ? "" : "s"} · looks only, driving unaffected · fix at the mechanic</span>}
                   <span>
                     {km(vehicle.odometerMetres)} on the clock · {vehicle.serviceDue ? "service due" : `${km(Math.max(0, VEHICLE_RULES.serviceIntervalMetres - vehicle.metresSinceService))} to next service`}
                   </span>
@@ -202,6 +203,7 @@ export function MechanicSheet({ place, vehicles, onClose, onRefresh, onToast }: 
                     <em>
                       Quote: {naira(VEHICLE_RULES.routineServiceFee)} service
                       {vehicle.serviceQuote.repair > 0 ? ` + ${naira(vehicle.serviceQuote.repair)} repairs` : ""}
+                      {vehicle.serviceQuote.dents > 0 ? ` + ${naira(vehicle.serviceQuote.dentRepair)} panel-beating (${vehicle.serviceQuote.dents} dent${vehicle.serviceQuote.dents === 1 ? "" : "s"}${vehicle.insured ? ", 70% paid by cover" : ""})` : ""}
                       {vehicle.insured && vehicle.serviceQuote.fullRepair > vehicle.serviceQuote.repair ? ` (cover saves ${naira(vehicle.serviceQuote.fullRepair - vehicle.serviceQuote.repair)})` : ""}
                     </em>
                   )}
@@ -213,7 +215,7 @@ export function MechanicSheet({ place, vehicles, onClose, onRefresh, onToast }: 
                       disabled={busy || nothingToDo}
                       onClick={() => void run(async () => {
                         const result = await api.serviceVehicle(vehicle.id);
-                        return `${vehicle.plate} serviced and repaired for ${naira(result.charged ?? vehicle.serviceQuote.total)}. Condition 100%.`;
+                        return `${vehicle.plate} serviced and repaired for ${naira(result.charged ?? vehicle.serviceQuote.total)}. Condition 100%${vehicle.serviceQuote.dents ? ", dents gone" : ""}.`;
                       })}
                     >{nothingToDo ? "Running well" : `Service ${naira(vehicle.serviceQuote.total)}`}</button>
                   ) : vehicle.status === "garaged" ? (

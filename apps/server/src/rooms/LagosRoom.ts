@@ -98,6 +98,10 @@ import {
   placeById,
   placeDistance,
   PLACES,
+  AGBERO,
+  AGBERO_SPOTS,
+  agberoAnswerSchema,
+  type AgberoEncounter,
   FAST_TRAVEL,
   FAVOURITES,
   FAVOURITE_LABEL,
@@ -162,6 +166,7 @@ import {
 import { loadAppearance, profileEvents } from "../profile-service.js";
 import { buildingEvents } from "../building-service.js";
 import { homePropertyOf, loadDiscoveries, recordDiscovery } from "../fast-travel-service.js";
+import { encounterEligible, payEncounter, resolveEncounter, startEncounter } from "../street-encounter-service.js";
 import { chargeRide, closeRide, refundOrphanedRides, refundRide } from "../ride-service.js";
 import { activeRental, parkRental, returnRental, startRental, type ActiveRental } from "../bike-service.js";
 import { requestTow } from "../tow-service.js";
@@ -260,6 +265,11 @@ type Player = {
   discovered: Set<string>;
   fastTravelAt: number;
   homePropertyId: string | null;
+  /** A roadside tout (agbero) waiting for this driver's answer. */
+  encounter: (AgberoEncounter & { spotId: string; vehicleId: string | null }) | null;
+  lastEncounterAt: number;
+  /** Cached result of the account-age and settings check, so a driver idling near a spot is not re-queried. */
+  encounterCheck: { at: number; ok: boolean } | null;
 };
 
 type TravelRequest = {
@@ -351,6 +361,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private vehicles = new Map<string, RoomVehicle>();
   private flights = new Map<string, Flight>();
   private travelRequests = new Map<string, TravelRequest>();
+  private spotUsedAt = new Map<string, number>();
   private excursions = new Map<string, Excursion>();
   private tows = new TowDispatcher({
     vehicles: this.vehicles,
@@ -466,6 +477,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("fastTravel", (client, payload) => this.handleFastTravel(client, payload));
     this.onMessage("travelAnswer", (client, payload) => this.handleTravelAnswer(client, payload));
     this.onMessage("joinRequest", (client, payload) => this.handleJoinRequest(client, payload));
+    this.onMessage("agberoAnswer", (client, payload) => void this.handleAgberoAnswer(client, payload));
     this.onMessage("goState", (client) => {
       const player = this.players.get(client.sessionId);
       if (player && !this.limited(player.actionRate, 6)) client.send("goState", this.goState(player));
@@ -572,6 +584,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       discovered,
       fastTravelAt: 0,
       homePropertyId,
+      encounter: null,
+      lastEncounterAt: 0,
+      encounterCheck: null,
     };
     for (const [sessionId, existing] of this.players) {
       if (existing.userId === player.userId) {
@@ -649,6 +664,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         this.releaseSeat(player, "interrupted", stop.id);
       }
       if (player.heldUp) await this.finishHoldUp(player, "timeout").catch(() => undefined);
+      if (player.encounter) await resolveEncounter(player.userId, player.encounter.id, "ignored").catch(() => undefined);
       if (player.robbing) {
         for (const other of this.players.values()) if (other.heldUp?.robberSessionId === player.sessionId) await this.finishHoldUp(other, "timeout").catch(() => undefined);
       }
@@ -1994,6 +2010,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       this.checkPolice(now);
       this.checkExcursions(now);
       this.checkHires(now);
+      this.checkEncounters(now);
     }
     for (const bus of this.buses) {
       const { route } = bus;
@@ -2246,6 +2263,138 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     }
   }
 
+
+  /* ---------- Agberos: optional roadside touts at a few Lagos danfo stops ---------- */
+
+  private ownedCar(player: Player) {
+    if (!player.vehicleId || player.vehicleSeat !== 0) return null;
+    const vehicle = this.vehicles.get(player.vehicleId);
+    if (!vehicle || vehicle.ownerUserId !== player.userId || vehicle.testDrive || vehicle.npc || vehicle.tow || vehicle.rental || vehicle.hire) return null;
+    return vehicleModelById.get(vehicle.modelId)?.category === "bicycle" ? null : vehicle;
+  }
+
+  private checkEncounters(now: number) {
+    for (const player of this.players.values()) {
+      const client = this.clientFor(player);
+      if (!client || !player.connected) continue;
+      const encounter = player.encounter;
+      if (encounter) {
+        const moved = Math.hypot(player.x - encounter.point[0], player.z - encounter.point[1]);
+        if (this.measuredSpeed(player) > AGBERO.driveOffSpeed || moved > 30) void this.settleAgbero(player, "drive");
+        else if (encounter.expiresAt < now) void this.settleAgbero(player, "ignore");
+        continue;
+      }
+      if (now - player.lastEncounterAt < AGBERO.playerCooldownMs || player.location !== "street") continue;
+      if (player.checkpoint || player.heldUp || player.robbing || player.ride) continue;
+      const car = this.ownedCar(player);
+      if (!car || this.measuredSpeed(player) > AGBERO.maxSpeed) continue;
+      const spot = AGBERO_SPOTS.find((entry) => Math.hypot(entry.point[0] - player.x, entry.point[1] - player.z) < AGBERO.triggerMetres);
+      if (!spot || now - (this.spotUsedAt.get(spot.id) ?? -Infinity) < AGBERO.spotCooldownMs) continue;
+      if (player.encounterCheck && now - player.encounterCheck.at < 60_000 && !player.encounterCheck.ok) continue;
+      player.lastEncounterAt = now;
+      this.spotUsedAt.set(spot.id, now);
+      void this.beginAgbero(player, spot, car.id);
+    }
+  }
+
+  private async beginAgbero(player: Player, spot: (typeof AGBERO_SPOTS)[number], vehicleId: string) {
+    const ok = await encounterEligible(player.userId).catch(() => false);
+    player.encounterCheck = { at: Date.now(), ok };
+    if (!ok) {
+      player.lastEncounterAt = 0;
+      return;
+    }
+    const ask = Math.round((AGBERO.askMin + randomInt(AGBERO.askMax - AGBERO.askMin + 1)) / 50) * 50;
+    const id = randomUUID();
+    const started = await startEncounter(id, player.userId, spot.id, vehicleId, ask, player.x, player.z).then(() => true).catch(() => false);
+    const client = this.clientFor(player);
+    if (!started || !client || player.encounter) return;
+    player.encounter = {
+      id,
+      spotId: spot.id,
+      vehicleId,
+      spotName: spot.name,
+      ask,
+      negotiated: false,
+      hasGuards: player.guards > 0 && player.guardsUntil > Date.now(),
+      expiresAt: Date.now() + AGBERO.answerMs,
+      point: [player.x, player.z],
+    };
+    client.send("agbero", this.agberoView(player));
+  }
+
+  private agberoView(player: Player): AgberoEncounter | null {
+    const encounter = player.encounter;
+    if (!encounter) return null;
+    const { spotId: _spot, vehicleId: _vehicle, ...view } = encounter;
+    return view;
+  }
+
+  private async handleAgberoAnswer(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = agberoAnswerSchema.safeParse(payload);
+    if (!player || !parsed.success || player.encounter?.id !== parsed.data.encounterId || this.limited(player.actionRate, 4)) return;
+    const choice = parsed.data.choice;
+    if (choice === "negotiate") {
+      const encounter = player.encounter;
+      if (encounter.negotiated) return;
+      encounter.negotiated = true;
+      const agrees = randomInt(100) < 60;
+      encounter.ask = agrees ? Math.max(AGBERO.floor, Math.round(encounter.ask / 2 / 50) * 50) : encounter.ask;
+      encounter.expiresAt = Date.now() + AGBERO.answerMs;
+      this.notify(client, { tone: "info", text: agrees ? `"Okay oga, bring ₦${encounter.ask} make we dey go."` : `"Ah no, na ₦${encounter.ask} we dey collect for here."` });
+      client.send("agbero", this.agberoView(player));
+      return;
+    }
+    if (choice === "guards" && !player.encounter.hasGuards) return this.notify(client, { tone: "error", text: "You don't have guards with you. Hire them at Eko Shield Security." });
+    await this.settleAgbero(player, choice === "pay" ? "pay" : choice === "drive" ? "drive" : choice);
+  }
+
+  /** Ends the encounter exactly once: the prompt is cleared before any await, and the database row must still be pending. */
+  private async settleAgbero(player: Player, how: "pay" | "drive" | "police" | "guards" | "ignore") {
+    const encounter = player.encounter;
+    if (!encounter) return;
+    player.encounter = null;
+    const client = this.clientFor(player);
+    client?.send("agbero", null);
+    const say = (tone: "info" | "success" | "error", text: string) => client && this.notify(client, { tone, text });
+    try {
+      if (how === "pay") {
+        const result = await payEncounter(player.userId, encounter.id, encounter.ask);
+        if (result.paid) say("info", `You gave him ₦${encounter.ask}. "Correct guy! Move on." It's on your record at any police station.`);
+        return;
+      }
+      if (how === "drive") {
+        const dent = randomInt(1_000) < AGBERO.dentChance * 1_000;
+        const done = await resolveEncounter(player.userId, encounter.id, "drove_off", { dent, vehicleId: encounter.vehicleId });
+        if (done) {
+          say("info", dent
+            ? "He slapped the boot as you pulled away — a small cosmetic dent. It doesn't affect driving; any mechanic can panel-beat it and insurance pays most of it."
+            : "You drove off. He shouted something about 'next time' and went back to the kerb. Nobody follows you.");
+        }
+        return;
+      }
+      if (how === "police") {
+        const cctv = policeWitness(encounter.point[0], encounter.point[1]);
+        const done = await resolveEncounter(player.userId, encounter.id, "police", { cctv });
+        if (done) say("success", cctv
+          ? "You called it in. A police camera covers this junction, so the tout was identified and warned off. The report is on your record at any police station."
+          : "You called it in and he backed off before anyone arrived. There's no police camera here, but your report is on record at any police station.");
+        return;
+      }
+      if (how === "guards") {
+        const done = await resolveEncounter(player.userId, encounter.id, "guards");
+        if (done) say("success", "Your guards stepped out and had a quiet word. He waved you on, no money changed hands.");
+        return;
+      }
+      await resolveEncounter(player.userId, encounter.id, "ignored");
+      say("info", "He lost interest and went back to the bus stop.");
+    } catch (error) {
+      if (error instanceof EconomyError) say("error", `${error.message}. He waves you on anyway.`);
+      else console.error("Agbero encounter failed", error);
+      await resolveEncounter(player.userId, encounter.id, "ignored").catch(() => undefined);
+    }
+  }
 
   /* ---------- Go now: fast travel, travelling together, joining a friend, and what's on ---------- */
 

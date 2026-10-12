@@ -9,6 +9,7 @@ import {
   type Notice,
   type Place,
   type PoliceCase,
+  type StreetIncident,
   type RobberyRecord,
   type SecurityPlanId,
   type SecurityStatus,
@@ -42,9 +43,11 @@ function useBusy(onToast: (notice: Notice) => void, onRefresh: () => Promise<voi
 
 const OUTCOME: Record<RobberyRecord["outcome"], string> = { robbed: "Robbed", escaped: "Got away", caught: "Stopped by police" };
 
+const INCIDENT: Record<StreetIncident["outcome"], string> = { paid: "You paid", drove_off: "You drove off", police: "You called the police", guards: "Your guards warned him off", ignored: "He gave up" };
+
 export function PoliceStationSheet({ place, onClose, onRefresh, onToast, onJustice }: SheetProps & { onJustice: () => void }) {
   const [busy, run] = useBusy(onToast, onRefresh);
-  const [records, setRecords] = useState<{ robberies: RobberyRecord[]; cases: PoliceCase[] } | null>(null);
+  const [records, setRecords] = useState<{ robberies: RobberyRecord[]; cases: PoliceCase[]; incidents: StreetIncident[] } | null>(null);
   const [accused, setAccused] = useState("");
   const [details, setDetails] = useState("");
   const load = () => api.policeRecords().then(setRecords).catch(() => undefined);
@@ -98,6 +101,26 @@ export function PoliceStationSheet({ place, onClose, onRefresh, onToast, onJusti
           <button className="primary" disabled={busy || !accused.trim()} data-testid="report-submit">File report</button>
         </form>
         <button className="secondary" onClick={() => { onClose(); onJustice(); }}>Pay or contest fines (court)</button>
+        {records && records.incidents.length > 0 && (
+          <div className="police-records" data-testid="street-incidents">
+            <h3>Roadside touts (agberos)</h3>
+            <ul className="menu">
+              {records.incidents.map((incident) => (
+                <li key={incident.id}>
+                  <div>
+                    <strong>{incident.spotName}</strong>
+                    <span>
+                      {INCIDENT[incident.outcome]}
+                      {incident.paid ? ` · ${naira(incident.paid)}` : ""}
+                      {incident.dent ? " · cosmetic dent" : ""}
+                      {incident.reported ? (incident.cctv ? " · reported, seen on police camera" : " · reported, no camera") : ""} · {new Date(incident.at).toLocaleString()}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {records && (records.robberies.length > 0 || records.cases.length > 0) && (
           <div className="police-records">
             <h3>Your record</h3>

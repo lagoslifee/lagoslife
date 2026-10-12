@@ -1,4 +1,4 @@
-import { blockedByWater, cabinSeats, seatPoint, travelSpot, TRAVEL, getPlace, placeById, getRoute, ROUTES, sampleRoute, type RideState, type TransitRoute } from "@lagos-living/shared";
+import { AGBERO, AGBERO_SPOTS, blockedByWater, cabinSeats, seatPoint, travelSpot, TRAVEL, getPlace, placeById, getRoute, ROUTES, sampleRoute, type RideState, type TransitRoute } from "@lagos-living/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const economy = vi.hoisted(() => ({
@@ -46,6 +46,14 @@ const justice = vi.hoisted(() => ({
 vi.mock("../justice-service.js", () => justice);
 const rides = vi.hoisted(() => ({ chargeRide: vi.fn(async () => 1_000), refundRide: vi.fn(async () => 1_000), closeRide: vi.fn(async () => undefined), refundOrphanedRides: vi.fn(async () => 0) }));
 vi.mock("../ride-service.js", () => rides);
+const encounters = vi.hoisted(() => ({
+  encounterEligible: vi.fn(async () => true),
+  startEncounter: vi.fn(async () => undefined),
+  payEncounter: vi.fn(async () => ({ paid: true, balance: 1_000 })),
+  resolveEncounter: vi.fn(async () => true),
+  encounterIncidents: vi.fn(async () => []),
+}));
+vi.mock("../street-encounter-service.js", () => encounters);
 vi.mock("../fast-travel-service.js", () => ({ loadDiscoveries: vi.fn(async () => new Set()), recordDiscovery: vi.fn(async () => undefined), homePropertyOf: vi.fn(async () => null) }));
 const travel = vi.hoisted(() => ({
   tripRecord: vi.fn(async (_userId: string): Promise<Record<string, unknown> | null> => null),
@@ -1118,5 +1126,72 @@ describe("LagosRoom Go now", () => {
     internals.handleTravelAnswer(host, { requestId: prompt!.requestId, accept: true });
     expect(player(ada).location).toBe("street");
     expect(Math.hypot((player(ada).x as number) - club.door[0], (player(ada).z as number) - club.door[1])).toBeLessThan(2);
+  });
+});
+
+describe("LagosRoom agbero encounters", () => {
+  type Internals = RoomInternals & { checkEncounters(now: number): void; handleAgberoAnswer(client: FakeClient, payload: unknown): Promise<void> };
+  const spot = AGBERO_SPOTS[0]!;
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const sentAgbero = (client: FakeClient) => client.send.mock.calls.filter(([type]) => type === "agbero").map(([, value]) => value as { id: string } | null);
+  const atSpot = (internals: Internals, client: FakeClient, modelId = "rolls-royce-cullinan") => {
+    const player = internals.players.get(client.sessionId)!;
+    internals.vehicles.set("car-1", { id: "car-1", ownerUserId: player.userId, ownerName: "ada", modelId, colour: "#000000", plate: "LAG-1", condition: 100, x: spot.point[0], z: spot.point[1], yaw: 0, driverSessionId: client.sessionId, lights: false, locked: false });
+    Object.assign(player, { x: spot.point[0] + 3, z: spot.point[1], vehicleId: "car-1", vehicleSeat: 0, encounter: null, lastEncounterAt: 0, encounterCheck: null, checkpoint: null, heldUp: null, robbing: false, ride: null, guards: 0, guardsUntil: 0 });
+    return player;
+  };
+  beforeEach(() => vi.clearAllMocks());
+
+  it("approaches a slow owned car at a spot once, pays once however often the button is pressed, and then cools down", async () => {
+    const { room, join } = setup();
+    const internals = room as Internals;
+    const ada = join("ada");
+    atSpot(internals, ada);
+    internals.checkEncounters(Date.now());
+    await flush();
+    const [encounter] = sentAgbero(ada);
+    expect(encounter?.id).toBeTruthy();
+    await Promise.all([
+      internals.handleAgberoAnswer(ada, { encounterId: encounter!.id, choice: "pay" }),
+      internals.handleAgberoAnswer(ada, { encounterId: encounter!.id, choice: "pay" }),
+    ]);
+    expect(encounters.payEncounter).toHaveBeenCalledTimes(1);
+    expect(sentAgbero(ada).at(-1)).toBeNull();
+    internals.checkEncounters(Date.now() + AGBERO.spotCooldownMs + 1);
+    await flush();
+    expect(encounters.startEncounter).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats driving off as an answer, settles it once and never follows", async () => {
+    const { room, join } = setup();
+    const internals = room as Internals;
+    const ada = join("ada");
+    const player = atSpot(internals, ada);
+    internals.checkEncounters(Date.now());
+    await flush();
+    player.travel = [{ at: Date.now(), metres: 12, seconds: 1 }];
+    internals.checkEncounters(Date.now());
+    internals.checkEncounters(Date.now());
+    await flush();
+    expect(encounters.resolveEncounter).toHaveBeenCalledTimes(1);
+    expect((encounters.resolveEncounter.mock.calls[0] as unknown[])[2]).toBe("drove_off");
+    expect(player.encounter).toBeNull();
+  });
+
+  it("leaves bikes, test drives, opted-out and new players alone", async () => {
+    const { room, join } = setup();
+    const internals = room as Internals;
+    const ada = join("ada");
+    atSpot(internals, ada, "yaba-city-bike");
+    internals.checkEncounters(Date.now());
+    atSpot(internals, ada);
+    (internals.vehicles.get("car-1") as Record<string, unknown>).testDrive = { endsAt: Date.now() + 60_000, origin: [0, 0], yaw: 0, warned: false };
+    internals.checkEncounters(Date.now());
+    atSpot(internals, ada);
+    encounters.encounterEligible.mockResolvedValueOnce(false);
+    internals.checkEncounters(Date.now());
+    await flush();
+    expect(encounters.startEncounter).not.toHaveBeenCalled();
+    expect(sentAgbero(ada)).toHaveLength(0);
   });
 });
