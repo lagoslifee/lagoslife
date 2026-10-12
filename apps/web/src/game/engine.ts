@@ -84,6 +84,7 @@ import {
   emptyTrip,
   EXCURSION_SEATS,
   flightPhase,
+  legRoute,
   placeById,
   placeDistance,
   seatPoint,
@@ -128,6 +129,7 @@ import { BikeStationsView } from "./bike-stations";
 import { defaultBindings, InputState, LocomotionController, MAX_FRAME_DT, SUBSTEP_DT, type Bindings, type MoveMode } from "./controller";
 import { DanfoFactory, type DanfoView } from "./danfo";
 import { MeshBuilderBatch } from "./geometry";
+import { buildMealTray, buildTrolley } from "./flight-scenes";
 import { buildInterior, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
 import { createMaterials, type Materials, type Quality } from "./materials";
 import { SignAtlas } from "./sign-atlas";
@@ -374,7 +376,12 @@ export class GameEngine {
   private trip: TripState = emptyTrip();
   private seatYaw = 0;
   private flightPhaseShown: FlightPhase | null = null;
+  /** Outside camera during the take-off and landing shots; null otherwise. */
+  private flightShot: { eye: Vector3; look: Vector3 } | null = null;
+  private flightShotCaption: "takeoff" | "landing" | null = null;
   private crew: Array<{ avatar: Avatar; z: number; dir: number; served: boolean }> = [];
+  private trolley: TransformNode | null = null;
+  private mealTray: TransformNode | null = null;
   private cabinAudio: CabinAudio = loadCabinAudio();
   private preloadPending = 0;
   private serverOffset = 0;
@@ -1210,7 +1217,14 @@ export class GameEngine {
 
     this.updateFlight(dt);
     if (this.showcase) this.updateShowcaseCamera(dt);
-    else this.updateCamera(dt, bus);
+    else if (this.flightShot) {
+      this.camera.fov = 0.62;
+      this.camera.position.copyFrom(this.flightShot.eye);
+      this.camera.setTarget(this.flightShot.look);
+    } else {
+      this.camera.fov = 0.95;
+      this.updateCamera(dt, bus);
+    }
     if (!bus && !seatedTravel && now - this.lastSend > 66) {
       const moved = Math.hypot(x - this.lastSent.x, z - this.lastSent.z) > 0.02 || motion !== this.lastSent.motion;
       if (moved || now - this.lastSend > 1000) {
@@ -2143,21 +2157,37 @@ export class GameEngine {
       avatar.root.rotation.y = Math.PI;
       this.crew.push({ avatar, z, dir: -1, served: false });
     }
+    this.trolley = buildTrolley(this.scene);
   }
 
   private clearCrew() {
     for (const member of this.crew) member.avatar.dispose();
     this.crew = [];
+    this.trolley?.dispose(false, true);
+    this.trolley = null;
+    this.mealTray?.dispose(false, true);
+    this.mealTray = null;
   }
 
   /** Flight timeline on the shared server clock: window sky, lighting, announcements, crew service, and Dubai preloading. */
   private updateFlight(dt: number) {
     const view = this.travelView;
     const flight = this.trip.flight;
-    if (!view || view.kind !== "cabin" || !flight) return;
+    if (!view || view.kind !== "cabin" || !flight) {
+      this.flightShot = null;
+      return;
+    }
     const now = Date.now() + this.serverOffset;
     const phase = flightPhase(flight.departAt, now);
     const seconds = (now - flight.departAt) / 1_000;
+    this.flightShot = view.flightShot(seconds, this.trip.leg === "return" ? "lagos" : "dubai");
+    const shot = this.flightShot ? (phase === "takeoff" ? "takeoff" : "landing") : null;
+    if (shot !== this.flightShotCaption) {
+      this.flightShotCaption = shot;
+      const home = this.trip.leg === "return";
+      if (shot === "takeoff") this.callbacks.subtitle(`${legRoute(this.trip.leg ?? "outbound").code} rolling down the runway at ${home ? "Dubai International" : "Murtala Muhammed, Lagos"}…`);
+      if (shot === "landing") this.callbacks.subtitle(`Final approach into ${home ? "Lagos" : "Dubai"}. Touchdown!`);
+    }
     const span = phase === "takeoff" ? TRAVEL.takeoffEnds : phase === "cruise" ? TRAVEL.cruiseEnds - TRAVEL.takeoffEnds : TRAVEL.flightSeconds - TRAVEL.cruiseEnds;
     const start = phase === "takeoff" ? 0 : phase === "cruise" ? TRAVEL.takeoffEnds : TRAVEL.cruiseEnds;
     const destination = this.trip.leg === "return" ? "lagos" : "dubai";
@@ -2184,10 +2214,15 @@ export class GameEngine {
       member.avatar.root.position.set(ox, 0.02, oz + member.z);
       member.avatar.root.rotation.y = member.dir < 0 ? Math.PI : 0;
       member.avatar.update(moving ? 0.9 : 0, moving ? "walk" : "idle", dt);
+      if (member === this.crew[0] && this.trolley) this.trolley.position.set(ox, 0, oz + member.z + member.dir * 0.75);
       if (moving && !member.served && Math.abs(oz + member.z - seat[1]) < 0.4) {
         member.served = true;
         if (!this.crew.some((other) => other !== member && other.served)) {
           const business = flight.cabin === "business";
+          if (!this.mealTray) {
+            this.mealTray = buildMealTray(this.scene, business);
+            this.mealTray.position.set(seat[0], 0.68, seat[1] + (business ? 0.42 : 0.3));
+          }
           this.callbacks.subtitle(business ? "Good afternoon. Grilled chicken with jollof, or lamb machboos? And a fresh juice or a mocktail?" : "Something to drink? We have water, juice and soft drinks, and a snack pack.");
           this.callbacks.notice({ tone: "success", text: business ? "Served: hot meal, fresh juice and dates (Business service)." : "Served: a soft drink and a snack pack." });
         }

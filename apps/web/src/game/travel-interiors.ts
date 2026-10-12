@@ -4,7 +4,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
@@ -27,6 +27,7 @@ import { MeshBuilderBatch } from "./geometry";
 import type { InteriorSpot } from "./interior";
 import type { Materials } from "./materials";
 import { buildAirliner } from "./airliner";
+import { buildAirfield, LANDING_SHOT, TAKEOFF_SHOT, type Airfield, type FlightShot } from "./flight-scenes";
 import { SignAtlas } from "./sign-atlas";
 
 const [OX, OZ] = INTERIOR_ORIGIN;
@@ -74,6 +75,8 @@ export type TravelView = {
   floor(x: number, z: number): number;
   /** Cabin only: window sky and cabin lighting for this flight phase. */
   setFlight(phase: FlightPhase, progress: number, destination: "dubai" | "lagos"): void;
+  /** Cabin only: an outside view of the jet during the take-off and landing, `seconds` after departure; null in the cabin. */
+  flightShot(seconds: number, destination: "dubai" | "lagos"): FlightShot | null;
   dispose(): void;
 };
 
@@ -171,9 +174,32 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
       get("tiles").polygon([P(x0, z0), P(x1, z0), P(x1, z1), P(x0, z1)], 0.02, 1.4, floorColour);
     }
   } else if (kind !== "dhow" && kind !== "safari") get(kind === "hotel" || kind === "cabin" ? "fabric" : "tiles").polygon(corners, 0.02, kind === "cabin" ? 2 : 1.4, floorColour);
-  if (!open) {
+  if (kind === "cabin") {
+    // Round fuselage: an elliptical tube seen from inside, closed at both ends.
+    const shell = new StandardMaterial("cabin shell", scene);
+    shell.diffuseColor = Color3.FromHexString("#eceae4");
+    shell.specularColor = new Color3(0.12, 0.12, 0.12);
+    shell.emissiveColor = Color3.FromHexString("#eceae4").scale(0.22);
+    shell.backFaceCulling = false;
+    disposables.push(shell);
+    const tube = MeshBuilder.CreateCylinder("cabin fuselage", { diameter: 4.0, height: HZ * 2, tessellation: 36, cap: Mesh.NO_CAP }, scene);
+    tube.rotation.x = Math.PI / 2;
+    tube.scaling.z = 0.9;
+    tube.position.set(OX, 0.55, OZ);
+    tube.material = shell;
+    tube.isPickable = false;
+    disposables.push(tube);
+    for (const end of [-1, 1]) {
+      const cap = MeshBuilder.CreateDisc("cabin end", { radius: 2.0, tessellation: 36 }, scene);
+      cap.scaling.y = 0.9;
+      cap.position.set(OX, 0.55, OZ + end * HZ);
+      cap.material = shell;
+      cap.isPickable = false;
+      disposables.push(cap);
+    }
+  } else if (!open) {
     get("plaster").polygon(corners, height, 3, [0.97, 0.97, 0.96], true);
-    const wall: Rgb = kind === "consulate" ? [0.93, 0.9, 0.84] : kind === "hotel" ? [0.95, 0.92, 0.86] : kind === "cabin" ? [0.92, 0.92, 0.9] : [0.9, 0.92, 0.94];
+    const wall: Rgb = kind === "consulate" ? [0.93, 0.9, 0.84] : kind === "hotel" ? [0.95, 0.92, 0.86] : [0.9, 0.92, 0.94];
     const terminal = kind === "airport-los" || kind === "airport-dxb";
     for (let index = 0; index < 4; index += 1) {
       // Terminals glaze the north side onto the apron instead of walling it.
@@ -191,6 +217,7 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
 
   let animate: (seconds: number) => void = () => {};
   let setFlight: TravelView["setFlight"] = () => {};
+  let flightShot: TravelView["flightShot"] = () => null;
   const lights: Array<PointLight | HemisphericLight> = [];
   const light = (x: number, y: number, z: number, hex: string, intensity: number, range: number) => {
     const point = new PointLight(`travel light ${lights.length}`, new Vector3(OX + x, y, OZ + z), scene);
@@ -383,7 +410,7 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
     const windows = new MeshBuilderBatch("cabin windows");
     for (let z = -HZ + 1; z < HZ - 1; z += 0.82) {
       for (const side of [-1, 1]) {
-        const x = OX + side * (HX - 0.03);
+        const x = OX + side * 1.7;
         const normal: [number, number, number] = [-side, 0, 0];
         const a: [number, number, number] = [x, 1.05, OZ + z - 0.17];
         const b: [number, number, number] = [x, 1.05, OZ + z + 0.17];
@@ -396,7 +423,8 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
     const windowMesh = windows.build(scene, windowMaterial);
     if (windowMesh) disposables.push(windowMesh);
     for (const side of [-1, 1]) {
-      deco("plaster", side * (HX - 0.3), 1.95, 0, 0.6, 0.42, HZ * 2 - 0.4, [0.9, 0.9, 0.88]);
+      deco("plaster", side * 1.15, 1.86, 0, 0.5, 0.36, HZ * 2 - 0.4, [0.9, 0.9, 0.88]);
+      deco("darkFrame", side * 0.9, 1.7, 0, 0.03, 0.04, HZ * 2 - 0.4, [0.3, 0.3, 0.32]);
       deco("chrome", side * (HX - 0.6), 1.75, 0, 0.02, 0.04, HZ * 2 - 0.4, [0.6, 0.6, 0.62]);
     }
     const cabinStrip = glow(scene, "cabin mood light", "#c8b8ff", disposables);
@@ -433,6 +461,33 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
       const dim = phase === "takeoff" || phase === "descent";
       cabinLight.intensity = rear.intensity = dim ? 4 : 10;
       cabinStrip.emissiveColor = Color3.FromHexString(dim ? "#5b4cc8" : phase === "cruise" ? "#e8d9ff" : "#c8b8ff");
+    };
+    // Departure and arrival airfields are built only around their shots, far from everything else.
+    let field: { airfield: Airfield; airport: "los" | "dxb" } | null = null;
+    const fieldFor = (airport: "los" | "dxb") => {
+      if (field?.airport === airport) return field.airfield;
+      field?.airfield.dispose();
+      field = { airfield: buildAirfield(scene, [OX, OZ + 3_000], airport), airport };
+      return field.airfield;
+    };
+    disposables.push({ dispose: () => field?.airfield.dispose() });
+    flightShot = (seconds, destination) => {
+      const from = destination === "dubai" ? "los" : "dxb";
+      const to = destination === "dubai" ? "dxb" : "los";
+      if (seconds >= TAKEOFF_SHOT[0] - 6 && seconds < TAKEOFF_SHOT[0]) {
+        fieldFor(from);
+        return null;
+      }
+      if (seconds >= TAKEOFF_SHOT[0] && seconds < TAKEOFF_SHOT[1]) return fieldFor(from).takeoff(seconds - TAKEOFF_SHOT[0]);
+      if (seconds >= LANDING_SHOT[0] - 3 && seconds < LANDING_SHOT[1]) {
+        const airfield = fieldFor(to);
+        return seconds >= LANDING_SHOT[0] ? airfield.landing(seconds - LANDING_SHOT[0]) : null;
+      }
+      if (field) {
+        field.airfield.dispose();
+        field = null;
+      }
+      return null;
     };
   } else if (kind === "hotel") {
     const hotel = trip?.room ? hotelById.get(trip.room.hotelId) : undefined;
@@ -677,6 +732,9 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
     },
     setFlight(phase, progress, destination) {
       setFlight(phase, progress, destination);
+    },
+    flightShot(seconds, destination) {
+      return flightShot(seconds, destination);
     },
     dispose() {
       for (const mesh of meshes) mesh.dispose();
