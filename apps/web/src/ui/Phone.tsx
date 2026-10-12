@@ -11,8 +11,9 @@ import { JusticeApp, SafetyApp, type ReportTarget } from "./SafetyUI";
 import { GoApp } from "./GoApp";
 import { PlacesApp, type CabDestination } from "./PlacesApp";
 import { BoutiqueApp } from "./BoutiqueApp";
+import { BankApp, BetApp, DocumentsApp } from "./FinanceApps";
 
-export type PhoneApp = "home" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
+export type PhoneApp = "home" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "bank" | "bet" | "documents" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
 
 const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
   { id: "places", label: "Places", icon: "📍" },
@@ -23,7 +24,10 @@ const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
   { id: "travel", label: "Travel", icon: "✈" },
   { id: "transport", label: "Transport", icon: "🚌" },
   { id: "jobs", label: "Jobs", icon: "📦" },
+  { id: "bank", label: "Bank", icon: "🏦" },
+  { id: "bet", label: "Bet", icon: "🎰" },
   { id: "wallet", label: "Wallet", icon: "₦" },
+  { id: "documents", label: "My ID", icon: "🪪" },
   { id: "property", label: "My Home", icon: "🏠" },
   { id: "vehicles", label: "Vehicles", icon: "🚗" },
   { id: "community", label: "Community", icon: "🤝" },
@@ -129,6 +133,9 @@ export function Phone(props: Props) {
         {app === "transport" && <TransportApp {...props} />}
         {app === "jobs" && <JobsApp {...props} />}
         {app === "wallet" && <WalletApp {...props} />}
+        {app === "bank" && <BankApp economy={props.economy} onRefresh={props.onRefresh} onToast={props.onToast} />}
+        {app === "bet" && <BetApp onRefresh={props.onRefresh} onToast={props.onToast} />}
+        {app === "documents" && <DocumentsApp playerName={props.playerName} vehicles={props.vehicles.length} />}
         {app === "property" && <PropertyApp {...props} />}
         {app === "vehicles" && (
           <VehiclesApp

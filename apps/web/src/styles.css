@@ -908,3 +908,68 @@ button.wide { width: 100%; margin: 6px 0; }
 .house-card span { color: #6a7773; font-size: calc(12px * var(--text-scale)); }
 .house-card em { color: #116c60; font-style: normal; font-weight: 700; font-size: 12px; }
 .house-choice.premium { border-color: #1ba7d6; background: linear-gradient(180deg, #f2fbff, #fffdf8); }
+
+/* Bank, betting, daily bonus and in-game documents */
+.field { display: grid; gap: 4px; margin: 8px 0; font-size: calc(12px * var(--text-scale)); }
+.field span { font-weight: 600; color: #48615c; }
+.field input { padding: 9px 10px; border-radius: 10px; border: 1px solid #d5d0c2; background: #fff; font-size: 16px; color: #17312e; }
+.bank .balance-card, .bank-block, .daily-card { margin-top: 10px; }
+.bank-block .primary, .daily-card .primary, .spin-tab > .primary { width: 100%; margin-top: 6px; }
+.balance-card.portfolio small { font-weight: 700; color: #fff; opacity: .92; }
+.daily-card { padding: 12px; border-radius: 14px; background: linear-gradient(135deg, #2b2112, #4a3615); color: #fff7dc; }
+.daily-card header { display: flex; justify-content: space-between; align-items: baseline; }
+.daily-card header small { color: #e7bd62; font-weight: 700; }
+.daily-card .muted { color: #e9dcbc; }
+.daily-strip { list-style: none; display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; padding: 0; margin: 10px 0 6px; }
+.daily-strip li { display: grid; place-items: center; gap: 2px; padding: 6px 0; border-radius: 8px; background: rgba(255,255,255,.08); font-size: 10px; }
+.daily-strip li b { font-size: 11px; }
+.daily-strip li.done { background: #1f9d63; }
+.daily-strip li.today { background: #e6bd62; color: #1d1a12; box-shadow: 0 0 0 2px #fff; animation: daily-pulse 1.2s ease-in-out infinite alternate; }
+@keyframes daily-pulse { to { transform: scale(1.06); } }
+.daily-popup { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(0,0,0,.45); padding: 16px; }
+.daily-popup > div { position: relative; width: min(380px, 100%); }
+.daily-popup .icon-button { position: absolute; right: 8px; top: 8px; z-index: 1; color: #fff; background: rgba(0,0,0,.3); }
+.daily-popup .daily-card { margin: 0; padding: 18px 14px 14px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.market-list { list-style: none; padding: 0; margin: 10px 0; }
+.market-list li button { width: 100%; display: grid; grid-template-columns: 40px 1fr 64px auto; gap: 8px; align-items: center; padding: 9px 4px; border: 0; border-bottom: 1px solid #ebe7dc; background: none; text-align: left; color: inherit; }
+.market-list .ticker { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; background: #17312e; color: #e6bd62; font-weight: 800; font-size: 11px; }
+.market-list .asset-name, .market-list .asset-price { display: grid; }
+.market-list .asset-name small { color: #6b7d79; font-size: 11px; }
+.market-list .asset-price { text-align: right; font-size: 12px; }
+.trade-sheet, .bet-slip { margin: 10px 0; padding: 12px; border-radius: 14px; background: #fff; border: 1px solid #e0ddd2; box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+.trade-sheet header { justify-content: space-between; }
+.trade-sheet .row, .bet-slip .row { flex-wrap: wrap; }
+.wheel-wrap { position: relative; display: grid; place-items: center; margin: 8px auto 4px; width: 220px; }
+.wheel-pointer { position: absolute; top: -6px; z-index: 1; color: #e2574c; font-size: 24px; text-shadow: 0 2px 2px rgba(0,0,0,.4); }
+.wheel { transition: transform 3s cubic-bezier(.12,.7,.18,1); filter: drop-shadow(0 6px 14px rgba(0,0,0,.35)); }
+.wheel-spin.spinning { animation: wheel-spin .7s linear infinite; }
+@keyframes wheel-spin { to { transform: rotate(-360deg); } }
+.spin-timer { text-align: center; font-weight: 700; margin: 4px 0; }
+.spin-history { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 4px; }
+.spin-history span { flex: none; padding: 2px 6px; border-radius: 6px; color: #fff; font-size: 11px; font-weight: 700; }
+.fixtures { list-style: none; padding: 0; margin: 0; }
+.fixture { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid #ebe7dc; }
+.fixture .teams { display: grid; font-size: 13px; }
+.fixture .teams small { color: #8a9a96; font-size: 10px; }
+.fixture .odds { display: flex; gap: 4px; }
+.fixture .odds button { display: grid; min-width: 46px; padding: 4px 6px; border-radius: 8px; border: 1px solid #d5d0c2; background: #fff; color: inherit; }
+.fixture .odds button small { font-size: 9px; color: #6b7d79; }
+.fixture .odds button.selected { background: #116c60; border-color: #116c60; color: #fff; }
+.fixture .odds button.selected small { color: #d9efe9; }
+.fixture .score { display: grid; text-align: center; min-width: 54px; }
+.fixture .score small { color: #c0392b; font-weight: 700; font-size: 11px; }
+.id-card { position: relative; overflow: hidden; margin: 10px 0; padding: 12px; border-radius: 14px; color: #fff; box-shadow: 0 10px 24px rgba(0,0,0,.2); }
+.id-card.passport { background: linear-gradient(135deg, #0b5d3b, #08402a); }
+.id-card.licence { background: linear-gradient(135deg, #e9eef2, #c9d6df); color: #17312e; }
+.id-card header { display: flex; gap: 8px; align-items: center; }
+.id-card header span { font-size: 26px; }
+.id-card header div { display: grid; }
+.id-card header small { opacity: .8; font-size: 11px; }
+.id-body { display: grid; grid-template-columns: 70px 1fr; gap: 10px; margin-top: 10px; }
+.id-card .photo { display: grid; place-items: center; height: 86px; border-radius: 8px; background: rgba(255,255,255,.2); font-size: 26px; font-weight: 800; }
+.id-card.licence .photo { background: rgba(23,49,46,.12); }
+.id-card dl { margin: 0; display: grid; gap: 4px; }
+.id-card dt { font-size: 9px; letter-spacing: .1em; text-transform: uppercase; opacity: .7; }
+.id-card dd { margin: 0; font-weight: 700; font-size: 13px; }
+.id-card footer { margin-top: 10px; font-family: ui-monospace, monospace; font-size: 10px; letter-spacing: .08em; opacity: .75; overflow: hidden; white-space: nowrap; }
+.id-card .watermark { position: absolute; inset: 40% -10% auto; transform: rotate(-14deg); text-align: center; font-style: normal; font-weight: 800; font-size: 13px; letter-spacing: .15em; opacity: .16; pointer-events: none; }

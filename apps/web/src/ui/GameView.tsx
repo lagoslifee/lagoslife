@@ -9,6 +9,7 @@ import type { Quality } from "../game/materials";
 import { FullMap, Minimap } from "./MapView";
 import { currentObjective, housingPath, type HousingPath } from "./objectives";
 import { Welcome } from "./Welcome";
+import { DailyBonusPopup } from "./FinanceApps";
 import { Phone, type PhoneApp } from "./Phone";
 import { TravelPromptCard } from "./GoApp";
 import { AgberoPrompt } from "./AgberoPrompt";
@@ -1013,6 +1014,8 @@ export function GameView({
           onEnter={(propertyId) => engine?.enterProperty(propertyId, "enter")}
         />
       )}
+
+      {engine && hud && !designing && !phone && <DailyBonusPopup onRefresh={refresh} onToast={toast} />}
 
       {phone && engine && (
         <Phone

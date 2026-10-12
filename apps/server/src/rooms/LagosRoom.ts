@@ -152,6 +152,7 @@ import { pool } from "../database.js";
 import { verifyMultiplayerToken, type MultiplayerIdentity } from "../multiplayer-token.js";
 import { clearProgressReset, removePlayerPosition, setPlayerPosition, wasProgressReset } from "../player-presence.js";
 import { homeEvents } from "../home-events.js";
+import { playerEvents } from "../player-events.js";
 import { isPropertyAvailable, requirePropertyAccess } from "../property-service.js";
 import { vehicleEvents } from "../vehicle-events.js";
 import { issueCitation } from "../justice-service.js";
@@ -415,6 +416,12 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (client) this.notify(client, { tone: "info", text: `${host} invited you round to ${home}. Phone → My Home → Visit gives you directions; the door will open for you.` });
   };
 
+  private onPlayerNotice = (userId: string, tone: "info" | "success" | "error", text: string) => {
+    const player = this.playerByUser(userId);
+    const client = player ? this.clientFor(player) : undefined;
+    if (client) this.notify(client, { tone, text });
+  };
+
   onAuth(_client: LagosClient, options: { token?: unknown }, _context: AuthContext) {
     return verifyMultiplayerToken(options.token);
   }
@@ -430,6 +437,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     travelEvents.on("invite", this.onTravelInvite);
     homeEvents.on("furniture", this.onHomeFurniture);
     homeEvents.on("invited", this.onHomeInvite);
+    playerEvents.on("notice", this.onPlayerNotice);
     try {
       await parkAbandonedVehicles();
       for (const vehicle of await loadStreetVehicles()) this.vehicles.set(vehicle.id, vehicle);
@@ -707,6 +715,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     travelEvents.off("invite", this.onTravelInvite);
     homeEvents.off("furniture", this.onHomeFurniture);
     homeEvents.off("invited", this.onHomeInvite);
+    playerEvents.off("notice", this.onPlayerNotice);
     await Promise.all(
       [...this.players.values()].map(async (player) => {
         await this.parkPlayerVehicle(player).catch(() => undefined);

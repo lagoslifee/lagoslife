@@ -1,5 +1,6 @@
 import type { CabinClass, CharacterAppearance, OutfitId, HotelBookingState, RoomType, TicketState, TravelStatus, VisaPlan, VisaState } from "@lagos-living/shared";
 import type { BottleItem, Citation, PoliceCase, StreetIncident, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
+import type { BettingStatus, DailyStatus, MarketStatus, Pick } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -195,6 +196,17 @@ export const api = {
   removeFromTable: (placeId: string, no: number, userName: string) => post<{ guest: string; tables: ClubTable[] }>(`/api/clubs/${placeId}/tables/${no}/guests/remove`, { userName }),
   orderBottle: (placeId: string, no: number, itemId: string) =>
     post<{ replayed: boolean; item: BottleItem; balance: number; tables: ClubTable[] }>(`/api/clubs/${placeId}/tables/${no}/bottle`, { itemId, idempotencyKey: crypto.randomUUID() }),
+  daily: () => request<DailyStatus>("/api/daily"),
+  claimDaily: () => post<{ amount: number; streak: number; balance: number }>("/api/daily/claim"),
+  transfer: (userName: string, amount: number, note: string) =>
+    post<{ replayed: boolean; balance: number; to: string }>("/api/bank/transfer", { userName, amount, note, idempotencyKey: crypto.randomUUID() }),
+  market: () => request<MarketStatus>("/api/market"),
+  trade: (assetId: string, side: "buy" | "sell", amount: number | "all") =>
+    post<{ replayed: boolean; balance: number; units: number; price: number; naira: number }>("/api/market/trade", { assetId, side, amount, idempotencyKey: crypto.randomUUID() }),
+  betting: () => request<BettingStatus>("/api/betting"),
+  betSpin: (stake: number) => post<{ replayed: boolean; balance: number; round: number; stopsAt: number }>("/api/betting/spin", { stake, idempotencyKey: crypto.randomUUID() }),
+  betFootball: (fixtureId: string, pick: Pick, stake: number) =>
+    post<{ replayed: boolean; balance: number; odds: number }>("/api/betting/football", { fixtureId, pick, stake, idempotencyKey: crypto.randomUUID() }),
   security: () => request<SecurityStatus>("/api/security"),
   hireSecurity: (plan: SecurityPlanId) =>
     post<{ replayed: boolean; balance: number; status: SecurityStatus }>("/api/security/hire", { plan, idempotencyKey: crypto.randomUUID() }),

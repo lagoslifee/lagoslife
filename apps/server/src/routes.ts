@@ -9,6 +9,10 @@ import {
   defaultSettings,
   eatRequestSchema,
   settingsSchema,
+  footballBetSchema,
+  spinBetSchema,
+  tradeRequestSchema,
+  transferRequestSchema,
   tenancyActionSchema,
   homeActionSchema,
   inviteGuestSchema,
@@ -50,6 +54,7 @@ import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
+import { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, marketStatus, trade, transferMoney } from "./finance-service.js";
 import { auth } from "./auth.js";
 import { acquirePlot, buildingEvents, buyReadyBuilt, listPlots, payNextStage, releasePlotsOf, renewPlotLease, startConstruction } from "./building-service.js";
 import { matchMaker } from "@colyseus/core";
@@ -568,6 +573,15 @@ export function configureRoutes(app: Express) {
     const { itemId, idempotencyKey } = tableBottleSchema.parse(req.body);
     return orderBottle(userId, String(req.params.placeId), tableNo(req), itemId, idempotencyKey);
   }));
+
+  app.get("/api/daily", requirePlayer, guarded("Daily bonus unavailable", (_req, userId) => dailyStatus(userId)));
+  app.post("/api/daily/claim", requirePlayer, rateLimited, guarded("Daily bonus could not be collected", (_req, userId) => claimDaily(userId)));
+  app.post("/api/bank/transfer", requirePlayer, rateLimited, guarded("Transfer failed", (req, userId) => transferMoney(userId, transferRequestSchema.parse(req.body))));
+  app.get("/api/market", requirePlayer, guarded("Market unavailable", (_req, userId) => marketStatus(userId)));
+  app.post("/api/market/trade", requirePlayer, rateLimited, guarded("Trade failed", (req, userId) => trade(userId, tradeRequestSchema.parse(req.body))));
+  app.get("/api/betting", requirePlayer, guarded("Betting unavailable", (_req, userId) => bettingStatus(userId)));
+  app.post("/api/betting/spin", requirePlayer, rateLimited, guarded("Bet failed", (req, userId) => betSpin(userId, spinBetSchema.parse(req.body))));
+  app.post("/api/betting/football", requirePlayer, rateLimited, guarded("Bet failed", (req, userId) => betFootball(userId, footballBetSchema.parse(req.body))));
 
   app.get("/api/security", requirePlayer, guarded("Security unavailable", (_req, userId) =>
     getSecurityStatus(userId)));
