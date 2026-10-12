@@ -765,6 +765,29 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .go-favourites small { font-size: 11px; opacity: .75; font-weight: normal; }
 .go-filter { width: 100%; margin-bottom: 6px; }
 
+/* Boutique */
+.boutique-hero { display: grid; gap: 2px; padding: 12px 14px; margin-bottom: 10px; border-radius: 14px; color: #fff; background: linear-gradient(135deg, #3b1d4a, #7a2f5a 60%, #c4661f); }
+.boutique-hero strong { font-size: 16px; letter-spacing: .02em; }
+.boutique-hero span { font-size: 12px; opacity: .85; }
+.boutique-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.boutique-item { display: grid; gap: 4px; align-content: start; padding: 9px; border-radius: 12px; background: rgba(255, 255, 255, .75); border: 1px solid rgba(0, 0, 0, .07); }
+.boutique-item strong { font-size: 13px; line-height: 1.2; }
+.boutique-item small { font-size: 11px; color: #5d625c; line-height: 1.3; }
+.garment { position: relative; height: 104px; border-radius: 10px; background: linear-gradient(#f3eee4, #e4dccd); overflow: hidden; }
+.garment i { position: absolute; left: 50%; transform: translateX(-50%); display: block; box-shadow: inset 0 -4px 0 rgba(0, 0, 0, .12); }
+.garment-top { top: 10px; width: 46px; height: 38px; border-radius: 12px 12px 4px 4px; }
+.garment-top::before, .garment-top::after { content: ""; position: absolute; top: 2px; width: 13px; height: 18px; background: inherit; border-radius: 6px; }
+.garment-top::before { left: -11px; transform: rotate(18deg); }
+.garment-top::after { right: -11px; transform: rotate(-18deg); }
+.garment-top.long::before, .garment-top.long::after { height: 34px; }
+.garment-legs { top: 47px; width: 36px; height: 44px; border-radius: 3px; clip-path: polygon(0 0, 100% 0, 100% 100%, 58% 100%, 50% 22%, 42% 100%, 0 100%); }
+.garment-skirt { top: 47px; width: 52px; height: 46px; border-radius: 3px 3px 10px 10px; clip-path: polygon(18% 0, 82% 0, 100% 100%, 0 100%); }
+.garment-shoes { top: 92px; width: 40px; height: 6px; border-radius: 3px; }
+.boutique-buy { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 2px; }
+.boutique-buy span { font-weight: 800; font-size: 13px; }
+.boutique-buy button { padding: 5px 9px; font-size: 12px; }
+.boutique-buy em { font-style: normal; font-size: 12px; font-weight: 700; color: #12443a; }
+
 /* Places directory */
 .place-chips { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 8px; scrollbar-width: none; }
 .place-chips button { flex: none; padding: 6px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; background: rgba(0, 0, 0, .06); border: 1px solid rgba(0, 0, 0, .1); color: inherit; }

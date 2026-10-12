@@ -18,6 +18,18 @@ export const outfits = [
   "beach-day",
   "police-uniform",
   "security-uniform",
+  "agbada-royal",
+  "senator-black",
+  "aso-oke-wine",
+  "denim-street",
+  "suit-navy",
+  "polo-weekend",
+  "gown-emerald",
+  "boubou-gold",
+  "ankara-jumpsuit",
+  "denim-skirt",
+  "corporate-red",
+  "lace-wine",
 ] as const;
 export type OutfitId = (typeof outfits)[number];
 /** Anyone can pick these in the character studio. */
@@ -25,6 +37,26 @@ export const starterOutfits = ["island-casual", "office-smart", "ankara-day", "a
 /** Sold in shops; wearable once owned (inventory item `outfit:<id>`). */
 export const shopOutfits = ["kandura", "abaya", "resort-linen", "beach-day"] as const satisfies readonly OutfitId[];
 export const isStarterOutfit = (outfit: string) => (starterOutfits as readonly string[]).includes(outfit);
+
+/**
+ * Lagos Living Boutique, sold from the phone (catalogue items `outfit:<id>` with no vendor, so no shop visit).
+ * `body` is who the cut is made for; the app lists the collection for the body chosen in the character studio.
+ * Keep in step with migration 0025_boutique.sql.
+ */
+export const BOUTIQUE = [
+  { outfit: "agbada-royal", body: "male", name: "Royal blue agbada", price: 65_000, description: "Flowing three-piece agbada with gold embroidery, for owambe Saturdays." },
+  { outfit: "senator-black", body: "male", name: "Black senator", price: 38_000, description: "Sharp black senator top and trousers with a long sleeve." },
+  { outfit: "aso-oke-wine", body: "male", name: "Wine aso-oke kaftan", price: 52_000, description: "Hand-woven wine aso-oke kaftan with matching trousers." },
+  { outfit: "denim-street", body: "male", name: "White tee and denim", price: 18_000, description: "Clean white tee, straight blue jeans and white sneakers." },
+  { outfit: "suit-navy", body: "male", name: "Navy two-piece suit", price: 75_000, description: "Tailored navy suit for Victoria Island boardrooms." },
+  { outfit: "polo-weekend", body: "male", name: "Weekend polo and chinos", price: 22_000, description: "Navy polo, stone chinos and loafers for a Lekki brunch." },
+  { outfit: "gown-emerald", body: "female", name: "Emerald evening gown", price: 70_000, description: "Floor-length emerald gown for the club and the gala." },
+  { outfit: "boubou-gold", body: "female", name: "Gold boubou", price: 48_000, description: "Wide, airy boubou in gold with a deep print border." },
+  { outfit: "ankara-jumpsuit", body: "female", name: "Ankara jumpsuit", price: 34_000, description: "Bold ankara jumpsuit, long-legged and sleeveless." },
+  { outfit: "denim-skirt", body: "female", name: "Tee and denim skirt", price: 16_000, description: "White tee with a knee-length denim skirt." },
+  { outfit: "corporate-red", body: "female", name: "Red corporate dress", price: 42_000, description: "Structured red sheath dress with long sleeves." },
+  { outfit: "lace-wine", body: "female", name: "Wine lace iro and buba", price: 58_000, description: "Wine lace buba with a wrapped iro skirt." },
+] as const satisfies ReadonlyArray<{ outfit: OutfitId; body: (typeof bodies)[number]; name: string; price: number; description: string }>;
 export const accessories = ["none", "glasses", "cap", "headwrap", "beard"] as const;
 
 /** Profiles saved before the body choice existed keep the male body they were shown with. */

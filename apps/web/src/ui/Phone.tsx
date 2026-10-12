@@ -10,12 +10,14 @@ import { VehiclesApp } from "./VehicleSheets";
 import { JusticeApp, SafetyApp, type ReportTarget } from "./SafetyUI";
 import { GoApp } from "./GoApp";
 import { PlacesApp, type CabDestination } from "./PlacesApp";
+import { BoutiqueApp } from "./BoutiqueApp";
 
-export type PhoneApp = "home" | "places" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
+export type PhoneApp = "home" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
 
 const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
   { id: "places", label: "Places", icon: "📍" },
   { id: "go", label: "Go", icon: "⚡" },
+  { id: "boutique", label: "Boutique", icon: "👔" },
   { id: "map", label: "Map", icon: "🗺" },
   { id: "ride", label: "Ride", icon: "🚕" },
   { id: "travel", label: "Travel", icon: "✈" },
@@ -110,6 +112,7 @@ export function Phone(props: Props) {
           <PlacesApp engine={props.engine} hud={props.hud} onNavigate={props.onNavigate} onCab={(destination) => { setCabTo(destination); setApp("ride"); }} onClose={onClose} />
         )}
         {app === "go" && <GoApp engine={props.engine} onClose={onClose} />}
+        {app === "boutique" && <BoutiqueApp engine={props.engine} economy={props.economy} onRefresh={props.onRefresh} onToast={props.onToast} />}
         {app === "ride" && <RideApp key={cabTo?.key ?? "ride"} engine={props.engine} ride={props.ride} properties={props.properties} initial={cabTo} onNavigate={props.onNavigate} onClose={onClose} />}
         {app === "travel" && <TravelApp engine={props.engine} economy={props.economy} onNavigate={props.onNavigate} onRefresh={props.onRefresh} onToast={props.onToast} onClose={onClose} />}
         {app === "transport" && <TransportApp {...props} />}
