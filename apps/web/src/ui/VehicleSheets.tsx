@@ -1,4 +1,7 @@
 import {
+  dialSpeed,
+  MAP_SCALE,
+  type VehicleModel,
   getPlace,
   insurancePremium,
   VEHICLE_MODELS,
@@ -19,7 +22,8 @@ import { useEffect, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PropertyListing } from "../api";
 import type { GameEngine } from "../game/engine";
 
-const kmh = (metresPerSecond: number) => Math.round(metresPerSecond * 3.6);
+/** Speedometer top speed: motor vehicles cover MAP_SCALE times the ground the dial shows; bicycles are true to life. */
+const kmh = (model: VehicleModel) => Math.round((model.body === "bicycle" ? model.topSpeed : dialSpeed(model.topSpeed)) * 3.6);
 const km = (metres: number) => `${(metres / 1000).toFixed(1)} km`;
 
 function useRunner(onToast: (notice: Notice) => void, onRefresh: () => Promise<void>) {
@@ -98,7 +102,11 @@ export function DealershipSheet({ place, economy, vehicles, onClose, onRefresh, 
               role="tab"
               aria-selected={category === key}
               className={category === key ? "chip selected" : "chip"}
-              onClick={() => setCategory(key)}
+              onClick={() => {
+                setCategory(key);
+                const first = VEHICLE_MODELS.find((model) => key === "all" || model.category === key);
+                if (first && key !== "all" && vehicleModelById.get(selected)?.category !== key) setSelected(first.id);
+              }}
             >
               {key === "all" ? `All (${VEHICLE_MODELS.length})` : vehicleCategoryLabels[key]}
             </button>
@@ -116,8 +124,8 @@ export function DealershipSheet({ place, economy, vehicles, onClose, onRefresh, 
                   <strong>{model.name}</strong>
                   <span>{model.description}</span>
                   <em>
-                    {vehicleCategoryLabels[model.category]} · {model.seats} {model.seats === 1 ? "seat" : "seats"} · top speed {kmh(model.topSpeed)} km/h
-                    {model.body === "bicycle" ? "" : ` · 0–50 km/h in ${(13.9 / model.acceleration).toFixed(1)} s · cover ${naira(insurancePremium(model))}/week`}
+                    {vehicleCategoryLabels[model.category]} · {model.seats} {model.seats === 1 ? "seat" : "seats"} · top speed {kmh(model)} km/h
+                    {model.body === "bicycle" ? "" : ` · 0–50 km/h in ${((13.9 * MAP_SCALE) / model.acceleration).toFixed(1)} s · cover ${naira(insurancePremium(model))}/week`}
                   </em>
                   <div className="swatches" role="radiogroup" aria-label={`${model.name} colour`}>
                     {model.colours.map((hex) => (
@@ -290,7 +298,7 @@ export function VehiclesApp({ engine, tows, vehicles, properties, position, driv
               <p className="muted small">
                 {driving ? "You are driving it" : vehicle.status === "towing" ? "With Ade Recovery" : vehicle.status === "garaged" ? `In the garage at ${garage?.name ?? "your home"}` : distance !== null ? `Parked ${distance} m away` : "Parked"}
                 {" · "}{km(vehicle.odometerMetres)}{vehicle.serviceDue ? " · service due" : ""}
-                {model ? ` · top ${kmh(model.topSpeed)} km/h` : ""}
+                {model ? ` · top ${kmh(model)} km/h` : ""}
               </p>
               <p className="small">{vehicle.insured ? `Insured until ${new Date(vehicle.insuredUntil!).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}: free tows, repairs capped at ${naira(VEHICLE_RULES.insuredExcess)}` : "Not insured"}</p>
               <div className="row wrap">

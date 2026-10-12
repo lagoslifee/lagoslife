@@ -1188,7 +1188,7 @@ export class GameEngine {
     const dt = Math.min(this.maxFrameDt, elapsed / 1000);
     this.frameTimes.push(elapsed);
     if (this.frameTimes.length > 120) this.frameTimes.shift();
-    if (this.readyFired && this.settings.autoGraphics && !document.hidden) {
+    if (this.readyFired && this.settings.autoGraphics && !document.hidden && !this.showcase) {
       // Under the 30 fps cap a steady frame is ~33 ms by design; judge load as if it were a 60 fps frame.
       const level = this.adaptive.sample(this.frameGap ? elapsed / 2 : elapsed, now);
       if (level !== null) this.applyQualityStep(level);
@@ -3650,11 +3650,15 @@ export class GameEngine {
    */
   showcaseVehicle(choice: { modelId: string; colour: string } | null) {
     if (!choice) {
-      this.showcase?.view?.dispose();
+      if (!this.showcase) return;
+      this.showcase.view?.dispose();
       this.showcase = null;
+      this.applyQualityStep(this.adaptive.level);
       return;
     }
     if (!this.vehicleFactory) return;
+    // A single still view is cheap, so show the car at full resolution rather than the adaptive downscale.
+    if (!this.showcase) this.engine.setHardwareScalingLevel(this.baseScaling);
     const place = getPlace(TEST_DRIVE.dealerPlaceId);
     const [dx, dz] = place.door;
     const point: Vec2 = [dx + Math.sin(place.facing) * 5.6, dz + Math.cos(place.facing) * 5.6];

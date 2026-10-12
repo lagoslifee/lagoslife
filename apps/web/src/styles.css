@@ -915,7 +915,18 @@ table.departures td { padding: 6px 10px; border-bottom: 1px solid #23413d; }
 .world-tag.agbero-tag { background: rgba(255, 236, 200, .96); }
 
 /* The dealership shows the car in the game view above, so its sheet stays in the lower half everywhere. */
-.sheet.wide.showcase-sheet { max-height: 52dvh; }
+/* A sideways-overflowing scroll layer stops some browsers compositing the game canvas behind it. */
+.sheet.wide.showcase-sheet { max-height: 52dvh; overflow: hidden; display: flex; flex-direction: column; }
+.showcase-sheet > * { flex-shrink: 0; }
+.showcase-sheet .vehicle-menu { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.vehicle-menu { grid-template-columns: minmax(0, 1fr); }
+.vehicle-menu li > div:first-child { flex: 1 1 220px; min-width: 0; }
+.vehicle-menu li em { overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .showcase-sheet .category-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-right: -16px; padding-right: 16px; }
+  .showcase-sheet .category-chips .chip { flex: none; }
+  .vehicle-menu .menu-actions { grid-auto-flow: column; grid-auto-columns: 1fr; width: 100%; min-width: 0; }
+}
 @media (max-height: 520px) { .sheet.wide.showcase-sheet { max-height: 62dvh; width: min(560px, 60vw); justify-self: end; } }
 
 /* Home designer: floor plan in the bottom of the screen, the room seen from above in the top 40%. */
