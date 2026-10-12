@@ -164,16 +164,6 @@ function AuthScreen() {
     }
   }
 
-  const playAsGuest = () => {
-    setBusy(true);
-    startGuestSession()
-      .then(() => location.assign("/"))
-      .catch((error: Error) => {
-        setMessage(error.message);
-        setBusy(false);
-      });
-  };
-
   const switchTo = (next: AuthMode) => {
     setMode(next);
     setMessage("");
@@ -266,13 +256,6 @@ function AuthScreen() {
             {mode === "login" && <button type="button" onClick={() => switchTo("forgot")}>Forgot password?</button>}
             {(mode === "forgot" || mode === "reset") && <button type="button" onClick={() => switchTo("login")}>Back to log in</button>}
           </div>
-          {guestMode && (mode === "login" || mode === "register") && (
-            <div className="guest-entry">
-              <span>or</span>
-              <button type="button" className="secondary" disabled={busy} onClick={playAsGuest} data-testid="play-as-guest">Play as guest</button>
-              <small className="field-hint">Jump straight in. Create an account later from Phone → Settings to keep your progress.</small>
-            </div>
-          )}
         </form>
       </section>
     </main>
