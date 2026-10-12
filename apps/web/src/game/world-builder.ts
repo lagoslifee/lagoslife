@@ -956,6 +956,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     // A prayer hall reads as a mosque only if its dome clears the roofline from the street.
     if (landmark === "mosque") floors = 2;
     if (landmark === "terminal") floors = 2;
+    if (landmark === "showroom") floors = 2;
     const height = floors * FLOOR_HEIGHT + 0.3;
     const paint = landmark ? LANDMARK_PAINT[landmark] : PAINTS[Math.floor(hash(building.id * 7) * PAINTS.length)]!;
     const trim: Color = landmark ? LANDMARK_TRIM[landmark] : hash(building.id * 11) > 0.5 ? [0.98, 0.98, 0.97] : [0.62, 0.6, 0.57];
@@ -990,6 +991,30 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
 
     const walls = base.get(cx, cz, "plaster");
     const trimBatch = base.get(cx, cz, "concrete");
+    /** Car showroom: floor-to-ceiling clear glass on the street sides, a dark brand band above, white inside. */
+    const showroomEdge = (a: Vec2, b: Vec2, nx: number, nz: number, length: number, front: boolean) => {
+      const glassTop = 4.6;
+      const towardRoad = roads.nearest((a[0] + b[0]) / 2 + nx * 3, (a[1] + b[1]) / 2 + nz * 3);
+      const glazed = front || Boolean(towardRoad && towardRoad.distance < 26);
+      const yawOut = Math.atan2(nx, nz);
+      walls.wall(a[0], a[1], b[0], b[1], glazed ? glassTop : 0, height + parapet, 2.5, paint);
+      walls.wall(b[0] - nx * 0.25, b[1] - nz * 0.25, a[0] - nx * 0.25, a[1] - nz * 0.25, height, height + parapet, 2.5, paint);
+      trimBatch.wall(a[0] + nx * 0.08, a[1] + nz * 0.08, b[0] + nx * 0.08, b[1] + nz * 0.08, glassTop - 0.05, glassTop + 0.25, 2, trim);
+      if (!glazed) {
+        walls.wall(b[0] - nx * 0.05, b[1] - nz * 0.05, a[0] - nx * 0.05, a[1] - nz * 0.05, 0, glassTop, 2.5, [0.95, 0.95, 0.94]);
+        return;
+      }
+      base.get(cx, cz, "showroomGlass").wall(a[0] + nx * 0.02, a[1] + nz * 0.02, b[0] + nx * 0.02, b[1] + nz * 0.02, 0.1, glassTop, 3);
+      const ex = (b[0] - a[0]) / length;
+      const ez = (b[1] - a[1]) / length;
+      const frames = base.get(cx, cz, "darkFrame");
+      const bays = Math.max(1, Math.round(length / 3));
+      for (let bay = 0; bay <= bays; bay += 1) {
+        const t = (bay / bays) * length;
+        frames.box(a[0] + ex * t + nx * 0.05, glassTop / 2, a[1] + ez * t + nz * 0.05, 0.12, glassTop, 0.14, yawOut);
+      }
+      frames.box((a[0] + b[0]) / 2 + nx * 0.05, 0.12, (a[1] + b[1]) / 2 + nz * 0.05, length, 0.24, 0.16, yawOut);
+    };
     ring.forEach((a, index) => {
       const b = ring[(index + 1) % ring.length]!;
       const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -997,6 +1022,10 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       const nx = (b[1] - a[1]) / length;
       const nz = -(b[0] - a[0]) / length;
       const yawOut = Math.atan2(nx, nz);
+      if (landmark === "showroom") {
+        showroomEdge(a, b, nx, nz, length, index === doorEdge);
+        return;
+      }
       walls.wall(a[0], a[1], b[0], b[1], 0.45, height + parapet, 2.5, paint);
       // Plinth band and floor bands give each storey a readable line.
       const plinth = (y0: number, y1: number, out: number, color: Color, batch: MeshBuilderBatch) => {
@@ -1198,6 +1227,19 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     } else if (landmark === "terminal") {
       terminalFront(landmarkGet, facade, { a: doorA, b: doorB }, height);
       terminalSign(place!, facade, height, cx, cz);
+    } else if (landmark === "showroom") {
+      const floorRing = ring.map(([x, z]) => [x, z] as [number, number]);
+      base.get(cx, cz, "tiles").polygon(floorRing, 0.08, 1.2, [0.96, 0.96, 0.95]);
+      base.get(cx, cz, "concrete").polygon(floorRing, 4.6, 3, [0.93, 0.93, 0.92], true);
+      const signWidth = Math.max(4, Math.min(doorLength - 1, 8.5));
+      const signHeight = signWidth / SignAtlas.aspect;
+      const signY = Math.min(height + parapet - signHeight / 2 - 0.1, 4.75 + signHeight / 2 + 0.15);
+      base.get(cx, cz, "darkFrame").box(doorX + doorNx * 0.12, signY, doorZ + doorNz * 0.12, signWidth + 0.3, signHeight + 0.2, 0.14, doorYaw, 1, undefined, true);
+      textQuad(base.get(cx, cz, "signs"), doorX + doorNx * 0.2, signY, doorZ + doorNz * 0.2, doorYaw, signWidth, signHeight, signUv(place!.name.toUpperCase(), "shop", "New & tokunbo cars · Test drives", "#c8102e"));
+      const frames = base.get(cx, cz, "darkFrame");
+      frames.box(doorX + doorNx * 0.09, 2.85, doorZ + doorNz * 0.09, 2.6, 0.14, 0.16, doorYaw);
+      for (const side of [-1, 0, 1]) frames.box(doorX + ex * side * 1.25 + doorNx * 0.09, 1.45, doorZ + ez * side * 1.25 + doorNz * 0.09, side ? 0.12 : 0.06, 2.8, 0.16, doorYaw);
+      base.get(cx, cz, "concrete").box(doorX + doorNx * 0.9, 0.06, doorZ + doorNz * 0.9, 4, 0.12, 1.6, doorYaw, 1, [0.82, 0.82, 0.8], true);
     } else if (shopfront) {
       const width = Math.min(doorLength - 0.8, 9);
       const centreT = Math.max(width / 2 + 0.4, Math.min(doorLength - width / 2 - 0.4, doorT * doorLength));
@@ -1776,8 +1818,10 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     const tx = Math.sin(place.kerbYaw);
     const tz = Math.cos(place.kerbYaw);
     let spot: Vec2 | null = null;
-    for (const along of [0.55, 0.4, 0.7, 0.25]) {
-      for (const side of [3.2, -3.2, 5.5, -5.5]) {
+    // The showroom's glass front and banner fill the forecourt, so its pylon stands at the kerb off to one side.
+    const showroom = place.kind === "dealership";
+    for (const along of showroom ? [0.9, 0.8, 0.7] : [0.55, 0.4, 0.7, 0.25]) {
+      for (const side of showroom ? [10, -10, 8, -8, 6, -6] : [3.2, -3.2, 5.5, -5.5]) {
         const x = dx + (kx - dx) * along + tx * side;
         const z = dz + (kz - dz) * along + tz * side;
         if (!roads.onAsphalt(x, z, 1.7) && !insideBuilding(x, z, 1.7) && !overWater(x, z)) {

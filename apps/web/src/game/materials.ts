@@ -160,6 +160,15 @@ export function createMaterials(scene: Scene, quality: Quality) {
   glass.environmentIntensity = 1.4;
   glass.alpha = 0.92;
 
+  // Clear shop glass: the cars inside a showroom stay visible from the street.
+  const showroomGlass = new PBRMaterial("showroom glass", scene);
+  showroomGlass.albedoColor = Color3.FromHexString("#cfe9f1");
+  showroomGlass.metallic = 0;
+  showroomGlass.roughness = 0.04;
+  showroomGlass.environmentIntensity = 1.1;
+  showroomGlass.alpha = 0.16;
+  showroomGlass.backFaceCulling = false;
+
   const water = new PBRMaterial("pool water", scene);
   water.albedoColor = Color3.FromHexString("#2f9fb3");
   water.roughness = 0.05;
@@ -226,6 +235,7 @@ export function createMaterials(scene: Scene, quality: Quality) {
     roof,
     tiles,
     glass,
+    showroomGlass,
     frame: flat(scene, "aluminium frame", "#d9dbd6", 0.4, 0.6),
     darkFrame: flat(scene, "bronze frame", "#3a352f", 0.45, 0.5),
     gate: flat(scene, "painted steel gate", "#202322", 0.55, 0.65),

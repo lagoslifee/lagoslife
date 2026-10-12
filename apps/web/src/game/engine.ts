@@ -912,7 +912,7 @@ export class GameEngine {
       { modelId: "banana-island-lx", side: -1 },
       { modelId: "island-suv", side: 1 },
     ];
-    return lots.map(({ modelId, side }, index) => {
+    const forecourt = lots.map(({ modelId, side }, index) => {
       const model = getVehicleModel(modelId);
       const view = factory.create(`showroom-${index}`, modelId, model.colours[(index * 3 + 3) % model.colours.length]!);
       const x = dx + fx * 4.2 + rx * side * 5.4;
@@ -920,6 +920,36 @@ export class GameEngine {
       view.setPose(x, this.world.groundHeight(x, z), z, place.facing + side * 0.55);
       this.addCaster(view.meshes);
       return view;
+    });
+    this.fillShowroomFloor(factory, place);
+    return forecourt;
+  }
+
+  /** Display cars behind the showroom glass, angled to the street; only spots well inside the building are used. */
+  private fillShowroomFloor(factory: VehicleFactory, place: Place) {
+    const [dx, dz] = place.door;
+    const [fx, fz] = [Math.sin(place.facing), Math.cos(place.facing)];
+    const [rx, rz] = [Math.cos(place.facing), -Math.sin(place.facing)];
+    const spots: Array<{ x: number; z: number; yaw: number }> = [];
+    for (const depth of [5, 10.5]) {
+      for (const across of [-7.5, -2.5, 2.5, 7.5]) {
+        const x = dx - fx * depth + rx * across;
+        const z = dz - fz * depth + rz * across;
+        if (!insideBuilding(x, z, 2.8) || spots.some((spot) => Math.hypot(spot.x - x, spot.z - z) < 4.8)) continue;
+        spots.push({ x, z, yaw: place.facing + (across < 0 ? 0.6 : -0.6) });
+      }
+    }
+    const models = ["mercedes-g63", "range-rover", "lexus-rx350", "toyota-camry", "mercedes-s-class", "toyota-land-cruiser"].slice(0, spots.length);
+    void Promise.all(models.map((modelId) => factory.ensure(modelId))).then(() => {
+      if (this.disposed) return;
+      models.forEach((modelId, index) => {
+        const spot = spots[index]!;
+        const model = getVehicleModel(modelId);
+        const view = factory.create(`showroom-floor-${index}`, modelId, model.colours[index % model.colours.length]!);
+        view.setPose(spot.x, this.world.groundHeight(spot.x, spot.z) + 0.08, spot.z, spot.yaw);
+        view.setDetail(true);
+        this.showroom.push(view);
+      });
     });
   }
 
@@ -3831,7 +3861,7 @@ export class GameEngine {
       requestStop: () => this.requestStop(),
       junctions: () => this.world.junctionSigns,
       stops: () => STOPS.map(({ route, ...stop }) => ({ ...stop, routeId: route.routeId })),
-      places: () => PLACES.map((place) => ({ id: place.id, name: place.name, kind: place.kind, door: place.door, kerb: place.kerb })),
+      places: () => PLACES.map((place) => ({ id: place.id, name: place.name, kind: place.kind, door: place.door, kerb: place.kerb, facing: place.facing })),
       plots: () => PLOTS.map((plot) => ({ id: plot.id, gate: plot.gate, door: houseDoor(plot), state: this.plotStates.find((entry) => entry.id === plot.id) ?? null })),
       stats: () => this.stats(),
       loadedTiles: () => this.world.loadedTiles(),

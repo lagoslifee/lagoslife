@@ -9,7 +9,7 @@ import type { Vec2 } from "@lagos-living/shared";
 
 export type EntranceCandidate = { key: string; point: Vec2; name: string; title?: string };
 
-type Marker = { root: TransformNode; arrow: Mesh; texture: DynamicTexture; accent: string; key: string | null };
+type Marker = { root: TransformNode; arrow: Mesh; label: Mesh; texture: DynamicTexture; accent: string; key: string | null };
 
 /** Doors further than this get no marker; only the nearest few are lit so phones draw a handful of meshes. */
 const SHOW_RANGE = 90;
@@ -18,6 +18,8 @@ const BILLBOARD_Y = 2;
 /** The route's own door gets a bigger cyan marker and a light beam from further out, drawn instead of the gold one. */
 const DESTINATION_RANGE = 700;
 const BEAM_HEIGHT = 40;
+/** Closer than this the name board would cover the shop's own sign, and the action prompt already names the place. */
+const LABEL_HIDE_RANGE = 14;
 
 /**
  * Glowing floor rings, a bobbing arrow and a name board over the door of nearby places outdoors, and a green EXIT
@@ -108,7 +110,7 @@ export class EntranceMarkers {
       mesh.alwaysSelectAsActiveMesh = true;
     }
     root.setEnabled(false);
-    return { root, arrow, texture, accent, key: null };
+    return { root, arrow, label, texture, accent, key: null };
   }
 
   private draw(marker: Marker, title: string, name: string) {
@@ -200,7 +202,12 @@ export class EntranceMarkers {
         this.place(marker, entry.candidate.point);
       });
     }
-    for (const marker of this.markers) if (marker.key) marker.arrow.position.y = bob;
+    for (const marker of this.markers) {
+      if (!marker.key) continue;
+      marker.arrow.position.y = bob;
+      const { x, z } = marker.root.position;
+      marker.label.setEnabled(Math.hypot(x - player[0], z - player[1]) > LABEL_HIDE_RANGE);
+    }
   }
 
   dispose() {
