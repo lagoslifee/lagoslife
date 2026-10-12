@@ -209,6 +209,55 @@ if (target === "avatar") {
         "umbrella in the middle, realistic, single object on the ground, no people, no text",
       texturePrompt: "warm teak wood table and chairs, cream canvas umbrella, dark metal umbrella pole",
     },
+    {
+      label: "prop-treadmill",
+      prompt: "Commercial gym treadmill with a black running belt, handrails and a console screen, realistic, single object, no people, no text",
+      texturePrompt: "matte black rubber belt, dark grey plastic frame, brushed aluminium handrails, glossy black console",
+    },
+    {
+      label: "prop-weight-bench",
+      prompt:
+        "Gym flat weight bench with an upright barbell rack, a steel barbell with black weight plates resting on the rack, " +
+        "realistic, single object, no people, no text",
+      texturePrompt: "black padded leather bench, matte black steel frame, chrome barbell, black rubber weight plates",
+    },
+    {
+      label: "prop-dumbbell-rack",
+      prompt: "Two-tier gym dumbbell rack holding ten pairs of hexagonal rubber dumbbells, realistic, single object, no people, no text",
+      texturePrompt: "black steel rack, black rubber hex dumbbells with chrome handles",
+    },
+    {
+      label: "prop-generator",
+      prompt:
+        "Large soundproof diesel generator set on a steel skid, boxy green canopy with louvred side vents, a control panel door, " +
+        "an exhaust pipe on top, realistic, single object, no people, no text, no logos",
+      texturePrompt: "dark green powder-coated steel canopy with light dust, black louvres, grey control panel, rusty exhaust",
+    },
+    {
+      label: "prop-double-bed",
+      prompt: "Modern double bed with a padded upholstered headboard, white sheets, two pillows and a folded throw, realistic, single object, no people",
+      texturePrompt: "grey fabric headboard, crisp white cotton sheets, mustard yellow throw, dark wood legs",
+    },
+    {
+      label: "prop-sofa",
+      prompt: "Modern three-seater living room sofa with cushions, realistic, single object, no people",
+      texturePrompt: "soft beige fabric upholstery, two teal throw cushions, dark wooden legs",
+    },
+    {
+      label: "prop-dining-set",
+      prompt: "Indoor dining table for six with six upholstered chairs around it, realistic, single object, no people",
+      texturePrompt: "polished walnut table top, cream upholstered chairs, dark wood legs",
+    },
+    {
+      label: "prop-gas-cooker",
+      prompt: "Freestanding kitchen cooker with an oven, four gas burners on top, simple box shape, realistic, single object, no text",
+      texturePrompt: "brushed stainless steel, black glass oven door, black cast iron burner grates",
+    },
+    {
+      label: "prop-standing-fan",
+      prompt: "Standing electric pedestal fan with a round wire guard and three blades on a tall pole and round base, realistic, single object, no text",
+      texturePrompt: "white plastic body, white wire guard, translucent blue blades, chrome pole",
+    },
   ];
   const wanted = process.argv.slice(3);
   const queue = PROPS.filter((prop) => (!wanted.length || wanted.includes(prop.label)) && !existsSync(path.join(outDir, `${prop.label}.glb`)));

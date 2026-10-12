@@ -22,6 +22,15 @@ export const PROPS = [
   { id: "immigration-booth", width: 2.3, quarterTurns: Number(process.env.TURN_IMMIGRATION ?? 0) },
   { id: "checkin-counter", width: 4.8, quarterTurns: Number(process.env.TURN_CHECKIN ?? 0) },
   { id: "restaurant-table", width: 2.4, quarterTurns: 0 },
+  { id: "treadmill", width: 1.9, quarterTurns: 0 },
+  { id: "weight-bench", width: 2.1, quarterTurns: 0 },
+  { id: "dumbbell-rack", width: 1.5, quarterTurns: 0 },
+  { id: "generator", width: 3.2, quarterTurns: 0 },
+  { id: "double-bed", width: 2.1, quarterTurns: 0 },
+  { id: "sofa", width: 2.2, quarterTurns: 0 },
+  { id: "dining-set", width: 2.2, quarterTurns: 0 },
+  { id: "gas-cooker", width: 0.6, quarterTurns: 0 },
+  { id: "standing-fan", width: 0.78, quarterTurns: 0 },
 ];
 const TRIANGLE_BUDGET = 7_000;
 

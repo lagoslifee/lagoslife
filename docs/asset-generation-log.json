@@ -539,6 +539,181 @@
       "consumedCredits": 10,
       "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12ff4-cd84-710e-b555-9bbe1acb3fd7/output/preview.png",
       "recordedAt": "2026-10-12T11:53:37.848Z"
+    },
+    {
+      "label": "prop-generator preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-0e6f-725f-a9da-3997047fd14a",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13015-0e6f-725f-a9da-3997047fd14a/output/preview.png",
+      "recordedAt": "2026-10-12T12:28:11.145Z"
+    },
+    {
+      "label": "prop-weight-bench preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-0e3c-73da-8f3d-20065189c445",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13015-0e3c-73da-8f3d-20065189c445/output/preview.png",
+      "recordedAt": "2026-10-12T12:28:11.148Z"
+    },
+    {
+      "label": "prop-sofa preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-0e9b-73ad-b292-4e899435a12b",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13015-0e9b-73ad-b292-4e899435a12b/output/preview.png",
+      "recordedAt": "2026-10-12T12:28:11.526Z"
+    },
+    {
+      "label": "prop-dining-set preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-0eb7-7363-aab5-cca8d81bf82b",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13015-0eb7-7363-aab5-cca8d81bf82b/output/preview.png",
+      "recordedAt": "2026-10-12T12:28:16.121Z"
+    },
+    {
+      "label": "prop-gas-cooker preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-0ecb-7363-9137-fd83d53c0f4f",
+      "status": "FAILED",
+      "error": {
+        "type": "invalid_input",
+        "code": "invalid_input",
+        "message": "Model service error (RepairDidNotCloseError): blueberry postproc[fidelity]: repair did not close the mesh (boundary_edges=5361, manifold=True). Upstream marks and continues; serving has nowhere to carry the mark, so this fails instead of shipping it.",
+        "doc_url": "https://docs.meshy.ai/en/api/errors#invalid-input"
+      },
+      "recordedAt": "2026-10-12T12:28:16.132Z"
+    },
+    {
+      "label": "prop-double-bed preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-0e8e-730f-8221-efb78e335b45",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13015-0e8e-730f-8221-efb78e335b45/output/preview.png",
+      "recordedAt": "2026-10-12T12:28:21.141Z"
+    },
+    {
+      "label": "prop-treadmill preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-0e49-76f9-8e66-52c10a1a3652",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13015-0e49-76f9-8e66-52c10a1a3652/output/preview.png",
+      "recordedAt": "2026-10-12T12:28:26.147Z"
+    },
+    {
+      "label": "prop-dumbbell-rack preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-0e63-7416-b651-6708f890aee7",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13015-0e63-7416-b651-6708f890aee7/output/preview.png",
+      "recordedAt": "2026-10-12T12:28:26.172Z"
+    },
+    {
+      "label": "prop-standing-fan preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-0edf-703a-be26-c85d24fa0220",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13015-0edf-703a-be26-c85d24fa0220/output/preview.png",
+      "recordedAt": "2026-10-12T12:28:51.666Z"
+    },
+    {
+      "label": "prop-weight-bench refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-b426-76da-a276-290d33cf0f81",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13015-b426-76da-a276-290d33cf0f81/output/preview.png",
+      "recordedAt": "2026-10-12T12:29:03.234Z"
+    },
+    {
+      "label": "prop-sofa refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-b5a0-7328-92bc-496bb947d1fc",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13015-b5a0-7328-92bc-496bb947d1fc/output/preview.png",
+      "recordedAt": "2026-10-12T12:29:03.521Z"
+    },
+    {
+      "label": "prop-generator refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-b424-76dc-b3c1-401aa271c527",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13015-b424-76dc-b3c1-401aa271c527/output/preview.png",
+      "recordedAt": "2026-10-12T12:29:08.465Z"
+    },
+    {
+      "label": "prop-dining-set refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-c792-7564-bc48-1aa9b55d9865",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13015-c792-7564-bc48-1aa9b55d9865/output/preview.png",
+      "recordedAt": "2026-10-12T12:29:13.335Z"
+    },
+    {
+      "label": "prop-double-bed refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-db2f-72cd-b818-7f606683ac34",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13015-db2f-72cd-b818-7f606683ac34/output/preview.png",
+      "recordedAt": "2026-10-12T12:29:18.787Z"
+    },
+    {
+      "label": "prop-dumbbell-rack refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-eed5-7115-bc56-532212162dbc",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13015-eed5-7115-bc56-532212162dbc/output/preview.png",
+      "recordedAt": "2026-10-12T12:29:24.617Z"
+    },
+    {
+      "label": "prop-standing-fan refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13016-526c-70f8-82b3-0e069c54d695",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13016-526c-70f8-82b3-0e069c54d695/output/preview.png",
+      "recordedAt": "2026-10-12T12:29:38.815Z"
+    },
+    {
+      "label": "prop-treadmill refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13015-eebd-7408-a6f8-83ed30f54dc1",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13015-eebd-7408-a6f8-83ed30f54dc1/output/preview.png",
+      "recordedAt": "2026-10-12T12:30:08.928Z"
+    },
+    {
+      "label": "prop-gas-cooker preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a1301a-96bf-7209-95a7-1394ed1297e0",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a1301a-96bf-7209-95a7-1394ed1297e0/output/preview.png",
+      "recordedAt": "2026-10-12T12:34:19.729Z"
+    },
+    {
+      "label": "prop-gas-cooker refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a1301b-53ed-7625-acd6-a9c048773d2f",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a1301b-53ed-7625-acd6-a9c048773d2f/output/preview.png",
+      "recordedAt": "2026-10-12T12:35:32.911Z"
     }
   ]
 }
