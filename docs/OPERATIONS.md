@@ -309,8 +309,8 @@ Render server (`render.yaml`) avoids this entirely.
 
 ### Testing money
 
-`TEST_FUNDS=10000000` refills every wallet to ₦10,000,000 whenever the game reads it (after each purchase, on the
-next refresh), so testers can buy anything. Each refill is a `test_funds` ledger entry. The VM test server runs with
+`TEST_FUNDS=20000000` refills every wallet to ₦20,000,000 whenever the game reads it (after each purchase, on the
+next refresh), so testers can buy anything (the dearest item, the Rolls-Royce Cullinan, is ₦15M). Each refill is a `test_funds` ledger entry. The VM test server runs with
 it on; leave it unset (0) anywhere the economy should be real.
 
 ## Secrets

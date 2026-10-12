@@ -793,4 +793,11 @@ table.departures td { padding: 6px 10px; border-bottom: 1px solid #23413d; }
 .flight-panel .reactions { display: flex; gap: 6px; margin-top: 6px; }
 .flight-panel .reaction { min-width: 36px; padding: 4px 6px; border-radius: 999px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08); font-size: 18px; cursor: pointer; }
 .chat-bubble.reaction { font-size: 22px; background: transparent; box-shadow: none; }
-.world-tags.hide-names .world-tag:not(.vehicle-tag):not(.bus-tag):not(:has(.chat-bubble)) { visibility: hidden; }
+.world-tags.hide-names .world-tag:not(.vehicle-tag):not(.bus-tag):not(.spotter-tag):not(:has(.chat-bubble)) { visibility: hidden; }
+
+/* Car spotters */
+.world-tag.spotter-tag { background: rgba(255, 250, 235, .95); color: #2b2214; font-weight: 600; border-radius: 10px; padding: 3px 8px; white-space: nowrap; }
+.world-tag.spotter-tag.flash { box-shadow: 0 0 0 3px rgba(255, 255, 255, .9), 0 0 18px rgba(255, 255, 255, .8); }
+.spotter-card { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 13; width: min(380px, calc(100% - 180px)); padding: 10px 12px; border-radius: 10px; color: #fff; background: rgba(40, 30, 12, .94); border-top: 3px solid #e7bd62; pointer-events: auto; box-shadow: 0 8px 24px rgba(0, 0, 0, .4); }
+.spotter-card p { margin: 0 0 8px; }
+.spotter-card .row { display: flex; gap: 6px; flex-wrap: wrap; }

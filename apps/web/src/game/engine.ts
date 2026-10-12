@@ -95,6 +95,7 @@ import {
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
 import { Escort, type EscortLeader } from "./escort";
 import { StreetCrews } from "./street-crews";
+import { CarSpotters, type SpottedCar } from "./car-spotters";
 import { apiUrl, authHeaders } from "../auth-client";
 import type { PlotState } from "../api";
 import { buildProgress } from "./build-progress";
@@ -307,6 +308,7 @@ export class GameEngine {
   private escorts = new Map<string, Escort>();
   private ownGuards = 0;
   private crews: StreetCrews | null = null;
+  private spotters: CarSpotters | null = null;
   private gatePlot: string | null = null;
   private looks = new Map<string, CharacterAppearance>();
   private appearance: CharacterAppearance = defaultAppearance;
@@ -647,6 +649,17 @@ export class GameEngine {
     this.showroom = this.buildShowroom(this.vehicleFactory);
     this.bikeStations = new BikeStationsView(scene, this.materials, (x, z) => this.world.groundHeight(x, z), this.vehicleFactory, (meshes) => this.addCaster(meshes));
     if (this.avatars) this.crews = new StreetCrews(scene, this.avatars, this.vehicleFactory, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
+    if (this.avatars) {
+      this.spotters = new CarSpotters(
+        this.avatars,
+        this.overlay,
+        (x, z) => this.world.groundHeight(x, z),
+        (x, z) => walkable(x, z) && this.navigator.snap([x, z]).distance > 4.5,
+        (x, y, z) => this.project(x, y, z),
+        (text) => this.callbacks.notice({ tone: "success", text }),
+      );
+      this.spotters.enabled = this.settings.carSpotters;
+    }
 
     this.input = new InputState(this.canvas, this.bindings);
     const start = getPlace("starter-home");
@@ -1128,6 +1141,7 @@ export class GameEngine {
       outdoors: !this.interior && !bus,
     });
     this.crews?.update(dt, x, z, !this.interior);
+    this.spotters?.update(dt, now, this.spottedCar(x, z), [x, z], !this.interior && !bus);
     this.plotsView?.animate(dt);
     this.updateGates(x, z);
     if (!this.interior) {
@@ -2323,8 +2337,27 @@ export class GameEngine {
     this.net.send("carrying", Boolean(target));
   }
 
+  /** The player's own car for the car spotters: driven (not a test drive or hire bike), or parked close by while on foot. */
+  private spottedCar(x: number, z: number): SpottedCar | null {
+    if (this.driving && this.car) {
+      const entry = this.vehicles.get(this.driving.vehicleId);
+      if (!entry || !entry.state.mine || entry.state.testDriveEndsAt || entry.state.rentalStartedAt) return null;
+      return { id: entry.state.id, x: this.car.x, z: this.car.z, speed: this.car.speed, modelId: entry.state.modelId, colour: entry.state.colour, condition: this.driving.condition };
+    }
+    if (this.passenger || this.self?.busId) return null;
+    for (const { state, view } of this.vehicles.values()) {
+      if (!state.mine || state.driverSessionId || state.testDriveEndsAt || state.rentalStartedAt || Math.hypot(view.x - x, view.z - z) > 15) continue;
+      return { id: state.id, x: view.x, z: view.z, speed: 0, modelId: state.modelId, colour: state.colour, condition: null };
+    }
+    return null;
+  }
+
   setSettings(settings: PlayerSettings) {
     this.settings = settings;
+    if (this.spotters) {
+      this.spotters.enabled = settings.carSpotters;
+      if (!settings.carSpotters) this.spotters.clear();
+    }
     this.audio.apply(settings);
     if (!settings.autoGraphics && this.adaptive.level !== 0) {
       this.adaptive.reset();
@@ -2895,6 +2928,7 @@ export class GameEngine {
     this.life?.dispose();
     syncPlotFootprints([]);
     for (const remote of this.remotes.values()) remote.tag.remove();
+    this.spotters?.clear();
     for (const tag of this.busTags.values()) tag.remove();
     for (const { tag } of this.vehicles.values()) tag.remove();
     this.engine?.stopRenderLoop();

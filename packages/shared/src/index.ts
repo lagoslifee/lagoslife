@@ -220,6 +220,10 @@ export const settingsSchema = z.object({
   needsEnabled: z.boolean(),
   /** Drift the camera back behind a moving vehicle after the player stops looking around. */
   cameraRecentre: z.boolean().default(true),
+  /** Pedestrians who admire and photograph rare cars (simulated photos only). */
+  carSpotters: z.boolean().default(true),
+  /** Fictional roadside touts (agberos) asking a slow or stopped car for small change. */
+  streetEncounters: z.boolean().default(true),
 });
 export type PlayerSettings = z.infer<typeof settingsSchema>;
 export const defaultSettings: PlayerSettings = {
@@ -231,6 +235,8 @@ export const defaultSettings: PlayerSettings = {
   subtitles: true,
   cameraShake: false,
   cameraRecentre: true,
+  carSpotters: true,
+  streetEncounters: true,
   textScale: 1,
   graphics: "medium",
   autoGraphics: true,

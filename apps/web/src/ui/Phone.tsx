@@ -466,6 +466,9 @@ function SettingsApp({ settings, onSettings, bindings, onBindings, quality, onQu
           </li>
         ))}
       </ul>
+      <h3>Street life</h3>
+      {toggle("carSpotters", "Car spotters admire rare cars (simulated photos, never your camera)")}
+      {toggle("streetEncounters", "Agbero roadside encounters (fictional touts asking for change)")}
       <h3>Audio & text</h3>
       {slider("masterVolume", "Master volume", 0, 1, 0.05)}
       {slider("ambienceVolume", "Street ambience", 0, 1, 0.05)}
