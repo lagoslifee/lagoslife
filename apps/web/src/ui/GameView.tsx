@@ -159,6 +159,7 @@ export function GameView({
   const [ride, setRide] = useState<RideState | null>(null);
   const [tows, setTows] = useState<TowState[]>([]);
   const towsRef = useRef<TowState[]>([]);
+  const restingRef = useRef(false);
   const [visitedHome, setVisitedHome] = useState(() => localStorage.getItem("lagos-visited-home") === "1");
   const touch = useMemo(() => matchMedia("(pointer: coarse)").matches, []);
   const toastId = useRef(0);
@@ -345,6 +346,20 @@ export function GameView({
           }
         },
         holding: (item) => setHolding(item),
+        resting: (kind) => {
+          if (kind === "sofa" || kind === "dining") {
+            restingRef.current = true;
+            api.rest().catch(() => (restingRef.current = false));
+          } else if (restingRef.current) {
+            restingRef.current = false;
+            api.restFinish()
+              .then((result) => {
+                if (result.gained > 0) toast({ tone: "success", text: `Rested: energy +${result.gained} (now ${result.energy}/100).` });
+                return refresh();
+              })
+              .catch(() => undefined);
+          }
+        },
         rideAsk: (ask) => setRideAsks((list) => [...list.filter((entry) => entry.sessionId !== ask.sessionId), ask].slice(-3)),
         travelPrompt: (prompt) => setTravelPrompts((list) => [...list.filter((entry) => entry.requestId !== prompt.requestId), prompt].slice(-3)),
         ride: (next) => {
@@ -636,12 +651,17 @@ export function GameView({
     }
     const propertyId = hud?.propertyId;
     if (interaction.spot === "bed") {
-      api.sleep()
-        .then((result) => {
-          toast({ tone: "success", text: `You slept well. Energy ${result.energy}/100.` });
-          return refresh();
-        })
-        .catch((error: Error) => toast({ tone: "error", text: error.message }));
+      const sleep = () =>
+        api.sleep()
+          .then((result) => {
+            engine?.sleepVeil("Energy restored · use Get up when you're ready");
+            toast({ tone: "success", text: `You slept well. Energy ${result.energy}/100.` });
+            return refresh();
+          })
+          .catch((error: Error) => toast({ tone: "error", text: error.message }));
+      if (!engine?.homeSeat("bed", () => void sleep())) void sleep();
+    } else if (interaction.spot === "sofa" || interaction.spot === "dining") {
+      engine?.homeSeat(interaction.spot);
     } else if (interaction.spot === "kitchen" && propertyId) {
       api.homeAction(propertyId, "cook")
         .then(() => {

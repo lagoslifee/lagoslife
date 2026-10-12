@@ -135,7 +135,7 @@ import { defaultBindings, InputState, LocomotionController, MAX_FRAME_DT, SUBSTE
 import { DanfoFactory, type DanfoView } from "./danfo";
 import { MeshBuilderBatch } from "./geometry";
 import { buildMealTray, buildTrolley } from "./flight-scenes";
-import { buildInterior, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
+import { buildInterior, type HomeRest, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
 import { createMaterials, type Materials, type Quality } from "./materials";
 import { SignAtlas } from "./sign-atlas";
 import { RoadNavigator, StreetTracker, type WorldData, type WorldTile } from "./street-index";
@@ -222,6 +222,8 @@ export type EngineCallbacks = {
   arrived: (label: string) => void;
   /** What the player has in hand (a drink or a plate from the club bar) and how many sips or bites are left; null when empty. */
   holding: (item: { name: string; left: number; food: boolean } | null) => void;
+  /** The player sat down on a home sofa, chair or bed (`kind`), or got up again (null). */
+  resting?: (kind: HomeRest | null) => void;
 };
 
 type Remote = {
@@ -457,7 +459,8 @@ export class GameEngine {
   private readonly adaptive = new AdaptiveQuality();
   private baseScaling = 1;
   /** Seated (or, on a club stool, standing up and dancing) on a fixed seat; `y` is the cushion height. */
-  private sitting: { seat: Vec2; yaw: number; y: number; pose: "sit" | "dance"; stool?: boolean } | null = null;
+  private sitting: { seat: Vec2; yaw: number; y: number; pose: "sit" | "dance"; stool?: boolean; rest?: HomeRest } | null = null;
+  private restingAs: HomeRest | null = null;
   private heldItem: { node: TransformNode; name: string; left: number; food: boolean } | null = null;
   private autopilot: { path: Vec2[]; index: number; sprint: boolean; resolve: (ok: boolean) => void; lastProgress: number; lastPoint: Vec2; deadline: number } | null = null;
   private forcedInput: [number, number] | null = null;
@@ -1242,7 +1245,13 @@ export class GameEngine {
     } else if (this.player) {
       if (this.sitting && (speed > 0.1 || this.emote !== this.sitting.pose || !this.interior)) this.sitting = null;
       const chair = this.sitting;
-      const lean = chair?.pose === "sit" ? 0.08 : 0;
+      const lying = chair?.rest === "bed";
+      const lean = chair?.pose === "sit" && !lying ? 0.08 : 0;
+      if ((chair?.rest ?? null) !== this.restingAs) {
+        this.restingAs = chair?.rest ?? null;
+        this.callbacks.resting?.(this.restingAs);
+      }
+      this.player.root.rotation.x = lying ? -Math.PI / 2 : 0;
       const workout = this.workout;
       if (workout) {
         const { station } = workout;
@@ -1257,7 +1266,7 @@ export class GameEngine {
         else this.player.root.position.set(x, seatedTravel ? TRAVEL_SEAT_Y : this.groundY + this.controller.hop, z);
         this.player.root.rotation.y = chair ? chair.yaw : seatedTravel ? this.seatYaw : this.controller.yaw;
         this.player.root.setEnabled(!bus && !inCar);
-        if (!inCar) this.player.update(speed, motion, dt);
+        if (!inCar) this.player.update(speed, lying ? "idle" : motion, dt);
       }
     } else if (this.playerFallback) {
       this.playerFallback.position.set(x, this.groundY + 0.88, z);
@@ -1575,7 +1584,7 @@ export class GameEngine {
         return;
       }
       if (chair) {
-        this.prompt = { key: bind("interact"), label: "Stand up" };
+        this.prompt = { key: bind("interact"), label: chair.rest === "bed" ? "Get up" : "Stand up", detail: chair.rest && chair.rest !== "bed" ? "Resting restores energy" : undefined };
         this.interaction = () => this.playEmote("none");
         return;
       }
@@ -2515,8 +2524,8 @@ export class GameEngine {
   }
 
   /** Hotel bed: the screen dims for a moment while the player sleeps. */
-  sleepVeil() {
-    this.showVeil("🌙", "Sleeping…", "Energy restored · the room stays yours", 2_200);
+  sleepVeil(caption = "Energy restored · the room stays yours") {
+    this.showVeil("🌙", "Sleeping…", caption, 2_200);
     if (this.transfer) this.transfer.arrivedAt = performance.now();
   }
 
@@ -2602,6 +2611,39 @@ export class GameEngine {
         this.emote = "sit";
         this.net.send("emote", { emote: "sit" });
         this.sitting = { seat: seat.at, yaw: seat.yaw, y: seat.y, pose: "sit", stool: seat.stool };
+      },
+      lastProgress: performance.now(),
+      lastPoint: here,
+      deadline: performance.now() + 15_000,
+    };
+    return true;
+  }
+
+  /** Walks to the nearest free sofa seat, dining chair or bed at home and sits or lies down; `onSeated` runs once there. */
+  homeSeat(kind: HomeRest, onSeated?: () => void) {
+    const view = this.interior && "seats" in this.interior ? this.interior : null;
+    const seats = (view?.seats ?? []).filter((seat) => seat.rest === kind);
+    if (!seats.length || this.club || this.travelView) return false;
+    const here: Vec2 = [this.controller.x, this.controller.z];
+    const taken = [...this.remotes.values()].map((remote) => remote.avatar?.root.position).filter((at): at is NonNullable<typeof at> => Boolean(at));
+    const free = seats.filter((seat) => !taken.some((at) => Math.hypot(at.x - seat.at[0], at.z - seat.at[1]) < 0.35));
+    const pool = free.length ? free : seats;
+    const seat = pool.reduce((best, entry) => (Math.hypot(entry.at[0] - here[0], entry.at[1] - here[1]) < Math.hypot(best.at[0] - here[0], best.at[1] - here[1]) ? entry : best));
+    // Walk to just in front of the seat, or past the foot of the bed; the collider keeps the player off the furniture.
+    const front: Vec2 = [seat.at[0] + Math.sin(seat.yaw) * 0.6, seat.at[1] + Math.cos(seat.yaw) * 0.6];
+    this.autopilot?.resolve(false);
+    this.autopilot = {
+      path: [front],
+      index: 0,
+      sprint: false,
+      resolve: (ok) => {
+        if (!this.interior) return;
+        if (!ok && Math.hypot(this.controller.x - front[0], this.controller.z - front[1]) > 1.6) return;
+        this.controller.yaw = seat.yaw;
+        this.emote = "sit";
+        this.net.send("emote", { emote: "sit" });
+        this.sitting = { seat: seat.at, yaw: seat.yaw, y: seat.y, pose: "sit", rest: kind };
+        onSeated?.();
       },
       lastProgress: performance.now(),
       lastPoint: here,

@@ -18,15 +18,24 @@ import { SignAtlas } from "./sign-atlas";
 export type InteriorKind = "starter" | "preview" | "home" | "club";
 /** `x`/`z` are room-local metres; pieces saved before free placement only have their grid cell. */
 export type Placement = { id?: string; itemId: string; gridX: number; gridZ: number; rotation: number; x?: number | null; z?: number | null };
-export type InteriorSpot = { id: "exit" | "bed" | "storage" | "kitchen" | "bar" | "stool" | "dance" | "tv" | `table-${number}`; point: Vec2; label: string };
+export type InteriorSpot = { id: "exit" | "bed" | "storage" | "kitchen" | "bar" | "stool" | "dance" | "tv" | "sofa" | "dining" | `table-${number}`; point: Vec2; label: string };
 
 const HEIGHT = 3.0;
 const DUBAI_CLUB = "pearl-club-dubai";
 
-/** A place to sit in a club: bar stools face the counter, VIP sofas face the room. `y` is the cushion height. */
-export type ClubSeat = { at: Vec2; yaw: number; y: number; stool: boolean; table?: number };
+export type HomeRest = "sofa" | "dining" | "bed";
+/**
+ * A place to sit: bar stools face the counter, VIP sofas face the room. `y` is the cushion height. Home seats carry
+ * `rest`; bed places are lain on, with `at` at the foot end and `yaw` facing away from the headboard.
+ */
+export type ClubSeat = { at: Vec2; yaw: number; y: number; stool: boolean; table?: number; rest?: HomeRest };
 const [OX, OZ] = INTERIOR_ORIGIN;
 const [HX, HZ] = INTERIOR_HALF;
+
+/** World point `lx` across and `lz` along a piece centred at `x, z` and turned by `yaw`. */
+function local(x: number, z: number, yaw: number, lx: number, lz: number): Vec2 {
+  return [x + lx * Math.cos(yaw) + lz * Math.sin(yaw), z - lx * Math.sin(yaw) + lz * Math.cos(yaw)];
+}
 
 /** World position of a placed piece. */
 export function placementCentre(placement: Placement): Vec2 {
@@ -84,6 +93,9 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   signs.quad([exitX + 2.4, 2.1, OZ - HZ + 0.03], [exitX + 0.9, 2.1, OZ - HZ + 0.03], [exitX + 0.9, 2.1 + 1.5 / SignAtlas.aspect, OZ - HZ + 0.03], [exitX + 2.4, 2.1 + 1.5 / SignAtlas.aspect, OZ - HZ + 0.03], [0, 0, 1], [[uv.u0, uv.v0], [uv.u1, uv.v0], [uv.u1, uv.v1], [uv.u0, uv.v1]]);
 
   const spots: InteriorSpot[] = [{ id: "exit", point: [exitX, OZ - HZ + 0.9], label: "Leave" }];
+  const seats: ClubSeat[] = [];
+  const addSpot = (id: InteriorSpot["id"], point: Vec2, label: string) => spots.push({ id, point, label });
+  const addSeat = (at: Vec2, yaw: number, y: number, rest: HomeRest) => seats.push({ at, yaw, y, stool: false, rest });
 
   const bed = (x: number, z: number, yaw: number) => {
     solid("wood", x, 0.25, z, 1.6, 0.4, 2.1, yaw);
@@ -92,13 +104,16 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     const pz = z + Math.cos(yaw) * 0.75;
     get("bedding").box(px, 0.72, pz, 1.2, 0.14, 0.4, yaw, 1, [0.8, 0.86, 0.95]);
     get("wood").box(x + Math.sin(yaw) * 1.05, 0.7, z + Math.cos(yaw) * 1.05, 1.7, 1.0, 0.08, yaw);
-    spots.push({ id: "bed", point: [x - Math.cos(yaw) * 1.2, z + Math.sin(yaw) * 1.2], label: "Sleep" });
+    addSpot("bed", local(x, z, yaw, -1.2, 0), "Lie down and sleep");
+    addSeat(local(x, z, yaw, 0, -0.92), yaw + Math.PI, 0.79, "bed");
   };
   const sofa = (x: number, z: number, yaw: number) => {
     solid("fabric", x, 0.25, z, 2.2, 0.45, 0.9, yaw);
     get("fabric").box(x - Math.sin(yaw) * 0.38, 0.7, z - Math.cos(yaw) * 0.38, 2.2, 0.6, 0.18, yaw);
     get("fabric").box(x - Math.cos(yaw) * 1.02, 0.55, z + Math.sin(yaw) * 1.02, 0.18, 0.4, 0.9, yaw);
     get("fabric").box(x + Math.cos(yaw) * 1.02, 0.55, z - Math.sin(yaw) * 1.02, 0.18, 0.4, 0.9, yaw);
+    for (const lx of [-0.55, 0.55]) addSeat(local(x, z, yaw, lx, 0.06), yaw, 0.48, "sofa");
+    addSpot("sofa", local(x, z, yaw, 0, 1.0), "Sit on the sofa");
   };
   const table = (x: number, z: number, yaw: number) => {
     get("wood").box(x, 0.74, z, 1.3, 0.06, 0.8, yaw);
@@ -111,7 +126,7 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     "island-bed": bed,
     "lagoon-sofa": sofa,
     "woven-table": table,
-    ...moreFurniture(get, solid, (point) => spots.push({ id: "bed", point, label: "Sleep" })),
+    ...moreFurniture(get, solid, addSpot, addSeat),
   };
 
   const disposables: Array<{ dispose(): void }> = [...exitDisposables];
@@ -168,7 +183,7 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
 
   return {
     spots,
-    seats: clubView?.seats ?? ([] as ClubSeat[]),
+    seats: clubView?.seats ?? seats,
     collide(x: number, z: number, radius: number): Vec2 {
       let px = Math.max(OX - HX + radius, Math.min(OX + HX - radius, x));
       let pz = Math.max(OZ - HZ + radius, Math.min(OZ + HZ - radius, z));
@@ -216,7 +231,12 @@ type Batch = (key: string) => MeshBuilderBatch;
  * Builders for the furniture catalogue beyond the original three pieces. Each takes the piece's centre and yaw;
  * sizes match FURNITURE footprints in packages/shared/src/furniture.ts. Local +z is the back of the piece.
  */
-function moreFurniture(get: Batch, solid: Solid, bedSpot: (point: Vec2) => void): Record<string, (x: number, z: number, yaw: number) => void> {
+function moreFurniture(
+  get: Batch,
+  solid: Solid,
+  addSpot: (id: InteriorSpot["id"], point: Vec2, label: string) => void,
+  addSeat: (at: Vec2, yaw: number, y: number, rest: HomeRest) => void,
+): Record<string, (x: number, z: number, yaw: number) => void> {
   const frame = (x: number, z: number, yaw: number) => (lx: number, lz: number): [number, number] => [
     x + lx * Math.cos(yaw) + lz * Math.sin(yaw),
     z - lx * Math.sin(yaw) + lz * Math.cos(yaw),
@@ -239,7 +259,8 @@ function moreFurniture(get: Batch, solid: Solid, bedSpot: (point: Vec2) => void)
         part("wood", at, yaw, side, 0.26, 0.85, 0.42, 0.52, 0.42, walnut, true);
         part("lamp", at, yaw, side, 0.66, 0.9, 0.2, 0.26, 0.2);
       }
-      bedSpot(at(-1.7, -0.4));
+      addSpot("bed", at(-1.7, -0.4), "Lie down and sleep");
+      addSeat(at(0, -1.02), yaw + Math.PI, 0.74, "bed");
     },
     "ikoyi-sectional": (x, z, yaw) => {
       const at = frame(x, z, yaw);
@@ -249,6 +270,8 @@ function moreFurniture(get: Batch, solid: Solid, bedSpot: (point: Vec2) => void)
       part("bedding", at, yaw, -0.95, 0.24, -0.45, 0.9, 0.44, 1.1, grey, true);
       part("bedding", at, yaw, 1.32, 0.55, 0.55, 0.16, 0.36, 0.9, grey);
       for (const lx of [-0.9, 0, 0.9]) part("bedding", at, yaw, lx, 0.58, 0.72, 0.6, 0.38, 0.14, [0.85, 0.72, 0.4]);
+      for (const lx of [-0.9, 0, 0.9]) addSeat(at(lx, 0.42), yaw + Math.PI, 0.47, "sofa");
+      addSpot("sofa", at(0.5, -0.5), "Sit on the sofa");
     },
     "velvet-armchair": (x, z, yaw) => {
       const at = frame(x, z, yaw);
@@ -256,6 +279,8 @@ function moreFurniture(get: Batch, solid: Solid, bedSpot: (point: Vec2) => void)
       part("bedding", at, yaw, 0, 0.24, -0.03, 0.82, 0.4, 0.8, mustard, true);
       part("bedding", at, yaw, 0, 0.68, 0.36, 0.82, 0.6, 0.16, mustard);
       for (const side of [-0.38, 0.38]) part("bedding", at, yaw, side, 0.52, 0, 0.14, 0.24, 0.78, mustard);
+      addSeat(at(0, -0.06), yaw + Math.PI, 0.45, "sofa");
+      addSpot("sofa", at(0, -0.85), "Sit in the armchair");
     },
     "marble-coffee-table": (x, z, yaw) => {
       const at = frame(x, z, yaw);
@@ -271,8 +296,10 @@ function moreFurniture(get: Batch, solid: Solid, bedSpot: (point: Vec2) => void)
           part("bedding", at, yaw, lx, 0.46, side * 0.7, 0.42, 0.06, 0.42, [0.9, 0.86, 0.78]);
           part("wood", at, yaw, lx, 0.23, side * 0.7, 0.36, 0.44, 0.36, walnut);
           part("wood", at, yaw, lx, 0.72, side * 0.9, 0.42, 0.5, 0.05, walnut);
+          addSeat(at(lx, side * 0.66), side > 0 ? yaw + Math.PI : yaw, 0.5, "dining");
         }
       }
+      for (const side of [-1, 1]) addSpot("dining", at(0, side * 1.35), "Sit at the dining table");
     },
     "tv-console": (x, z, yaw) => {
       const at = frame(x, z, yaw);

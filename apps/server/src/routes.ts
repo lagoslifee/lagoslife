@@ -64,6 +64,7 @@ import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
 import { businessStatus, collectBusiness, enrol, startBusiness, upgradeBusiness } from "./business-service.js";
 import { finishSet, gymStatus, joinGym, startSet } from "./gym-service.js";
+import { finishRest, startRest } from "./home-living-service.js";
 import { applyCleaner, dismissStaff, hireStaff, homeStaff, orderDelivery, partyUntil, staffByHome, startParty, stopParty } from "./home-services-service.js";
 import { cancelGig, completeGig, gigStatus, startGigWork, takeGig } from "./gig-service.js";
 import { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, marketStatus, sprayMoney, trade, transferMoney } from "./finance-service.js";
@@ -447,6 +448,8 @@ export function configureRoutes(app: Express) {
 
   app.post("/api/needs/sleep", requirePlayer, rateLimited, guarded("Could not sleep", (_req, userId) =>
     restAtHome(userId)));
+  app.post("/api/needs/rest", requirePlayer, rateLimited, guarded("Could not sit down", (_req, userId) => startRest(userId)));
+  app.post("/api/needs/rest/finish", requirePlayer, rateLimited, guarded("Could not stand up", (_req, userId) => finishRest(userId)));
 
   app.post("/api/jobs/delivery/start", requirePlayer, rateLimited, guarded("Job could not be started", (_req, userId) =>
     startDelivery(userId)));

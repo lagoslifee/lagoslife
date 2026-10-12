@@ -1,6 +1,6 @@
 import type { CabinClass, CharacterAppearance, OutfitId, HotelBookingState, RoomType, TicketState, TravelStatus, VisaPlan, VisaState } from "@lagos-living/shared";
 import type { BottleItem, Citation, PoliceCase, StreetIncident, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
-import type { BusinessStatus, BusinessTypeId, CourseId, ExerciseId, GymStatus } from "@lagos-living/shared";
+import type { BusinessStatus, BusinessTypeId, CourseId, ExerciseId, GymStatus, RestResult } from "@lagos-living/shared";
 import type { HomeStaffRole, HomeStaffState } from "@lagos-living/shared";
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
@@ -144,6 +144,8 @@ export const api = {
   purchase: (itemId: string) => post<{ balance: number; replayed: boolean }>("/api/shop/purchase", { itemId, idempotencyKey: crypto.randomUUID() }),
   eat: (itemId: string) => post<{ name: string; needs: { hunger: number; energy: number } }>("/api/food/eat", { itemId }),
   sleep: () => post<{ hunger: number; energy: number }>("/api/needs/sleep"),
+  rest: () => post<{ started: boolean }>("/api/needs/rest"),
+  restFinish: () => post<RestResult>("/api/needs/rest/finish"),
   wardrobe: () => request<{ outfits: OutfitId[] }>("/api/wardrobe"),
   saveAppearance: (appearance: CharacterAppearance) => request<{ appearance: CharacterAppearance }>("/api/character", { method: "PUT", body: JSON.stringify({ appearance }) }),
   startDelivery: () => post<ActiveJob & { resumed: boolean }>("/api/jobs/delivery/start"),
