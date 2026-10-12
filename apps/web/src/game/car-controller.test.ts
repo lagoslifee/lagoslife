@@ -63,7 +63,8 @@ describe("CarController", () => {
     const b = new CarController(saloon);
     run(a, 3, { throttle: 1, steer: 0.3 }, open, 30);
     run(b, 3, { throttle: 1, steer: 0.3 }, open, 144);
-    expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeLessThan(1.5);
+    const travelled = Math.hypot(b.x, b.z);
+    expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeLessThan(travelled * 0.05);
   });
 
   it("stops at a wall head-on and reports the impact speed", () => {

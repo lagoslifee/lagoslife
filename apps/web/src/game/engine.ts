@@ -24,6 +24,7 @@ import { Scene } from "@babylonjs/core/scene";
 import {
   defaultSettings,
   effectiveTopSpeed,
+  dialSpeed,
   getPlace,
   getVehicleModel,
   TEST_DRIVE,
@@ -983,7 +984,7 @@ export class GameEngine {
     for (let step = 0; step < steps; step += 1) {
       impact = Math.max(impact, car.step(dt / steps, { throttle, steer, handbrake }, topSpeed, this.collideCar));
     }
-    if (impact >= VEHICLE_RULES.impactMinSpeed && now - this.lastContactAt > 600 && now - this.lastImpactSentAt > 900) {
+    if (dialSpeed(impact) >= VEHICLE_RULES.impactMinSpeed && now - this.lastContactAt > 600 && now - this.lastImpactSentAt > 900) {
       this.lastImpactSentAt = now;
       this.net.send("vehicleImpact", { speed: impact });
       this.audio.horn(0.15);
@@ -1876,12 +1877,13 @@ export class GameEngine {
 
   private vehicleHud(car: CarController, driving: { vehicleId: string; condition: number }) {
     const top = effectiveTopSpeed(car.model, driving.condition);
+    const dial = (speed: number) => (car.model.body === "bicycle" ? speed : dialSpeed(speed));
     return {
       id: driving.vehicleId,
       name: car.model.name,
       plate: this.vehicles.get(driving.vehicleId)?.state.plate ?? "",
-      kmh: Math.round(Math.abs(car.speed) * 3.6),
-      topKmh: Math.round(top * 3.6),
+      kmh: Math.round(dial(Math.abs(car.speed)) * 3.6),
+      topKmh: Math.round(dial(top) * 3.6),
       condition: driving.condition,
       limp: driving.condition < VEHICLE_RULES.limpCondition,
       reversing: car.speed < -0.3,

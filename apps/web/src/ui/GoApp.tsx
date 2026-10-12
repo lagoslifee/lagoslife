@@ -1,4 +1,4 @@
-import { FAST_TRAVEL, placeById, regionOf, type FastTravelState, type Happening, type TravelPrompt } from "@lagos-living/shared";
+import { FAST_TRAVEL, placeById, regionOf, type FastTravelState, type Happening, type TravelPrompt, type Vec2 } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import type { GameEngine } from "../game/engine";
 import type { RideAsk } from "../multiplayer";
@@ -15,7 +15,7 @@ function useNow(interval = 1_000) {
 }
 
 /** Phone → Go: favourites, discovered places, travelling together, joining a friend, and what's on right now. */
-export function GoApp({ engine, onClose }: { engine: GameEngine | null; onClose: () => void }) {
+export function GoApp({ engine, onNavigate, onClose }: { engine: GameEngine | null; onNavigate: (target: { point: Vec2; label: string }) => void; onClose: () => void }) {
   const [state, setState] = useState<FastTravelState | null>(null);
   const [companions, setCompanions] = useState<string[]>([]);
   const [filter, setFilter] = useState("");
@@ -32,8 +32,17 @@ export function GoApp({ engine, onClose }: { engine: GameEngine | null; onClose:
   }, [engine]);
   if (!engine) return null;
   if (!state) return <p className="muted">Loading…</p>;
-  const wait = Math.max(0, Math.ceil((state.cooldownUntil - now) / 1_000));
+  const driving = engine.drivingVehicleId() !== null;
+  const wait = driving ? 0 : Math.max(0, Math.ceil((state.cooldownUntil - now) / 1_000));
   const go = (target: { placeId: string } | { favourite: "home" | "garage" | "club" | "airport" }, label: string) => {
+    if (driving) {
+      const place = "placeId" in target ? placeById.get(target.placeId) : undefined;
+      const favourite = "favourite" in target ? state.favourites.find((entry) => entry.id === target.favourite) : undefined;
+      if (place) onNavigate({ point: place.kerb, label: place.name });
+      else if (favourite?.point) onNavigate({ point: favourite.point, label });
+      onClose();
+      return;
+    }
     engine.fastTravel(target, label, companions);
     setCompanions([]);
     onClose();
@@ -51,8 +60,12 @@ export function GoApp({ engine, onClose }: { engine: GameEngine | null; onClose:
   return (
     <div className="app-section go-app" data-testid="go-app">
       <p className="muted small">
-        Arrive at the public entrance of a place you've already been to. You must be on foot; your car stays parked where you leave it. Walking, danfos and rides
-        still work as usual.{wait > 0 && <strong> Ready again in {wait} s.</strong>}
+        {driving ? (
+          <strong>You're driving: pick a place and the route is drawn on the road so you can drive straight there.</strong>
+        ) : (
+          <>Arrive at the public entrance of a place you've already been to. In a car, Go draws the route for you to drive instead.</>
+        )}
+        {wait > 0 && <strong> Ready again in {wait} s.</strong>}
       </p>
 
       <h3>Tonight in the City</h3>
@@ -65,7 +78,7 @@ export function GoApp({ engine, onClose }: { engine: GameEngine | null; onClose:
               <small className="muted"> · {item.detail}</small>
             </span>
             {item.placeId && state.discovered.includes(item.placeId) ? (
-              <button disabled={wait > 0} onClick={() => go({ placeId: item.placeId! }, placeById.get(item.placeId!)?.name ?? item.title)}>Join</button>
+              <button disabled={wait > 0} onClick={() => go({ placeId: item.placeId! }, placeById.get(item.placeId!)?.name ?? item.title)}>{driving ? "Drive there" : "Join"}</button>
             ) : item.placeId ? (
               <small className="muted">Visit once to unlock</small>
             ) : null}
@@ -121,7 +134,7 @@ export function GoApp({ engine, onClose }: { engine: GameEngine | null; onClose:
               {place.name}
               <small className="muted"> · {place.street}</small>
             </span>
-            <button disabled={wait > 0} data-testid={`go-place-${place.id}`} onClick={() => go({ placeId: place.id }, place.name)}>Go now</button>
+            <button disabled={wait > 0} data-testid={`go-place-${place.id}`} onClick={() => go({ placeId: place.id }, place.name)}>{driving ? "Drive there" : "Go now"}</button>
           </li>
         ))}
       </ul>

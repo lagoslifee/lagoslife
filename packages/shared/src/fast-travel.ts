@@ -57,7 +57,8 @@ export type Happening = {
 /** What the Go app shows: discovered places, favourites with their resolved place, and residents you could join. */
 export type FastTravelState = {
   discovered: string[];
-  favourites: Array<{ id: Favourite; label: string; placeId: string | null; note: string | null }>;
+  /** `point` is where Go arrives, also used to draw a driving route. */
+  favourites: Array<{ id: Favourite; label: string; placeId: string | null; point: [number, number] | null; note: string | null }>;
   cooldownUntil: number;
   nearby: Array<{ sessionId: string; name: string; distance: number }>;
   online: Array<{ sessionId: string; name: string; where: string }>;

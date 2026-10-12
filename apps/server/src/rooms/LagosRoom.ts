@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  dialSpeed,
   checkpointAnswerSchema,
   type CheckpointStop,
   type HoldUp,
@@ -798,7 +799,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (player.vehicleSeat && player.ride?.status !== "riding") return;
     if (player.location.startsWith("flight:") || player.location.startsWith("excursion:")) return;
     const now = Date.now();
-    const elapsed = Math.min(1.5, Math.max(0.03, (now - player.lastAcceptedAt) / 1_000));
+    // Mobile links stall for seconds and then deliver a burst; the first packet of the burst covers the whole gap.
+    const elapsed = Math.min(4, Math.max(0.03, (now - player.lastAcceptedAt) / 1_000));
     const vehicle = player.vehicleId ? this.vehicles.get(player.vehicleId) : undefined;
     const topSpeed = vehicle
       ? effectiveTopSpeed(getVehicleModel(vehicle.modelId), vehicle.condition)
@@ -1882,7 +1884,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (now - player.lastImpactAt < IMPACT_COOLDOWN_MS) return;
     player.lastImpactAt = now;
     const model = getVehicleModel(vehicle.modelId);
-    const speed = Math.min(parsed.data.speed, model.topSpeed * 1.3);
+    const speed = dialSpeed(Math.min(parsed.data.speed, model.topSpeed * 1.3));
     const damage = impactDamage(speed, config.VEHICLE_DAMAGE_MULTIPLIER);
     const severe = impactSeverity(speed) === "severe";
     this.considerCitation(client, player, speed);
@@ -1939,12 +1941,12 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (result) this.notify(client, { tone: "info", text: `Ade Recovery cancelled.${result.refunded ? ` ₦${result.refunded.toLocaleString("en-NG")} refunded.` : ""}` });
   }
 
-  /** Speed measured by the server from accepted updates over the last moment, so a client cannot talk it down. */
+  /** Speedometer speed measured by the server from accepted updates over the last moment, so a client cannot talk it down. */
   private measuredSpeed(player: Player) {
     const now = Date.now();
     const recent = player.travel.filter(({ at }) => now - at <= SPEED_WINDOW_MS);
     const seconds = recent.reduce((sum, sample) => sum + sample.seconds, 0);
-    return seconds > 0 ? recent.reduce((sum, { metres }) => sum + metres, 0) / seconds : 0;
+    return seconds > 0 ? dialSpeed(recent.reduce((sum, { metres }) => sum + metres, 0) / seconds) : 0;
   }
 
   /**
@@ -2785,8 +2787,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       favourites: FAVOURITES.map((id) => {
         const target = this.resolveTravelTarget(player, { favourite: id });
         return typeof target === "string"
-          ? { id, label: FAVOURITE_LABEL[id], placeId: null, note: target }
-          : { id, label: FAVOURITE_LABEL[id], placeId: target.placeId, note: null };
+          ? { id, label: FAVOURITE_LABEL[id], placeId: null, point: null, note: target }
+          : { id, label: FAVOURITE_LABEL[id], placeId: target.placeId, point: target.point, note: null };
       }),
       cooldownUntil: player.fastTravelAt + FAST_TRAVEL.cooldownMs,
       nearby: others

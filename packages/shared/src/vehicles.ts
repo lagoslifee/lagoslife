@@ -287,12 +287,19 @@ const realModels: VehicleModel[] = REAL_CATALOGUE.filter((car) => REAL_VEHICLE_A
 const ASSETS: Record<string, VehicleAsset> = { ...VEHICLE_ASSETS, ...REAL_VEHICLE_ASSETS };
 
 /**
- * The catalogue figures are real-world-ish; the map is a compact Lagos, so motor vehicles run faster than life to
- * keep most drives to two or three minutes (Lekki to Ikoyi about 3 in a saloon). Bicycles stay at their natural pace.
+ * The catalogue figures are real-world-ish; motor vehicles run faster than life to keep most drives to two or three
+ * minutes (Lekki to Victoria Island about 3 in a saloon). Bicycles stay at their natural pace.
  */
-export const SPEED_SCALE = { topSpeed: 2.5, acceleration: 2.2, braking: 1.6 } as const;
-/** Game-wide speed limit: no car goes faster than 150 km/h. */
-export const MAX_VEHICLE_SPEED = 150 / 3.6;
+export const SPEED_SCALE = { topSpeed: 3.6, acceleration: 3.2, braking: 2.2 } as const;
+/**
+ * The map is drawn at street scale but the city is far bigger than a drive should take, so cars cover ground this many
+ * times faster than the speedometer says (as open-world games do). Speeds shown to players, fines and crash damage use
+ * `dialSpeed`; movement and anti-cheat use real metres per second.
+ */
+export const MAP_SCALE = 1.6;
+export const dialSpeed = (metresPerSecond: number) => metresPerSecond / MAP_SCALE;
+/** Game-wide speed limit: no car's speedometer goes past 150 km/h. */
+export const MAX_VEHICLE_SPEED = (150 / 3.6) * MAP_SCALE;
 
 function scaled(model: VehicleModel): VehicleModel {
   if (model.body === "bicycle") return model;

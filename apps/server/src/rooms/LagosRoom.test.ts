@@ -1,4 +1,4 @@
-import { AGBERO, AGBERO_SPOTS, blockedByWater, cabinSeats, seatPoint, travelSpot, TRAVEL, getPlace, placeById, getRoute, ROUTES, sampleRoute, type RideState, type TransitRoute } from "@lagos-living/shared";
+import { MAP_SCALE, AGBERO, AGBERO_SPOTS, blockedByWater, cabinSeats, seatPoint, travelSpot, TRAVEL, getPlace, placeById, getRoute, ROUTES, sampleRoute, type RideState, type TransitRoute } from "@lagos-living/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const economy = vi.hoisted(() => ({
@@ -346,7 +346,7 @@ describe("LagosRoom driving", () => {
     const pose = drive(room, ada, 1, 15, 1);
     expect(player(ada).x).toBeCloseTo(pose.x);
     expect(room.vehicles.get("car-1")!.x).toBeCloseTo(pose.x);
-    drive(room, ada, 2, 15 + 60, 1);
+    drive(room, ada, 2, 15 + 100, 1);
     expect(player(ada).x).toBeCloseTo(pose.x);
     expect(ada.send.mock.calls.some(([type]) => type === "correction")).toBe(true);
   });
@@ -355,7 +355,7 @@ describe("LagosRoom driving", () => {
     const { room, ada, player } = withCar(20);
     vehicles.claimVehicle.mockResolvedValueOnce({ condition: 20 });
     await room.handleEnterVehicle(ada, { vehicleId: "car-1" });
-    drive(room, ada, 1, 36, 1);
+    drive(room, ada, 1, 50, 1);
     expect(player(ada).x).toBeCloseTo(parked.x);
   });
 
@@ -525,6 +525,7 @@ describe("LagosRoom chat", () => {
 });
 
 describe("LagosRoom careless-driving citations", () => {
+  // Test speeds are speedometer speeds; cars cover MAP_SCALE times as much ground.
   const start = stop.s + 60;
   const parked = sampleRoute(lekki, start);
   beforeEach(() => vi.clearAllMocks());
@@ -540,7 +541,7 @@ describe("LagosRoom careless-driving citations", () => {
     await context.room.handleEnterVehicle(ada, { vehicleId: "car-1" });
     const step = (sequence: number, metres: number) => {
       context.player(ada).lastAcceptedAt = Date.now() - 500;
-      const pose = sampleRoute(lekki, start + metres);
+      const pose = sampleRoute(lekki, start + metres * MAP_SCALE);
       context.room.handlePosition(ada, { sequence, x: pose.x, z: pose.z, yaw: pose.yaw, motion: "drive" });
     };
     return { ...context, ada, step };
@@ -550,7 +551,7 @@ describe("LagosRoom careless-driving citations", () => {
     const { room, ada, step, notices } = await driving();
     step(1, 9);
     step(2, 18);
-    await room.handleVehicleImpact(ada, { speed: 17 });
+    await room.handleVehicleImpact(ada, { speed: 17 * MAP_SCALE });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(justice.issueCitation).toHaveBeenCalledTimes(1);
     const [userId, offence, evidence] = justice.issueCitation.mock.calls[0]! as [string, string, { speed: number; district: string }];
@@ -564,7 +565,7 @@ describe("LagosRoom careless-driving citations", () => {
     const { room, ada, step } = await driving();
     step(1, 2);
     step(2, 4);
-    await room.handleVehicleImpact(ada, { speed: 25 });
+    await room.handleVehicleImpact(ada, { speed: 25 * MAP_SCALE });
     expect(justice.issueCitation).not.toHaveBeenCalled();
   });
 
@@ -572,12 +573,12 @@ describe("LagosRoom careless-driving citations", () => {
     const { room, ada, step } = await driving();
     step(1, 9);
     step(2, 18);
-    await room.handleVehicleImpact(ada, { speed: 6 });
+    await room.handleVehicleImpact(ada, { speed: 6 * MAP_SCALE });
     expect(justice.issueCitation).not.toHaveBeenCalled();
   });
 
   const pedestrianAt = (context: Awaited<ReturnType<typeof driving>>, metres: number, sideways = 0) => {
-    const pose = sampleRoute(lekki, start + metres);
+    const pose = sampleRoute(lekki, start + metres * MAP_SCALE);
     const bola = context.join("bola");
     Object.assign(context.player(bola), { x: pose.x + Math.cos(pose.yaw) * sideways, z: pose.z - Math.sin(pose.yaw) * sideways, location: "street" });
     return bola;
@@ -597,7 +598,7 @@ describe("LagosRoom careless-driving citations", () => {
 
   it("sees a parked car the driver swept through between two updates", async () => {
     const context = await driving();
-    const through = sampleRoute(lekki, start + 13);
+    const through = sampleRoute(lekki, start + 13 * MAP_SCALE);
     context.room.vehicles.set("car-2", {
       id: "car-2", ownerUserId: "u-cy", ownerName: "cy", modelId: "eko-hatch", colour: "#2b4c7e",
       plate: "LND 456 CD", condition: 100, x: through.x, z: through.z, yaw: through.yaw, driverSessionId: null,
@@ -628,6 +629,7 @@ describe("LagosRoom careless-driving citations", () => {
     const { door, facade } = getPlace("starter-home");
     const length = Math.hypot(facade[0] - door[0], facade[1] - door[1]);
     const unit: [number, number] = [(facade[0] - door[0]) / length, (facade[1] - door[1]) / length];
+    speeds = speeds.map((speed) => speed * MAP_SCALE);
     const distance = speeds.reduce((total, speed) => total + speed * dt, 0);
     // End with the nose at the wall: the front of a 4.4 m car sits about 2.2 m ahead of its centre.
     let along = length - 2.2 - distance;
