@@ -12,7 +12,7 @@ import {
 } from "@lagos-living/shared";
 import { FormEvent, lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ACCESSORY_LABELS, BODY_LABELS, HAIR_LABELS, OUTFITS } from "./game/wardrobe";
-import { apiConfigured, apiUrl, authClient, authHeaders, guestMode, signOut, startGuestSession } from "./auth-client";
+import { apiConfigured, apiUrl, authClient, authHeaders, guestMode, sessionToken, signOut, startGuestSession } from "./auth-client";
 
 /** After a new deploy, an open tab asks for chunk names that no longer exist; reload once to get the new build. */
 function reloadOnStaleChunk<T>(load: () => Promise<T>) {
@@ -335,6 +335,26 @@ function GameShell({
   );
 }
 
+/** Loading text that offers a retry when the server is slow or unreachable instead of hanging forever. */
+function SlowLoading({ text, offline }: { text: string; offline: boolean }) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSlow(true), 12_000);
+    return () => window.clearTimeout(timer);
+  }, []);
+  if (!slow && !offline) return <div className="loading-screen">{text}</div>;
+  return (
+    <main className="loading-screen" role="alert" data-testid="loading-slow">
+      <div className="auth-card">
+        <p className="step-label">{offline ? "CAN'T REACH THE GAME SERVER" : "STILL CONNECTING"}</p>
+        <h2>{offline ? "The game server isn't answering" : "This is taking longer than usual"}</h2>
+        <p className="muted small">Your account is saved. Check your connection, then try again.</p>
+        <button onClick={() => location.reload()}>Try again</button>
+      </div>
+    </main>
+  );
+}
+
 function ServerMissingScreen() {
   return (
     <main className="loading-screen" role="alert" data-testid="server-missing">
@@ -363,6 +383,8 @@ function Main() {
 
   useEffect(() => {
     if (session.isPending || session.data || manual || autoSignIn !== "idle") return;
+    // An unreachable server is not a signed-out player: keep the saved guest account and retry instead.
+    if (session.error && sessionToken.get()) return;
     const devAttempted = sessionStorage.getItem("lagos-dev-sign-in-attempted");
     if (local && !devAttempted) {
       sessionStorage.setItem("lagos-dev-sign-in-attempted", "1");
@@ -404,7 +426,7 @@ function Main() {
     );
   }
   if (session.isPending || autoSignIn === "pending" || (!session.data && !manual && guestMode)) {
-    return <div className="loading-screen">{local ? "Entering local test session…" : "Entering Lagos as a guest…"}</div>;
+    return <SlowLoading text={local ? "Entering local test session…" : "Entering Naija World…"} offline={Boolean(session.error)} />;
   }
   return session.data ? <GameShell user={session.data.user} /> : <AuthScreen />;
 }

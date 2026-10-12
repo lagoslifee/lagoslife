@@ -471,6 +471,8 @@ export class GameEngine {
   private readonly callbacks: EngineCallbacks;
   private frameTimes: number[] = [];
   private readonly adaptive = new AdaptiveQuality();
+  private frameGap = 0;
+  private lastUpdateAt = 0;
   private baseScaling = 1;
   /** Seated (or, on a club stool, standing up and dancing) on a fixed seat; `y` is the cushion height. */
   private sitting: { seat: Vec2; yaw: number; y: number; pose: "sit" | "dance"; stool?: boolean; rest?: HomeRest } | null = null;
@@ -827,8 +829,13 @@ export class GameEngine {
     engine.onContextLostObservable.add(() => this.callbacks.graphics(MeshBuilderBatch.keepCpuCopies ? "lost" : "failed"));
     engine.onContextRestoredObservable.add(() => this.callbacks.graphics("restored"));
     // Babylon only queues the next frame after this callback returns, so one thrown error would freeze the game for good.
+    // Phones and tablets heat up and throttle (then stutter) at 60-120 fps; 30 fps on low/medium keeps them cool.
+    const frameGap = (this.frameGap = matchMedia("(pointer: coarse)").matches && this.quality !== "high" ? 1000 / 30 - 3 : 0);
+    let lastFrame = 0;
     engine.runRenderLoop(() => {
       if (this.disposed) return;
+      if (frameGap && performance.now() - lastFrame < frameGap) return;
+      lastFrame = performance.now();
       const counter = (engine as unknown as { _drawCalls?: { current: number } })._drawCalls;
       const before = counter?.current ?? 0;
       const t0 = performance.now();
@@ -1145,11 +1152,14 @@ export class GameEngine {
   private update() {
     if (!this.world) return;
     const now = performance.now();
-    const dt = Math.min(this.maxFrameDt, this.engine.getDeltaTime() / 1000);
-    this.frameTimes.push(this.engine.getDeltaTime());
+    const elapsed = this.lastUpdateAt ? now - this.lastUpdateAt : this.engine.getDeltaTime();
+    this.lastUpdateAt = now;
+    const dt = Math.min(this.maxFrameDt, elapsed / 1000);
+    this.frameTimes.push(elapsed);
     if (this.frameTimes.length > 120) this.frameTimes.shift();
     if (this.readyFired && this.settings.autoGraphics && !document.hidden) {
-      const level = this.adaptive.sample(this.engine.getDeltaTime(), now);
+      // Under the 30 fps cap a steady frame is ~33 ms by design; judge load as if it were a 60 fps frame.
+      const level = this.adaptive.sample(this.frameGap ? elapsed / 2 : elapsed, now);
       if (level !== null) this.applyQualityStep(level);
     }
 

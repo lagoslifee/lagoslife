@@ -24,7 +24,15 @@ export class CityAudio {
     };
     window.addEventListener("pointerdown", unlock);
     window.addEventListener("keydown", unlock);
+    document.addEventListener("visibilitychange", this.visibility);
   }
+
+  /** A suspended context stops the audio thread, so a backgrounded tab doesn't keep the phone working. */
+  private visibility = () => {
+    if (!this.context) return;
+    if (document.hidden) void this.context.suspend();
+    else void this.context.resume();
+  };
 
   private start() {
     if (this.context) return;
@@ -224,6 +232,7 @@ export class CityAudio {
   }
 
   dispose() {
+    document.removeEventListener("visibilitychange", this.visibility);
     void this.context?.close();
   }
 }
