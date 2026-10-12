@@ -8,6 +8,12 @@ const configSchema = z
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     PORT: z.coerce.number().int().positive().default(2567),
     WEB_ORIGIN: z.url().default("http://localhost:5173"),
+    /** Further sites serving the same web client (comma-separated), e.g. a Vercel mirror of the Netlify site. */
+    EXTRA_WEB_ORIGINS: z
+      .string()
+      .default("")
+      .transform((value) => value.split(",").map((entry) => entry.trim().replace(/\/+$/, "")).filter(Boolean))
+      .pipe(z.array(z.url())),
     DATABASE_URL: z
       .string()
       .default("postgresql://lagos:lagos_dev@localhost:5432/lagos_living"),
@@ -64,8 +70,9 @@ const configSchema = z
         message: "Set a unique BETTER_AUTH_SECRET for production",
       });
     }
-    for (const key of ["WEB_ORIGIN", "BETTER_AUTH_URL"] as const) {
-      if (!value[key].startsWith("https://") && !/^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(value[key])) {
+    const origins = [["WEB_ORIGIN", value.WEB_ORIGIN], ["BETTER_AUTH_URL", value.BETTER_AUTH_URL], ...value.EXTRA_WEB_ORIGINS.map((origin) => ["EXTRA_WEB_ORIGINS", origin])] as const;
+    for (const [key, origin] of origins) {
+      if (!origin.startsWith("https://") && !/^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(origin)) {
         context.addIssue({ code: "custom", path: [key], message: `${key} must use https in production` });
       }
     }
@@ -74,3 +81,6 @@ const configSchema = z
 export const parseConfig = (env: NodeJS.ProcessEnv) => configSchema.parse(env);
 
 export const config = parseConfig(process.env);
+
+/** Every site allowed to call the API with credentials. */
+export const webOrigins = [config.WEB_ORIGIN, ...config.EXTRA_WEB_ORIGINS];

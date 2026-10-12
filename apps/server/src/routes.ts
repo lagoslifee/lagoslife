@@ -72,7 +72,7 @@ import { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, marketSta
 import { auth } from "./auth.js";
 import { acquirePlot, buildingEvents, buyReadyBuilt, listPlots, payNextStage, releasePlotsOf, renewPlotLease, startConstruction } from "./building-service.js";
 import { matchMaker } from "@colyseus/core";
-import { config } from "./config.js";
+import { config, webOrigins } from "./config.js";
 import { pool } from "./database.js";
 import { clientReportSchema, processHealth, recordClientReport } from "./diagnostics.js";
 import { getPlayerPosition, markProgressReset } from "./player-presence.js";
@@ -262,7 +262,7 @@ export function configureRoutes(app: Express) {
   if (config.TRUSTED_PROXIES.length) app.set("trust proxy", config.TRUSTED_PROXIES);
   app.use(
     cors({
-      origin: config.WEB_ORIGIN,
+      origin: webOrigins,
       credentials: true,
       methods: ["GET", "POST", "PUT", "OPTIONS"],
       exposedHeaders: ["set-auth-token"],

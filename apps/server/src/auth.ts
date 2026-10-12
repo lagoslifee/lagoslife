@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { bearer, username } from "better-auth/plugins";
 import nodemailer from "nodemailer";
-import { config } from "./config.js";
+import { config, webOrigins } from "./config.js";
 import { pool } from "./database.js";
 
 const mailer = nodemailer.createTransport({
@@ -17,7 +17,7 @@ export const auth = betterAuth({
   baseURL: config.BETTER_AUTH_URL,
   secret: config.BETTER_AUTH_SECRET,
   database: pool,
-  trustedOrigins: [config.WEB_ORIGIN],
+  trustedOrigins: webOrigins,
   // Counters in Postgres keep limits shared across server processes. Enabled only in production (the default).
   rateLimit: { storage: "database" },
   advanced: config.TRUSTED_PROXIES.length > 0 ? { ipAddress: { trustedProxies: config.TRUSTED_PROXIES } } : undefined,

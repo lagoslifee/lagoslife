@@ -25,6 +25,13 @@ describe("production configuration", () => {
     expect(() => parseConfig({ ...production, BETTER_AUTH_URL: "http://localhost:2567" })).not.toThrow();
   });
 
+  it("accepts extra https web origins and refuses plain http ones", () => {
+    const config = parseConfig({ ...production, EXTRA_WEB_ORIGINS: " https://naija-world.vercel.app/ , https://play2.example.com" });
+    expect(config.EXTRA_WEB_ORIGINS).toEqual(["https://naija-world.vercel.app", "https://play2.example.com"]);
+    expect(() => parseConfig({ ...production, EXTRA_WEB_ORIGINS: "http://naija-world.example.com" })).toThrow(/EXTRA_WEB_ORIGINS must use https/);
+    expect(() => parseConfig({ ...production, EXTRA_WEB_ORIGINS: "not a url" })).toThrow();
+  });
+
   it("keeps development defaults outside production", () => {
     const config = parseConfig({});
     expect(config.NODE_ENV).toBe("development");
