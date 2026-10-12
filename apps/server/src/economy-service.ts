@@ -271,8 +271,16 @@ export async function eatItem(userId: string, itemId: string) {
 
 export async function restAtHome(userId: string) {
   const position = getPlayerPosition(userId);
-  if (!position || !/^(starter:|home:)/.test(position.location)) {
-    throw new EconomyError("Sleep inside your home.");
+  if (!position || !/^(starter:|home:|hotel:)/.test(position.location)) {
+    throw new EconomyError("Sleep inside your home or your hotel room.");
+  }
+  if (position.location.startsWith("hotel:")) {
+    const room = await pool.query(
+      `SELECT 1 FROM hotel_booking b WHERE b.id = $1 AND b.status = 'checked_in' AND b.ends_at > NOW()
+         AND (b.user_id = $2 OR EXISTS (SELECT 1 FROM hotel_guest g WHERE g.booking_id = b.id AND g.user_id = $2))`,
+      [position.location.slice(6), userId],
+    );
+    if (!room.rowCount) throw new EconomyError("Check in at reception before sleeping in this room.");
   }
   if (position.location.startsWith("home:")) {
     const propertyId = position.location.slice(5);

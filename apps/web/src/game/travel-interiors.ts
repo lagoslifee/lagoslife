@@ -15,6 +15,7 @@ import {
   EXCURSION_SEATS,
   hotelById,
   INTERIOR_ORIGIN,
+  POOL_WATER,
   seatPoint,
   TRAVEL_LAYOUTS,
   type FlightPhase,
@@ -51,6 +52,9 @@ const SPOT_LABELS: Record<string, string> = {
   photo: "Photo spot",
   dining: "Rooftop dining",
   galley: "Galley",
+  loungers: "Sun loungers · towels and drinks",
+  swim: "Swim · walk into the water",
+  towels: "Towel desk",
 };
 
 /** Seat cushion height for seated avatars in cabins, boats and the 4×4. */
@@ -65,6 +69,8 @@ export type TravelView = {
   collide(x: number, z: number, radius: number): Vec2;
   update(seconds: number): void;
   setTableBottles(no: number, bottles: Array<{ id: string; itemId: string }>): void;
+  /** Height the player stands at here: waist-deep in the pool, otherwise the floor. */
+  floor(x: number, z: number): number;
   /** Cabin only: window sky and cabin lighting for this flight phase. */
   setFlight(phase: FlightPhase, progress: number, destination: "dubai" | "lagos"): void;
   dispose(): void;
@@ -111,7 +117,7 @@ function board(scene: Scene, name: string, width: number, height: number, lines:
 export function buildTravelInterior(scene: Scene, materials: Materials, atlas: SignAtlas, kind: TravelInterior, trip: TripState | null): TravelView {
   const layout = TRAVEL_LAYOUTS[kind];
   const [HX, HZ] = layout.half;
-  const open = kind === "rooftop" || kind === "dhow" || kind === "safari";
+  const open = kind === "rooftop" || kind === "dhow" || kind === "safari" || kind === "pool";
   const height = kind === "airport-los" || kind === "airport-dxb" ? 6.5 : kind === "cabin" ? 2.35 : 3.2;
   const batches = new Map<string, MeshBuilderBatch>();
   const get = (key: string) => {
@@ -154,8 +160,14 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
   // Shell: floor, ceiling and four walls (open-air scenes get a floor and railings instead).
   const corners: Vec2[] = [P(-HX, -HZ), P(HX, -HZ), P(HX, HZ), P(-HX, HZ)];
   const floorColour: Rgb =
-    kind === "consulate" ? [0.9, 0.88, 0.82] : kind === "hotel" ? [0.62, 0.5, 0.38] : kind === "cabin" ? [0.3, 0.33, 0.42] : kind === "rooftop" ? [0.72, 0.66, 0.58] : kind === "dhow" ? [0.55, 0.36, 0.2] : kind === "safari" ? [0.25, 0.25, 0.24] : [0.86, 0.86, 0.84];
-  if (kind !== "dhow" && kind !== "safari") get(kind === "hotel" || kind === "cabin" ? "fabric" : "tiles").polygon(corners, 0.02, kind === "cabin" ? 2 : 1.4, floorColour);
+    kind === "consulate" ? [0.9, 0.88, 0.82] : kind === "hotel" ? [0.62, 0.5, 0.38] : kind === "cabin" ? [0.3, 0.33, 0.42] : kind === "rooftop" ? [0.72, 0.66, 0.58] : kind === "pool" ? [0.86, 0.8, 0.7] : kind === "dhow" ? [0.55, 0.36, 0.2] : kind === "safari" ? [0.25, 0.25, 0.24] : [0.86, 0.86, 0.84];
+  const [wx0, wz0, wx1, wz1] = POOL_WATER;
+  if (kind === "pool") {
+    // Deck tiles round the pool, leaving the water open.
+    for (const [x0, z0, x1, z1] of [[-HX, -HZ, HX, wz0], [-HX, wz1, HX, HZ], [-HX, wz0, wx0, wz1], [wx1, wz0, HX, wz1]] as const) {
+      get("tiles").polygon([P(x0, z0), P(x1, z0), P(x1, z1), P(x0, z1)], 0.02, 1.4, floorColour);
+    }
+  } else if (kind !== "dhow" && kind !== "safari") get(kind === "hotel" || kind === "cabin" ? "fabric" : "tiles").polygon(corners, 0.02, kind === "cabin" ? 2 : 1.4, floorColour);
   if (!open) {
     get("plaster").polygon(corners, height, 3, [0.97, 0.97, 0.96], true);
     const wall: Rgb = kind === "consulate" ? [0.93, 0.9, 0.84] : kind === "hotel" ? [0.95, 0.92, 0.86] : kind === "cabin" ? [0.92, 0.92, 0.9] : [0.9, 0.92, 0.94];
@@ -421,6 +433,65 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
       bulb.material = glow(scene, "string bulb", "#ffd27a", disposables);
       disposables.push(bulb);
     }
+  } else if (kind === "pool") {
+    const hotel = trip?.room ? hotelById.get(trip.room.hotelId) : undefined;
+    // Glass balustrade, the pool (lit blue water with a tiled rim), loungers with towels and parasols, a poolside bar,
+    // palms in planters and the marina towers beyond.
+    for (const [x0, z0, x1, z1] of [[-HX, -HZ, HX, -HZ], [HX, -HZ, HX, HZ], [HX, HZ, -HX, HZ], [-HX, HZ, -HX, -HZ]] as const) {
+      get("glass").wall(OX + x0, OZ + z0, OX + x1, OZ + z1, 0, 1.1, 2, [0.6, 0.8, 0.85]);
+      get("chrome").box(OX + (x0 + x1) / 2, 1.12, OZ + (z0 + z1) / 2, Math.max(0.05, Math.abs(x1 - x0)), 0.05, Math.max(0.05, Math.abs(z1 - z0)));
+    }
+    get("plaster").polygon([P(-HX - 40, -HZ - 40), P(HX + 40, -HZ - 40), P(HX + 40, HZ + 40), P(-HX - 40, HZ + 40)], -30, 8, [0.4, 0.42, 0.45]);
+    const water = glow(scene, "pool water", "#3fb6d9", disposables);
+    water.alpha = 0.85;
+    const surface = MeshBuilder.CreateGround("pool water", { width: wx1 - wx0, height: wz1 - wz0 }, scene);
+    surface.position.set(OX + (wx0 + wx1) / 2, -0.25, OZ + (wz0 + wz1) / 2);
+    surface.material = water;
+    disposables.push(surface);
+    const basin = glow(scene, "pool basin", "#1d7fa8", disposables);
+    const floorMesh = MeshBuilder.CreateGround("pool floor", { width: wx1 - wx0, height: wz1 - wz0 }, scene);
+    floorMesh.position.set(OX + (wx0 + wx1) / 2, -1.3, OZ + (wz0 + wz1) / 2);
+    floorMesh.material = basin;
+    disposables.push(floorMesh);
+    for (const [x0, z0, x1, z1] of [[wx0, wz0, wx1, wz0], [wx1, wz0, wx1, wz1], [wx1, wz1, wx0, wz1], [wx0, wz1, wx0, wz0]] as const) {
+      get("tiles").wall(OX + x0, OZ + z0, OX + x1, OZ + z1, -1.3, 0.02, 1, [0.55, 0.78, 0.86]);
+      deco("concrete", (x0 + x1) / 2, 0.05, (z0 + z1) / 2, Math.max(0.3, Math.abs(x1 - x0) + 0.3), 0.06, Math.max(0.3, Math.abs(z1 - z0) + 0.3), [0.95, 0.94, 0.9]);
+    }
+    for (const x of [-5.4, -3.6, -1.8, 0, 1.8, 3.6, 5.4]) {
+      deco("chrome", x, 0.2, -4.2, 0.7, 0.06, 1.9, [0.95, 0.95, 0.93]);
+      deco("fabric", x, 0.25, -4.1, 0.6, 0.04, 1.6, [0.92, 0.45, 0.2]);
+      deco("fabric", x, 0.45, -4.95, 0.6, 0.35, 0.08, [0.95, 0.95, 0.93]);
+      if (Math.round(x / 1.8) % 2 === 0) {
+        deco("pole", x + 0.9, 1.2, -4.6, 0.05, 2.4, 0.05);
+        deco("fabric", x + 0.9, 2.4, -4.6, 1.8, 0.06, 1.8, [0.95, 0.92, 0.84]);
+      }
+    }
+    solid("wood", -7.9, 0.55, 3.6, 0.7, 1.1, 3.2, [0.45, 0.32, 0.22]);
+    deco("chrome", -7.9, 1.12, 3.6, 0.8, 0.04, 3.3, [0.85, 0.75, 0.5]);
+    sign("Pool bar", "Drinks to your lounger", -8.95, 1.7, 3.6, 2.2, "east");
+    solid("wood", 7.4, 0.5, -5.2, 1.2, 1.0, 0.6, [0.6, 0.45, 0.3]);
+    for (let index = 0; index < 4; index += 1) deco("fabric", 7.1 + index * 0.2, 1.08, -5.2, 0.18, 0.14, 0.4, [0.97, 0.97, 0.95]);
+    sign("Towels", "Ask the attendant", 7.4, 1.7, -5.55, 1.4);
+    sign(hotel?.name ?? "Hotel pool", "Pool deck · guests only · fictional hotel", 0, 1.5, HZ - 0.05, 3.0);
+    for (const [x, z] of [[-8, -6], [8, 6], [-8, 6], [8, 0.8]] as const) {
+      solid("concrete", x, 0.35, z, 0.8, 0.7, 0.8, [0.8, 0.76, 0.7]);
+      deco("wood", x, 1.8, z, 0.18, 2.4, 0.18, [0.45, 0.32, 0.2]);
+      for (const angle of [0, 1.3, 2.6, 3.9, 5.2]) deco("fabric", x + Math.cos(angle) * 0.6, 3.0, z + Math.sin(angle) * 0.6, 1.2, 0.05, 0.35, [0.2, 0.5, 0.22]);
+    }
+    const tower = new MeshBuilderBatch("pool towers");
+    for (let index = 0; index < 18; index += 1) {
+      const angle = (index / 18) * Math.PI * 2;
+      const distance = 45 + (index % 4) * 12;
+      const h = 30 + ((index * 41) % 80);
+      tower.box(OX + Math.cos(angle) * distance, h / 2 - 20, OZ + Math.sin(angle) * distance, 10 + (index % 3) * 4, h, 10 + (index % 2) * 5);
+    }
+    const towers = tower.build(scene, (materials as unknown as Record<string, Mesh["material"]>).curtainWall ?? materials.glass);
+    if (towers) disposables.push(towers);
+    lights.push(new HemisphericLight("pool sun", new Vector3(0.2, 1, 0.3), scene));
+    lights[lights.length - 1]!.intensity = 0.55;
+    animate = (seconds) => {
+      water.emissiveColor.set(0.22 + Math.sin(seconds * 1.7) * 0.03, 0.68 + Math.sin(seconds * 1.3) * 0.04, 0.85);
+    };
   } else if (kind === "dhow") {
     // Wooden hull and deck with benches, a canopy, and the marina sliding past.
     get("wood").polygon([P(-HX, -HZ + 1), P(HX, -HZ + 1), P(HX, HZ - 1.5), P(0, HZ), P(-HX, HZ - 1.5)], 0.25, 1, [0.55, 0.36, 0.2]);
@@ -531,6 +602,11 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
       animate(seconds);
     },
     setTableBottles() {},
+    floor(x: number, z: number) {
+      if (kind !== "pool") return 0.02;
+      const inside = x > OX + wx0 + 0.25 && x < OX + wx1 - 0.25 && z > OZ + wz0 + 0.25 && z < OZ + wz1 - 0.25;
+      return inside ? -0.95 : 0.02;
+    },
     setFlight(phase, progress, destination) {
       setFlight(phase, progress, destination);
     },

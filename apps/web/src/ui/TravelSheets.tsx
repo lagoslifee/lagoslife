@@ -8,8 +8,13 @@ import {
   CONSULATE_NAME,
   CONSULATE_NOTICE,
   REACTIONS,
+  LOUNGE_MENU,
+  POOL_MENU,
   ROOFTOP_MENU,
   ROOM_SERVICE,
+  type OutfitId,
+  type TravelMenu,
+  type TravelMenuItem,
   RENTAL_CARS,
   TRAVEL,
   TRAVEL_PLACES,
@@ -36,6 +41,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { api, naira, type EconomyState } from "../api";
 import type { GameEngine } from "../game/engine";
+import { OUTFITS } from "../game/wardrobe";
 
 /** Street places that open a travel sheet instead of the generic shop or listing sheet. */
 export const TRAVEL_SHEET_KINDS = new Set<string>(["airport", "consulate", "hotel", "lounge", "marina", "desert", "photo", "beach", "car_rental", "tourism"]);
@@ -369,11 +375,15 @@ function HotelSheet({ place, engine, status, busy, run, balance, onClose }: { pl
               <button className="primary" disabled={busy} data-testid="hotel-checkin" onClick={() => void run(async () => {
                 const result = await api.checkInHotel(booking.id);
                 setKey(result.keyCode);
-                return `Checked in. Your digital key is ${result.keyCode}.`;
+                engine.deliverKeys(hotel.id, `The receptionist hands you your key card (code ${result.keyCode}). Enjoy your stay.`);
+                return `Checked in · room paid. Your digital key is ${result.keyCode}.`;
               })}>Check in at reception</button>
             )}
             {booking.status === "checked_in" && (
-              <button className="primary" data-testid="hotel-go-up" onClick={() => { engine.enterTravel("hotel", { hotelId: hotel.id, bookingId: booking.id }); onClose(); }}>Go up to the room</button>
+              <>
+                <button className="primary" data-testid="hotel-go-up" onClick={() => { engine.enterTravel("hotel", { hotelId: hotel.id, bookingId: booking.id }); onClose(); }}>Go up to the room</button>
+                <button className="secondary" data-testid="hotel-pool" onClick={() => { engine.enterTravel("pool", { hotelId: hotel.id, bookingId: booking.id }); onClose(); }}>🏊 Pool deck</button>
+              </>
             )}
             {!booking.mine && booking.status === "booked" && <span className="muted small">Waiting for {booking.ownerName} to check in.</span>}
           </div>
@@ -491,6 +501,7 @@ export function TravelSpotSheet({ interior, spot, engine, trip, economy, onClose
                   </div>
                   <button className="primary small-button" disabled={busy || balance < details.fee || visa?.status === "processing" || (visa?.status === "issued" && visa.visitsUsed < visa.visitsTotal)} data-testid={`visa-${plan}`} onClick={() => void run(async () => {
                     const result = await api.applyVisa(plan);
+                    if (!result.replayed) engine.handOver("counter", "passport", "The officer takes your passport and form, and hands you a receipt. Take a seat.");
                     return result.replayed ? "That application is already in." : `Application ${result.visa.reference} received · ${naira(details.fee)} paid. Take a seat; it's ready in about ${TRAVEL.visaProcessingSeconds} seconds.`;
                   })}>{balance < details.fee ? "Not enough" : `Apply · ${naira(details.fee)}`}</button>
                 </li>
@@ -572,7 +583,9 @@ export function TravelSpotSheet({ interior, spot, engine, trip, economy, onClose
                     <span className="muted small">Total to pay now: {naira(details.fare)}. Free cancellation for {TRAVEL.freeCancelMinutes} min, then {Math.round(TRAVEL.cancelFeeRate * 100)}% is kept until you board.</span>
                     <button className="primary" disabled={busy || balance < details.fare} data-testid={`buy-${cabin}`} onClick={() => void run(async () => {
                       const result = await api.buyTicket(cabin);
-                      return result.replayed ? "You already have this ticket." : `${details.name} return booked · ${result.ticket.reference} · ${seatLabel(result.ticket.seat)}. Check in at the next counter.`;
+                      if (result.replayed) return "You already have this ticket.";
+                      engine.handOver("tickets", "pass", `The agent prints your ${details.name} ticket and hands it over: ${result.ticket.reference} · ${seatLabel(result.ticket.seat)}.`);
+                      return `${details.name} return paid · ${naira(details.fare)}. Check in at the next counter.`;
                     })}>{balance < details.fare ? `You need ${naira(details.fare)}` : `Pay ${naira(details.fare)}`}</button>
                   </div>
                 );
@@ -588,7 +601,7 @@ export function TravelSpotSheet({ interior, spot, engine, trip, economy, onClose
         <Sheet eyebrow="CHECK-IN" title={lagos ? "Check in · LL 721 to Dubai" : "Check in · LL 722 to Lagos"} onClose={onClose} testId="checkin-desk">
           <TicketLine ticket={ticket} />
           {!ticket ? <p>You need a ticket first. The ticket desk is just behind you.</p> : leg === "booked" ? (
-            <button className="primary" onClick={() => counter("checkin")} data-testid="do-checkin">Check in and drop my bag</button>
+            <button className="primary" onClick={() => { engine.checkInBag(); counter("checkin"); }} data-testid="do-checkin">Check in and drop my bag</button>
           ) : (
             <p>{leg === "checked_in" ? "You're checked in. Head to the gate at the back of the hall." : `This leg is ${LEG_LABEL[leg ?? "booked"]?.toLowerCase()}.`}</p>
           )}
@@ -611,8 +624,18 @@ export function TravelSpotSheet({ interior, spot, engine, trip, economy, onClose
     if (spot === "lounge") {
       return (
         <Sheet eyebrow="BUSINESS LOUNGE" title="Sky Lounge" onClose={onClose} testId="lounge-desk">
-          <p className="muted">Quiet seating, coffee, pastries and fresh juice for Business passengers.</p>
-          <button className="primary" disabled={ticket?.cabin !== "business"} onClick={() => counter("lounge")}>{ticket?.cabin === "business" ? "Show my boarding pass" : "Business tickets only"}</button>
+          <p className="muted">Sofas, hot food and a bar for Business passengers. Take a seat and order: a host brings it to you.</p>
+          {ticket?.cabin === "business" ? (
+            <>
+              <div className="row">
+                <button className="primary" onClick={() => { engine.handOver("lounge", "pass", "The host checks your boarding pass. Welcome to the Sky Lounge."); counter("lounge"); }}>Show my boarding pass</button>
+                <button className="secondary" data-testid="lounge-sit" onClick={() => { engine.takeSeat(); onClose(); }}>🛋️ Take a seat</button>
+              </div>
+              <MenuInline engine={engine} menu={LOUNGE_MENU} kind="lounge" balance={balance} busy={busy} run={run} onClose={onClose} />
+            </>
+          ) : (
+            <button className="primary" disabled>Business tickets only</button>
+          )}
         </Sheet>
       );
     }
@@ -659,8 +682,22 @@ export function TravelSpotSheet({ interior, spot, engine, trip, economy, onClose
         </Sheet>
       );
     }
-    if (spot === "storage") return <HotelSafe booking={booking} economy={economy} busy={busy} run={run} onClose={onClose} />;
-    if (spot === "service") return <MenuSheet title="Room service" eyebrow={booking.hotelName.toUpperCase()} menu={ROOM_SERVICE} kind="room-service" bookingId={booking.id} balance={balance} busy={busy} run={run} onClose={onClose} />;
+    if (spot === "storage") return <HotelWardrobe engine={engine} booking={booking} economy={economy} busy={busy} run={run} onClose={onClose} />;
+    if (spot === "bed") {
+      return (
+        <Sheet eyebrow={booking.roomName.toUpperCase()} title="Bed" onClose={onClose} testId="hotel-bed">
+          <p className="muted">Sleep restores your energy to full. The room stays yours until checkout.</p>
+          <button className="primary" data-testid="hotel-sleep" disabled={busy} onClick={() => void run(async () => {
+            await api.sleep();
+            engine.sleepVeil();
+            onClose();
+            return "You slept well. Energy is back to 100.";
+          })}>🌙 Sleep</button>
+          <HotelStay booking={booking} busy={busy} run={run} balance={balance} onClose={onClose} />
+        </Sheet>
+      );
+    }
+    if (spot === "service") return <MenuSheet engine={engine} title="Room service" eyebrow={booking.hotelName.toUpperCase()} menu={ROOM_SERVICE} kind="room-service" bookingId={booking.id} balance={balance} busy={busy} run={run} onClose={onClose} />;
     if (spot === "view") {
       return (
         <Sheet eyebrow="WINDOW" title="The view" onClose={onClose} testId="hotel-view">
@@ -672,6 +709,27 @@ export function TravelSpotSheet({ interior, spot, engine, trip, economy, onClose
     return <HotelStay booking={booking} busy={busy} run={run} balance={balance} onClose={onClose} />;
   }
 
+  if (interior === "pool") {
+    if (spot === "bar") return <MenuSheet engine={engine} title="Pool bar" eyebrow="POOL DECK" menu={POOL_MENU} kind="pool" balance={balance} busy={busy} run={run} onClose={onClose} />;
+    if (spot === "swim") {
+      return (
+        <Sheet eyebrow="POOL DECK" title="Swim" onClose={onClose} testId="pool-swim">
+          <p className="muted">Walk down the steps into the water; it is about waist deep. Walk out the same way.</p>
+        </Sheet>
+      );
+    }
+    return (
+      <Sheet eyebrow="POOL DECK" title="Sun loungers" onClose={onClose} testId="pool-loungers">
+        <p className="muted">Lie back on a lounger. Ask the attendant for a towel, and order from the pool bar: it is brought to you.</p>
+        <div className="row">
+          <button className="primary" data-testid="pool-lounge" onClick={() => { engine.takeSeat(); onClose(); }}>🏖️ Lie on a lounger</button>
+          <button className="secondary" onClick={() => { engine.handOver("towels", "towel", "The attendant hands you a fresh pool towel."); onClose(); }}>Ask for a towel</button>
+        </div>
+        <MenuInline engine={engine} menu={POOL_MENU} kind="pool" balance={balance} busy={busy} run={run} onClose={onClose} />
+      </Sheet>
+    );
+  }
+
   if (interior === "rooftop") {
     if (spot === "photo") {
       return (
@@ -681,38 +739,91 @@ export function TravelSpotSheet({ interior, spot, engine, trip, economy, onClose
         </Sheet>
       );
     }
-    return <MenuSheet title={spot === "bar" ? "Rooftop bar" : "Rooftop dining"} eyebrow="SKYLINE ROOFTOP" menu={ROOFTOP_MENU} kind="rooftop" balance={balance} busy={busy} run={run} onClose={onClose} />;
+    if (spot === "dining") {
+      return (
+        <Sheet eyebrow="SKYLINE ROOFTOP" title="Rooftop dining" onClose={onClose} testId="menu-rooftop">
+          <button className="secondary" onClick={() => { engine.takeSeat(); onClose(); }}>🪑 Take a table</button>
+          <MenuInline engine={engine} menu={ROOFTOP_MENU} kind="rooftop" balance={balance} busy={busy} run={run} onClose={onClose} />
+        </Sheet>
+      );
+    }
+    return <MenuSheet engine={engine} title={spot === "bar" ? "Rooftop bar" : "Rooftop dining"} eyebrow="SKYLINE ROOFTOP" menu={ROOFTOP_MENU} kind="rooftop" balance={balance} busy={busy} run={run} onClose={onClose} />;
   }
   return null;
 }
 
-function MenuSheet({ title, eyebrow, menu, kind, bookingId, balance, busy, run, onClose }: {
-  title: string;
-  eyebrow: string;
-  menu: ReadonlyArray<{ id: string; name: string; price: number; hunger: number; energy: number }>;
-  kind: "room-service" | "rooftop";
+type MenuProps = {
+  engine: GameEngine;
+  menu: readonly TravelMenuItem[];
+  kind: TravelMenu;
   bookingId?: string;
   balance: number;
   busy: boolean;
   run: (work: () => Promise<string | null>) => Promise<void>;
   onClose: () => void;
-}) {
+};
+
+/** A venue menu; each paid order is carried to the player by a member of staff. */
+function MenuInline({ engine, menu, kind, bookingId, balance, busy, run, onClose }: MenuProps) {
   return (
-    <Sheet eyebrow={eyebrow} title={title} onClose={onClose} testId={`menu-${kind}`}>
+    <ul className="venue-list">
+      {menu.map((item) => (
+        <li key={item.id}>
+          <div>
+            <strong>{item.name}</strong>
+            <span>{naira(item.price)}{item.hunger ? ` · hunger +${item.hunger}` : ""} · energy +{item.energy}</span>
+          </div>
+          <button className="primary small-button" disabled={busy || balance < item.price} data-testid={`order-${item.id}`} onClick={() => void run(async () => {
+            const result = await api.travelOrder(kind, item.id, bookingId);
+            engine.deliverOrder(result.name, Boolean(item.drink));
+            onClose();
+            return `${result.name} ordered · ${naira(item.price)}. ${kind === "room-service" ? "Room service is on the way up." : "Someone is bringing it over."}`;
+          })}>{balance < item.price ? "Not enough" : `Order · ${naira(item.price)}`}</button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function MenuSheet({ title, eyebrow, ...props }: MenuProps & { title: string; eyebrow: string }) {
+  return (
+    <Sheet eyebrow={eyebrow} title={title} onClose={props.onClose} testId={`menu-${props.kind}`}>
+      <MenuInline {...props} />
+    </Sheet>
+  );
+}
+
+/** The bag checked in at home is waiting in the room: change into any outfit you own (each comes with its shoes). */
+function HotelWardrobe({ engine, booking, economy, busy, run, onClose }: { engine: GameEngine; booking: HotelBookingState; economy: EconomyState | null; busy: boolean; run: (work: () => Promise<string | null>) => Promise<void>; onClose: () => void }) {
+  const [outfits, setOutfits] = useState<OutfitId[] | null>(null);
+  const [safe, setSafe] = useState(false);
+  useEffect(() => {
+    void api.wardrobe().then((body) => setOutfits(body.outfits)).catch(() => setOutfits([]));
+  }, []);
+  if (safe) return <HotelSafe booking={booking} economy={economy} busy={busy} run={run} onClose={onClose} />;
+  const wearing = engine.currentAppearance().outfit;
+  return (
+    <Sheet eyebrow={`${booking.roomName.toUpperCase()} · WARDROBE`} title="Your bag from home" onClose={onClose} testId="hotel-wardrobe">
+      <p className="muted small">The porter brought your checked bag up. Everything you own is packed: pick an outfit to change into.</p>
+      {outfits === null && <p className="muted small">Unpacking…</p>}
       <ul className="venue-list">
-        {menu.map((item) => (
-          <li key={item.id}>
+        {(outfits ?? []).map((outfit) => (
+          <li key={outfit}>
             <div>
-              <strong>{item.name}</strong>
-              <span>{naira(item.price)} · hunger +{item.hunger} · energy +{item.energy}</span>
+              <strong>{OUTFITS[outfit].label}{outfit === wearing ? " · wearing" : ""}</strong>
+              <span>With matching shoes</span>
             </div>
-            <button className="primary small-button" disabled={busy || balance < item.price} data-testid={`order-${item.id}`} onClick={() => void run(async () => {
-              const result = await api.travelOrder(kind, item.id, bookingId);
-              return `${result.name} served · ${naira(item.price)}.`;
-            })}>{balance < item.price ? "Not enough" : `Order · ${naira(item.price)}`}</button>
+            <button className="secondary small-button" disabled={busy || outfit === wearing} data-testid={`wear-${outfit}`} onClick={() => void run(async () => {
+              const result = await api.saveAppearance({ ...engine.currentAppearance(), outfit });
+              engine.setAppearance(result.appearance);
+              window.dispatchEvent(new CustomEvent("lagos-appearance", { detail: result.appearance }));
+              onClose();
+              return `You changed into: ${OUTFITS[outfit].label}.`;
+            })}>Change</button>
           </li>
         ))}
       </ul>
+      <button className="secondary" onClick={() => setSafe(true)}>Open the room safe</button>
     </Sheet>
   );
 }

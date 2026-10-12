@@ -125,18 +125,50 @@ export function hotelRoom(hotelId: string, type: RoomType) {
   return hotelById.get(hotelId)?.rooms.find((room) => room.type === type) ?? null;
 }
 
-export const ROOM_SERVICE = [
-  { id: "karak-tea", name: "Karak tea", price: 1_200, hunger: 2, energy: 6 },
-  { id: "fresh-juice", name: "Fresh mango juice", price: 2_000, hunger: 4, energy: 4 },
+/** Menu entries; `drink` items arrive as glasses or a bottle on a tray rather than a plate. */
+export type TravelMenuItem = { id: string; name: string; price: number; hunger: number; energy: number; drink?: boolean };
+/** Premium bottles served by hotels, the lounge and the rooftop (fictional game prices, in naira). */
+const PREMIUM_BAR: TravelMenuItem[] = [
+  { id: "moet-imperial", name: "Moët & Chandon Impérial (bottle)", price: 95_000, hunger: 0, energy: 4, drink: true },
+  { id: "hennessy-xo", name: "Hennessy XO (bottle)", price: 280_000, hunger: 0, energy: 4, drink: true },
+  { id: "dom-perignon", name: "Dom Pérignon Vintage (bottle)", price: 450_000, hunger: 0, energy: 5, drink: true },
+  { id: "ace-of-spades", name: "Armand de Brignac Ace of Spades (bottle)", price: 850_000, hunger: 0, energy: 5, drink: true },
+];
+export const ROOM_SERVICE: TravelMenuItem[] = [
+  { id: "karak-tea", name: "Karak tea", price: 1_200, hunger: 2, energy: 6, drink: true },
+  { id: "fresh-juice", name: "Fresh mango juice", price: 2_000, hunger: 4, energy: 4, drink: true },
   { id: "chicken-shawarma", name: "Chicken shawarma plate", price: 3_500, hunger: 25, energy: 3 },
   { id: "mezze", name: "Mezze platter", price: 5_500, hunger: 30, energy: 4 },
   { id: "machboos", name: "Lamb machboos", price: 7_500, hunger: 40, energy: 5 },
-] as const;
-export const ROOFTOP_MENU = [
-  { id: "mocktail", name: "Signature mocktail", price: 3_000, hunger: 2, energy: 6 },
+  { id: "wagyu-burger", name: "Wagyu burger and truffle fries", price: 14_000, hunger: 45, energy: 5 },
+  ...PREMIUM_BAR,
+];
+export const ROOFTOP_MENU: TravelMenuItem[] = [
+  { id: "mocktail", name: "Signature mocktail", price: 3_000, hunger: 2, energy: 6, drink: true },
   { id: "sunset-platter", name: "Sunset sharing platter", price: 9_000, hunger: 30, energy: 4 },
   { id: "skyline-dinner", name: "Three-course skyline dinner", price: 18_000, hunger: 60, energy: 8 },
-] as const;
+  { id: "old-fashioned", name: "Smoked old fashioned", price: 12_000, hunger: 0, energy: 3, drink: true },
+  ...PREMIUM_BAR,
+];
+/** Business lounge at both airports: served at your seat. */
+export const LOUNGE_MENU: TravelMenuItem[] = [
+  { id: "flat-white", name: "Flat white", price: 1_500, hunger: 2, energy: 8, drink: true },
+  { id: "pastries", name: "Warm pastry basket", price: 2_500, hunger: 15, energy: 3 },
+  { id: "jollof-chicken", name: "Smoky jollof and grilled chicken", price: 6_000, hunger: 40, energy: 4 },
+  { id: "club-sandwich", name: "Club sandwich", price: 4_500, hunger: 30, energy: 3 },
+  { id: "champagne-glass", name: "Glass of champagne", price: 18_000, hunger: 0, energy: 3, drink: true },
+  ...PREMIUM_BAR,
+];
+/** Poolside bar at the hotels: brought to your lounger. */
+export const POOL_MENU: TravelMenuItem[] = [
+  { id: "coconut", name: "Fresh coconut", price: 2_500, hunger: 3, energy: 5, drink: true },
+  { id: "pool-mocktail", name: "Passion fruit mojito (alcohol-free)", price: 3_500, hunger: 2, energy: 6, drink: true },
+  { id: "pool-club", name: "Poolside club sandwich", price: 5_000, hunger: 30, energy: 3 },
+  { id: "rose-glass", name: "Glass of rosé", price: 9_000, hunger: 0, energy: 3, drink: true },
+  ...PREMIUM_BAR,
+];
+export const TRAVEL_MENUS = { "room-service": ROOM_SERVICE, rooftop: ROOFTOP_MENU, lounge: LOUNGE_MENU, pool: POOL_MENU } as const;
+export type TravelMenu = keyof typeof TRAVEL_MENUS;
 
 export const activityIds = ["dhow-cruise", "desert-safari"] as const;
 export type ActivityId = (typeof activityIds)[number];
@@ -184,7 +216,7 @@ export const TRAVEL_SHOP = [
 
 /* ---------- Interiors ---------- */
 
-export type TravelInterior = "consulate" | "airport-los" | "airport-dxb" | "cabin" | "hotel" | "rooftop" | "dhow" | "safari";
+export type TravelInterior = "consulate" | "airport-los" | "airport-dxb" | "cabin" | "hotel" | "rooftop" | "dhow" | "safari" | "pool";
 type Layout = { half: Vec2; spawn: Vec2; spots: Record<string, Vec2> };
 /** Offsets from INTERIOR_ORIGIN; +z is north (away from the entrance). */
 export const TRAVEL_LAYOUTS: Record<TravelInterior, Layout> = {
@@ -204,7 +236,11 @@ export const TRAVEL_LAYOUTS: Record<TravelInterior, Layout> = {
   rooftop: { half: [9, 7], spawn: [0, -5.8], spots: { exit: [0, -6.6], bar: [-6.6, 0], photo: [0, 6.2], dining: [5, 2] } },
   dhow: { half: [2.4, 7.5], spawn: [0, 0], spots: {} },
   safari: { half: [1.6, 3], spawn: [0, 0], spots: {} },
+  /** Hotel pool deck, shared by everyone checked in at the same hotel. Water fills POOL_WATER. */
+  pool: { half: [9, 7], spawn: [0, -5.8], spots: { exit: [0, -6.6], loungers: [0, -3.3], swim: [0, 2.2], bar: [-6.9, 3.6], towels: [6.6, -5.2] } },
 };
+/** The pool's water, as offsets [minX, minZ, maxX, maxZ]; inside it players wade waist-deep. */
+export const POOL_WATER = [-6, -1.8, 6, 5.6] as const;
 
 /** Bench seats on the dhow deck and in the open safari 4×4, as offsets; avatars face +z, or sideways on the dhow. */
 export const EXCURSION_SEATS: Record<"dhow" | "safari", Array<{ at: Vec2; yaw: number }>> = {
@@ -244,6 +280,7 @@ export function travelInteriorOf(location: string): TravelInterior | null {
   if (location.startsWith("flight:")) return "cabin";
   if (location.startsWith("hotel:")) return "hotel";
   if (location === "rooftop") return "rooftop";
+  if (location.startsWith("pool:")) return "pool";
   if (location.startsWith("excursion:dhow-cruise")) return "dhow";
   if (location.startsWith("excursion:desert-safari")) return "safari";
   return null;
@@ -386,14 +423,14 @@ export const hotelBookingSchema = z.object({ bookingId: z.string().min(1).max(80
 export const hotelExtendSchema = z.object({ bookingId: z.string().min(1).max(80), nights: z.number().int().min(1).max(TRAVEL.maxNights), idempotencyKey: key });
 export const hotelGuestSchema = z.object({ bookingId: z.string().min(1).max(80), userName: z.string().trim().min(1).max(60), invited: z.boolean() });
 export const hotelStoreSchema = z.object({ bookingId: z.string().min(1).max(80), itemId: z.string().min(1).max(80), direction: z.enum(["in", "out"]) });
-export const travelOrderSchema = z.object({ menu: z.enum(["room-service", "rooftop"]), itemId: z.string().min(1).max(40), bookingId: z.string().max(80).optional(), idempotencyKey: key });
+export const travelOrderSchema = z.object({ menu: z.enum(["room-service", "rooftop", "lounge", "pool"]), itemId: z.string().min(1).max(40), bookingId: z.string().max(80).optional(), idempotencyKey: key });
 export const activityBookSchema = z.object({ activity: z.enum(activityIds), idempotencyKey: key });
 export const carRentSchema = z.object({ modelId: z.string().min(1).max(60), hours: z.number().int().refine(isRentalPeriod, "Hire by the hour (1–3) or by whole days."), idempotencyKey: key });
 export const photoSchema = z.object({ spot: z.string().min(1).max(60) });
 
 /** Room messages. */
 export const travelEnterSchema = z.object({
-  target: z.enum(["consulate", "airport", "rooftop", "hotel"]),
+  target: z.enum(["consulate", "airport", "rooftop", "hotel", "pool"]),
   hotelId: z.string().max(80).optional(),
   bookingId: z.string().max(80).optional(),
   previewRoom: z.enum(roomTypes).optional(),

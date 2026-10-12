@@ -14,6 +14,7 @@ import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
@@ -41,6 +42,7 @@ import {
   MOVEMENT,
   PLACES,
   propertyTitle,
+  bottleById,
   CLUBS,
   CLUB_LAYOUT,
   CLUB_TABLES,
@@ -107,6 +109,7 @@ import { MultiplayerConnection, type MultiplayerStatus, type PoliceEvent } from 
 import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, MAX_AUTO_SCALING, qualityStep } from "./adaptive-quality";
 import { CityAudio } from "./audio";
 import { appearanceFor, Avatar, AvatarFactory, dubaiDriverLook, taxiDriverLook } from "./avatar";
+import { CLUB_BARTENDER, deskStaffFor, seatsFor, serviceOrigin, ServiceStaff, staffLook, type StaffProp } from "./service-staff";
 import { addTaxiLivery } from "./taxi-livery";
 import { CarController } from "./car-controller";
 import { VehicleFactory, type VehicleView } from "./vehicles";
@@ -267,6 +270,7 @@ const TRAVEL_DISTRICT: Record<TravelInterior, string> = {
   rooftop: "Dubai Marina · Dubai",
   dhow: "Dubai Marina · Dubai",
   safari: "Dubai desert",
+  pool: "Dubai Marina · Dubai",
 };
 
 /** Full avatars drawn at once for other residents, per graphics preset. */
@@ -298,6 +302,7 @@ export class GameEngine {
   data!: WorldData;
   private world!: BuiltWorld;
   private avatars: AvatarFactory | null = null;
+  private staff!: ServiceStaff;
   private danfos: DanfoFactory | null = null;
   private player: Avatar | null = null;
   private playerFallback: Mesh | null = null;
@@ -361,7 +366,7 @@ export class GameEngine {
   private emote: MotionState | null = null;
   private club: Club | null = null;
   private tableBottles = new Map<number, string[]>();
-  private waiters: Array<{ avatar: Avatar; path: Vec2[]; t: number; table: number; bottles: Array<{ id: string; itemId: string }> }> = [];
+  private waiters: Array<{ avatar: Avatar; path: Vec2[]; t: number; table: number; bottles: Array<{ id: string; itemId: string }>; prop: TransformNode; sparkler: boolean }> = [];
   private settings: PlayerSettings;
   private bindings: Bindings;
   private disposed = false;
@@ -374,6 +379,7 @@ export class GameEngine {
   private frameTimes: number[] = [];
   private readonly adaptive = new AdaptiveQuality();
   private baseScaling = 1;
+  private sitting: { seat: Vec2; yaw: number } | null = null;
   private autopilot: { path: Vec2[]; index: number; sprint: boolean; resolve: (ok: boolean) => void; lastProgress: number; lastPoint: Vec2; deadline: number } | null = null;
   private forcedInput: [number, number] | null = null;
   private readyFired = false;
@@ -590,6 +596,7 @@ export class GameEngine {
 
     this.materials = createMaterials(scene, this.quality);
     this.atlas = new SignAtlas(scene, this.quality === "low" ? 0.5 : 1);
+    this.staff = new ServiceStaff(scene, () => this.avatars, (text) => this.callbacks.notice({ tone: "success", text }), (x, z) => (this.interior ? 0.02 : this.world.groundHeight(x, z)));
     MeshBuilderBatch.keepCpuCopies = this.quality !== "low";
     this.callbacks.loading("Loading Lagos streets…", 0.25);
     const response = await fetch("/assets/world/lagos.world.json");
@@ -1101,7 +1108,7 @@ export class GameEngine {
     // Vehicles move first, so seated avatars and the camera use this frame's pose rather than trailing a frame behind.
     this.updateVehicles(now, dt);
     const { x, z } = this.controller;
-    const targetGround = this.interior ? 0.02 : this.world.groundHeight(x, z);
+    const targetGround = this.interior ? (this.travelView?.floor(x, z) ?? 0.02) : this.world.groundHeight(x, z);
     this.groundY += (targetGround - this.groundY) * Math.min(1, dt * 12);
     const inCar = Boolean(this.car && this.driving);
     const speed = inCar ? Math.abs(this.car!.speed) : this.controller.speed();
@@ -1118,8 +1125,11 @@ export class GameEngine {
       this.player.update(0, ride.seat === 0 && !bike ? "drive" : "sit", dt);
       if (bike && ride.seat === 0) this.player.pedal(seatView.crank);
     } else if (this.player) {
-      this.player.root.position.set(x, seatedTravel ? TRAVEL_SEAT_Y : this.groundY + this.controller.hop, z);
-      this.player.root.rotation.y = seatedTravel ? this.seatYaw : this.controller.yaw;
+      if (this.sitting && (speed > 0.1 || this.emote !== "sit" || !this.interior)) this.sitting = null;
+      const chair = this.sitting;
+      if (chair) this.player.root.position.set(chair.seat[0] + Math.sin(chair.yaw) * 0.08, TRAVEL_SEAT_Y, chair.seat[1] + Math.cos(chair.yaw) * 0.08);
+      else this.player.root.position.set(x, seatedTravel ? TRAVEL_SEAT_Y : this.groundY + this.controller.hop, z);
+      this.player.root.rotation.y = chair ? chair.yaw : seatedTravel ? this.seatYaw : this.controller.yaw;
       this.player.root.setEnabled(!bus && !inCar);
       if (!inCar) this.player.update(speed, motion, dt);
     } else if (this.playerFallback) {
@@ -1146,6 +1156,7 @@ export class GameEngine {
     this.updateRemotes(now, dt);
     this.interior?.update(now * 0.001);
     this.updateWaiters(dt);
+    if (!this.staff.idle) this.staff.update(dt, [this.controller.x, this.controller.z], now * 0.001);
     const leaderView = seatView && ride ? seatView : null;
     this.updateEscorts(dt, {
       x: leaderView ? leaderView.x : x,
@@ -1605,6 +1616,7 @@ export class GameEngine {
     if (kind === "dhow") return "Marina dhow cruise";
     if (kind === "safari") return "Desert safari";
     const hotel = this.trip.room ? placeById.get(this.trip.room.hotelId)?.name ?? "Hotel" : "Hotel";
+    if (kind === "pool") return `${hotel} · pool deck`;
     return this.self?.previewOnly ? `${hotel} · room preview` : `${hotel} · your room`;
   }
 
@@ -1734,6 +1746,10 @@ export class GameEngine {
     }
   }
 
+  currentAppearance() {
+    return this.appearance;
+  }
+
   setAppearance(appearance: CharacterAppearance) {
     this.appearance = appearance;
     this.player?.setAppearance(appearance);
@@ -1773,7 +1789,7 @@ export class GameEngine {
         remote.avatar.update(0, driver && !bike ? "drive" : "sit", dt);
         if (bike && driver) remote.avatar.pedal(seatView.crank);
       } else if (remote.avatar) {
-        remote.avatar.root.position.set(x, this.interior ? (this.travelView?.seated && b.motion === "sit" ? TRAVEL_SEAT_Y : 0.02) : this.world.groundHeight(x, z), z);
+        remote.avatar.root.position.set(x, this.interior ? (this.travelView && b.motion === "sit" ? TRAVEL_SEAT_Y : (this.travelView?.floor(x, z) ?? 0.02)) : this.world.groundHeight(x, z), z);
         remote.avatar.root.rotation.y = a.yaw + dyaw * t;
         remote.avatar.root.setEnabled(!b.busId && !b.vehicleId);
         remote.avatar.update(remote.speed, b.motion, dt);
@@ -1922,6 +1938,7 @@ export class GameEngine {
       this.interior = null;
       this.travelView = null;
       this.clearCrew();
+      this.staff?.clear();
       this.audio.setCabinHum(0);
       this.club = null;
       this.audio.setClub(null);
@@ -1967,7 +1984,12 @@ export class GameEngine {
 
   private onTrip(trip: TripState) {
     const rebuild = Boolean(this.travelView && this.self && trip.room?.hotelId !== this.trip.room?.hotelId);
+    const before = this.trip;
     this.trip = trip;
+    if (this.travelView && before.ticketId === trip.ticketId) {
+      if (!before.immigrationDone && trip.immigrationDone) this.handOver("immigration", "passport", "The officer stamps your passport and hands it back. Welcome to Dubai.");
+      if (!before.bagCollected && trip.bagCollected) this.handOver("baggage", "bag", "The porter lifts your bag off the belt for you. Unpack and change clothes at your hotel wardrobe.");
+    }
     this.callbacks.trip(trip);
     if (rebuild && this.self) void this.loadInterior(this.self);
   }
@@ -2148,7 +2170,7 @@ export class GameEngine {
     return this.travelView?.kind === "cabin" ? this.preloadPending : 0;
   }
 
-  enterTravel(target: "consulate" | "airport" | "rooftop" | "hotel", options: { hotelId?: string; bookingId?: string; previewRoom?: "standard" | "suite" | "luxury" } = {}) {
+  enterTravel(target: "consulate" | "airport" | "rooftop" | "hotel" | "pool", options: { hotelId?: string; bookingId?: string; previewRoom?: "standard" | "suite" | "luxury" } = {}) {
     if (!this.beginTransition()) return;
     this.net.send("travelEnter", { target, ...options });
   }
@@ -2182,6 +2204,69 @@ export class GameEngine {
     return this.trip;
   }
 
+  /** The person at a counter hands the player what they just paid for (boarding pass, passport, keys...). */
+  handOver(deskId: string, prop: StaffProp, caption: string) {
+    this.staff.handOver(deskId, prop, caption, [this.controller.x, this.controller.z]);
+  }
+
+  /** A waiter carries a paid order from the kitchen or bar to wherever the player is standing or sitting. */
+  /** Check-in: the bag packed at home goes onto the belt, and the agent hands back a boarding pass. */
+  checkInBag() {
+    this.staff.handOver("checkin", "bag", "Your bag from home is tagged and on the belt: your clothes and shoes travel with you.", [this.controller.x, this.controller.z], () => {
+      this.handOver("checkin", "pass", "The agent hands you your boarding pass. Next: the gate at the back of the hall.");
+    }, true);
+  }
+
+  /** Walks to the nearest seat in this venue (lounge sofa, rooftop chair, pool lounger) and sits down. */
+  takeSeat() {
+    const kind = this.travelView?.kind;
+    const seats = kind ? seatsFor(kind) : [];
+    if (!seats.length) return false;
+    const here: Vec2 = [this.controller.x, this.controller.z];
+    const seat = seats.reduce((best, entry) => (Math.hypot(entry.at[0] - here[0], entry.at[1] - here[1]) < Math.hypot(best.at[0] - here[0], best.at[1] - here[1]) ? entry : best));
+    const front: Vec2 = [seat.at[0] + Math.sin(seat.yaw) * seat.approach, seat.at[1] + Math.cos(seat.yaw) * seat.approach];
+    this.autopilot?.resolve(false);
+    this.autopilot = {
+      path: [front],
+      index: 0,
+      sprint: false,
+      resolve: (ok) => {
+        if (!ok) return;
+        this.controller.yaw = seat.yaw;
+        this.emote = "sit";
+        this.net.send("emote", { emote: "sit" });
+        this.sitting = { seat: seat.at, yaw: seat.yaw };
+      },
+      lastProgress: performance.now(),
+      lastPoint: here,
+      deadline: performance.now() + 15_000,
+    };
+    return true;
+  }
+
+  /** Hotel bed: the screen dims for a moment while the player sleeps. */
+  sleepVeil() {
+    this.showVeil("🌙", "Sleeping…", "Energy restored · the room stays yours", 2_200);
+    if (this.transfer) this.transfer.arrivedAt = performance.now();
+  }
+
+  /** Car hire: the agent walks out of the office with the keys. */
+  deliverKeys(placeId: string, caption: string) {
+    const place = placeById.get(placeId);
+    if (!place) return this.callbacks.notice({ tone: "success", text: caption });
+    this.staff.deliver(place.door, staffLook(91, regionOf(place.door[0], place.door[1]) === "dubai", "agent"), "keys", caption);
+  }
+
+  deliverOrder(itemName: string, drink: boolean) {
+    const kind = this.travelView?.kind;
+    const from = kind ? serviceOrigin(kind) : this.club ? CLUB_BARTENDER : null;
+    const dubai = regionOf(this.controller.x, this.controller.z) === "dubai" || kind === "hotel" || kind === "rooftop" || kind === "airport-dxb";
+    const caption = kind === "hotel" ? `Room service: your ${itemName} is here. Enjoy.` : `Your ${itemName} is served. Enjoy.`;
+    if (!from) return this.callbacks.notice({ tone: "success", text: caption });
+    if (this.club) return this.handOver("bar", "drink", `The bartender hands you your ${itemName}.`);
+    this.staff.deliver(from, staffLook(80 + itemName.length, dubai, kind === "hotel" ? "waiter" : "hostess"), drink ? "drink" : "tray", caption);
+  }
+
   private async loadInterior(self: SelfState) {
     const token = ++this.interiorToken;
     const travel = travelInteriorOf(self.location);
@@ -2195,6 +2280,7 @@ export class GameEngine {
       this.audio.setClub(null);
       this.flightPhaseShown = null;
       if (travel === "cabin") this.spawnCrew();
+      this.staff.setDesks(deskStaffFor(travel));
       this.audio.setCabinHum(travel === "cabin" && this.cabinAudio.hum ? 1 : 0);
       return;
     }
@@ -2212,6 +2298,7 @@ export class GameEngine {
     if (token !== this.interiorToken || this.self?.location !== self.location) return;
     this.interior?.dispose();
     this.interior = buildInterior(this.scene, this.materials, this.atlas, kind, title, placements, club);
+    this.staff.setDesks(club ? [{ id: "bar", at: CLUB_BARTENDER, yaw: Math.PI / 2, look: staffLook(70 + club.bpm, regionOf(self.x, self.z) === "dubai" || club.id === TRAVEL_PLACES.club, "hostess") }] : []);
     this.club = club ?? null;
     this.audio.setClub(this.club);
   }
@@ -2232,12 +2319,18 @@ export class GameEngine {
         if (!this.waiters.some((waiter) => waiter.table === table.no)) this.interior.setTableBottles(table.no, table.bottles);
         continue;
       }
-      const avatar = this.avatars.create(`waiter ${table.no} ${fresh[0]}`, { ...appearanceFor(900 + table.no), outfit: "office-smart" } satisfies CharacterAppearance);
+      // Bottle girls carry the order high on a tray, sparklers lit, from the bar to the booth.
+      const dubai = this.club.id === TRAVEL_PLACES.club;
+      const avatar = this.avatars.create(`hostess ${table.no} ${fresh[0]}`, { ...staffLook(900 + table.no + fresh.length, dubai, "hostess"), outfit: dubai ? "office-skirt" : "ankara-dress" } satisfies CharacterAppearance);
       const [barX, barZ] = CLUB_LAYOUT.bar;
       const [tx, tz] = spec.table;
       const path: Vec2[] = [[barX + 0.4, barZ], [barX + 0.6, tz], [tx - 0.55, tz]];
       avatar.root.position.set(path[0]![0], 0.02, path[0]![1]);
-      this.waiters.push({ avatar, path, t: 0, table: table.no, bottles: table.bottles });
+      const prop = this.staff.buildProp("bottle");
+      prop.parent = avatar.root;
+      prop.position.set(0.05, 1.55, 0.3);
+      const sparkler = fresh.some((id) => bottleById.get(table.bottles.find((bottle) => bottle.id === id)?.itemId ?? "")?.sparkler);
+      this.waiters.push({ avatar, path, t: 0, table: table.no, bottles: table.bottles, prop, sparkler });
     }
   }
 
@@ -2262,9 +2355,15 @@ export class GameEngine {
         }
         remaining -= length;
       }
+      const spark = waiter.prop.getChildMeshes(false).find((child) => child.name.endsWith("spark"));
+      spark?.setEnabled(waiter.sparkler);
+      if (spark) spark.scaling.setAll(0.6 + Math.random() * 0.9);
       if (!done) continue;
       this.interior?.setTableBottles(waiter.table, waiter.bottles);
       if (waiter.t > 99) continue;
+      waiter.prop.dispose();
+      if (waiter.sparkler && this.interior && "celebrate" in this.interior) this.interior.celebrate(waiter.table);
+      this.callbacks.notice({ tone: "success", text: `Bottle service: your order arrives at VIP ${waiter.table}${waiter.sparkler ? " with sparklers, and the DJ lights the club up for you" : ""}.` });
       // Stand at the table for a moment after serving, then leave.
       waiter.t = 100;
       waiter.avatar.update(0, "idle", dt);

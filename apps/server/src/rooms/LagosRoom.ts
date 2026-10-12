@@ -2773,6 +2773,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (!access.checkedIn) return fail(access.owner ? "Check in at reception first to get your digital key." : "Your host hasn't checked in yet.");
     if (player.location !== "street" || player.vehicleId) return;
     player.trip = { ...emptyTrip(), room: { hotelId, roomType: access.roomType, bookingId } };
+    if (target === "pool") return this.moveInside(client, player, `pool:${hotelId}`, travelSpawn("pool"), place.door, hotelId);
     this.moveInside(client, player, `hotel:${bookingId}`, travelSpawn("hotel"), place.door, hotelId);
   }
 

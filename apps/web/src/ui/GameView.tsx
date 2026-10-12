@@ -912,7 +912,7 @@ export function GameView({
         />
       )}
       {clubBar && hud?.propertyId === clubBar.id && (
-        <ClubBarSheet place={clubBar} economy={economy} onClose={() => setClubBar(null)} onRefresh={refresh} onToast={toast} />
+        <ClubBarSheet place={clubBar} economy={economy} onClose={() => setClubBar(null)} onRefresh={refresh} onToast={toast} onServed={(name) => engine?.deliverOrder(name, true)} />
       )}
       {sheet && engine && TRAVEL_SHEET_KINDS.has(sheet.kind) && (
         <TravelPlaceSheet

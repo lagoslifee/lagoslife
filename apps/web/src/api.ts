@@ -1,4 +1,4 @@
-import type { CabinClass, HotelBookingState, RoomType, TicketState, TravelStatus, VisaPlan, VisaState } from "@lagos-living/shared";
+import type { CabinClass, CharacterAppearance, OutfitId, HotelBookingState, RoomType, TicketState, TravelStatus, VisaPlan, VisaState } from "@lagos-living/shared";
 import type { BottleItem, Citation, PoliceCase, StreetIncident, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
@@ -125,6 +125,8 @@ export const api = {
   purchase: (itemId: string) => post<{ balance: number; replayed: boolean }>("/api/shop/purchase", { itemId, idempotencyKey: crypto.randomUUID() }),
   eat: (itemId: string) => post<{ name: string; needs: { hunger: number; energy: number } }>("/api/food/eat", { itemId }),
   sleep: () => post<{ hunger: number; energy: number }>("/api/needs/sleep"),
+  wardrobe: () => request<{ outfits: OutfitId[] }>("/api/wardrobe"),
+  saveAppearance: (appearance: CharacterAppearance) => request<{ appearance: CharacterAppearance }>("/api/character", { method: "PUT", body: JSON.stringify({ appearance }) }),
   startDelivery: () => post<ActiveJob & { resumed: boolean }>("/api/jobs/delivery/start"),
   completeDelivery: (jobId: string) => post<{ balance: number; reward: number; replayed: boolean }>("/api/jobs/delivery/complete", { jobId }),
   cancelDelivery: () => post<{ cancelled: boolean }>("/api/jobs/delivery/cancel"),
@@ -170,7 +172,7 @@ export const api = {
   extendHotelStay: (bookingId: string, nights: number) => post<{ balance: number }>("/api/travel/hotel/extend", { bookingId, nights, idempotencyKey: crypto.randomUUID() }),
   hotelGuest: (bookingId: string, userName: string, invited: boolean) => post<{ name: string }>("/api/travel/hotel/guest", { bookingId, userName, invited }),
   hotelStorage: (bookingId: string, itemId: string, direction: "in" | "out") => post("/api/travel/hotel/storage", { bookingId, itemId, direction }),
-  travelOrder: (menu: "room-service" | "rooftop", itemId: string, bookingId?: string) =>
+  travelOrder: (menu: "room-service" | "rooftop" | "lounge" | "pool", itemId: string, bookingId?: string) =>
     post<{ balance: number; name: string }>("/api/travel/order", { menu, itemId, bookingId, idempotencyKey: crypto.randomUUID() }),
   clubStatus: (placeId: string) => request<ClubStatus>(`/api/clubs/${placeId}`),
   buyWristband: (placeId: string) => post<{ charged: number; balance: number; status: ClubStatus }>(`/api/clubs/${placeId}/wristband`),

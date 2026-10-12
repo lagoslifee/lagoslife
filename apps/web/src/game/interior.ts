@@ -170,6 +170,10 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     setTableBottles(no: number, bottles: Array<{ id: string; itemId: string }>) {
       clubView?.setBottles(no, bottles);
     },
+    /** Club only: strobes and boosts the lights over a VIP table when its bottles arrive. */
+    celebrate(no: number) {
+      clubView?.celebrate(no);
+    },
     dispose() {
       for (const mesh of meshes) mesh.dispose();
       for (const item of disposables) item.dispose();
@@ -403,10 +407,15 @@ function buildClub(
   disposables.push({ dispose: () => tableBottles.forEach((entry) => entry.root.dispose()) });
 
   let lastLed = -1;
+  let party = { until: -1, table: 0 };
+  const celebrate = (no: number) => {
+    party = { until: clock + 8, table: no };
+  };
   const animate = (seconds: number) => {
     clock = seconds;
     const beat = (seconds * bpm) / 60;
-    const pulse = Math.pow(1 - (beat % 1), 2.5);
+    const partying = seconds < party.until;
+    const pulse = partying ? Math.pow(1 - ((beat * 2) % 1), 2) : Math.pow(1 - (beat % 1), 2.5);
     const step = Math.floor(beat);
     panels.forEach((material, index) => {
       const colour = palette[(index + step) % palette.length]!;
@@ -419,8 +428,13 @@ function buildClub(
     beams.forEach((beam, index) => {
       const angle = seconds * 0.9 + (index * Math.PI * 2) / beams.length;
       beam.position.set(floorX + Math.cos(angle) * halfX * 0.8, HEIGHT - 0.4, floorZ + Math.sin(angle) * halfZ * 0.8);
-      beam.intensity = 3 + 7 * pulse;
+      beam.intensity = partying ? 6 + 14 * pulse : 3 + 7 * pulse;
     });
+    vipLight.intensity = partying ? 8 + 10 * pulse : 4;
+    if (partying) {
+      const strobe = Math.floor(seconds * 12) % 3 === 0;
+      stripMaterial.emissiveColor.set(strobe ? 1 : 0.9, strobe ? 1 : 0.75, strobe ? 1 : 0.2);
+    }
     ball.rotation.y = seconds * 0.6;
     for (const entry of tableBottles.values()) {
       for (const flare of entry.sparks) {
@@ -444,9 +458,9 @@ function buildClub(
       ledContext.fillStyle = "rgba(255,255,255,0.9)";
       ledContext.font = "bold 18px Inter, Arial, sans-serif";
       ledContext.textAlign = "center";
-      ledContext.fillText(club ? club.dj.toUpperCase() : "LIVE", ledSize.w / 2, 24);
+      ledContext.fillText(partying ? `BOTTLE SERVICE · VIP ${party.table}` : club ? club.dj.toUpperCase() : "LIVE", ledSize.w / 2, 24);
       led.update(false);
     }
   };
-  return { animate, setBottles };
+  return { animate, setBottles, celebrate };
 }

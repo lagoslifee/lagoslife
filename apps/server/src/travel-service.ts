@@ -10,8 +10,8 @@ import {
   hotelRoom,
   INTERIOR_ORIGIN,
   RENTAL_CARS,
-  ROOFTOP_MENU,
-  ROOM_SERVICE,
+  TRAVEL_MENUS,
+  type TravelMenu,
   TRAVEL,
   TRAVEL_LAYOUTS,
   TRAVEL_PLACES,
@@ -34,7 +34,7 @@ import { EventEmitter } from "node:events";
 import type { PoolClient } from "pg";
 import { pool } from "./database.js";
 import { creditWallet, debitWallet, EconomyError, ensureProfile, ensureWallet, withTransaction } from "./economy-service.js";
-import { isNear } from "./player-presence.js";
+import { getPlayerPosition, isNear } from "./player-presence.js";
 import { findResident, hiddenPlayers } from "./safety-service.js";
 
 type Db = PoolClient | typeof pool;
@@ -597,12 +597,22 @@ export async function moveStorage(userId: string, bookingId: string, itemId: str
 
 /* ---------- Food, activities and rentals ---------- */
 
-export async function orderTravelFood(userId: string, menu: "room-service" | "rooftop", itemId: string, bookingId: string | undefined, idempotencyKey: string) {
-  const list = menu === "room-service" ? ROOM_SERVICE : ROOFTOP_MENU;
-  const item = list.find((entry) => entry.id === itemId);
+export async function orderTravelFood(userId: string, menu: TravelMenu, itemId: string, bookingId: string | undefined, idempotencyKey: string) {
+  const item = TRAVEL_MENUS[menu].find((entry) => entry.id === itemId);
   if (!item) throw new EconomyError("That isn't on the menu.", 404);
   if (menu === "room-service") {
     if (!bookingId || !isNear(userId, [INTERIOR_ORIGIN[0], INTERIOR_ORIGIN[1]], 12, `hotel:${bookingId}`)) throw new EconomyError("Order room service from inside your hotel room.", 409);
+  } else if (menu === "lounge") {
+    const inLounge = (["airport-los", "airport-dxb"] as const).some((kind) => {
+      const [lx, lz] = TRAVEL_LAYOUTS[kind].spots.lounge!;
+      return isNear(userId, [INTERIOR_ORIGIN[0] + lx, INTERIOR_ORIGIN[1] + lz], 4.5, kind === "airport-los" ? "airport:los" : "airport:dxb");
+    });
+    if (!inLounge) throw new EconomyError("Order from a seat in the Business lounge.", 409);
+    const business = await pool.query(`SELECT 1 FROM travel_ticket WHERE user_id = $1 AND cabin = 'business' AND cancelled_at IS NULL LIMIT 1`, [userId]);
+    if (!business.rowCount) throw new EconomyError("The lounge serves Business ticket holders.", 403);
+  } else if (menu === "pool") {
+    const position = getPlayerPosition(userId);
+    if (!position?.location.startsWith("pool:") || !isNear(userId, [INTERIOR_ORIGIN[0], INTERIOR_ORIGIN[1]], 14, position.location)) throw new EconomyError("Order from the hotel pool deck.", 409);
   } else if (!isNear(userId, [INTERIOR_ORIGIN[0], INTERIOR_ORIGIN[1]], 14, "rooftop")) {
     throw new EconomyError("Order at the Skyline rooftop lounge.", 409);
   }
@@ -610,7 +620,7 @@ export async function orderTravelFood(userId: string, menu: "room-service" | "ro
     await lockWallet(client, userId);
     const replay = await client.query(`SELECT 1 FROM game_transaction WHERE user_id = $1 AND idempotency_key = $2`, [userId, `travel-order:${idempotencyKey}`]);
     if (replay.rowCount) return { balance: await balanceOf(client, userId), replayed: true, name: item.name, needs: null };
-    const balance = await debitWallet(client, userId, item.price, "travel_order", `${menu === "room-service" ? "Room service" : "Skyline rooftop"} · ${item.name}`, `travel-order:${idempotencyKey}`, { itemId });
+    const balance = await debitWallet(client, userId, item.price, "travel_order", `${menu === "room-service" ? "Room service" : menu === "lounge" ? "Business lounge" : menu === "pool" ? "Pool bar" : "Skyline rooftop"} · ${item.name}`, `travel-order:${idempotencyKey}`, { itemId });
     await ensureProfile(client, userId);
     const needs = await client.query(
       `UPDATE player_profile SET hunger = LEAST(100, hunger + $2), energy = LEAST(100, energy + $3), updated_at = NOW() WHERE user_id = $1 RETURNING hunger, energy`,

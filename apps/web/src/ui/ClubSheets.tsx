@@ -96,7 +96,7 @@ export function ClubDoorSheet({ place, economy, onClose, onRefresh, onToast, onE
 }
 
 /** At the bar inside a club. */
-export function ClubBarSheet({ place, economy, onClose, onRefresh, onToast }: Common & { place: Place }) {
+export function ClubBarSheet({ place, economy, onClose, onRefresh, onToast, onServed }: Common & { place: Place; onServed?: (name: string) => void }) {
   const [busy, run] = useRun({ onRefresh, onToast });
   const balance = economy?.balance ?? 0;
   return (
@@ -127,6 +127,7 @@ export function ClubBarSheet({ place, economy, onClose, onRefresh, onToast }: Co
                   disabled={busy || balance < item.price}
                   onClick={() => void run(async () => {
                     const result = await api.clubOrder(place.id, item.id);
+                    onServed?.(item.name);
                     return `${item.name}, ${naira(item.price)}. Hunger ${result.needs.hunger}/100 · energy ${result.needs.energy}/100.`;
                   })}
                 >

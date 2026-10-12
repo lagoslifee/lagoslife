@@ -275,6 +275,11 @@ function GameShell({
 }) {
   const playerName = user.displayUsername ?? user.username ?? user.name;
   const [appearance, setAppearance] = useState(defaultAppearance);
+  useEffect(() => {
+    const changed = (event: Event) => setAppearance((event as CustomEvent<CharacterAppearance>).detail);
+    window.addEventListener("lagos-appearance", changed);
+    return () => window.removeEventListener("lagos-appearance", changed);
+  }, []);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [standing, setStanding] = useState<{ checked: boolean; suspension: Suspension | null }>({ checked: false, suspension: null });
 
