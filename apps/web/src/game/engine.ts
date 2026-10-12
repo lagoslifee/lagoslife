@@ -76,6 +76,7 @@ import {
   RIDE,
   rideFare,
   expressFare,
+  ESTATE_AGENT,
   TOW,
   walkable,
   BIKE_RENTAL,
@@ -2175,7 +2176,7 @@ export class GameEngine {
     }
     this.listingLabels = new Map();
     for (const [placeId, entry] of byPlace) {
-      if (entry.mine) this.listingLabels.set(placeId, "mine");
+      if (entry.mine) this.listingLabels.set(placeId, entry.open ? "mine" : "removed");
       else if (!entry.open) this.listingLabels.set(placeId, placeById.get(placeId)?.kind === "rental" ? "let" : "sold");
     }
     this.boardsAt = 0;
@@ -3426,6 +3427,13 @@ export class GameEngine {
   enterProperty(propertyId: string, mode: "enter" | "preview") {
     if (!this.beginTransition()) return;
     this.net.send("enterProperty", { propertyId, mode });
+  }
+
+  /** The estate agent drives you to a listing and shows you inside. */
+  estateViewing(propertyId: string, label: string) {
+    if (!this.beginTransition()) return;
+    this.showVeil("🔑", `Driving you to ${label}…`, ESTATE_AGENT.name, ESTATE_AGENT.viewingSeconds * 1_000);
+    this.net.send("estateViewing", { propertyId });
   }
 
   exitProperty() {

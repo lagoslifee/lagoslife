@@ -28,7 +28,8 @@ export function plotById(id: string) {
 }
 
 /** The estate agent buys land and houses for you from anywhere, for a small fee on top of the price. */
-export const ESTATE_AGENT = { name: "Lekki Homes estate agent", feeRate: 0.02 } as const;
+/** `viewingSeconds`: the agent drives you to a listing for a free viewing in about this long. */
+export const ESTATE_AGENT = { name: "Lekki Homes estate agent", feeRate: 0.02, viewingSeconds: 3 } as const;
 export const agentFee = (price: number) => Math.max(1_000, Math.round((price * ESTATE_AGENT.feeRate) / 1000) * 1000);
 
 /** Ground rent and freehold prices for every plot, in fictional game naira. */

@@ -1151,7 +1151,7 @@ export function GameView({
               </div>
               <button className="icon-button" onClick={() => setSheet(null)} aria-label="Close">✕</button>
             </header>
-            <EstateApp properties={properties} plots={plots} here={hud ? [hud.x, hud.z] : null} onRefresh={refresh} onToast={toast} onNavigate={chooseTrip} onClose={() => setSheet(null)} />
+            <EstateApp properties={properties} plots={plots} here={hud ? [hud.x, hud.z] : null} onRefresh={refresh} onToast={toast} onNavigate={chooseTrip} onView={(id, label) => engine?.estateViewing(id, label)} onClose={() => setSheet(null)} />
           </section>
         </div>
       )}

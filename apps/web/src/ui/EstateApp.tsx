@@ -9,6 +9,8 @@ type Props = {
   onRefresh: () => Promise<void>;
   onToast: (notice: Notice) => void;
   onNavigate: (target: { point: Vec2; label: string } | null) => void;
+  /** The agent drives you there for a viewing inside. */
+  onView?: ((propertyId: string, label: string) => void) | undefined;
   onClose: () => void;
 };
 
@@ -16,7 +18,7 @@ type Props = {
  * Phone → Estate: one agent for land, ready-built houses and the flats and houses on the market. The agent buys for
  * you from anywhere for a 2% fee; walking to a plot's signboard and buying there is fee-free.
  */
-export function EstateApp({ properties, plots, here, onRefresh, onToast, onNavigate, onClose }: Props) {
+export function EstateApp({ properties, plots, here, onRefresh, onToast, onNavigate, onView, onClose }: Props) {
   const [tab, setTab] = useState<"houses" | "land" | "market">("houses");
   const [busy, setBusy] = useState(false);
   const own = plots.find((plot) => plot.status === "mine");
@@ -170,7 +172,11 @@ export function EstateApp({ properties, plots, here, onRefresh, onToast, onNavig
                 {listing.listingType !== "sale" && listing.rent > 0 && (
                   <button disabled={busy} onClick={() => run(async () => (await api.acquire(listing.id, "rented"), `You're renting ${listing.name}.`))}>Rent</button>
                 )}
-                <button onClick={() => go(listing.door, `${listing.name} · view inside`)}>View inside</button>
+                {onView ? (
+                  <button data-testid={`estate-view-${listing.id}`} onClick={() => { onView(listing.id, listing.name); onClose(); }}>View inside · agent drives you ({ESTATE_AGENT.viewingSeconds} s, free)</button>
+                ) : (
+                  <button onClick={() => go(listing.door, `${listing.name} · view inside`)}>View inside</button>
+                )}
               </div>
             </li>
           ))}

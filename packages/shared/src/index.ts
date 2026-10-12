@@ -155,6 +155,7 @@ export const enterPropertySchema = z.object({
   propertyId: z.string().min(1).max(100),
   mode: z.enum(["enter", "preview"]),
 });
+export const estateViewingSchema = z.object({ propertyId: z.string().min(1).max(100) });
 
 export const networkPlayerSchema = z.object({
   sessionId: z.string().min(1),

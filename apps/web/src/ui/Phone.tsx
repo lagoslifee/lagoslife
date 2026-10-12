@@ -157,7 +157,7 @@ export function Phone(props: Props) {
           <PlacesApp engine={props.engine} hud={props.hud} onNavigate={props.onNavigate} onCab={(destination) => { setCabTo(destination); setApp("ride"); }} onClose={onClose} />
         )}
         {app === "games" && <GamesApp />}
-        {app === "estate" && <EstateApp properties={props.properties} plots={props.plots} here={props.hud ? [props.hud.x, props.hud.z] : null} onRefresh={props.onRefresh} onToast={props.onToast} onNavigate={props.onNavigate} onClose={onClose} />}
+        {app === "estate" && <EstateApp properties={props.properties} plots={props.plots} here={props.hud ? [props.hud.x, props.hud.z] : null} onRefresh={props.onRefresh} onToast={props.onToast} onNavigate={props.onNavigate} onView={props.engine ? (id, label) => props.engine!.estateViewing(id, label) : undefined} onClose={onClose} />}
         {app === "business" && <BusinessApp onRefresh={props.onRefresh} onToast={props.onToast} />}
         {app === "go" && <GoApp engine={props.engine} onNavigate={props.onNavigate} onClose={onClose} />}
         {app === "boutique" && <BoutiqueApp engine={props.engine} economy={props.economy} onRefresh={props.onRefresh} onToast={props.onToast} />}

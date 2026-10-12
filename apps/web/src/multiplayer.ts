@@ -240,6 +240,7 @@ export class MultiplayerConnection {
       | "rentBike"
       | "returnBike"
       | "towRequest"
+      | "estateViewing"
       | "towCancel"
       | "checkpointAnswer"
       | "holdUp"

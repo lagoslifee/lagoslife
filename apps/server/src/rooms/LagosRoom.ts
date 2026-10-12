@@ -23,6 +23,8 @@ import {
   type ChatMessage,
   emoteRequestSchema,
   enterPropertySchema,
+  estateViewingSchema,
+  ESTATE_AGENT,
   enterVehicleSchema,
   getVehicleModel,
   impactDamage,
@@ -484,6 +486,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("alight", (client) => this.handleAlight(client));
     this.onMessage("requestStop", (client) => this.handleRequestStop(client));
     this.onMessage("enterProperty", (client, payload) => void this.handleEnterProperty(client, payload));
+    this.onMessage("estateViewing", (client, payload) => void this.handleEstateViewing(client, payload));
     this.onMessage("exitProperty", (client) => this.handleExitProperty(client));
     this.onMessage("unstuck", (client) => this.handleUnstuck(client));
     this.onMessage("enterVehicle", (client, payload) => void this.handleEnterVehicle(client, payload));
@@ -988,6 +991,46 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       text: `Stop requested: ${stop.name}.`,
       announcement: `Owa o! Next stop, ${stop.name}.`,
     });
+  }
+
+  /** The estate agent drives you to a home on the market and lets you in to look round. Viewings are free. */
+  private async handleEstateViewing(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = estateViewingSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
+    const fail = (text: string) => this.notify(client, { tone: "error", text });
+    const block = this.fastTravelBlock(player);
+    if (block) return fail(block);
+    const place = propertyPlace(parsed.data.propertyId);
+    if (!place || (place.kind !== "sale" && place.kind !== "rental")) return fail("The agent only shows homes that are on the market.");
+    if (regionOf(place.door[0], place.door[1]) !== regionOf(...this.standingAt(player))) return fail(`${place.name} is in Lagos. Fly back from Dubai International first.`);
+    let target: Awaited<ReturnType<typeof previewTarget>>;
+    try {
+      target = await previewTarget(player.userId, parsed.data.propertyId);
+    } catch (error) {
+      return fail(error instanceof EconomyError ? `${error.message}.` : "That home can't be viewed right now.");
+    }
+    this.notify(client, { tone: "info", text: `${ESTATE_AGENT.name}: I'll drive you to ${place.name} now.` });
+    this.clock.setTimeout(() => {
+      const latest = this.players.get(client.sessionId);
+      if (!latest?.connected) return;
+      const stillBlocked = this.fastTravelBlock(latest);
+      if (stillBlocked) return fail(stillBlocked);
+      const own = "home" in target;
+      const propertyId = "home" in target ? target.home : target.preview;
+      latest.returnPoint = [...place.door];
+      latest.location = own ? `home:${propertyId}` : `preview:${propertyId}:${latest.userId}`;
+      latest.previewOnly = !own;
+      latest.propertyId = propertyId;
+      [latest.x, latest.z] = INTERIOR_SPAWN;
+      latest.motion = "idle";
+      latest.travel = [];
+      latest.lastAcceptedAt = Date.now();
+      setPlayerPosition(latest.userId, latest.x, latest.z, latest.location);
+      void this.persist(latest).catch(() => undefined);
+      this.sendSelf(client, latest, own ? "entered" : "preview");
+      this.notify(client, { tone: "success", text: own ? `Welcome home to ${place.name}.` : `Here we are: ${place.name}. Have a look round, then buy or rent from Phone → Estate or at the door.` });
+    }, ESTATE_AGENT.viewingSeconds * 1_000);
   }
 
   private async handleEnterProperty(client: Client, payload: unknown) {
