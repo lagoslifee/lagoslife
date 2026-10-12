@@ -89,18 +89,20 @@ export function interiorModels(kind: InteriorKind, layout: HomeLayout, placement
 function previewPieces(layout: HomeLayout): Placement[] {
   const piece = (itemId: string, x: number, z: number, rotation: number): Placement => ({ itemId, gridX: 0, gridZ: 0, rotation, x, z });
   if (layout.tier === "flat") return [piece("lagoon-sofa", 0.3, -0.2, 0), piece("woven-table", 0.3, 1.4, 0), piece("island-bed", layout.halfX - 1.2, layout.back - 1.4, 0)];
+  // The lounge faces away from the door, so the way in looks over a low sofa back; a mansion keeps its foyer clear.
   const wide = layout.tier === "mansion";
+  const [cx, cz] = wide ? [6, 5.6] : [0, 0.6];
   return [
-    piece("aso-rug", 0, 1.6, 0),
-    piece("ikoyi-sectional", 0, 2.6, 0),
-    piece("marble-coffee-table", 0, 0.9, 0),
-    piece("tv-console", 0, -1.8, 180),
-    piece("velvet-armchair", 2.3, 0.9, 90),
+    piece("aso-rug", cx, cz + 1.0, 0),
+    piece("ikoyi-sectional", cx, cz, 180),
+    piece("marble-coffee-table", cx, cz + 1.7, 0),
+    piece("tv-console", cx, cz + 3.0, 0),
+    piece("velvet-armchair", cx + 2.3, cz + 1.7, 90),
+    piece("floor-lamp", cx + 2.4, cz - 0.2, 0),
+    piece("potted-palm", cx - 2.4, cz - 0.2, 0),
     piece("dining-set", wide ? -7 : -3.6, wide ? 6.5 : 5, 0),
-    piece("eko-king-bed", wide ? 8.5 : layout.halfX - 3.2, wide ? 9 : layout.back - 1.6, 0),
+    piece("eko-king-bed", wide ? 9.5 : layout.halfX - 3.2, wide ? 12.5 : layout.back - 1.6, 0),
     piece("wardrobe", wide ? 11.8 : layout.halfX - 0.5, wide ? 5 : layout.back - 4.6, 90),
-    piece("floor-lamp", 2.4, 3.4, 0),
-    piece("potted-palm", -2.4, 3.4, 0),
     piece("bookshelf", wide ? -12.7 : -layout.halfX + 0.3, wide ? 9 : 4.5, 270),
   ];
 }

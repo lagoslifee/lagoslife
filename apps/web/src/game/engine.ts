@@ -3983,6 +3983,8 @@ export class GameEngine {
       appearance: () => this.player?.appearance ?? null,
       emote: (emote: "wave" | "dance" | "sit" | "none") => this.playEmote(emote),
       fastTravel: (placeId: string) => this.fastTravel({ placeId }, placeId),
+      enterProperty: (propertyId: string, mode: "enter" | "preview") => this.enterProperty(propertyId, mode),
+      room: () => (this.interior && !this.travelView ? (this.interior as InteriorView).bounds : null),
       repair: () => ({ site: this.repairSite?.site.at ?? null, stand: this.repairSite?.site.stand ?? null, workingFor: this.repairing ? Math.max(0, this.repairing.until - performance.now()) : 0 }),
       repairWork: (seconds: number) => this.repairWork(seconds),
       remoteAppearances: () =>
