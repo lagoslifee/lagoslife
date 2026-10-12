@@ -15,7 +15,7 @@ import {
   type CharacterAppearance,
   type MotionState,
 } from "@lagos-living/shared";
-import { GarmentPlugin, HAIR_COLOUR, OUTFITS, skinTint, type Accessory, type Body, type Hairstyle } from "./appearance";
+import { GarmentPlugin, hairHex, OUTFITS, skinTint, type Accessory, type Body, type Hairstyle } from "./appearance";
 import { dressHead, HEAD_UNIT, headAnchor, type HeadStyle } from "./avatar-style";
 
 /**
@@ -142,7 +142,7 @@ type Limbs = Record<"leftUp" | "leftLow" | "rightUp" | "rightLow" | "leftArm" | 
 export type Workout = "treadmill" | "bench" | "dumbbells" | "repair";
 
 /**
- * The resident models are sculpted athletic. At build 0 each bone's thickness (its local Y and Z; X runs along the
+ * The resident models are sculpted athletic. At build 0 each bone's thickness (its local X and Z; Y runs along the
  * bone) is scaled by the factor here, and each child divides out its parent's factor so only that segment thins.
  * Build 1 is the sculpted model. The clips only animate rotation and translation, so the scale holds.
  */
@@ -165,6 +165,19 @@ const SLIM: Array<[bone: string, factor: number, parent: string | null]> = [
   ["foot_l", 1, "calf_l"],
   ["foot_r", 1, "calf_r"],
 ];
+/** Extra slimming on the female body, on top of SLIM, for a softer frame through the arms and shoulders. */
+const FEMALE_SLIM: Record<string, number> = {
+  spine_03: 0.94,
+  clavicle_l: 0.9,
+  clavicle_r: 0.9,
+  upperarm_l: 0.84,
+  upperarm_r: 0.84,
+  lowerarm_l: 0.88,
+  lowerarm_r: 0.88,
+  calf_l: 0.94,
+  calf_r: 0.94,
+};
+const FEMALE_BUILD_MAX = 0.4;
 type Instance = ReturnType<AvatarFactory["instantiate"]>;
 
 const flex = new Quaternion();
@@ -210,13 +223,16 @@ export class Avatar {
   }
 
   private applyBuild() {
-    const at = (factor: number) => factor + (1 - factor) * this.build;
-    const factors = new Map(SLIM.map(([bone, factor]) => [bone, at(factor)]));
+    const female = this.current.body === "female";
+    // Training tones a woman's figure; it never reaches the sculpted bodybuilder arms and shoulders.
+    const build = female ? this.build * FEMALE_BUILD_MAX : this.build;
+    const at = (factor: number) => factor + (1 - factor) * build;
+    const factors = new Map(SLIM.map(([bone, factor]) => [bone, at(factor) * (female ? FEMALE_SLIM[bone] ?? 1 : 1)]));
     for (const [bone, , parent] of SLIM) {
       const node = this.instance.bones.get(bone);
       if (!node) continue;
       const thickness = factors.get(bone)! / (parent ? factors.get(parent)! : 1);
-      node.scaling.set(1, thickness, thickness);
+      node.scaling.set(thickness, 1, thickness);
     }
   }
 
@@ -258,7 +274,7 @@ export class Avatar {
     skirt?.setEnabled(OUTFITS[appearance.outfit].skirt !== null);
     const bulky = appearance.hairstyle === "afro" || appearance.hairstyle === "twists" || appearance.hairstyle === "buns";
     const showHair = appearance.accessory === "headwrap" ? false : !(appearance.accessory === "cap" && bulky);
-    const hairColour = Color3.FromHexString(HAIR_COLOUR).toLinearSpace().scale(1 / 0.27);
+    const hairColour = Color3.FromHexString(hairHex(appearance)).toLinearSpace().scale(1 / 0.27);
     if (brows?.material instanceof PBRMaterial) brows.material.albedoColor = hairColour;
     for (const [style, mesh] of hair) {
       const on = (style === appearance.hairstyle && showHair && MESH_HAIR.has(style)) || (style === "beard" && appearance.accessory === "beard");
