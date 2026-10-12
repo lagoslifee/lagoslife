@@ -209,6 +209,23 @@ export function GameView({
     return () => clearTimeout(timer);
   }, [engine, quality, toast]);
 
+  const needAlerts = useRef<{ hunger: number; energy: number }>({ hunger: 100, energy: 100 });
+  useEffect(() => {
+    if (!economy) return;
+    const advice = {
+      hunger: "Eat something: a food stall, Phone → Order, or cook at home.",
+      energy: "Rest: sleep at home, sit down for a meal, or slow down on the gym and dancing.",
+    };
+    for (const need of ["hunger", "energy"] as const) {
+      const value = economy.needs[need];
+      const previous = needAlerts.current[need];
+      const label = need === "hunger" ? "Food" : "Energy";
+      if (value <= 10 && previous > 10) toast({ tone: "error", text: `⚠️ ${label} is very low (${value}%). ${advice[need]}` });
+      else if (value <= 25 && previous > 25) toast({ tone: "info", text: `${label} is getting low (${value}%). ${advice[need]}` });
+      needAlerts.current[need] = value;
+    }
+  }, [economy?.needs.hunger, economy?.needs.energy, toast]);
+
   const refreshPlots = useCallback(async () => {
     try {
       const next = await api.plots();
@@ -904,10 +921,7 @@ export function GameView({
               <strong>{economy ? naira(economy.balance) : "…"}</strong>
             </div>
             {economy && (
-              <div className="needs-mini" title="Hunger and energy">
-                <i style={{ width: `${economy.needs.hunger}%` }} className="hunger" />
-                <i style={{ width: `${economy.needs.energy}%` }} className="energy" />
-              </div>
+              <NeedBars hunger={economy.needs.hunger} energy={economy.needs.energy} />
             )}
             <div className={`net ${hud.network}`} data-testid="network">
               <i /> {hud.network === "connected" ? `${hud.online} online` : hud.network === "connecting" ? "Connecting…" : hud.networkReason}
@@ -1691,5 +1705,25 @@ function TouchControls({ engine }: { engine: GameEngine }) {
         <button className="use" onClick={() => engine.triggerInteract()} aria-label="Use">✋</button>
       </div>
     </>
+  );
+}
+
+/** Food and energy with their percentage; amber below a quarter, red and pulsing below a tenth. */
+function NeedBars({ hunger, energy }: { hunger: number; energy: number }) {
+  const row = (icon: string, label: string, value: number, kind: string) => {
+    const level = value <= 10 ? "critical" : value <= 25 ? "low" : "ok";
+    return (
+      <div className={`need-row ${kind} ${level}`} role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={value} data-testid={`need-${kind}`}>
+        <span className="need-icon" aria-hidden="true">{icon}</span>
+        <span className="need-track"><i style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /></span>
+        <b>{Math.round(value)}%</b>
+      </div>
+    );
+  };
+  return (
+    <div className="needs-mini" title="Food and energy">
+      {row("🍲", "Food", hunger, "hunger")}
+      {row("⚡", "Energy", energy, "energy")}
+    </div>
   );
 }
