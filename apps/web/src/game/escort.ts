@@ -17,6 +17,8 @@ type Guard = { avatar: Avatar; x: number; z: number; yaw: number; shown: boolean
 
 /** How far behind the leader's car the Hilux drives, measured along the leader's own path. */
 const FOLLOW_METRES = 11;
+/** Closest the Hilux ever gets to the leader's car, so it never drives into it. */
+const MIN_GAP = 7.5;
 const TRUCK_COLOUR = "#141617";
 /** Where the two guards riding on the bed stand, in truck space (x across, z forward), and the bed floor height. */
 const BED_RIDERS: Vec2[] = [[-0.42, -1.55], [0.42, -1.85]];
@@ -235,8 +237,16 @@ export class Escort {
 
     if (leader.driving) {
       const target = this.along(FOLLOW_METRES);
-      if (target && Math.hypot(target.x - this.truck.x, target.z - this.truck.z) > 0.02) {
+      // Reversing or a tight U-turn folds the path back on itself; never take a spot closer than MIN_GAP to the leader.
+      if (target && Math.hypot(target.x - leader.x, target.z - leader.z) >= MIN_GAP && Math.hypot(target.x - this.truck.x, target.z - this.truck.z) > 0.02) {
         this.truck.setPose(target.x, this.ground(target.x, target.z), target.z, target.yaw);
+      }
+      const gap = Math.hypot(this.truck.x - leader.x, this.truck.z - leader.z);
+      if (gap < MIN_GAP) {
+        const [ax, az] = gap > 0.1 ? [(this.truck.x - leader.x) / gap, (this.truck.z - leader.z) / gap] : [-Math.sin(leader.yaw), -Math.cos(leader.yaw)];
+        const x = leader.x + ax * MIN_GAP;
+        const z = leader.z + az * MIN_GAP;
+        this.truck.setPose(x, this.ground(x, z), z, this.truck.yaw);
       }
       this.truck.track(dt);
       this.strobe(dt, Math.abs(this.truck.speed) > 0.5);
