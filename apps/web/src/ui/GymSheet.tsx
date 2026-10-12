@@ -60,9 +60,9 @@ export function GymSheet({ place, balance, onClose, onRefresh, onToast, onTrain 
               than {GYM.graceDays} days and it slowly fades.
             </p>
             <div className="gym-fitness">
-              <span>Stamina</span>
+              <span>Stamina bonus</span>
               <div className="gym-bar"><i style={{ width: percent((1 - staminaFactor(status.fitness)) / GYM.staminaAtFullFitness) }} /></div>
-              <strong>−{Math.round((1 - staminaFactor(status.fitness)) * 100)}%</strong>
+              <strong>+{Math.round((1 - staminaFactor(status.fitness)) * 100)}%</strong>
             </div>
             <p className="muted small">
               Every set uses energy; cardio uses the most. The fitter you get, the less each set, shift and delivery tires you: up to{" "}
