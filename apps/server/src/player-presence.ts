@@ -37,6 +37,12 @@ export function isNear(userId: string, point: readonly [number, number], radius:
   );
 }
 
+/** Everyone whose last known location is exactly `location` (an interior such as the gym). */
+export function usersIn(location: string) {
+  const now = Date.now();
+  return [...positions].filter(([, position]) => now - position.updatedAt <= 15_000 && position.location === location).map(([userId]) => userId);
+}
+
 /** Everyone whose last known position is within `radius` of `point`. */
 export function usersNear(point: readonly [number, number], radius: number, location = "street") {
   const now = Date.now();

@@ -24,6 +24,9 @@ import {
   emoteRequestSchema,
   enterPropertySchema,
   estateViewingSchema,
+  GYM,
+  gymLocation,
+  insideGym,
   ESTATE_AGENT,
   enterVehicleSchema,
   getVehicleModel,
@@ -823,7 +826,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const home = !travelKind && (player.location.startsWith("home:") || player.location.startsWith("preview:"));
     const valid = !inInterior
       ? walkable(parsed.data.x, parsed.data.z)
-      : home
+      : player.location === gymLocation()
+        ? insideGym(parsed.data.x - INTERIOR_ORIGIN[0], parsed.data.z - INTERIOR_ORIGIN[1])
+        : home
         ? insideHome(homeLayout(player.propertyId), parsed.data.x - INTERIOR_ORIGIN[0], parsed.data.z - INTERIOR_ORIGIN[1])
         : Math.abs(parsed.data.x - INTERIOR_ORIGIN[0]) <= half[0] && Math.abs(parsed.data.z - INTERIOR_ORIGIN[1]) <= half[1];
     if (distance > allowed || !valid) {
@@ -1042,7 +1047,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const { mode } = parsed.data;
     let { propertyId } = parsed.data;
     const club = CLUBS[propertyId] ? getPlace(propertyId) : null;
-    const place = club ?? (propertyId === "starter-home" ? getPlace("starter-home") : (propertyPlace(propertyId) ?? builtHomePlace(propertyId)));
+    const gym = propertyId === GYM.placeId ? getPlace(GYM.placeId) : null;
+    const place = club ?? gym ?? (propertyId === "starter-home" ? getPlace("starter-home") : (propertyPlace(propertyId) ?? builtHomePlace(propertyId)));
     if (!place) return this.notify(client, { tone: "error", text: "That home is not on the map." });
     if (Math.hypot(player.x - place.door[0], player.z - place.door[1]) > 4.5) {
       return this.notify(client, { tone: "error", text: `Walk up to the door of ${place.name}.` });
@@ -1055,6 +1061,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
           return this.notify(client, { tone: "error", text: `Pay the cover at the door of ${club.name} first.` });
         }
         location = clubLocation(propertyId);
+      } else if (gym) {
+        location = gymLocation();
       } else if (propertyId === "starter-home") {
         location = `starter:${player.userId}`;
       } else if (mode === "preview") {
@@ -1086,7 +1094,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     player.lastAcceptedAt = Date.now();
     setPlayerPosition(player.userId, player.x, player.z, location);
     void this.persist(player).catch(() => undefined);
-    if (!previewOnly && !club && propertyId !== "starter-home") void markProgress(pool, player.userId, "visited_home").catch(() => undefined);
+    if (!previewOnly && !club && !gym && propertyId !== "starter-home") void markProgress(pool, player.userId, "visited_home").catch(() => undefined);
     this.sendSelf(client, player, previewOnly ? "preview" : "entered");
   }
 
@@ -2605,8 +2613,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (player.vehicleId) return "Park and step out first. Your car stays parked where you leave it, and you can find it from Phone → Vehicles.";
     if (player.ride && ["approaching", "waiting", "riding"].includes(player.ride.status)) return "You have a ride booked. Cancel it or finish the trip first.";
     if (player.heldUp || player.robbing || player.checkpoint) return "Not right now — deal with what's in front of you first.";
-    if (player.location !== "street" && !/^(home|starter|preview|club):/.test(player.location)) {
-      return "Go now works from the street, a home or a club. Finish this part of your trip first.";
+    if (player.location !== "street" && !/^(home|starter|preview|club|gym):/.test(player.location)) {
+      return "Go now works from the street, a home, a club or the gym. Finish this part of your trip first.";
     }
     return null;
   }

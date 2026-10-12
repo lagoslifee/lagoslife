@@ -52,6 +52,9 @@ export const PROPS = [
   { id: "console-vase", width: 1.5, quarterTurns: 0, texture: 512 },
   // Parked on the helipad sky mansion's roof (apps/web/src/game/plots.ts).
   { id: "helicopter", width: 9.2, quarterTurns: 0 },
+  // iFitness Lekki's training floor (apps/web/src/game/gym-interior.ts).
+  { id: "squat-rack", width: 1.9, quarterTurns: 0 },
+  { id: "exercise-bike", width: 1.25, quarterTurns: 0 },
 ];
 const TRIANGLE_BUDGET = 7_000;
 

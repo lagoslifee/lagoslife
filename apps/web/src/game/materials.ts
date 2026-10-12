@@ -68,6 +68,89 @@ function curtainWall(scene: Scene) {
   return material;
 }
 
+/**
+ * What you see through the iFitness glass front: LED battens, a mirror wall with TVs and the red band, a row of
+ * treadmills with members running on them, and the rack and plates on the weights side. Lit from inside, so unlit.
+ */
+function gymView(scene: Scene) {
+  const [w, h] = [1024, 256];
+  const texture = new DynamicTexture("gym view", { width: w, height: h }, scene, true);
+  const ctx = texture.getContext() as unknown as CanvasRenderingContext2D;
+  const wall = ctx.createLinearGradient(0, 0, 0, h);
+  wall.addColorStop(0, "#1b1c20");
+  wall.addColorStop(0.14, "#3a3c42");
+  wall.addColorStop(0.7, "#4a4d54");
+  wall.addColorStop(0.71, "#26282d");
+  wall.addColorStop(1, "#17181b");
+  ctx.fillStyle = wall;
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = "#f4f7ff";
+  for (let x = 30; x < w; x += 150) ctx.fillRect(x, 10, 110, 5);
+  ctx.fillStyle = "#e0262b";
+  ctx.fillRect(0, 70, w, 7);
+  ctx.fillStyle = "#7d8a96";
+  ctx.fillRect(0, 112, 700, 64);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
+  for (let x = 20; x < 700; x += 90) ctx.fillRect(x, 112, 30, 64);
+  const runners = ["#e0262b", "#2b8be0", "#f2f2f2", "#1fb87a", "#f2a01e", "#9b59d0"];
+  for (let index = 0; index < 6; index += 1) {
+    const x = 40 + index * 110;
+    ctx.fillStyle = "#0d0d10";
+    ctx.fillRect(x + 8, 84, 46, 24);
+    ctx.fillStyle = index % 2 ? "#3aa0ff" : "#5fd0ff";
+    ctx.fillRect(x + 11, 87, 40, 18);
+    ctx.fillStyle = "#101114";
+    ctx.fillRect(x, 212, 92, 14);
+    ctx.fillRect(x + 6, 150, 6, 64);
+    ctx.fillRect(x + 6, 150, 34, 6);
+    const stride = index % 2 ? 1 : -1;
+    const bx = x + 52;
+    ctx.fillStyle = "#3b2418";
+    ctx.beginPath();
+    ctx.arc(bx, 132, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = runners[index]!;
+    ctx.fillRect(bx - 10, 142, 20, 34);
+    ctx.fillStyle = "#1e1f24";
+    ctx.save();
+    ctx.translate(bx, 176);
+    for (const swing of [stride, -stride]) {
+      ctx.save();
+      ctx.rotate(swing * 0.35);
+      ctx.fillRect(-4, 0, 8, 36);
+      ctx.restore();
+    }
+    ctx.restore();
+    ctx.fillStyle = "#3b2418";
+    for (const swing of [stride, -stride]) {
+      ctx.save();
+      ctx.translate(bx + swing * 9, 146);
+      ctx.rotate(-swing * 0.6);
+      ctx.fillRect(-3, 0, 6, 26);
+      ctx.restore();
+    }
+  }
+  ctx.fillStyle = "#111215";
+  for (const x of [770, 850]) ctx.fillRect(x, 60, 8, 166);
+  ctx.fillRect(770, 60, 88, 8);
+  ctx.fillRect(760, 120, 108, 5);
+  for (const [x, r] of [[748, 30], [880, 30], [950, 22], [985, 18]] as const) {
+    ctx.fillStyle = "#08080a";
+    ctx.beginPath();
+    ctx.arc(x, 226 - r, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#e0262b";
+    ctx.beginPath();
+    ctx.arc(x, 226 - r, r * 0.25, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  texture.update(true);
+  const material = new PBRMaterial("gym view", scene);
+  material.albedoTexture = texture;
+  material.unlit = true;
+  return material;
+}
+
 /** Seeded noise so the procedural Dubai textures look the same on every load. */
 function speckle(ctx: CanvasRenderingContext2D, size: number, count: number, colors: string[], seed: number) {
   let state = seed;
@@ -216,6 +299,7 @@ export function createMaterials(scene: Scene, quality: Quality) {
     gulf,
     canvas,
     curtainWall: curtainWall(scene),
+    gymView: gymView(scene),
     signBlue: flat(scene, "dubai street sign", "#1d4f91", 0.45),
     water,
     lagoon,

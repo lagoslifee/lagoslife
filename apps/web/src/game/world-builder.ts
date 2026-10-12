@@ -957,7 +957,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     // A prayer hall reads as a mosque only if its dome clears the roofline from the street.
     if (landmark === "mosque") floors = 2;
     if (landmark === "terminal") floors = 2;
-    if (landmark === "showroom") floors = 2;
+    if (landmark === "showroom" || landmark === "gym") floors = 2;
     const height = floors * FLOOR_HEIGHT + 0.3;
     const paint = landmark ? LANDMARK_PAINT[landmark] : PAINTS[Math.floor(hash(building.id * 7) * PAINTS.length)]!;
     const trim: Color = landmark ? LANDMARK_TRIM[landmark] : hash(building.id * 11) > 0.5 ? [0.98, 0.98, 0.97] : [0.62, 0.6, 0.57];
@@ -1016,6 +1016,33 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       }
       frames.box((a[0] + b[0]) / 2 + nx * 0.05, 0.12, (a[1] + b[1]) / 2 + nz * 0.05, length, 0.24, 0.16, yawOut);
     };
+    /** iFitness street front: full-height glass over the lit training floor, a dark upper storey with a red band. */
+    const gymEdge = (a: Vec2, b: Vec2, nx: number, nz: number, length: number) => {
+      const glassTop = 3.6;
+      const yawOut = Math.atan2(nx, nz);
+      walls.wall(a[0], a[1], b[0], b[1], glassTop, height + parapet, 2.5, paint);
+      walls.wall(b[0] - nx * 0.25, b[1] - nz * 0.25, a[0] - nx * 0.25, a[1] - nz * 0.25, height, height + parapet, 2.5, paint);
+      const depth = 0.7;
+      const inner = (p: Vec2, y: number): [number, number, number] => [p[0] - nx * depth, y, p[1] - nz * depth];
+      base.get(cx, cz, "gymView").quad(inner(a, 0.1), inner(b, 0.1), inner(b, glassTop), inner(a, glassTop), [nx, 0, nz], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      // Reveals so the recess reads as a room behind the glass, not a picture on the wall.
+      walls.wall(a[0], a[1], a[0] - nx * depth, a[1] - nz * depth, 0, glassTop, 2.5, [0.2, 0.2, 0.22]);
+      walls.wall(b[0] - nx * depth, b[1] - nz * depth, b[0], b[1], 0, glassTop, 2.5, [0.2, 0.2, 0.22]);
+      base.get(cx, cz, "concrete").quad(inner(a, 0.09), inner(b, 0.09), [b[0], 0.09, b[1]], [a[0], 0.09, a[1]], [0, 1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]], [0.12, 0.12, 0.13]);
+      base.get(cx, cz, "concrete").quad(inner(a, glassTop), inner(b, glassTop), [b[0], glassTop, b[1]], [a[0], glassTop, a[1]], [0, -1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]], [0.95, 0.96, 1]);
+      base.get(cx, cz, "showroomGlass").wall(a[0] + nx * 0.02, a[1] + nz * 0.02, b[0] + nx * 0.02, b[1] + nz * 0.02, 0.1, glassTop, 3);
+      const ex = (b[0] - a[0]) / length;
+      const ez = (b[1] - a[1]) / length;
+      const frames = base.get(cx, cz, "darkFrame");
+      const bays = Math.max(1, Math.round(length / 2.4));
+      for (let bay = 0; bay <= bays; bay += 1) {
+        const t = (bay / bays) * length;
+        frames.box(a[0] + ex * t + nx * 0.05, glassTop / 2, a[1] + ez * t + nz * 0.05, 0.1, glassTop, 0.12, yawOut);
+      }
+      frames.box((a[0] + b[0]) / 2 + nx * 0.05, 0.1, (a[1] + b[1]) / 2 + nz * 0.05, length, 0.2, 0.14, yawOut);
+      frames.box((a[0] + b[0]) / 2 + nx * 0.05, glassTop, (a[1] + b[1]) / 2 + nz * 0.05, length, 0.16, 0.14, yawOut);
+      base.get(cx, cz, "neon").box((a[0] + b[0]) / 2 + nx * 0.1, glassTop + 0.32, (a[1] + b[1]) / 2 + nz * 0.1, length, 0.14, 0.04, yawOut, 1, [0.9, 0.12, 0.14]);
+    };
     ring.forEach((a, index) => {
       const b = ring[(index + 1) % ring.length]!;
       const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -1025,6 +1052,10 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       const yawOut = Math.atan2(nx, nz);
       if (landmark === "showroom") {
         showroomEdge(a, b, nx, nz, length, index === doorEdge);
+        return;
+      }
+      if (landmark === "gym" && index === doorEdge) {
+        gymEdge(a, b, nx, nz, length);
         return;
       }
       walls.wall(a[0], a[1], b[0], b[1], 0.45, height + parapet, 2.5, paint);
@@ -1228,6 +1259,19 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     } else if (landmark === "terminal") {
       terminalFront(landmarkGet, facade, { a: doorA, b: doorB }, height);
       terminalSign(place!, facade, height, cx, cz);
+    } else if (landmark === "gym") {
+      const signWidth = Math.max(4, Math.min(doorLength - 1, 7.5));
+      const signHeight = signWidth / SignAtlas.aspect;
+      const signY = Math.min(height + parapet - signHeight / 2 - 0.15, 3.6 + 0.55 + signHeight / 2 + 0.2);
+      base.get(cx, cz, "darkFrame").box(doorX + doorNx * 0.12, signY, doorZ + doorNz * 0.12, signWidth + 0.4, signHeight + 0.24, 0.14, doorYaw, 1, [0.06, 0.06, 0.07], true);
+      textQuad(base.get(cx, cz, "signs"), doorX + doorNx * 0.2, signY, doorZ + doorNz * 0.2, doorYaw, signWidth, signHeight, signUv("iFitness", "club", "Gym · Lekki · Members welcome", "#e0262b"));
+      const frames = base.get(cx, cz, "darkFrame");
+      frames.box(doorX + doorNx * 0.12, 2.75, doorZ + doorNz * 0.12, 2.8, 0.18, 0.2, doorYaw);
+      for (const side of [-1, 1]) frames.box(doorX + ex * side * 1.35 + doorNx * 0.12, 1.4, doorZ + ez * side * 1.35 + doorNz * 0.12, 0.16, 2.8, 0.2, doorYaw);
+      base.get(cx, cz, "chrome").box(doorX + doorNx * 0.16, 1.1, doorZ + doorNz * 0.16, 0.05, 0.9, 0.05, doorYaw);
+      base.get(cx, cz, "concrete").box(doorX + doorNx * 1.2, 0.06, doorZ + doorNz * 1.2, 4.2, 0.12, 2.2, doorYaw, 1, [0.16, 0.16, 0.17], true);
+      base.get(cx, cz, "concrete").box(doorX + doorNx * 1.6, 3.15, doorZ + doorNz * 1.6, 4.4, 0.16, 3.0, doorYaw, 1, [0.1, 0.1, 0.11], true);
+      base.get(cx, cz, "neon").box(doorX + doorNx * 3.1, 3.15, doorZ + doorNz * 3.1, 4.4, 0.08, 0.03, doorYaw, 1, [0.9, 0.12, 0.14]);
     } else if (landmark === "showroom") {
       const floorRing = ring.map(([x, z]) => [x, z] as [number, number]);
       base.get(cx, cz, "tiles").polygon(floorRing, 0.08, 1.2, [0.96, 0.96, 0.95]);

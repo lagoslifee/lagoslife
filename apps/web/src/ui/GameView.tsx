@@ -1,4 +1,4 @@
-import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL, EXERCISES, type ExerciseId, type FoodParcel, SEATED_MEAL_ENERGY } from "@lagos-living/shared";
+import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL, EXERCISES, GYM, type ExerciseId, type FoodParcel, SEATED_MEAL_ENERGY } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { noteFps, report, setReportedQuality } from "../diagnostics";
@@ -746,6 +746,8 @@ export function GameView({
     } else if (interaction.spot === "bar" && propertyId) {
       const place = propertyPlace(propertyId);
       if (place?.kind === "club") setClubBar(place);
+    } else if (interaction.spot === "gym") {
+      setSheet(getPlace(GYM.placeId));
     } else if (interaction.spot === "dance") {
       engine?.playEmote("dance");
     } else if (interaction.spot.startsWith("table-")) {

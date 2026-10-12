@@ -1,4 +1,4 @@
-import { EXERCISES, exerciseIds, GYM, type ExerciseId, type GymStatus, type Notice, type Place } from "@lagos-living/shared";
+import { EXERCISES, exerciseIds, GYM, setEnergyCost, staminaFactor, type ExerciseId, type GymStatus, type Notice, type Place } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import { api, naira } from "../api";
 
@@ -8,13 +8,13 @@ type Props = {
   onClose: () => void;
   onRefresh: () => Promise<void>;
   onToast: (notice: Notice) => void;
-  /** Puts the player on the machine; false when they can't (driving, indoors). */
+  /** Puts the player on the machine; false when they can't (not inside the gym). */
   onTrain: (exercise: ExerciseId, endsAt: string) => boolean;
 };
 
 const percent = (fitness: number) => `${Math.round(fitness * 100)}%`;
 
-/** iFitness: membership, your fitness, the machines outside and who else is training. */
+/** iFitness front desk: membership, your fitness and stamina, the machines and who else is training. */
 export function GymSheet({ place, balance, onClose, onRefresh, onToast, onTrain }: Props) {
   const [status, setStatus] = useState<GymStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -59,6 +59,15 @@ export function GymSheet({ place, balance, onClose, onRefresh, onToast, onTrain 
               Your body follows your training: you start with an ordinary build and get more muscular with every set you finish. Skip the gym for more
               than {GYM.graceDays} days and it slowly fades.
             </p>
+            <div className="gym-fitness">
+              <span>Stamina</span>
+              <div className="gym-bar"><i style={{ width: percent((1 - staminaFactor(status.fitness)) / GYM.staminaAtFullFitness) }} /></div>
+              <strong>−{Math.round((1 - staminaFactor(status.fitness)) * 100)}%</strong>
+            </div>
+            <p className="muted small">
+              Every set uses energy; cardio uses the most. The fitter you get, the less each set, shift and delivery tires you: up to{" "}
+              {Math.round(GYM.staminaAtFullFitness * 100)}% less at full fitness. Your energy is {status.energy}/100.
+            </p>
             {member ? (
               <p className="small">✅ Member until {new Date(status.memberUntil!).toLocaleDateString()}</p>
             ) : (
@@ -89,7 +98,7 @@ export function GymSheet({ place, balance, onClose, onRefresh, onToast, onTrain 
                     <span className="business-emoji">{EXERCISES[id].emoji}</span>
                     <div>
                       <strong>{EXERCISES[id].name}</strong>
-                      <small className="muted">{EXERCISES[id].blurb} Uses {GYM.energyPerSet} energy.</small>
+                      <small className="muted">{EXERCISES[id].blurb} Uses {setEnergyCost(id, status.fitness)} energy{setEnergyCost(id, status.fitness) < EXERCISES[id].energy ? ` (${EXERCISES[id].energy} when untrained)` : ""}.</small>
                     </div>
                   </div>
                   <div className="business-actions">
@@ -99,7 +108,7 @@ export function GymSheet({ place, balance, onClose, onRefresh, onToast, onTrain 
                       data-testid={`gym-${id}`}
                       onClick={() => run(async () => {
                         const set = await api.gymSet(id);
-                        if (!onTrain(id, set.endsAt)) throw new Error("Get out of the car first, then start the set.");
+                        if (!onTrain(id, set.endsAt)) throw new Error(`Go inside ${GYM.name} and walk up to the machine first.`);
                         onClose();
                       })}
                     >

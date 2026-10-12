@@ -358,6 +358,16 @@ if (target === "avatar") {
         "four bladed main rotor, tail boom with tail rotor, landing skids, realistic, single object, no text, no logos",
       texturePrompt: "glossy black and gold paint, dark tinted cabin glass, silver rotor blades, black landing skids",
     },
+    {
+      label: "prop-squat-rack",
+      prompt: "Commercial gym power rack squat cage with a loaded steel barbell on the hooks and black bumper plates on storage pegs, realistic, single object, no people, no text",
+      texturePrompt: "matte black steel cage, chrome barbell, black rubber bumper plates, red accents on the uprights",
+    },
+    {
+      label: "prop-exercise-bike",
+      prompt: "Commercial gym upright stationary exercise bike with a padded seat, handlebars and a console screen, realistic, single object, no people, no text",
+      texturePrompt: "matte black frame, dark grey plastic covers, black padded seat, glossy black console, red flywheel accent",
+    },
   ];
   const wanted = process.argv.slice(3);
   const queue = PROPS.filter((prop) => (!wanted.length || wanted.includes(prop.label)) && !existsSync(path.join(outDir, `${prop.label}.glb`)));

@@ -5,7 +5,7 @@ type Color = [number, number, number];
 type Get = (material: string) => MeshBuilderBatch;
 
 /** Mapped places drawn with their own architecture instead of the generic Lagos block. */
-export type LandmarkKind = "church" | "mosque" | "club" | "modern" | "terminal" | "showroom";
+export type LandmarkKind = "church" | "mosque" | "club" | "modern" | "terminal" | "showroom" | "gym";
 
 export function landmarkFor(place: Place | undefined): LandmarkKind | null {
   if (!place) return null;
@@ -14,6 +14,7 @@ export function landmarkFor(place: Place | undefined): LandmarkKind | null {
   if (place.kind === "sale" || place.kind === "rental") return "modern";
   if (place.kind === "airport") return "terminal";
   if (place.kind === "dealership") return "showroom";
+  if (place.kind === "gym") return "gym";
   return null;
 }
 
@@ -24,6 +25,7 @@ export const LANDMARK_PAINT: Record<LandmarkKind, Color> = {
   modern: [0.97, 0.97, 0.96],
   terminal: [0.9, 0.91, 0.92],
   showroom: [0.13, 0.14, 0.16],
+  gym: [0.12, 0.12, 0.14],
 };
 
 export const LANDMARK_TRIM: Record<LandmarkKind, Color> = {
@@ -33,6 +35,7 @@ export const LANDMARK_TRIM: Record<LandmarkKind, Color> = {
   modern: [0.22, 0.22, 0.24],
   terminal: [0.75, 0.77, 0.8],
   showroom: [0.78, 0.8, 0.82],
+  gym: [0.86, 0.14, 0.16],
 };
 
 const GOLD: Color = [0.86, 0.68, 0.26];

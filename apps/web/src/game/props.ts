@@ -14,6 +14,8 @@ export type PropId =
   | "treadmill"
   | "weight-bench"
   | "dumbbell-rack"
+  | "squat-rack"
+  | "exercise-bike"
   | "generator"
   | "double-bed"
   | "sofa"

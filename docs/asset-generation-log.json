@@ -1056,6 +1056,42 @@
       "consumedCredits": 10,
       "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13165-d60d-765c-b11a-3e497745a788/output/preview.png",
       "recordedAt": "2026-10-12T18:36:12.826Z"
+    },
+    {
+      "label": "prop-exercise-bike preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a1319b-6276-76bd-be79-00fed34a5c07",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a1319b-6276-76bd-be79-00fed34a5c07/output/preview.png",
+      "recordedAt": "2026-10-12T19:34:32.158Z"
+    },
+    {
+      "label": "prop-squat-rack preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a1319b-6279-7267-84cf-024f562472c2",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a1319b-6279-7267-84cf-024f562472c2/output/preview.png",
+      "recordedAt": "2026-10-12T19:34:52.263Z"
+    },
+    {
+      "label": "prop-exercise-bike refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a1319c-09ef-7423-a7b3-225357fa15d6",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a1319c-09ef-7423-a7b3-225357fa15d6/output/preview.png",
+      "recordedAt": "2026-10-12T19:35:30.098Z"
+    },
+    {
+      "label": "prop-squat-rack refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a1319c-5878-73aa-a7ca-0b732542a15a",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a1319c-5878-73aa-a7ca-0b732542a15a/output/preview.png",
+      "recordedAt": "2026-10-12T19:35:50.457Z"
     }
   ]
 }

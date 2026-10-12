@@ -115,7 +115,7 @@ import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-in
 import { COMPOUND_PLACES, compoundCars } from "./compounds";
 import { EntranceMarkers, type EntranceCandidate } from "./entrance-markers";
 import { TourGuide, tourStops } from "./tour-guide";
-import { gymStations, type GymStation } from "./gym-stations";
+import { GYM_RECEPTION, gymRegulars, gymStations, type GymRegular, type GymStation } from "./gym-stations";
 import { RepairSite } from "./repair-site";
 import { PropLibrary } from "./props";
 import { HomeStaffView, type StaffPost } from "./home-staff-view";
@@ -291,7 +291,7 @@ const PLACE_ACTIONS: Record<Place["kind"], string> = {
   desert: "Desert camp",
   car_rental: "Hire a car",
   tourism: "Things to do in Dubai",
-  gym: "Gym",
+  gym: "Enter gym",
   estate: "Estate agent",
 };
 
@@ -467,6 +467,8 @@ export class GameEngine {
   private emote: MotionState | null = null;
   private club: Club | null = null;
   private tableBottles = new Map<number, string[]>();
+  /** Members training on the iFitness floor while the player is inside. */
+  private regulars: Array<{ avatar: Avatar; plan: GymRegular; time: number }> = [];
   private waiters: Array<{ avatar: Avatar; path: Vec2[]; t: number; table: number; bottles: Array<{ id: string; itemId: string }>; prop: TransformNode; sparkler: boolean }> = [];
   private settings: PlayerSettings;
   private bindings: Bindings;
@@ -1414,6 +1416,7 @@ export class GameEngine {
     this.repairSite?.site.update(now / 1_000);
     this.interior?.update(now * 0.001);
     this.updateWaiters(dt);
+    this.updateRegulars(dt);
     if (!this.staff.idle) this.staff.update(dt, [this.controller.x, this.controller.z], now * 0.001);
     if (now - this.boardsAt > 1_000) {
       this.boardsAt = now;
@@ -1866,7 +1869,7 @@ export class GameEngine {
       }
       const yours = this.listingLabels.get(place.id) === "mine";
       offer(distance, { key: bind("interact"), label: yours ? `Your home · ${place.name}` : `${PLACE_ACTIONS[place.kind]} · ${place.name}`, detail: place.street }, () =>
-        place.kind === "starter_home" ? this.enterProperty("starter-home", "enter") : this.callbacks.interact({ kind: "place", place }),
+        place.kind === "starter_home" || place.kind === "gym" ? this.enterProperty(place.kind === "gym" ? place.id : "starter-home", "enter") : this.callbacks.interact({ kind: "place", place }),
       );
     }
     if (best) {
@@ -2422,6 +2425,7 @@ export class GameEngine {
       this.club = null;
       this.audio.setClub(null);
       this.clearWaiters();
+      this.clearRegulars();
       this.dropHeld();
     }
     if (enteringInterior) {
@@ -2897,6 +2901,7 @@ export class GameEngine {
     if (travel) {
       this.interior?.dispose();
       this.clearCrew();
+      this.clearRegulars();
       const view = buildTravelInterior(this.scene, this.materials, this.atlas, travel, this.trip, this.props);
       this.interior = view;
       this.travelView = view;
@@ -2911,7 +2916,8 @@ export class GameEngine {
     this.travelView = null;
     this.audio.setCabinHum(0);
     const club = self.location.startsWith("club:") && self.propertyId ? CLUBS[self.propertyId] : undefined;
-    const kind: InteriorKind = club ? "club" : self.location.startsWith("starter:") ? "starter" : self.previewOnly ? "preview" : "home";
+    const gym = self.location.startsWith("gym:");
+    const kind: InteriorKind = club ? "club" : gym ? "gym" : self.location.startsWith("starter:") ? "starter" : self.previewOnly ? "preview" : "home";
     const title = self.propertyId ? propertyTitle(self.propertyId) : "Home";
     let placements: Placement[] = [];
     let layout = homeLayout(self.propertyId);
@@ -2928,7 +2934,15 @@ export class GameEngine {
     this.interior?.dispose();
     this.interior = buildInterior(this.scene, this.materials, this.atlas, kind, title, placements, club, { layout, props: this.props });
     this.interior.setCutaway(this.planShare !== null);
-    this.staff.setDesks(club ? [{ id: "bar", at: CLUB_BARTENDER, yaw: Math.PI / 2, look: staffLook(70 + club.bpm, regionOf(self.x, self.z) === "dubai" || club.id === TRAVEL_PLACES.club, "hostess") }] : []);
+    this.staff.setDesks(
+      club
+        ? [{ id: "bar", at: CLUB_BARTENDER, yaw: Math.PI / 2, look: staffLook(70 + club.bpm, regionOf(self.x, self.z) === "dubai" || club.id === TRAVEL_PLACES.club, "hostess") }]
+        : gym
+          ? [{ id: "gym-desk", at: GYM_RECEPTION.staff, yaw: Math.PI / 2, look: { ...staffLook(64, false, "hostess"), outfit: "athleisure" } }]
+          : [],
+    );
+    this.clearRegulars();
+    if (gym) this.spawnRegulars();
     this.club = club ?? null;
     this.audio.setClub(this.club);
   }
@@ -3015,6 +3029,34 @@ export class GameEngine {
         this.waiters = this.waiters.filter((entry) => entry !== waiter);
       }, 2_500);
     }
+  }
+
+  private spawnRegulars() {
+    if (!this.avatars) return;
+    for (const plan of gymRegulars()) {
+      const avatar = this.avatars.create(`gym member ${plan.seed}`, { ...appearanceFor(plan.seed), outfit: "athleisure", accessory: "none" });
+      avatar.setBuild(0.55 + (plan.seed % 4) * 0.15);
+      avatar.root.position.set(plan.at[0], 0.02 + plan.lift, plan.at[1]);
+      avatar.root.rotation.y = plan.yaw;
+      this.regulars.push({ avatar, plan, time: plan.seed * 0.37 });
+    }
+  }
+
+  /** Runners jog on the belts, riders pedal, the bench and rack press, the stretcher reaches slowly overhead. */
+  private updateRegulars(dt: number) {
+    for (const regular of this.regulars) {
+      const { avatar, plan } = regular;
+      regular.time += dt;
+      avatar.update(plan.speed, plan.motion, dt);
+      if (plan.workout === "bike") avatar.pedal(regular.time * 5.5);
+      else if (plan.workout === "stretch") avatar.exercise("bench", regular.time * 0.45);
+      else avatar.exercise(plan.workout, regular.time);
+    }
+  }
+
+  private clearRegulars() {
+    for (const regular of this.regulars) regular.avatar.dispose();
+    this.regulars = [];
   }
 
   private clearWaiters() {
@@ -3180,20 +3222,12 @@ export class GameEngine {
         props.place("restaurant-table", x, z, Math.atan2(fx, fz), this.streetProps, this.world.groundHeight(x, z));
       }
     }
-    const stations = gymStations();
-    void props.ensure(stations.map((station) => station.prop)).then(() => {
-      if (this.disposed) return;
-      for (const station of stations) {
-        const [px, pz] = station.propAt;
-        props.place(station.prop, px, pz, station.propYaw, this.streetProps, this.world.groundHeight(px, pz));
-      }
-    });
   }
 
-  /** Puts the player on the machine for a gym set; false when they are driving, riding or indoors. */
+  /** Puts the player on the machine for a gym set; false unless they are inside the gym. */
   startWorkout(exercise: ExerciseId) {
     const station = gymStations().find((entry) => entry.exercise === exercise);
-    if (!station || this.interior || this.driving || this.passenger || this.riding()) return false;
+    if (!station || !this.self?.location.startsWith("gym:") || !this.interior || this.driving || this.passenger) return false;
     this.emote = null;
     this.sitting = null;
     this.controller.teleport(station.at[0], station.at[1]);

@@ -9,12 +9,14 @@ import {
   CLUB_LAYOUT,
   CLUB_TABLES,
   FRONT_WALL,
+  GYM_ROOM,
   HOME_LAYOUTS,
   INTERIOR_EXIT,
   INTERIOR_HALF,
   INTERIOR_ORIGIN,
   legacyCellPosition,
   type Club,
+  type ExerciseId,
   type HomeLayout,
   type Vec2,
 } from "@lagos-living/shared";
@@ -29,12 +31,13 @@ import { MeshBuilderBatch } from "./geometry";
 import type { Materials } from "./materials";
 import type { PropId, PropLibrary } from "./props";
 import { buildBottle } from "./drinks";
+import { GYM_RECEPTION, gymMachines, gymStations } from "./gym-stations";
 import { SignAtlas } from "./sign-atlas";
 
-export type InteriorKind = "starter" | "preview" | "home" | "club";
+export type InteriorKind = "starter" | "preview" | "home" | "club" | "gym";
 /** `x`/`z` are room-local metres; pieces saved before free placement only have their grid cell. */
 export type Placement = { id?: string; itemId: string; gridX: number; gridZ: number; rotation: number; x?: number | null; z?: number | null };
-export type InteriorSpot = { id: "exit" | "bed" | "storage" | "kitchen" | "bar" | "stool" | "dance" | "tv" | "sofa" | "dining" | `table-${number}`; point: Vec2; label: string };
+export type InteriorSpot = { id: "exit" | "bed" | "storage" | "kitchen" | "bar" | "stool" | "dance" | "tv" | "sofa" | "dining" | "gym" | `table-${number}`; point: Vec2; label: string };
 
 const HEIGHT = 3.0;
 const DUBAI_CLUB = "pearl-club-dubai";
@@ -78,8 +81,12 @@ const FURNITURE_MODELS: Partial<Record<string, PropId>> = {
 };
 const SHOWPIECES: PropId[] = ["kitchen-wall", "kitchen-island", "grand-piano", "chandelier", "wall-art", "console-vase", "potted-palm"];
 
+/** The iFitness training floor: wider and deeper than a flat, with a high ceiling. */
+const GYM_LAYOUT: HomeLayout = { ...HOME_LAYOUTS.flat, halfX: GYM_ROOM.halfX, back: GYM_ROOM.back, height: GYM_ROOM.height };
+
 /** Meshy models a home needs before it is built, so the first frame already shows them. */
 export function interiorModels(kind: InteriorKind, layout: HomeLayout, placements: Placement[]): PropId[] {
+  if (kind === "gym") return [...new Set([...gymMachines().map((machine) => machine.prop), "potted-palm" as const])];
   if (kind === "club" || kind === "starter") return [];
   const pieces = kind === "preview" ? previewPieces(layout).map((piece) => piece.itemId) : placements.map((piece) => piece.itemId);
   const models = pieces.map((itemId) => FURNITURE_MODELS[itemId]).filter((id): id is PropId => Boolean(id));
@@ -112,7 +119,7 @@ export type InteriorOptions = { layout?: HomeLayout; props?: PropLibrary | null 
 
 /** Builds one room at the interior origin; obstacles are returned as axis-aligned boxes. */
 export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtlas, kind: InteriorKind, title: string, placements: Placement[], club?: Club, options: InteriorOptions = {}) {
-  const layout = kind === "club" || kind === "starter" ? HOME_LAYOUTS.flat : (options.layout ?? HOME_LAYOUTS.flat);
+  const layout = kind === "gym" ? GYM_LAYOUT : kind === "club" || kind === "starter" ? HOME_LAYOUTS.flat : (options.layout ?? HOME_LAYOUTS.flat);
   const props = options.props ?? null;
   const [X0, X1, Z0, Z1, H] = [OX - layout.halfX, OX + layout.halfX, OZ + FRONT_WALL, OZ + layout.back, layout.height];
   const disposables: Array<{ dispose(): void }> = [];
@@ -142,21 +149,24 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
 
   const corners: Vec2[] = [[X0, Z0], [X1, Z0], [X1, Z1], [X0, Z1]];
   const marina = kind === "club" && club?.id === DUBAI_CLUB;
-  const grand = kind !== "club" && kind !== "starter" && layout.tier !== "flat";
+  const gym = kind === "gym";
+  const plain = kind === "club" || kind === "starter" || gym;
+  const grand = !plain && layout.tier !== "flat";
   if (grand) get(local_.floorKey).polygon(corners, 0.02, local_.floorTile);
+  else if (gym) get("vertexPaint").polygon(corners, 0.02, 1, [0.15, 0.15, 0.17]);
   else get("tiles").polygon(corners, 0.02, 1.2, marina ? [0.78, 0.76, 0.74] : kind === "club" ? [0.16, 0.14, 0.2] : undefined);
   // The ceiling is its own mesh so the home designer can lift it off for a view from above.
   const ceiling = new MeshBuilderBatch("interior ceiling");
-  ceiling.polygon(corners, H, 3, marina ? [0.14, 0.12, 0.1] : kind === "club" ? [0.08, 0.07, 0.1] : [0.97, 0.97, 0.95], true);
-  const wallColor: [number, number, number] = marina ? [0.3, 0.25, 0.19] : kind === "club" ? [0.13, 0.11, 0.17] : kind === "starter" ? [0.86, 0.9, 0.84] : local_.wall;
+  ceiling.polygon(corners, H, 3, marina ? [0.14, 0.12, 0.1] : kind === "club" ? [0.08, 0.07, 0.1] : gym ? [0.2, 0.2, 0.22] : [0.97, 0.97, 0.95], true);
+  const wallColor: [number, number, number] = marina ? [0.3, 0.25, 0.19] : kind === "club" ? [0.13, 0.11, 0.17] : gym ? [0.34, 0.34, 0.37] : kind === "starter" ? [0.86, 0.9, 0.84] : local_.wall;
   for (let index = 0; index < 4; index += 1) {
     const a = corners[index]!;
     const b = corners[(index + 1) % 4]!;
-    get(kind === "club" || kind === "starter" ? "plaster" : "homeWall").wall(b[0], b[1], a[0], a[1], 0, H, 2.5, wallColor);
+    get(plain ? "plaster" : "homeWall").wall(b[0], b[1], a[0], a[1], 0, H, 2.5, wallColor);
   }
   if (grand) {
     dressHome(layout, { get, solid, model, boxes });
-  } else {
+  } else if (!gym) {
     // Windows with a bright daylight view on the north and east walls.
     for (const x of kind === "club" ? [] : [-3, 0, 3]) {
       get("lamp").quad([OX + x + 0.7, 1.0, Z1 - 0.02], [OX + x - 0.7, 1.0, Z1 - 0.02], [OX + x - 0.7, 2.3, Z1 - 0.02], [OX + x + 0.7, 2.3, Z1 - 0.02], [0, 0, -1], [[0, 0], [1, 0], [1, 1], [0, 1]]);
@@ -169,8 +179,8 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   // Exit door on the south wall.
   const [exitX, exitZ] = INTERIOR_EXIT;
   const exitDisposables: Array<{ dispose(): void }> = [];
-  buildExitDoor(scene, exitX, OZ - HZ + 0.02, 0, exitDisposables, { label: kind === "club" ? "Back to the street" : "Out to the street", width: 1.4 });
-  const subtitle = club ? `Tonight: ${club.dj}` : kind === "preview" ? "Show flat preview" : kind === "starter" ? "Starter room" : "Your home";
+  buildExitDoor(scene, exitX, OZ - HZ + 0.02, 0, exitDisposables, { label: kind === "club" ? "Back to the street" : gym ? "Out to Admiralty Way" : "Out to the street", width: 1.4 });
+  const subtitle = club ? `Tonight: ${club.dj}` : gym ? "Members' training floor" : kind === "preview" ? "Show flat preview" : kind === "starter" ? "Starter room" : "Your home";
   const uv = atlas.get(title, "plate", subtitle);
   const signs = new MeshBuilderBatch("interior title");
   signs.quad([exitX + 2.4, 2.1, OZ - HZ + 0.03], [exitX + 0.9, 2.1, OZ - HZ + 0.03], [exitX + 0.9, 2.1 + 1.5 / SignAtlas.aspect, OZ - HZ + 0.03], [exitX + 2.4, 2.1 + 1.5 / SignAtlas.aspect, OZ - HZ + 0.03], [0, 0, 1], [[uv.u0, uv.v0], [uv.u1, uv.v0], [uv.u1, uv.v1], [uv.u0, uv.v1]]);
@@ -230,6 +240,10 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   if (kind === "club") {
     clubView = buildClub(scene, atlas, get, solid, spots, disposables, club);
     animate = clubView.animate;
+  } else if (gym) {
+    dressGym(atlas, signs, { get, solid, model, boxes });
+    for (const station of gymStations()) addSpot("gym", station.spot, GYM_SPOT_LABELS[station.exercise]);
+    addSpot("gym", GYM_RECEPTION.spot, "Reception · membership");
   } else if (kind === "starter") {
     bed(OX - HX + 1.0, OZ + HZ - 1.4, Math.PI);
     table(OX + 2.5, OZ + 2.6, 0);
@@ -263,15 +277,17 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   }
   const sign = signs.build(scene, atlas.material);
   if (sign) meshes.push(sign);
-  const roof = ceiling.build(scene, kind === "club" || kind === "starter" ? materials.plaster : local_.byKey.homeCeiling!);
+  const roof = ceiling.build(scene, plain ? materials.plaster : local_.byKey.homeCeiling!);
   if (roof) meshes.push(roof);
   // Bigger homes get a light per zone; tall rooms hang them lower so the floor still reads bright.
-  const lightPoints: Vec2[] = layout.tier === "mansion" ? [[0, 1.5], [-7, 8], [7, 8]] : layout.tier === "flat" || !grand ? [[0, 0]] : [[0, 0.5], [0, layout.back - 4]];
+  const lightPoints: Vec2[] = gym
+    ? [[-5, 0.5], [5, 0.5], [-4, 7.5], [5, 7.5]]
+    : layout.tier === "mansion" ? [[0, 1.5], [-7, 8], [7, 8]] : layout.tier === "flat" || !grand ? [[0, 0]] : [[0, 0.5], [0, layout.back - 4]];
   const lights = lightPoints.map(([lx, lz], index) => {
     const light = new PointLight(`interior light ${index}`, new Vector3(OX + lx, Math.min(H - 0.6, 4.2), OZ + lz), scene);
-    light.intensity = kind === "club" ? 5 : grand ? 26 : 18;
-    light.range = grand ? 20 : 14;
-    light.diffuse = Color3.FromHexString(kind === "club" ? "#b8a8ff" : "#fff1dc");
+    light.intensity = kind === "club" ? 5 : grand ? 26 : gym ? 16 : 18;
+    light.range = grand || gym ? 20 : 14;
+    light.diffuse = Color3.FromHexString(kind === "club" ? "#b8a8ff" : gym ? "#f1f4ff" : "#fff1dc");
     return light;
   });
 
@@ -682,6 +698,93 @@ function dressHome(layout: HomeLayout, { get, solid, model, boxes }: Dresser) {
     palm(2.9, 8.7);
     palm(-layout.halfX + 0.8, FRONT_WALL + 0.8);
     palm(layout.halfX - 0.8, FRONT_WALL + 0.8);
+  }
+}
+
+const GYM_SPOT_LABELS: Record<ExerciseId, string> = { treadmill: "Treadmill · cardio", bench: "Bench press", dumbbells: "Dumbbells" };
+
+/**
+ * iFitness inside: a cardio row of treadmills and bikes facing a mirror wall with TVs, free weights (squat rack,
+ * benches, dumbbells) on black rubber along the east wall, a stretch mat, lockers, the front desk by the door, and a
+ * glazed street front. The machines come from gym-stations.ts so members train exactly where they are drawn.
+ */
+function dressGym(atlas: SignAtlas, signs: MeshBuilderBatch, { get, solid, model, boxes }: Dresser) {
+  const { halfX, back, height: H } = GYM_ROOM;
+  const [X0, X1, Z0, Z1] = [OX - halfX, OX + halfX, OZ + FRONT_WALL, OZ + back];
+  const wx = (x: number) => OX + x;
+  const wz = (z: number) => OZ + z;
+  const zone = (x0: number, z0: number, x1: number, z1: number, y: number, color: Rgb) =>
+    get("vertexPaint").polygon([[wx(x0), wz(z0)], [wx(x1), wz(z0)], [wx(x1), wz(z1)], [wx(x0), wz(z1)]], y, 1, color);
+  zone(-halfX, 7.4, 4.4, back, 0.025, [0.2, 0.24, 0.3]);
+  zone(4.8, FRONT_WALL, halfX, back, 0.025, [0.07, 0.07, 0.08]);
+  zone(4.4, FRONT_WALL, 4.8, back, 0.03, [0.78, 0.1, 0.1]);
+  zone(-3.2, 1.8, 0.2, 4.6, 0.03, [0.36, 0.2, 0.46]);
+  zone(-0.9, FRONT_WALL, 0.9, FRONT_WALL + 1.2, 0.03, [0.1, 0.1, 0.1]);
+
+  // Red band round the room and white trim at the skirting.
+  for (const [ax, az, bx, bz] of [[X0, Z1, X1, Z1], [X1, Z0, X1, Z1], [X0, Z0, X0, Z1]] as const) {
+    const yaw = ax === bx ? Math.PI / 2 : 0;
+    const length = Math.hypot(bx - ax, bz - az);
+    const [cx, cz] = [(ax + bx) / 2 + (ax === bx ? (ax < OX ? 0.03 : -0.03) : 0), (az + bz) / 2 + (ax === bx ? 0 : -0.03)];
+    get("neon").box(cx, 2.85, cz, length, 0.12, 0.02, yaw, 1, [0.9, 0.12, 0.14]);
+    get("vertexPaint").box(cx, 0.08, cz, length, 0.16, 0.03, yaw, 1, [0.9, 0.9, 0.9]);
+  }
+
+  // Mirror wall with a TV over each treadmill, and the iFitness sign above.
+  get("chrome").box(wx(-4.3), 1.1, Z1 - 0.03, 9.2, 1.6, 0.03, 0, 1, [0.82, 0.88, 0.92]);
+  for (const x of [-7.6, -5.4, -3.2, -1.0, 2.2]) {
+    get("vertexPaint").box(wx(x), 2.35, Z1 - 0.06, 1.1, 0.66, 0.06, 0, 1, [0.05, 0.05, 0.06]);
+    get("neon").box(wx(x), 2.35, Z1 - 0.1, 1.0, 0.56, 0.01, 0, 1, x === 2.2 ? [0.95, 0.42, 0.16] : [0.2, 0.55, 0.95]);
+  }
+  const uv = atlas.get("iFitness", "club", "Lekki · Train hard");
+  const [sx0, sx1, sy0] = [wx(-5.6), wx(-0.8), 3.0];
+  const sy1 = sy0 + (sx1 - sx0) / SignAtlas.aspect;
+  signs.quad([sx0, sy0, Z1 - 0.04], [sx1, sy0, Z1 - 0.04], [sx1, sy1, Z1 - 0.04], [sx0, sy1, Z1 - 0.04], [0, 0, -1], [[uv.u0, uv.v0], [uv.u1, uv.v0], [uv.u1, uv.v1], [uv.u0, uv.v1]]);
+
+  // Street front: floor-to-ceiling glass either side of the door, with mullions.
+  for (const [from, to] of [[-halfX + 0.3, -1.3], [1.3, halfX - 0.3]] as const) {
+    get("lamp").quad([wx(to), 0.25, Z0 + 0.02], [wx(from), 0.25, Z0 + 0.02], [wx(from), 3.4, Z0 + 0.02], [wx(to), 3.4, Z0 + 0.02], [0, 0, 1], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+    for (let x = from; x <= to + 0.01; x += (to - from) / 4) get("darkFrame").box(wx(x), 1.82, Z0 + 0.05, 0.08, 3.2, 0.06);
+    for (const y of [0.25, 3.4]) get("darkFrame").box(wx((from + to) / 2), y, Z0 + 0.05, to - from + 0.08, 0.08, 0.06);
+  }
+
+  // Ceiling: long LED battens over the floor.
+  for (const x of [-6.5, -2.5, 1.5, 6.5]) get("lamp").box(wx(x), H - 0.03, wz(3), 0.16, 0.03, 13);
+
+  for (const machine of gymMachines()) {
+    const [x, z] = machine.at;
+    const [w, h, d] = machine.size;
+    if (!model(machine.prop, x, z, machine.yaw)) solid("vertexPaint", x, h / 2, z, w, h, d, machine.yaw, machine.color, false);
+    const swap = Math.abs(Math.sin(machine.yaw)) > 0.7;
+    boxes.push({ x, z, hx: (swap ? d : w) / 2 - 0.1, hz: (swap ? w : d) / 2 - 0.1 });
+  }
+  // Weight plates on a tree by the rack, kettlebells along the wall.
+  solid("vertexPaint", wx(8.4), 0.6, wz(9.6), 0.12, 1.2, 0.12, 0, [0.2, 0.2, 0.22]);
+  for (const [y, size] of [[0.35, 0.45], [0.7, 0.4], [1.0, 0.32]] as const) get("rubber").box(wx(8.4), y, wz(9.6), size, size, 0.06, Math.PI / 2);
+  for (let index = 0; index < 6; index += 1) {
+    const z = wz(0.8 + index * 0.38);
+    get("rubber").box(X1 - 0.3, 0.13, z, 0.22, 0.26, 0.22);
+    get("vertexPaint").box(X1 - 0.3, 0.3, z, 0.06, 0.1, 0.16, 0, 1, [0.75, 0.12, 0.14]);
+  }
+  boxes.push({ x: X1 - 0.3, z: wz(1.75), hx: 0.2, hz: 1.2 });
+
+  // Front desk with the brand strip, a water cooler, lockers by the door.
+  const [dx, dz] = GYM_RECEPTION.desk;
+  solid("vertexPaint", dx, 0.55, dz, 0.7, 1.1, 2.4, 0, [0.12, 0.12, 0.13]);
+  get("vertexPaint").box(dx, 1.12, dz, 0.85, 0.05, 2.5, 0, 1, [0.94, 0.94, 0.92]);
+  get("neon").box(dx + 0.36, 0.7, dz, 0.01, 0.12, 2.2, 0, 1, [0.9, 0.12, 0.14]);
+  get("vertexPaint").box(dx, 1.2, dz + 0.6, 0.35, 0.22, 0.03, Math.PI / 2, 1, [0.08, 0.08, 0.09]);
+  solid("vertexPaint", wx(-8.5), 0.55, wz(0.6), 0.35, 1.1, 0.35, 0, [0.9, 0.92, 0.94]);
+  get("neon").box(wx(-8.5), 1.25, wz(0.6), 0.28, 0.32, 0.28, 0, 1, [0.55, 0.78, 0.95]);
+  for (let index = 0; index < 6; index += 1) {
+    const x = wx(2.2 + index * 0.5);
+    get("vertexPaint").box(x, 0.95, Z0 + 0.3, 0.48, 1.9, 0.5, 0, 1, index % 2 ? [0.55, 0.57, 0.6] : [0.48, 0.5, 0.53]);
+    get("chrome").box(x + 0.15, 1.1, Z0 + 0.56, 0.03, 0.12, 0.02);
+  }
+  boxes.push({ x: wx(3.45), z: Z0 + 0.3, hx: 1.5, hz: 0.3 });
+  for (const [x, z] of [[-halfX + 0.5, back - 0.5], [halfX - 0.5, FRONT_WALL + 2.2]] as const) {
+    if (!model("potted-palm", wx(x), wz(z), 0)) solid("vertexPaint", wx(x), 0.3, wz(z), 0.5, 0.6, 0.5, 0, [0.72, 0.38, 0.24]);
+    boxes.push({ x: wx(x), z: wz(z), hx: 0.3, hz: 0.3 });
   }
 }
 
