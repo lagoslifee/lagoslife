@@ -128,10 +128,19 @@ async function findReplay(client: PoolClient, userId: string, idempotencyKey: st
   return Boolean(replay.rowCount);
 }
 
+/** Raises a wallet to `TEST_FUNDS` on testing servers; the row lock keeps two refills from both crediting. */
+async function refillTestFunds(client: PoolClient, userId: string) {
+  if (config.TEST_FUNDS <= 0) return;
+  const { rows } = await client.query<{ balance: string }>("SELECT balance FROM wallet WHERE user_id = $1 FOR UPDATE", [userId]);
+  const missing = config.TEST_FUNDS - Number(rows[0]?.balance ?? config.TEST_FUNDS);
+  if (missing > 0) await creditWallet(client, userId, missing, "test_funds", "Testing top-up", `test-funds:${randomUUID()}`);
+}
+
 export async function getEconomyState(userId: string) {
   await withTransaction(async (client) => {
     await ensureWallet(client, userId);
     await ensureProfile(client, userId);
+    await refillTestFunds(client, userId);
   });
   const [wallet, catalog, inventory, transactions, job, profile] = await Promise.all([
     pool.query(`SELECT balance FROM wallet WHERE user_id = $1`, [userId]),

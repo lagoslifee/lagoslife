@@ -307,6 +307,12 @@ run in tmux, notices within about three minutes, starts a new tunnel, restarts t
 pushes `netlify.toml` to `main`, after which Netlify rebuilds in about a minute. A named Cloudflare tunnel or the
 Render server (`render.yaml`) avoids this entirely.
 
+### Testing money
+
+`TEST_FUNDS=10000000` refills every wallet to ₦10,000,000 whenever the game reads it (after each purchase, on the
+next refresh), so testers can buy anything. Each refill is a `test_funds` ledger entry. The VM test server runs with
+it on; leave it unset (0) anywhere the economy should be real.
+
 ## Secrets
 
 - `.env`, `.env.*` (except `.env.production.example`) and `apps/server/.env`
