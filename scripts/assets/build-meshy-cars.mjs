@@ -30,7 +30,11 @@ const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies(
 const only = process.argv.slice(2);
 const r2 = (value) => Math.round(value * 100) / 100;
 /** Triangles kept per car before the wheels are cut out. */
-const TRIANGLE_BUDGET = 11_000;
+const TRIANGLE_BUDGET = 16_000;
+/** Faces meeting at more than this keep a hard edge; the rest of the body is shaded smooth. */
+const CREASE = Math.cos((40 * Math.PI) / 180);
+/** How much of the baked shading the paint keeps: Meshy bakes reflections into the white body as grey smudges. */
+const PAINT_SHADING = 0.4;
 
 async function rasterOf(texture) {
   const { data, info } = await sharp(Buffer.from(texture.getImage())).raw().toBuffer({ resolveWithObject: true });
@@ -53,6 +57,98 @@ const saturation = (c) => (Math.max(...c) - Math.min(...c)) / (Math.max(...c) ||
 const isRed = ([r, g, b]) => r > 0.45 && r > g * 2 && r > b * 2;
 const isDark = (c) => luminance(c) < 0.16;
 const isPaint = (c) => luminance(c) > 0.6 && saturation(c) < 0.14;
+/** Grey enough to be white paint with a baked reflection on it, if it joins onto clear paint. */
+const mayBePaint = (c) => luminance(c) > 0.3 && saturation(c) < 0.16;
+
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const unit = (v) => {
+  const l = Math.hypot(...v) || 1;
+  return [v[0] / l, v[1] / l, v[2] / l];
+};
+const keyOf = (p) => `${Math.round(p[0] * 1e4)},${Math.round(p[1] * 1e4)},${Math.round(p[2] * 1e4)}`;
+
+/** Triangles sharing a corner position (UV seams split vertices, so positions, not indices, join the shell). */
+function neighbours(tris) {
+  const byCorner = new Map();
+  tris.forEach((tri, index) => {
+    for (const p of tri.p) {
+      const key = keyOf(p);
+      const list = byCorner.get(key);
+      if (list) list.push(index);
+      else byCorner.set(key, [index]);
+    }
+  });
+  return { byCorner, of: (index) => [...new Set(tris[index].p.flatMap((p) => byCorner.get(keyOf(p))))].filter((other) => other !== index) };
+}
+
+/**
+ * Smooth vertex normals from the simplified shell itself: the source normals belong to the dense mesh and make the
+ * decimated body look dented. Area-weighted across UV seams, keeping creases sharper than CREASE.
+ */
+function smoothNormals(tris, graph) {
+  const face = tris.map((tri) => {
+    const n = cross(sub(tri.p[1], tri.p[0]), sub(tri.p[2], tri.p[0]));
+    const outward = dot(n, [0, 1, 2].reduce((sum, k) => [sum[0] + tri.n[k][0], sum[1] + tri.n[k][1], sum[2] + tri.n[k][2]], [0, 0, 0])) >= 0;
+    return outward ? n : [-n[0], -n[1], -n[2]];
+  });
+  const direction = face.map(unit);
+  tris.forEach((tri, index) => {
+    tri.n = tri.p.map((p) => {
+      const sum = [0, 0, 0];
+      for (const other of graph.byCorner.get(keyOf(p))) {
+        if (dot(direction[other], direction[index]) < CREASE) continue;
+        sum[0] += face[other][0];
+        sum[1] += face[other][1];
+        sum[2] += face[other][2];
+      }
+      return unit(sum);
+    });
+  });
+}
+
+/**
+ * Clearly white triangles are paint and dark or coloured ones are trim (glass, grilles, lamps). The grey ones in
+ * between are baked reflections, on the body or on the glass, so each takes the side of whichever it lies nearer
+ * across the shell. Then single stray triangles take their neighbours' side, so a recoloured car has no white or grey
+ * patches left on its panels and no tinted windows.
+ */
+function paintMask(tris, graph, skip) {
+  const value = new Float32Array(tris.length);
+  const open = [];
+  tris.forEach((tri, index) => {
+    if (skip.has(index)) value[index] = 0;
+    else if (isPaint(tri.c)) value[index] = 1;
+    else if (mayBePaint(tri.c)) {
+      value[index] = 0.5;
+      open.push(index);
+    } else value[index] = 0;
+  });
+  const around = new Map(open.map((index) => [index, graph.of(index)]));
+  for (let pass = 0; pass < 40; pass += 1) {
+    for (const index of open) {
+      const list = around.get(index);
+      if (list.length) value[index] = list.reduce((sum, other) => sum + value[other], 0) / list.length;
+    }
+  }
+  const paint = new Uint8Array(tris.length);
+  value.forEach((v, index) => (paint[index] = v > 0.5 ? 1 : 0));  for (let pass = 0; pass < 3; pass += 1) {
+    const next = paint.slice();
+    tris.forEach((tri, index) => {
+      if (skip.has(index)) return;
+      const around = graph.of(index).filter((other) => !skip.has(other));
+      if (!around.length) return;
+      const share = around.reduce((sum, other) => sum + paint[other], 0) / around.length;
+      // A light triangle left in the trim would show as a white sliver on a coloured car.
+      const light = luminance(tri.c) > 0.55;
+      if (!paint[index] && ((share > 0.65 && luminance(tri.c) > 0.2) || (light && share >= 0.3))) next[index] = 1;
+      else if (paint[index] && share < 0.25) next[index] = 0;
+    });
+    paint.set(next);
+  }
+  return paint;
+}
 
 async function build(car) {
   const input = path.join(sourceDir, `car-${car.id}.glb`);
@@ -175,6 +271,8 @@ async function build(car) {
   const shift = (front.z + rear.z) / 2;
   const hubXs = [];
   const exported = new Set();
+  const body = [];
+  const fixed = new Set();
   for (const tri of tris) {
     tri.p = tri.p.map(([x, y, z]) => [x, y, z - shift]);
     const hit = wheelOf({ p: tri.p.map(([x, y, z]) => [x, y, z + shift]) });
@@ -187,10 +285,20 @@ async function build(car) {
       }
       continue;
     }
-    if (isRed(tri.c) && tri.p[0][2] < -(car.length / 2 - shift) * 0.55) parts.taillamp.push(tri);
-    else if (isPaint(tri.c)) parts.paint.push(tri);
-    else parts.trim.push(tri);
+    if (isRed(tri.c) && tri.p[0][2] < -(car.length / 2 - shift) * 0.55) {
+      parts.taillamp.push(tri);
+      fixed.add(body.length);
+    }
+    body.push(tri);
   }
+  const graph = neighbours(body);
+  smoothNormals(body, graph);
+  smoothNormals(parts.wheel, neighbours(parts.wheel));
+  const paint = paintMask(body, graph, fixed);
+  body.forEach((tri, index) => {
+    if (fixed.has(index)) return;
+    (paint[index] ? parts.paint : parts.trim).push(tri);
+  });
   if (!parts.wheel.length) throw new Error(`${car.id}: no wheel triangles`);
   const hub = (Math.min(...hubXs) + Math.max(...hubXs)) / 2;
   const axle = front.z - shift;
@@ -205,8 +313,11 @@ async function build(car) {
   const colourMap = copyTexture(base, "base colour");
   const normalMap = copyTexture(material.getNormalTexture(), "normal");
   const ormMap = copyTexture(material.getMetallicRoughnessTexture(), "metallic roughness");
+  // The game tints this by the chosen colour, so it keeps panel lines but only a trace of the baked reflections.
+  const lifted = await sharp(Buffer.from(base.getImage())).linear(PAINT_SHADING, 255 * (1 - PAINT_SHADING)).jpeg({ quality: 92 }).toBuffer();
+  const paintMap = document.createTexture("paint shading").setImage(new Uint8Array(lifted)).setMimeType("image/jpeg");
   const makeMaterial = (name, options = {}) => {
-    const m = document.createMaterial(name).setBaseColorTexture(colourMap).setMetallicFactor(options.metallic ?? 1).setRoughnessFactor(options.roughness ?? 1);
+    const m = document.createMaterial(name).setBaseColorTexture(options.colour ?? colourMap).setMetallicFactor(options.metallic ?? 1).setRoughnessFactor(options.roughness ?? 1);
     if (normalMap) m.setNormalTexture(normalMap);
     if (ormMap && !options.flat) m.setMetallicRoughnessTexture(ormMap);
     return m;
@@ -231,13 +342,14 @@ async function build(car) {
       .setAttribute("TEXCOORD_0", accessor(new Float32Array(uv), "VEC2"));
     scene.addChild(document.createNode(name).setMesh(document.createMesh(name).addPrimitive(prim)));
   };
-  addMesh("paint", parts.paint, makeMaterial("paint", { flat: true, metallic: 0.5, roughness: 0.3 }));
+  addMesh("paint", parts.paint, makeMaterial("paint", { flat: true, metallic: 0.5, roughness: 0.3, colour: paintMap }));
   addMesh("trim", parts.trim, makeMaterial("trim"));
   if (parts.taillamp.length) addMesh("taillamp", parts.taillamp, makeMaterial("taillamp"));
   addMesh("wheel", parts.wheel, makeMaterial("wheel"));
   await document.transform(
     weld(),
-    textureCompress({ encoder: sharp, targetFormat: "webp", slots: /^baseColorTexture$/, resize: [512, 512], quality: 82 }),
+    // A dozen cars load at once on a phone; with the separate paint texture, two 512² maps keep each near 3 MB of GPU memory.
+    textureCompress({ encoder: sharp, targetFormat: "webp", slots: /^baseColorTexture$/, resize: [512, 512], quality: 85 }),
     textureCompress({ encoder: sharp, targetFormat: "webp", slots: /^(normalTexture|metallicRoughnessTexture)$/, resize: [256, 256], quality: 75 }),
     meshopt({ encoder: MeshoptEncoder, level: "medium" }),
   );
