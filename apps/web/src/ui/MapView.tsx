@@ -638,7 +638,7 @@ export function FullMap({
   );
 }
 
-/** Under-five-second option: an express taxi to the current map pin, for the normal ride fare. */
+/** Under-five-second option: an express taxi to the current map pin, for the ride fare plus the express fee. */
 function ExpressOffer({ engine, onClose }: { engine: GameEngine; onClose: () => void }) {
   const [, refresh] = useState(0);
   useEffect(() => {
@@ -648,7 +648,7 @@ function ExpressOffer({ engine, onClose }: { engine: GameEngine; onClose: () => 
   const pin = engine.currentWaypoint();
   const pose = engine.pose();
   const key = pin ? `${pin.label}|${pin.point.join()}|${Math.round(pose.x / 25)}|${Math.round(pose.z / 25)}|${pose.indoors}` : "";
-  const offer = useMemo(() => (pin ? engine.rideOffer(pin.point, pin.label) : null), [key]);
+  const offer = useMemo(() => (pin ? engine.rideOffer(pin.point, pin.label, true) : null), [key]);
   if (!pin || !offer) return <p className="muted small">Pick a place to set a route. You can then take an express taxi there in about 3 seconds.</p>;
   return (
     <div className="map-express" data-testid="map-express">

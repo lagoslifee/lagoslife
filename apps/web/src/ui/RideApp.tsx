@@ -69,6 +69,7 @@ export function RideApp({ engine, ride, properties, initial, onNavigate, onClose
   const matches = (term ? destinations.filter((entry) => `${entry.label} ${entry.sub}`.toLowerCase().includes(term)) : destinations).slice(0, term ? 12 : 8);
 
   const quote = useMemo(() => (engine && chosen ? engine.rideOffer(chosen.point, chosen.label) : null), [engine, chosen]);
+  const express = useMemo(() => (engine && chosen ? engine.rideOffer(chosen.point, chosen.label, true) : null), [engine, chosen]);
 
   if (active && ride) {
     const remaining = ride.status === "riding" ? engine?.rideRemaining() ?? null : null;
@@ -147,7 +148,7 @@ export function RideApp({ engine, ride, properties, initial, onNavigate, onClose
                 <div><dt>Trip</dt><dd>{(quote.metres / 1000).toFixed(1)} km · {minutes(quote.tripSeconds)}</dd></div>
               </dl>
               {quote.walkAfter > 30 && <p className="muted small">Drop-off is on the nearest road, {Math.round(quote.walkAfter)} m from the entrance.</p>}
-              <p className="muted small">Paid up front in game naira. Free to cancel within a minute; refunds go back to your wallet. Express takes you straight there in a few seconds for the same fare.</p>
+              <p className="muted small">Paid up front in game naira. Free to cancel within a minute; refunds go back to your wallet. Express takes you straight there in about 3 seconds for ₦{RIDE.expressFee.toLocaleString("en-NG")} extra, even from indoors or off the road.</p>
             </>
           )}
           <div className="row">
@@ -167,7 +168,7 @@ export function RideApp({ engine, ride, properties, initial, onNavigate, onClose
             <button
               className="primary"
               data-testid="ride-express"
-              disabled={Boolean(quote.problem) || booking}
+              disabled={Boolean(express?.problem) || booking}
               onClick={() => {
                 setBooking(true);
                 setTimeout(() => setBooking(false), 4000);
@@ -175,7 +176,7 @@ export function RideApp({ engine, ride, properties, initial, onNavigate, onClose
                 onClose();
               }}
             >
-              Express · there in 3 s
+              Express · 3 s{express && !express.problem ? ` · ${naira(express.fare)}` : ""}
             </button>
           </div>
         </section>

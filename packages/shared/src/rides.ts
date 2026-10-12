@@ -32,6 +32,8 @@ export const RIDE = {
   dubaiColour: "#e8dcc0",
   /** Skipping ahead puts the rider at the drop-off after this short transfer. */
   skipSeconds: 3,
+  /** Express costs the ride fare plus this, and can be booked from indoors or away from a road. */
+  expressFee: 1_500,
   boardRange: 7,
   /** Drop-off counts as arrived within this distance of the destination's road point. */
   arriveRange: 40,
@@ -39,6 +41,10 @@ export const RIDE = {
 
 export function rideFare(roadMetres: number) {
   return Math.round((RIDE.baseFare + (roadMetres / 1000) * RIDE.perKm) / 50) * 50;
+}
+
+export function expressFare(roadMetres: number) {
+  return rideFare(roadMetres) + RIDE.expressFee;
 }
 
 const point = z.tuple([z.number().finite(), z.number().finite()]);
@@ -51,7 +57,7 @@ export const rideBookSchema = z.object({
   destination: point,
   label: z.string().min(1).max(80),
   roadMetres: z.number().finite().min(0).max(60_000),
-  /** Express: same fare, but the rider is taken straight to the drop-off instead of riding along. */
+  /** Express: the rider is taken straight to the destination in about 3 s, for the fare plus `RIDE.expressFee`. */
   express: z.boolean().default(false),
   idempotencyKey: z.uuid(),
 });

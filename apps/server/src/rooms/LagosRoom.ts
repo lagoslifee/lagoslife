@@ -44,6 +44,7 @@ import {
   rentBikeSchema,
   rentalUsage,
   rideFare,
+  expressFare,
   rideBookSchema,
   rideCancelSchema,
   type RideState,
@@ -1348,9 +1349,16 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
     const fail = (text: string) => this.notify(client, { tone: "error", text });
     if (player.ride && (player.ride.status === "approaching" || player.ride.status === "waiting" || player.ride.status === "riding")) return fail("You already have a ride booked.");
-    if (player.location !== "street" || player.busId || player.vehicleId) return fail("Book a ride from the street, not from inside a vehicle or building.");
-    const { pickup, dropoff, destination, label, roadMetres, idempotencyKey } = parsed.data;
-    if (Math.hypot(pickup[0] - player.x, pickup[1] - player.z) > RIDE.pickupRange || !walkable(pickup[0], pickup[1], 0.5)) {
+    const express = parsed.data.express;
+    if (player.busId || player.vehicleId) return fail("Get out of the vehicle you're in before booking.");
+    if (express) {
+      const block = this.fastTravelBlock(player);
+      if (block) return fail(block);
+    } else if (player.location !== "street") return fail("Book a ride from the street, not from inside a building. Express works from indoors.");
+    const { dropoff, destination, label, roadMetres, idempotencyKey } = parsed.data;
+    // Express picks you up wherever you stand (indoors, off-road); a normal ride needs a road the driver can reach.
+    const pickup: [number, number] = express ? this.standingAt(player) : parsed.data.pickup;
+    if (!express && (Math.hypot(pickup[0] - player.x, pickup[1] - player.z) > RIDE.pickupRange || !walkable(pickup[0], pickup[1], 0.5))) {
       return fail("Move closer to a road so the driver can reach you.");
     }
     if (!walkable(dropoff[0], dropoff[1], 0.5) || Math.hypot(dropoff[0] - destination[0], dropoff[1] - destination[1]) > 400) {
@@ -1364,7 +1372,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (straight < RIDE.minMetres) return fail(`${label} is a short walk from here.`);
     if (straight > RIDE.maxMetres) return fail(`${label} is outside the Naija World Ride service area.`);
     const metres = Math.min(straight * RIDE.maxRoadFactor, Math.max(straight * RIDE.minRoadFactor, roadMetres));
-    const fare = rideFare(metres);
+    const fare = express ? expressFare(metres) : rideFare(metres);
     const id = randomUUID();
     const now = Date.now();
     player.ride = {
@@ -1391,8 +1399,15 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const ride = player.ride;
     try {
       const balance = await chargeRide(player.userId, fare, label, idempotencyKey, id);
-      if (parsed.data.express) {
-        this.notify(client, { tone: "success", text: `Express ride booked: ₦${fare.toLocaleString("en-NG")} paid, balance ₦${balance.toLocaleString("en-NG")}.` });
+      if (express) {
+        this.notify(client, { tone: "success", text: `Express to ${label}: ₦${fare.toLocaleString("en-NG")} paid, balance ₦${balance.toLocaleString("en-NG")}.` });
+        if (walkable(destination[0], destination[1], 0.5)) ride.dropoff = [destination[0], destination[1]];
+        if (player.location !== "street") {
+          player.location = "street";
+          player.previewOnly = false;
+          player.propertyId = null;
+          [player.x, player.z] = player.returnPoint;
+        }
         await this.skipRide(player);
         return;
       }

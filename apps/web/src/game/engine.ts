@@ -75,6 +75,7 @@ import {
   type Vec2,
   RIDE,
   rideFare,
+  expressFare,
   TOW,
   walkable,
   BIKE_RENTAL,
@@ -3467,27 +3468,29 @@ export class GameEngine {
 
   /** Road pickup near the player, the drop-off road point near `destination`, and the road route between them. */
   rideQuote(destination: Vec2) {
-    const { x, z } = this.controller;
-    const pickup = this.navigator.snap([x, z]);
+    const origin: Vec2 = this.interior ? this.lastStreet : [this.controller.x, this.controller.z];
+    const pickup = this.navigator.snap(origin);
     const dropoff = this.navigator.snap(destination);
     const plan = this.navigator.plan(pickup.point, dropoff.point);
-    return { pickup, dropoff, plan, indoors: Boolean(this.interior), aboard: Boolean(this.self?.busId || this.driving || this.passenger) };
+    return { origin, pickup, dropoff, plan, indoors: Boolean(this.interior), aboard: Boolean(this.self?.busId || this.driving || this.passenger) };
   }
 
-  /** Fare, trip length and any reason a ride to `destination` cannot be booked from here. */
-  rideOffer(destination: Vec2, label: string) {
+  /** Fare, trip length and any reason a ride to `destination` cannot be booked from here. Express works from indoors and off-road. */
+  rideOffer(destination: Vec2, label: string, express = false) {
     const result = this.rideQuote(destination);
-    const straight = Math.hypot(result.dropoff.point[0] - result.pickup.point[0], result.dropoff.point[1] - result.pickup.point[1]);
+    const from = express ? result.origin : result.pickup.point;
+    const straight = Math.hypot(result.dropoff.point[0] - from[0], result.dropoff.point[1] - from[1]);
     let problem: string | null = null;
-    if (result.indoors) problem = "You're indoors. Step out to the street first: the driver arrives about 10 seconds after you book from the kerb, and the timer only starts then.";
-    else if (result.aboard) problem = "Get out of your current vehicle before booking.";
-    else if (result.pickup.distance > RIDE.pickupRange) problem = `You are ${Math.round(result.pickup.distance)} m from the nearest road. Walk to a street so the driver can reach you.`;
-    else if (!result.plan.reachable) problem = `No road connects here with ${label}. Try the danfo, or walk.`;
+    if (result.aboard) problem = this.driving ? "You're driving. Park and step out first, or just follow the route." : "Get out of your current vehicle before booking.";
+    else if (!express && result.indoors) problem = "You're indoors. Step out to the street first, or take the express (works from anywhere).";
+    else if (!express && result.pickup.distance > RIDE.pickupRange) problem = `You are ${Math.round(result.pickup.distance)} m from the nearest road. Walk to a street, or take the express (works from anywhere).`;
+    else if (!express && !result.plan.reachable) problem = `No road connects here with ${label}. Try the danfo, or walk.`;
     else if (result.dropoff.distance > 400) problem = `${label} is ${Math.round(result.dropoff.distance)} m from any road, so a car cannot get there.`;
     else if (straight < RIDE.minMetres) problem = `${label} is a short walk away (${Math.round(straight)} m).`;
     else if (straight > RIDE.maxMetres) problem = `${label} is outside the service area.`;
     const metres = Math.min(straight * RIDE.maxRoadFactor, Math.max(straight, result.plan.metres));
-    return { ...result, problem, metres, fare: rideFare(metres), tripSeconds: metres / (RIDE.driverSpeed * 0.75), walkAfter: result.dropoff.distance };
+    const fare = express ? expressFare(metres) : rideFare(metres);
+    return { ...result, problem, metres, fare, tripSeconds: metres / (RIDE.driverSpeed * 0.75), walkAfter: result.dropoff.distance };
   }
 
   requestTow(vehicleId: string, destination: TowDestination) {
