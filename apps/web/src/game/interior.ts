@@ -159,13 +159,31 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   const ceiling = new MeshBuilderBatch("interior ceiling");
   ceiling.polygon(corners, H, 3, marina ? [0.14, 0.12, 0.1] : kind === "club" ? [0.08, 0.07, 0.1] : gym ? [0.2, 0.2, 0.22] : [0.97, 0.97, 0.95], true);
   const wallColor: [number, number, number] = marina ? [0.3, 0.25, 0.19] : kind === "club" ? [0.13, 0.11, 0.17] : gym ? [0.34, 0.34, 0.37] : kind === "starter" ? [0.86, 0.9, 0.84] : local_.wall;
+  const RAIL = 1.05;
+  // Inward normals of the front, east, back and west walls.
+  const inward: Vec2[] = [[0, 1], [-1, 0], [0, -1], [1, 0]];
   for (let index = 0; index < 4; index += 1) {
     const a = corners[index]!;
     const b = corners[(index + 1) % 4]!;
-    get(plain ? "plaster" : "homeWall").wall(b[0], b[1], a[0], a[1], 0, H, 2.5, wallColor);
+    if (plain) {
+      get("plaster").wall(b[0], b[1], a[0], a[1], 0, H, 2.5, wallColor);
+      continue;
+    }
+    const { scheme } = local_;
+    get("homeWall").wall(b[0], b[1], a[0], a[1], 0, RAIL, 2.5, scheme.lower);
+    // The back wall carries the print; the others are painted.
+    if (index === 2) get("homePaper").wall(b[0], b[1], a[0], a[1], RAIL, H, 2.2);
+    else get("homeWall").wall(b[0], b[1], a[0], a[1], RAIL, H, 2.5, scheme.upper);
+    const [nx, nz] = inward[index]!;
+    const [mx, mz] = [(a[0] + b[0]) / 2 + nx * 0.02, (a[1] + b[1]) / 2 + nz * 0.02];
+    const along = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const yaw = index % 2 ? Math.PI / 2 : 0;
+    get("homeSkirting").box(mx, 0.07, mz, along, 0.14, 0.04, yaw);
+    get("homeRail").box(mx, RAIL, mz, along, 0.06, 0.05, yaw);
   }
+  let upstairs: Upstairs | null = null;
   if (grand) {
-    dressHome(layout, { get, solid, model, boxes });
+    upstairs = dressHome(layout, { get, solid, model, boxes });
   } else if (!gym) {
     // Windows with a bright daylight view on the north and east walls.
     for (const x of kind === "club" ? [] : [-3, 0, 3]) {
@@ -288,15 +306,23 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     light.intensity = kind === "club" ? 5 : grand ? 26 : gym ? 16 : 18;
     light.range = grand || gym ? 20 : 14;
     light.diffuse = Color3.FromHexString(kind === "club" ? "#b8a8ff" : gym ? "#f1f4ff" : "#fff1dc");
+    // A light hanging just under the ceiling would burn a bright disc into it; the ceiling's own glow lights it evenly.
+    if (roof && !plain) light.excludedMeshes.push(roof);
     return light;
   });
 
+  let level: Level = "ground";
   return {
     spots,
     seats: clubView?.seats ?? seats,
     /** Inside faces of the walls, in world metres, and the ceiling height. */
     bounds: { minX: X0, maxX: X1, minZ: Z0, maxZ: Z1, height: H },
     collide(x: number, z: number, radius: number): Vec2 {
+      if (upstairs) {
+        const step = climb(level, upstairs, { minX: X0, maxX: X1, maxZ: Z1 }, x, z, radius);
+        level = step.level;
+        if (step.point) return step.point;
+      }
       let px = Math.max(X0 + radius, Math.min(X1 - radius, x));
       let pz = Math.max(Z0 + radius, Math.min(Z1 - radius, z));
       for (const box of boxes) {
@@ -310,6 +336,10 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
         }
       }
       return [px, pz];
+    },
+    /** Height the resident stands at: the floor, partway up the stairs, or up on the gallery. */
+    floor(_x: number, z: number) {
+      return upstairs ? levelHeight(level, upstairs, z) : 0.02;
     },
     /** Lifts the ceiling off so the room can be seen from above. */
     setCutaway(open: boolean) {
@@ -367,7 +397,6 @@ function painted(scene: Scene, name: string, size: [number, number], draw: (cont
 /** Floors, trim and views for the bigger homes, drawn once per visit on small canvases. */
 function homeMaterials(scene: Scene, layout: HomeLayout, disposables: Array<{ dispose(): void }>) {
   const byKey: Record<string, Material> = {};
-  const wall: Rgb = layout.tier === "mansion" ? [0.97, 0.94, 0.88] : layout.tier === "apartment" ? [0.95, 0.95, 0.93] : layout.tier === "house" ? [0.96, 0.92, 0.84] : [0.98, 0.95, 0.88];
   const pbr = (name: string, setup: (material: PBRMaterial) => void) => {
     const material = new PBRMaterial(name, scene);
     material.metallic = 0;
@@ -376,16 +405,32 @@ function homeMaterials(scene: Scene, layout: HomeLayout, disposables: Array<{ di
     disposables.push(material);
     return material;
   };
+  const scheme = HOME_SCHEMES[layout.tier];
   // Painted plaster with a little self-light, so far walls and high ceilings stay bright on phones with few lights.
+  // Emissive adds the same grey to every colour, so it stays low enough not to wash the paint out.
   byKey.homeWall = pbr("home wall", (material) => {
     material.roughness = 0.85;
-    material.emissiveColor = new Color3(0.32, 0.31, 0.29);
+    material.emissiveColor = new Color3(0.13, 0.12, 0.11);
   });
   byKey.homeCeiling = pbr("home ceiling", (material) => {
     material.roughness = 0.9;
-    material.emissiveColor = new Color3(0.3, 0.3, 0.29);
+    material.emissiveColor = new Color3(0.58, 0.56, 0.52);
   });
-  if (layout.tier === "flat") return { byKey, floorKey: "tiles", floorTile: 1.2, wall };
+  byKey.homePaper = pbr("home wallpaper", (material) => {
+    material.roughness = 0.75;
+    material.emissiveColor = new Color3(0.1, 0.1, 0.09);
+    material.albedoTexture = painted(scene, `${layout.tier} wallpaper`, [256, 256], scheme.paper, disposables);
+  });
+  byKey.homeSkirting = pbr("home skirting", (material) => {
+    material.albedoColor = Color3.FromArray(scheme.skirting);
+    material.roughness = 0.4;
+  });
+  byKey.homeRail = pbr("home rail", (material) => {
+    material.albedoColor = Color3.FromArray(scheme.rail);
+    material.roughness = 0.35;
+    material.metallic = layout.tier === "mansion" || layout.tier === "apartment" ? 0.6 : 0;
+  });
+  if (layout.tier === "flat") return { byKey, floorKey: "tiles", floorTile: 1.2, wall: scheme.upper, scheme };
   const random = seeded(layout.tier.length * 977);
   const floor = pbr(`${layout.tier} floor`, (material) => {
     if (layout.tier === "house") {
@@ -496,7 +541,156 @@ function homeMaterials(scene: Scene, layout: HomeLayout, disposables: Array<{ di
   }, disposables);
   disposables.push(view);
   byKey.homeView = view;
-  return { byKey, floorKey: "homeFloor", floorTile: layout.tier === "house" ? 2.4 : layout.tier === "mansion" ? 1.6 : 2.4, wall };
+  return { byKey, floorKey: "homeFloor", floorTile: layout.tier === "house" ? 2.4 : layout.tier === "mansion" ? 1.6 : 2.4, wall: scheme.upper, scheme };
+}
+
+type Paint = (context: CanvasRenderingContext2D, w: number, h: number) => void;
+type HomeScheme = { lower: Rgb; upper: Rgb; skirting: Rgb; rail: Rgb; paper: Paint };
+
+/** Ankara-style print: repeating diamonds and dots, the way Lagos homes often dress one wall. */
+const ankara = (ground: string, ink: string, accent: string): Paint => (context, w, h) => {
+  context.fillStyle = ground;
+  context.fillRect(0, 0, w, h);
+  const cell = w / 4;
+  for (let row = 0; row < 4; row += 1) {
+    for (let col = 0; col < 4; col += 1) {
+      const [cx, cy] = [col * cell + cell / 2, row * cell + cell / 2];
+      context.fillStyle = ink;
+      context.beginPath();
+      context.moveTo(cx, cy - cell * 0.42);
+      context.lineTo(cx + cell * 0.42, cy);
+      context.lineTo(cx, cy + cell * 0.42);
+      context.lineTo(cx - cell * 0.42, cy);
+      context.fill();
+      context.fillStyle = accent;
+      context.beginPath();
+      context.arc(cx, cy, cell * 0.14, 0, Math.PI * 2);
+      context.fill();
+      context.fillStyle = ground;
+      context.beginPath();
+      context.arc(cx, cy, cell * 0.06, 0, Math.PI * 2);
+      context.fill();
+      context.fillStyle = accent;
+      for (const [dx, dy] of [[0, 0], [cell, 0], [0, cell], [cell, cell]] as const) {
+        context.beginPath();
+        context.arc(col * cell + dx, row * cell + dy, cell * 0.07, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+  }
+};
+
+/** Tall palm fronds on a soft ground. */
+const fronds = (ground: string, leaf: string): Paint => (context, w, h) => {
+  context.fillStyle = ground;
+  context.fillRect(0, 0, w, h);
+  const random = seeded(7);
+  context.strokeStyle = leaf;
+  context.lineCap = "round";
+  for (let index = 0; index < 9; index += 1) {
+    const [x, y] = [random() * w, random() * h];
+    const angle = random() * Math.PI * 2;
+    const length = 60 + random() * 40;
+    for (const shift of [-w, 0, w]) {
+      const [sx, sy] = [x + shift, y];
+      context.lineWidth = 2;
+      context.beginPath();
+      context.moveTo(sx, sy);
+      context.lineTo(sx + Math.cos(angle) * length, sy + Math.sin(angle) * length);
+      context.stroke();
+      context.lineWidth = 1.4;
+      for (let leafAt = 0.15; leafAt < 1; leafAt += 0.09) {
+        const [lx, ly] = [sx + Math.cos(angle) * length * leafAt, sy + Math.sin(angle) * length * leafAt];
+        for (const side of [-1, 1]) {
+          const turn = angle + side * 0.9;
+          context.beginPath();
+          context.moveTo(lx, ly);
+          context.lineTo(lx + Math.cos(turn) * 16 * (1 - leafAt * 0.6), ly + Math.sin(turn) * 16 * (1 - leafAt * 0.6));
+          context.stroke();
+        }
+      }
+    }
+  }
+};
+
+/** Art-deco fans in thin metallic lines. */
+const deco = (ground: string, line: string): Paint => (context, w, h) => {
+  context.fillStyle = ground;
+  context.fillRect(0, 0, w, h);
+  context.strokeStyle = line;
+  context.lineWidth = 2;
+  const size = w / 4;
+  for (let row = 0; row <= 4; row += 1) {
+    for (let col = 0; col <= 4; col += 1) {
+      const [cx, cy] = [col * size + (row % 2 ? size / 2 : 0), row * size * 0.5 + size * 0.5];
+      for (let ring = 1; ring <= 3; ring += 1) {
+        context.beginPath();
+        context.arc(cx, cy, (size / 2) * (ring / 3), Math.PI, 0);
+        context.stroke();
+      }
+    }
+  }
+};
+
+/** Damask-like medallions for the mansion. */
+const damask = (ground: string, ink: string): Paint => (context, w, h) => {
+  context.fillStyle = ground;
+  context.fillRect(0, 0, w, h);
+  context.fillStyle = ink;
+  const size = w / 2;
+  for (const [cx, cy] of [[size / 2, size / 2], [size * 1.5, size * 1.5], [size * 1.5, size / 2 - size], [size / 2, size * 1.5]] as const) {
+    for (const [ox, oy] of [[0, 0], [0, h], [0, -h]] as const) {
+      const [x, y] = [cx + ox, cy + oy];
+      context.beginPath();
+      context.ellipse(x, y, size * 0.16, size * 0.3, 0, 0, Math.PI * 2);
+      context.fill();
+      for (const side of [-1, 1]) {
+        context.beginPath();
+        context.ellipse(x + side * size * 0.24, y + size * 0.05, size * 0.1, size * 0.2, side * 0.6, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.fillRect(x - 1.5, y - size * 0.46, 3, size * 0.92);
+    }
+  }
+};
+
+/** Lower panel, upper paint, trim and a printed feature wall for each kind of home, so no room is plain white. */
+const HOME_SCHEMES: Record<HomeLayout["tier"], HomeScheme> = {
+  flat: { lower: [0.5, 0.23, 0.14], upper: [0.86, 0.69, 0.5], skirting: [0.3, 0.18, 0.11], rail: [0.95, 0.9, 0.8], paper: ankara("#e9c98f", "#1f6f6b", "#c4532d") },
+  house: { lower: [0.07, 0.26, 0.26], upper: [0.7, 0.76, 0.6], skirting: [0.25, 0.16, 0.1], rail: [0.94, 0.92, 0.86], paper: fronds("#dfe5d2", "#4f7d55") },
+  apartment: { lower: [0.09, 0.12, 0.24], upper: [0.72, 0.67, 0.6], skirting: [0.12, 0.12, 0.14], rail: [0.78, 0.62, 0.34], paper: deco("#25303f", "#c9a45c") },
+  mansion: { lower: [0.3, 0.17, 0.09], upper: [0.86, 0.76, 0.6], skirting: [0.22, 0.13, 0.08], rail: [0.82, 0.65, 0.33], paper: damask("#efe4cc", "#d6c19a") },
+};
+
+/** A walkable stair (world metres; z0 is the bottom tread) up to a landing that runs from `deck.z0` to the back wall. */
+export type Upstairs = { stair: { x0: number; x1: number; z0: number; z1: number }; deck: { z0: number; y: number } };
+
+export type Level = "ground" | "stairs" | "upper";
+
+/**
+ * Moves a resident between the ground floor, the stairs and the gallery. Returns the corrected point while on the
+ * stairs or the gallery; on the ground floor the room's usual furniture collision applies (`point` is null).
+ */
+export function climb(level: Level, { stair, deck }: Upstairs, room: { minX: number; maxX: number; maxZ: number }, x: number, z: number, radius: number): { level: Level; point: Vec2 | null } {
+  const [sx0, sx1] = [stair.x0 + radius, stair.x1 - radius];
+  const inStairWidth = x > sx0 && x < sx1;
+  let next = level;
+  if (next === "ground" && inStairWidth && z > stair.z0 - 0.2 && z < stair.z0 + 0.6) next = "stairs";
+  if (next === "upper" && inStairWidth && z < deck.z0 + radius) next = "stairs";
+  if (next === "stairs") {
+    if (z < stair.z0 - 0.05) next = "ground";
+    else if (z > stair.z1 + radius) next = "upper";
+    else return { level: next, point: [Math.max(sx0, Math.min(sx1, x)), z] };
+  }
+  // Up on the gallery: the glass balustrade keeps residents on the landing, except at the top of the stairs.
+  if (next === "upper") return { level: next, point: [Math.max(room.minX + radius, Math.min(room.maxX - radius, x)), Math.max(deck.z0 + radius, Math.min(room.maxZ - radius, z))] };
+  return { level: next, point: null };
+}
+
+export function levelHeight(level: Level, { stair, deck }: Upstairs, z: number) {
+  if (level === "ground") return 0.02;
+  if (level === "upper") return deck.y + 0.03;
+  return 0.02 + Math.max(0, Math.min(1, (z - stair.z0) / (stair.z1 - stair.z0))) * deck.y;
 }
 
 type Dresser = {
@@ -516,6 +710,7 @@ function dressHome(layout: HomeLayout, { get, solid, model, boxes }: Dresser) {
   const wx = (x: number) => OX + x;
   const wz = (z: number) => OZ + z;
   const block = (x: number, z: number, hx: number, hz: number) => boxes.push({ x, z, hx, hz });
+  let levels: Upstairs | null = null;
   type Side = "north" | "east" | "west" | "south";
   /** Point on the inside of a wall: `along` runs along it (x for north/south, z for east/west), `out` steps into the room. */
   const onWall = (side: Side, along: number, y: number, out: number): [number, number, number] =>
@@ -651,7 +846,9 @@ function dressHome(layout: HomeLayout, { get, solid, model, boxes }: Dresser) {
       get("homeTrim").box(OX, top / 2, z, stairHalf * 2 + 0.2, top, run);
       get("homeFloor").box(OX, top - 0.02, z - 0.02, stairHalf * 2, 0.05, run + 0.04);
     }
-    block(OX, wz((stairZ0 + stairZ1) / 2), stairHalf + 0.1, (stairZ1 - stairZ0) / 2);
+    // Solid from the side and underneath, but the first tread is left open so residents can walk up.
+    block(OX, wz((stairZ0 + 0.6 + stairZ1) / 2), stairHalf + 0.1, (stairZ1 - stairZ0 - 0.6) / 2);
+    levels = { stair: { x0: OX - stairHalf, x1: OX + stairHalf, z0: wz(stairZ0), z1: wz(stairZ1) }, deck: { z0: wz(gallery.z), y: gallery.y } };
     for (const side of [-1, 1]) {
       const x = OX + side * (stairHalf + 0.08);
       const [z0, z1] = [wz(stairZ0), wz(stairZ1)];
@@ -699,6 +896,7 @@ function dressHome(layout: HomeLayout, { get, solid, model, boxes }: Dresser) {
     palm(-layout.halfX + 0.8, FRONT_WALL + 0.8);
     palm(layout.halfX - 0.8, FRONT_WALL + 0.8);
   }
+  return levels;
 }
 
 const GYM_SPOT_LABELS: Record<ExerciseId, string> = { treadmill: "Treadmill · cardio", bench: "Bench press", dumbbells: "Dumbbells" };

@@ -1347,7 +1347,7 @@ export class GameEngine {
     // Vehicles move first, so seated avatars and the camera use this frame's pose rather than trailing a frame behind.
     this.updateVehicles(now, dt);
     const { x, z } = this.controller;
-    const targetGround = this.interior ? (this.travelView?.floor(x, z) ?? 0.02) : this.world.groundHeight(x, z);
+    const targetGround = this.interior ? (this.travelView ? this.travelView.floor(x, z) : (this.interior as InteriorView).floor(x, z)) : this.world.groundHeight(x, z);
     this.groundY += (targetGround - this.groundY) * Math.min(1, dt * 12);
     const inCar = Boolean(this.car && this.driving);
     const speed = inCar ? Math.abs(this.car!.speed) : this.controller.speed();
@@ -1653,7 +1653,7 @@ export class GameEngine {
     // Positive pitch lifts the camera above the target, looking down (matching the obstruction probe above).
     const position = this.cameraTarget.add(new Vector3(-dir.x, dir.y, -dir.z).scale(this.cameraReach));
     position.y = Math.max(position.y, (this.interior ? 0.3 : this.groundY + 0.35));
-    if (this.interior) position.y = Math.min(position.y, this.travelView ? (this.travelView.kind === "rooftop" || this.travelView.kind === "dhow" || this.travelView.kind === "safari" ? 8 : this.travelView.height - 0.15) : 2.45);
+    if (this.interior) position.y = Math.min(position.y, this.travelView ? (this.travelView.kind === "rooftop" || this.travelView.kind === "dhow" || this.travelView.kind === "safari" ? 8 : this.travelView.height - 0.15) : Math.min(this.groundY + 2.45, (this.interior as InteriorView).bounds.height - 0.2));
     this.cameraPosition.copyFrom(position);
     this.camera.position.copyFrom(position);
     this.camera.setTarget(this.cameraTarget);
@@ -4135,6 +4135,7 @@ export class GameEngine {
       emote: (emote: "wave" | "dance" | "sit" | "none") => this.playEmote(emote),
       fastTravel: (placeId: string) => this.fastTravel({ placeId }, placeId),
       enterProperty: (propertyId: string, mode: "enter" | "preview") => this.enterProperty(propertyId, mode),
+      estateViewing: (propertyId: string) => this.estateViewing(propertyId, propertyId),
       room: () => (this.interior && !this.travelView ? (this.interior as InteriorView).bounds : null),
       repair: () => ({ site: this.repairSite?.site.at ?? null, stand: this.repairSite?.site.stand ?? null, workingFor: this.repairing ? Math.max(0, this.repairing.until - performance.now()) : 0 }),
       repairWork: (seconds: number) => this.repairWork(seconds),
