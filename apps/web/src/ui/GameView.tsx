@@ -133,6 +133,8 @@ export function GameView({
     setRestarts(restartsRef.current);
   }, []);
   const [manualTarget, setManualTarget] = useState<{ point: Vec2; label: string } | null>(null);
+  const [quietObjective, setQuietObjective] = useState<string | null>(null);
+  const [arrival, setArrival] = useState<{ label: string; at: number } | null>(null);
   const [ride, setRide] = useState<RideState | null>(null);
   const [tows, setTows] = useState<TowState[]>([]);
   const towsRef = useRef<TowState[]>([]);
@@ -307,6 +309,7 @@ export function GameView({
           setAgbero(encounter);
           if (!encounter) void refresh();
         },
+        arrived: (label) => setArrival({ label, at: Date.now() }),
         travelPrompt: (prompt) => setTravelPrompts((list) => [...list.filter((entry) => entry.requestId !== prompt.requestId), prompt].slice(-3)),
         ride: (next) => {
           setRide(next);
@@ -396,7 +399,12 @@ export function GameView({
       : ride?.status === "riding"
         ? { point: ride.dropoff, label: ride.label }
         : null;
-  const target = rideTarget ?? manualTarget ?? objective?.target ?? null;
+  const objectiveRoute = objective?.target && objectiveKey !== quietObjective ? objective.target : null;
+  const target = rideTarget ?? manualTarget ?? objectiveRoute;
+  const endRoute = () => {
+    setManualTarget(null);
+    setQuietObjective(objectiveKey);
+  };
 
   useEffect(() => {
     engine?.setWaypoint(target);
@@ -407,12 +415,12 @@ export function GameView({
     engine?.setDeliveryTarget(job ? { point: [job.destinationX, job.destinationZ], label: job.destinationLabel ?? "Delivery" } : null);
   }, [engine, economy?.activeJob?.id]);
 
+  // Arriving ends the route outright; the objective's own route only comes back when the step changes or on request.
   useEffect(() => {
-    if (manualTarget && hud && Math.hypot(manualTarget.point[0] - hud.x, manualTarget.point[1] - hud.z) < 6) {
-      setManualTarget(null);
-      toast({ tone: "success", text: `Arrived: ${manualTarget.label}` });
-    }
-  }, [hud?.x, hud?.z]);
+    if (!arrival) return;
+    if (!rideTarget) endRoute();
+    toast({ tone: "success", text: `You have arrived at ${arrival.label}` });
+  }, [arrival]);
 
   const warnings = safety?.warnings ?? [];
   const blocking = Boolean(welcomeOpen || sheet || plotSheet || travelSpot || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length || holdUp || robTarget);
@@ -621,7 +629,7 @@ export function GameView({
               </button>
             ))}
             {tripHint(trip, hud.location) && <p className="nav-line" data-testid="trip-hint">✈ {tripHint(trip, hud.location)}</p>}
-            <NavLine engine={engine} />
+            <NavLine engine={engine} onEnd={rideTarget ? null : endRoute} />
           </section>
 
           <section className="hud-status">
@@ -653,6 +661,7 @@ export function GameView({
               {guideOpen && <p>{objective.detail.replace(/press E\b/g, touch ? "tap ✋" : `press ${keyLabel(bindings.interact)}`)}</p>}
               {guideOpen && objective.choose && <button className="primary small-button" onClick={() => setWelcomeOpen(true)}>Choose where to live</button>}
               {target && hud.waypoint && <p className="distance">◆ {target.label} · {Math.round(hud.waypoint.distance)} m</p>}
+              {guideOpen && objective.target && !objectiveRoute && !manualTarget && <button className="secondary small-button" onClick={() => setQuietObjective(null)}>Show route</button>}
             </section>
           )}
           {guideHidden && (
@@ -1120,21 +1129,23 @@ function TouchLook({ engine }: { engine: GameEngine }) {
 const metresLabel = (metres: number) => (metres >= 1000 ? `${(metres / 1000).toFixed(1)} km` : `${Math.max(10, Math.round(metres / 10) * 10)} m`);
 
 /** Next turn for the current destination, re-read on every HUD refresh. */
-function NavLine({ engine }: { engine: GameEngine }) {
+function NavLine({ engine, onEnd }: { engine: GameEngine; onEnd: (() => void) | null }) {
   const nav = engine.navigation();
   if (!nav) return null;
+  const end = onEnd && <button className="nav-end" onClick={onEnd} aria-label="End route">End</button>;
   if (!nav.reachable) {
-    return <p className="nav-line warn" data-testid="nav-line">No road reaches {nav.label}. Head there on foot using the map.</p>;
+    return <p className="nav-line warn" data-testid="nav-line">No road reaches {nav.label}. Head there on foot using the map.{end}</p>;
   }
   const guidance = nav.guidance;
   if (!guidance) return null;
   const tail = nav.gap > 40 ? ` · the road ends ${metresLabel(nav.gap)} short, walk the rest` : "";
-  if (nav.rerouting) return <p className="nav-line" data-testid="nav-line"><b>⟳</b> Rerouting to {nav.label}…</p>;
-  if (guidance.turn === "arrive" && guidance.remaining < 15) return <p className="nav-line" data-testid="nav-line"><b>◎</b> You have arrived at {nav.label}{tail}</p>;
+  if (nav.rerouting) return <p className="nav-line" data-testid="nav-line"><b>⟳</b> Rerouting to {nav.label}…{end}</p>;
+  if (guidance.turn === "arrive" && guidance.remaining < 40) return <p className="nav-line" data-testid="nav-line"><b>◎</b> {nav.label} is just ahead{tail}{end}</p>;
   return (
     <p className="nav-line" data-testid="nav-line">
       <b>{turnArrow[guidance.turn]}</b> {metresLabel(guidance.distance)} · {describeTurn(guidance)}
       <small> · {metresLabel(guidance.remaining)} to {nav.label}{tail}</small>
+      {end}
     </p>
   );
 }

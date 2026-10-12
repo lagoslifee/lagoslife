@@ -199,6 +199,8 @@ export type EngineCallbacks = {
   travelPrompt: (prompt: TravelPrompt) => void;
   /** A roadside tout asks this driver for change; null when it is over. */
   agbero: (encounter: AgberoEncounter | null) => void;
+  /** The player reached the waypoint; the route has already been cleared. */
+  arrived: (label: string) => void;
 };
 
 type Remote = {
@@ -275,6 +277,33 @@ const TRAVEL_DISTRICT: Record<TravelInterior, string> = {
 
 /** Full avatars drawn at once for other residents, per graphics preset. */
 const AVATAR_LIMIT: Record<Quality, number> = { low: 10, medium: 18, high: 30 };
+
+/** White arrowheads every `spacing` metres along a route ribbon of half-width `half`, pointing toward the destination. */
+function routeChevrons(batch: MeshBuilderBatch, points: Vec2[], half: number, spacing: number) {
+  const up: [number, number, number] = [0, 1, 0];
+  const white: [number, number, number] = [1, 1, 1];
+  let next = spacing * 0.6;
+  let along = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const [ax, az] = points[index - 1]!;
+    const [bx, bz] = points[index]!;
+    const length = Math.hypot(bx - ax, bz - az);
+    if (length < 0.01) continue;
+    const fx = (bx - ax) / length;
+    const fz = (bz - az) / length;
+    while (next <= along + length) {
+      const t = next - along;
+      const cx = ax + fx * t;
+      const cz = az + fz * t;
+      const tip: [number, number, number] = [cx + fx * half * 0.9, 0.24, cz + fz * half * 0.9];
+      const back = half * 0.8;
+      batch.triangle(tip, [cx - fx * back + fz * half * 0.85, 0.24, cz - fz * back - fx * half * 0.85], [cx - fx * back * 0.35, 0.24, cz - fz * back * 0.35], up, [[0, 0], [1, 0], [0, 1]], white);
+      batch.triangle(tip, [cx - fx * back * 0.35, 0.24, cz - fz * back * 0.35], [cx - fx * back - fz * half * 0.85, 0.24, cz - fz * back + fx * half * 0.85], up, [[0, 0], [1, 0], [0, 1]], white);
+      next += spacing;
+    }
+    along += length;
+  }
+}
 
 export type CabinAudio = { hum: boolean; announcements: boolean };
 function loadCabinAudio(): CabinAudio {
@@ -2414,9 +2443,16 @@ export class GameEngine {
       this.beacon.material = material;
       this.beacon.isPickable = false;
     }
+    const { x, z } = this.controller;
+    if (Math.hypot(target.point[0] - x, target.point[1] - z) < (this.car ? 18 : 9)) {
+      this.setWaypoint(null);
+      this.beacon.setEnabled(false);
+      this.routeMesh?.setEnabled(false);
+      this.callbacks.arrived(target.label);
+      return;
+    }
     this.beacon.setEnabled(true);
     this.beacon.position.set(target.point[0], 20, target.point[1]);
-    const { x, z } = this.controller;
     const moved = Math.hypot(x - this.lastRoute.x, z - this.lastRoute.z);
     if (this.routePlan) {
       this.guidance = guide(this.routePlan, [x, z]);
@@ -2434,11 +2470,15 @@ export class GameEngine {
       this.routeMesh?.dispose();
       const batch = new MeshBuilderBatch("route");
       const points = this.routePoints.filter((point, index, all) => index === 0 || Math.hypot(point[0] - all[index - 1]![0], point[1] - all[index - 1]![1]) > 0.3);
-      if (points.length >= 2) batch.ribbon(points, -0.22, 0.22, 0.22, 1);
+      const half = this.car ? 0.7 : 0.35;
+      if (points.length >= 2) {
+        batch.ribbon(points, -half, half, 0.22, 1, [0.18, 0.83, 1]);
+        routeChevrons(batch, points, half, this.car ? 9 : 5);
+      }
       if (!this.routeMaterial) {
         this.routeMaterial = new PBRMaterial("route glow", this.scene);
         this.routeMaterial.unlit = true;
-        this.routeMaterial.albedoColor = Color3.FromHexString("#2fd3ff");
+        this.routeMaterial.albedoColor = Color3.White();
         this.routeMaterial.alpha = 0.7;
         this.routeMaterial.zOffset = -6;
       }
