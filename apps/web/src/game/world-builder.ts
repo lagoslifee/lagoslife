@@ -39,6 +39,7 @@ import {
   worshipDoor,
 } from "./landmarks";
 import { SignAtlas, type SignStyle, type UvRect } from "./sign-atlas";
+import { COMPOUND_PLACES, compoundPoolSpots, compoundWall } from "./compounds";
 import { PLACE_KIND } from "../place-kinds";
 import { findJunctions, waterSampler, type WorldArea, type WorldBuilding, type WorldData, type WorldRoad, type WorldTile } from "./street-index";
 
@@ -1806,6 +1807,49 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       board(dx + rx * 4.5, dz + rz * 4.5, yaw);
     }
     placeSigns.push({ placeId: place.id, point: place.door });
+  }
+
+  for (const place of COMPOUND_PLACES.filter((candidate) => inTile(candidate.door[0], candidate.door[1]))) {
+    const get = (key: string) => base.get(place.door[0], place.door[1], key);
+    const yaw = place.facing;
+    const clear = (x: number, z: number, margin: number) => !insideBuilding(x, z, margin) && !roads.onAsphalt(x, z, margin + 0.4) && !overWater(x, z);
+    const wall = compoundWall(place);
+    for (const [a, b] of wall.segments) {
+      const pieces = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 1.5);
+      for (let index = 0; index < pieces; index += 1) {
+        const p0: Vec2 = [a[0] + ((b[0] - a[0]) * index) / pieces, a[1] + ((b[1] - a[1]) * index) / pieces];
+        const p1: Vec2 = [a[0] + ((b[0] - a[0]) * (index + 1)) / pieces, a[1] + ((b[1] - a[1]) * (index + 1)) / pieces];
+        const [mx, mz] = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2];
+        if (!clear(mx, mz, 0.3)) continue;
+        const length = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+        get("concrete").box(mx, 1.2, mz, length + 0.02, 2.4, 0.26, yaw, 1, [0.93, 0.9, 0.82]);
+        get("darkFrame").box(mx, 2.44, mz, length + 0.02, 0.08, 0.34, yaw);
+        addObstacle(p0, p1, 0.16);
+      }
+    }
+    for (const [px, pz] of wall.gatePosts) {
+      if (!clear(px, pz, 0.3)) continue;
+      get("concrete").box(px, 1.45, pz, 0.6, 2.9, 0.6, yaw, 1, [0.86, 0.82, 0.72]);
+      get("chrome").box(px, 3.0, pz, 0.32, 0.22, 0.32, yaw);
+      addObstacle([px, pz], [px, pz], 0.32);
+    }
+    const pool = compoundPoolSpots(place).find(({ centre, corners }) => [centre, ...corners].every(([x, z]) => clear(x, z, 0.6)));
+    if (pool) {
+      const [cx, cz] = pool.centre;
+      const [fx, fz] = [Math.sin(yaw), Math.cos(yaw)];
+      const [rx, rz] = [fz, -fx];
+      get("concrete").box(cx, 0.09, cz, 8.0, 0.18, 4.6, yaw, 1, [0.95, 0.94, 0.9], true);
+      get("water").box(cx, 0.2, cz, 7.0, 0.04, 3.6, yaw);
+      for (const side of [-1, 1]) {
+        const lx = cx - fx * 3.0 + rx * side * 1.6;
+        const lz = cz - fz * 3.0 + rz * side * 1.6;
+        if (!clear(lx, lz, 0.4)) continue;
+        get("wood").box(lx, 0.3, lz, 0.7, 0.12, 1.9, yaw);
+        get("fabric").box(lx, 0.42, lz, 0.62, 0.08, 1.7, yaw, 1, [0.95, 0.95, 0.92]);
+        addObstacle([lx, lz], [lx, lz], 0.45);
+      }
+      addObstacle([cx - rx * 1.7, cz - rz * 1.7], [cx + rx * 1.7, cz + rz * 1.7], 1.9);
+    }
   }
 
   // Roadside banner for every mapped venue: a pylon on the pavement, its panel across the street so drivers read it

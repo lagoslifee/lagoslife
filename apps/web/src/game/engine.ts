@@ -107,6 +107,7 @@ import {
   regionOf,
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
+import { COMPOUND_PLACES, compoundCars } from "./compounds";
 import { EntranceMarkers, type EntranceCandidate } from "./entrance-markers";
 import { TourGuide, tourStops } from "./tour-guide";
 import { gymStations, type GymStation } from "./gym-stations";
@@ -489,6 +490,9 @@ export class GameEngine {
   private bikeStations: BikeStationsView | null = null;
   /** Lekki Motors' forecourt display cars (client-only, but solid). */
   private showroom: VehicleView[] = [];
+  /** Cars parked in the Ikoyi compounds, created only while the player is nearby. */
+  private compoundViews = new Map<string, VehicleView[]>();
+  private lastCompoundCheck = 0;
   private showcaseAngle = 0;
   /** The car being browsed at the dealership, shown on the forecourt with the camera circling it. */
   private showcase: { view: VehicleView | null; modelId: string; colour: string; point: Vec2; yaw: number; request: number } | null = null;
@@ -925,6 +929,34 @@ export class GameEngine {
     return forecourt;
   }
 
+  private updateCompoundCars(now: number) {
+    const factory = this.vehicleFactory;
+    if (!factory || now - this.lastCompoundCheck < 1000) return;
+    this.lastCompoundCheck = now;
+    COMPOUND_PLACES.forEach((place, index) => {
+      const distance = Math.hypot(place.door[0] - this.controller.x, place.door[1] - this.controller.z);
+      const shown = this.compoundViews.get(place.id);
+      if (shown && distance > 320) {
+        for (const view of shown) view.dispose();
+        this.compoundViews.delete(place.id);
+        return;
+      }
+      if (shown || distance > 240) return;
+      const views: VehicleView[] = [];
+      this.compoundViews.set(place.id, views);
+      const cars = compoundCars(place, index);
+      void Promise.all(cars.map(({ modelId }) => factory.ensure(modelId))).then(() => {
+        if (this.disposed || this.compoundViews.get(place.id) !== views) return;
+        cars.forEach((car, slot) => {
+          const model = getVehicleModel(car.modelId);
+          const view = factory.create(`compound ${place.id} ${slot}`, car.modelId, model.colours[(index + slot * 2) % model.colours.length]!);
+          view.setPose(car.x, this.world.groundHeight(car.x, car.z), car.z, car.yaw);
+          views.push(view);
+        });
+      });
+    });
+  }
+
   /** Display cars behind the showroom glass, angled to the street; only spots well inside the building are used. */
   private fillShowroomFloor(factory: VehicleFactory, place: Place) {
     const [dx, dz] = place.door;
@@ -960,6 +992,7 @@ export class GameEngine {
     for (const bus of this.buses.values()) [px, pz] = bus.pushOut(px, pz, MOVEMENT.radius);
     for (const { view } of this.vehicles.values()) [px, pz] = view.pushOut(px, pz, MOVEMENT.radius);
     for (const view of this.showroom) [px, pz] = view.pushOut(px, pz, MOVEMENT.radius);
+    for (const views of this.compoundViews.values()) for (const view of views) [px, pz] = view.pushOut(px, pz, MOVEMENT.radius);
     const { x: ox, z: oz } = this.controller;
     // Open water and the district edges stop residents; slide along them, and never trap someone already outside.
     if (!this.onLand(px, pz) && this.onLand(ox, oz)) {
@@ -979,6 +1012,7 @@ export class GameEngine {
       if (id !== this.driving?.vehicleId && id !== this.rideCar?.vehicleId) [px, pz] = view.pushOut(px, pz, radius);
     }
     for (const view of this.showroom) [px, pz] = view.pushOut(px, pz, radius);
+    for (const views of this.compoundViews.values()) for (const view of views) [px, pz] = view.pushOut(px, pz, radius);
     // Water and district edges count as a fixed overlap, so the car stops at the shore but can always reverse off it.
     if (!this.onLand(px, pz)) return [px + radius, pz];
     return [px, pz];
@@ -1215,6 +1249,7 @@ export class GameEngine {
       this.input.zoom = 0;
     }
 
+    this.updateCompoundCars(now);
     const ridingId = this.self?.busId ?? null;
     for (const danfo of this.buses.values()) {
       const near = danfo.id === ridingId || Math.hypot(danfo.root.position.x - this.controller.x, danfo.root.position.z - this.controller.z) < DANFO_VISIBLE_RANGE;
