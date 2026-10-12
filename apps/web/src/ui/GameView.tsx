@@ -1397,7 +1397,7 @@ export function GameView({
         />
       )}
 
-      {engine && hud && !designing && !phone && <DailyBonusPopup onRefresh={refresh} onToast={toast} />}
+      {engine && hud && !designing && !phone && !overlayOpen && <DailyBonusPopup onRefresh={refresh} onToast={toast} />}
 
       {phone && engine && (
         <Phone

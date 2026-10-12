@@ -352,7 +352,7 @@ function CharacterCreator({
   const pickBody = (body: (typeof bodies)[number]) => {
     if (body === appearance.body) return;
     const starter = starterLook(body);
-    setAppearance({ ...appearance, body, hairstyle: starter.hairstyle, outfit: wearable.includes(starter.outfit) ? starter.outfit : appearance.outfit, accessory: "none" });
+    setAppearance({ ...appearance, body, hairstyle: starter.hairstyle, outfit: wearable.includes(starter.outfit) ? starter.outfit : appearance.outfit, accessory: appearance.accessory === "beard" ? "none" : appearance.accessory });
   };
   const outfitNames = Object.fromEntries(outfits.map((outfit) => [outfit, OUTFITS[outfit].label])) as Record<OutfitId, string>;
 
@@ -372,7 +372,7 @@ function CharacterCreator({
           <ChipRow label="Skin tone" options={skinTones} value={appearance.skinTone} onPick={set("skinTone")} swatch={(tone) => SKIN_TONE_COLOURS[tone]} />
           <ChipRow label="Hairstyle" options={hairstyles} value={appearance.hairstyle} names={HAIR_LABELS} onPick={set("hairstyle")} />
           <ChipRow label="Hair colour" options={hairColours} value={appearance.hairColour ?? "black"} names={Object.fromEntries(hairColours.map((colour) => [colour, HAIR_COLOURS[colour].label]))} onPick={set("hairColour")} swatch={(colour) => HAIR_COLOURS[colour].hex} />
-          <ChipRow label="Face" options={accessories} value={appearance.accessory} names={ACCESSORY_LABELS} onPick={set("accessory")} />
+          <ChipRow label="Face" options={appearance.body === "female" ? accessories.filter((item) => item !== "beard") : accessories} value={appearance.accessory} names={ACCESSORY_LABELS} onPick={set("accessory")} />
           <ChipRow label="Outfit" options={wearable} value={appearance.outfit} names={outfitNames} onPick={set("outfit")} />
           {error && <p className="form-message" role="status">{error}</p>}
           <div className="creator-actions">
