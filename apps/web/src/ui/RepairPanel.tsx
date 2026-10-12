@@ -51,7 +51,9 @@ export function RepairPanel({ gig, onWork, onGig, onRunning, onError, onClose }:
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close">✕</button>
         </header>
-        <p className="muted">Pay {naira(gig.reward)} once it runs. Check parts to find the fault, fix it, then pull the cord. You can only work on a part after checking it.</p>
+        <p className={`repair-latest${pending ? " pending" : ""}`} data-testid="repair-latest">
+          {pending ?? repair.log.at(-1) ?? `Pays ${naira(gig.reward)} once it runs. Check parts to find the fault, fix it, then pull the cord.`}
+        </p>
         <ul className="repair-parts">
           {PARTS.map(({ part, icon, name, inspect, fix, fixName }) => {
             const checked = repair.inspected.includes(part);
@@ -65,10 +67,11 @@ export function RepairPanel({ gig, onWork, onGig, onRunning, onError, onClose }:
           })}
         </ul>
         <button className="primary repair-start" disabled={Boolean(busy) || repair.running} onClick={() => act("pull-start")}>🪢 {REPAIR_LABEL["pull-start"]}</button>
-        <ol className="repair-log" data-testid="repair-log">
-          {repair.log.map((line, index) => <li key={index}>{line}</li>)}
-          {pending && <li className="pending">{pending}</li>}
-        </ol>
+        {repair.log.length > 1 && (
+          <ol className="repair-log" data-testid="repair-log">
+            {repair.log.slice(0, -1).map((line, index) => <li key={index}>{line}</li>)}
+          </ol>
+        )}
       </section>
     </div>
   );

@@ -1759,7 +1759,7 @@ export class GameEngine {
     if (this.repairSite && !this.repairing) {
       const [gx, gz] = this.repairSite.site.at;
       const distance = Math.hypot(gx - x, gz - z);
-      if (distance < 3.5) offer(distance - 2, { key: bind("interact"), label: "Work on the generator", detail: "Find the fault and fix it" }, () => this.callbacks.interact({ kind: "repair" }));
+      if (distance < 5) offer(distance - 6, { key: bind("interact"), label: "Work on the generator", detail: "Find the fault and fix it" }, () => this.callbacks.interact({ kind: "repair" }));
     }
     if (this.gigTarget) {
       const distance = Math.hypot(this.gigTarget.point[0] - x, this.gigTarget.point[1] - z);
@@ -3172,6 +3172,7 @@ export class GameEngine {
     this.sitting = null;
     this.workout = null;
     this.controller.teleport(...site.stand);
+    this.cameraYaw = site.faceYaw - 0.8;
     this.repairing = { until: performance.now() + seconds * 1_000, time: 0 };
     return true;
   }
@@ -3866,6 +3867,8 @@ export class GameEngine {
       appearance: () => this.player?.appearance ?? null,
       emote: (emote: "wave" | "dance" | "sit" | "none") => this.playEmote(emote),
       fastTravel: (placeId: string) => this.fastTravel({ placeId }, placeId),
+      repair: () => ({ site: this.repairSite?.site.at ?? null, stand: this.repairSite?.site.stand ?? null, workingFor: this.repairing ? Math.max(0, this.repairing.until - performance.now()) : 0 }),
+      repairWork: (seconds: number) => this.repairWork(seconds),
       remoteAppearances: () =>
         Object.fromEntries([...this.remotes].map(([sessionId, remote]) => [remote.tag.textContent ?? sessionId, remote.avatar?.appearance ?? null])),
     };

@@ -28,7 +28,7 @@ export class RepairSite {
     const [lx, lz] = [-fz, fx];
     const out = Math.min(2.4, length * 0.4);
     this.at = [place.door[0] + fx * out + lx * 2.6, place.door[1] + fz * out + lz * 2.6];
-    this.stand = [this.at[0] - lx * 1.15, this.at[1] - lz * 1.15];
+    this.stand = [this.at[0] - lx * 1.35, this.at[1] - lz * 1.35];
     this.faceYaw = Math.atan2(lx, lz);
     this.baseY = groundHeight(this.at[0], this.at[1]);
     this.root = new TransformNode("repair generator", scene);
@@ -63,6 +63,7 @@ export class RepairSite {
     bulb.isPickable = false;
     this.lamp = new StandardMaterial("repair work lamp glass", scene);
     this.lamp.diffuseColor = new Color3(0.3, 0.3, 0.28);
+    this.lamp.specularColor = Color3.Black();
     bulb.material = this.lamp;
     this.disposables.push(bulb, this.lamp);
   }

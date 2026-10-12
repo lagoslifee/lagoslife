@@ -336,10 +336,10 @@ export class Avatar {
       bend(limbs.leftFore, 0.2 + 1.7 * phase, Axis.X);
     } else if (kind === "repair") {
       const turn = Math.sin(time * 5);
-      bend(limbs.rightArm, -0.75 + 0.12 * turn);
-      bend(limbs.leftArm, -0.6);
-      bend(limbs.rightFore, 0.7 + 0.45 * turn, Axis.X);
-      bend(limbs.leftFore, 0.8, Axis.X);
+      bend(limbs.rightArm, 0.85 + 0.12 * turn);
+      bend(limbs.leftArm, 0.75);
+      bend(limbs.rightFore, 0.5 + 0.45 * turn, Axis.X);
+      bend(limbs.leftFore, 0.6, Axis.X);
     } else if (kind === "bench") {
       for (const [arm, fore, side] of [[limbs.rightArm, limbs.rightFore, 1], [limbs.leftArm, limbs.leftFore, -1]] as const) {
         bend(arm, side * (-1.2 - 1.1 * phase), Axis.Z);
