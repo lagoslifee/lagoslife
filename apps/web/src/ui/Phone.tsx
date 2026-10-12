@@ -12,14 +12,16 @@ import { GoApp } from "./GoApp";
 import { PlacesApp, type CabDestination } from "./PlacesApp";
 import { GamesApp } from "./games/GamesApp";
 import { BusinessApp } from "./BusinessApp";
+import { EstateApp } from "./EstateApp";
 import { BoutiqueApp } from "./BoutiqueApp";
 import { BankApp, BetApp, DocumentsApp } from "./FinanceApps";
 
-export type PhoneApp = "home" | "games" | "business" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "order" | "bank" | "bet" | "documents" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
+export type PhoneApp = "home" | "games" | "business" | "estate" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "order" | "bank" | "bet" | "documents" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
 
 const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
   { id: "places", label: "Places", icon: "📍" },
   { id: "go", label: "Go", icon: "⚡" },
+  { id: "estate", label: "Estate", icon: "🏢" },
   { id: "boutique", label: "Boutique", icon: "👔" },
   { id: "map", label: "Map", icon: "🗺" },
   { id: "ride", label: "Ride", icon: "🚕" },
@@ -45,7 +47,7 @@ const APPS: Array<{ id: PhoneApp; label: string; icon: string }> = [
 ];
 
 /** Apps about life in Lagos, hidden from the home screen while the player is in Dubai. */
-const LAGOS_ONLY = new Set<PhoneApp>(["transport", "jobs", "order", "property", "community", "justice"]);
+const LAGOS_ONLY = new Set<PhoneApp>(["transport", "jobs", "order", "property", "community", "justice", "estate"]);
 
 type Props = {
   app: PhoneApp;
@@ -137,6 +139,7 @@ export function Phone(props: Props) {
           <PlacesApp engine={props.engine} hud={props.hud} onNavigate={props.onNavigate} onCab={(destination) => { setCabTo(destination); setApp("ride"); }} onClose={onClose} />
         )}
         {app === "games" && <GamesApp />}
+        {app === "estate" && <EstateApp properties={props.properties} plots={props.plots} here={props.hud ? [props.hud.x, props.hud.z] : null} onRefresh={props.onRefresh} onToast={props.onToast} onNavigate={props.onNavigate} onClose={onClose} />}
         {app === "business" && <BusinessApp onRefresh={props.onRefresh} onToast={props.onToast} />}
         {app === "go" && <GoApp engine={props.engine} onClose={onClose} />}
         {app === "boutique" && <BoutiqueApp engine={props.engine} economy={props.economy} onRefresh={props.onRefresh} onToast={props.onToast} />}

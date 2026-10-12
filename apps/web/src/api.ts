@@ -146,11 +146,11 @@ export const api = {
   completeDelivery: (jobId: string) => post<{ balance: number; reward: number; replayed: boolean }>("/api/jobs/delivery/complete", { jobId }),
   cancelDelivery: () => post<{ cancelled: boolean }>("/api/jobs/delivery/cancel"),
   plots: () => request<PlotState[]>("/api/plots"),
-  acquirePlot: (plotId: string, tenure: "leased" | "owned") => post<{ balance: number }>(`/api/plots/${plotId}/acquire`, { tenure, idempotencyKey: crypto.randomUUID() }),
+  acquirePlot: (plotId: string, tenure: "leased" | "owned", viaAgent = false) => post<{ balance: number }>(`/api/plots/${plotId}/acquire`, { tenure, viaAgent, idempotencyKey: crypto.randomUUID() }),
   renewPlot: (plotId: string) => post<{ balance: number }>(`/api/plots/${plotId}/renew`, { idempotencyKey: crypto.randomUUID() }),
   startBuilding: (plotId: string, designId: HouseDesign["id"]) => post<{ balance: number }>(`/api/plots/${plotId}/build`, { designId, idempotencyKey: crypto.randomUUID() }),
-  buyReadyBuilt: (plotId: string, designId: HouseDesign["id"]) =>
-    post<{ balance: number; homeId: string }>(`/api/plots/${plotId}/buy-built`, { designId, idempotencyKey: crypto.randomUUID() }),
+  buyReadyBuilt: (plotId: string, designId: HouseDesign["id"], viaAgent = false) =>
+    post<{ balance: number; homeId: string }>(`/api/plots/${plotId}/buy-built`, { designId, viaAgent, idempotencyKey: crypto.randomUUID() }),
   payNextStage: (plotId: string) => post<{ balance: number }>(`/api/plots/${plotId}/next-stage`, { idempotencyKey: crypto.randomUUID() }),
   acquire: (propertyId: string, tenure: "owned" | "rented") => post<{ balance: number }>("/api/properties/acquire", { propertyId, tenure, idempotencyKey: crypto.randomUUID() }),
   renew: (propertyId: string) => post<{ balance: number }>(`/api/properties/${propertyId}/renew`, { idempotencyKey: crypto.randomUUID() }),
@@ -215,7 +215,7 @@ export const api = {
   trade: (assetId: string, side: "buy" | "sell", amount: number | "all") =>
     post<{ replayed: boolean; balance: number; units: number; price: number; naira: number }>("/api/market/trade", { assetId, side, amount, idempotencyKey: crypto.randomUUID() }),
   betting: () => request<BettingStatus>("/api/betting"),
-  betSpin: (stake: number) => post<{ replayed: boolean; balance: number; round: number; stopsAt: number }>("/api/betting/spin", { stake, idempotencyKey: crypto.randomUUID() }),
+  betSpin: (stake: number) => post<{ replayed: boolean; balance: number; multiplier: number; payout: number; slice: number }>("/api/betting/spin", { stake, idempotencyKey: crypto.randomUUID() }),
   betFootball: (fixtureId: string, pick: Pick, stake: number) =>
     post<{ replayed: boolean; balance: number; odds: number }>("/api/betting/football", { fixtureId, pick, stake, idempotencyKey: crypto.randomUUID() }),
   hireStaff: (propertyId: string, role: HomeStaffRole) => post<{ balance: number }>(`/api/properties/${propertyId}/staff`, { role, idempotencyKey: crypto.randomUUID() }),

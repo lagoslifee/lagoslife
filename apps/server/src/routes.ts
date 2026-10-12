@@ -465,8 +465,8 @@ export function configureRoutes(app: Express) {
   }));
 
   app.post("/api/plots/:plotId/acquire", requirePlayer, rateLimited, guarded("Plot could not be acquired", (req, userId) => {
-    const body = z.object({ tenure: z.enum(["leased", "owned"]), idempotencyKey: z.string().min(8).max(80) }).parse(req.body);
-    return acquirePlot(userId, String(req.params.plotId), body.tenure, body.idempotencyKey);
+    const body = z.object({ tenure: z.enum(["leased", "owned"]), idempotencyKey: z.string().min(8).max(80), viaAgent: z.boolean().optional() }).parse(req.body);
+    return acquirePlot(userId, String(req.params.plotId), body.tenure, body.idempotencyKey, body.viaAgent ?? false);
   }));
 
   app.post("/api/plots/:plotId/renew", requirePlayer, rateLimited, guarded("Ground rent could not be paid", (req, userId) =>
@@ -478,8 +478,8 @@ export function configureRoutes(app: Express) {
   }));
 
   app.post("/api/plots/:plotId/buy-built", requirePlayer, rateLimited, guarded("The house could not be bought", (req, userId) => {
-    const body = z.object({ designId: z.string().min(1).max(40), idempotencyKey: z.string().min(8).max(80) }).parse(req.body);
-    return buyReadyBuilt(userId, String(req.params.plotId), body.designId, body.idempotencyKey);
+    const body = z.object({ designId: z.string().min(1).max(40), idempotencyKey: z.string().min(8).max(80), viaAgent: z.boolean().optional() }).parse(req.body);
+    return buyReadyBuilt(userId, String(req.params.plotId), body.designId, body.idempotencyKey, body.viaAgent ?? false);
   }));
 
   app.post("/api/plots/:plotId/next-stage", requirePlayer, rateLimited, guarded("The builders could not be paid", (req, userId) =>

@@ -1,4 +1,6 @@
 import {
+  agentFee,
+  ESTATE_AGENT,
   builtHomeId,
   constructionStages,
   designTotal,
@@ -222,20 +224,22 @@ export async function listPlots(userId: string): Promise<PlotStatus[]> {
   });
 }
 
-export async function acquirePlot(userId: string, plotId: string, tenure: "leased" | "owned", idempotencyKey: string) {
+export async function acquirePlot(userId: string, plotId: string, tenure: "leased" | "owned", idempotencyKey: string, viaAgent = false) {
   const plot = requirePlot(plotId);
   await settleExpiredPlotLeases();
   return announce(withTransaction(async (client) => {
     const balanceBefore = await lockWallet(client, userId);
     const replay = await replayed(client, userId, idempotencyKey);
     if (replay !== null) return { balance: replay, replayed: true };
-    requireAtGate(userId, plot, tenure === "owned" ? "buy it" : "lease it");
+    if (!viaAgent) requireAtGate(userId, plot, tenure === "owned" ? "buy it" : "lease it");
     const held = await client.query(`SELECT plot_id FROM plot_tenure WHERE owner_user_id = $1`, [userId]);
     if (held.rowCount) throw new EconomyError("You already hold a plot. Build on it first.", 409);
     const taken = await client.query(`SELECT 1 FROM plot_tenure WHERE plot_id = $1 FOR UPDATE`, [plotId]);
     if (taken.rowCount) throw new EconomyError("Another resident already holds this plot.", 409);
     const price = tenure === "owned" ? PLOT_TERMS.purchasePrice : PLOT_TERMS.leaseRent;
-    if (balanceBefore < price) throw new EconomyError("Insufficient game naira", 402);
+    const fee = viaAgent ? agentFee(price) : 0;
+    if (balanceBefore < price + fee) throw new EconomyError("Insufficient game naira", 402);
+    if (fee) await debitWallet(client, userId, fee, "construction", `${ESTATE_AGENT.name} · agent's fee`, `${idempotencyKey}:agent`, { plotId });
     const balance = await debitWallet(client, userId, price, tenure === "owned" ? "plot_purchase" : "plot_lease",
       `${plot.name} · ${tenure === "owned" ? "freehold" : "ground rent"}`, idempotencyKey, { plotId, tenure });
     await client.query(
@@ -308,7 +312,7 @@ export async function startConstruction(userId: string, plotId: string, designId
  * Buys a finished house in one go: the freehold (unless the resident already holds this plot) and the whole design,
  * handed over at once for a markup instead of waiting on each stage.
  */
-export async function buyReadyBuilt(userId: string, plotId: string, designId: string, idempotencyKey: string) {
+export async function buyReadyBuilt(userId: string, plotId: string, designId: string, idempotencyKey: string, viaAgent = false) {
   const plot = requirePlot(plotId);
   const design = requireDesign(designId);
   await settleExpiredPlotLeases();
@@ -316,7 +320,7 @@ export async function buyReadyBuilt(userId: string, plotId: string, designId: st
     const balanceBefore = await lockWallet(client, userId);
     const replay = await replayed(client, userId, idempotencyKey);
     if (replay !== null) return { balance: replay, replayed: true };
-    requireAtGate(userId, plot, "buy a house here");
+    if (!viaAgent) requireAtGate(userId, plot, "buy a house here");
     const tenure = await client.query(`SELECT owner_user_id FROM plot_tenure WHERE plot_id = $1 FOR UPDATE`, [plotId]);
     const holdsLand = tenure.rows[0]?.owner_user_id === userId;
     if (tenure.rowCount && !holdsLand) throw new EconomyError("Another resident already holds this plot.", 409);
@@ -327,7 +331,9 @@ export async function buyReadyBuilt(userId: string, plotId: string, designId: st
     const existing = await client.query(`SELECT 1 FROM construction WHERE plot_id = $1`, [plotId]);
     if (existing.rowCount) throw new EconomyError("Building has already started on this plot.", 409);
     const price = readyBuiltPrice(design, holdsLand);
-    if (balanceBefore < price) throw new EconomyError("Insufficient game naira", 402);
+    const fee = viaAgent ? agentFee(price) : 0;
+    if (balanceBefore < price + fee) throw new EconomyError("Insufficient game naira", 402);
+    if (fee) await debitWallet(client, userId, fee, "construction", `${ESTATE_AGENT.name} · agent's fee`, `${idempotencyKey}:agent`, { plotId, designId });
     const balance = await debitWallet(client, userId, price, "construction",
       `${plot.name} · ${design.name} · ready-built${holdsLand ? "" : " with freehold"}`, idempotencyKey, { plotId, designId, readyBuilt: true });
     if (!holdsLand) {
