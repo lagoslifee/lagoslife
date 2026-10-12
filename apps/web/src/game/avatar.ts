@@ -128,6 +128,9 @@ export class AvatarFactory {
       rightFore: node("lowerarm_r"),
       leftFore: node("lowerarm_l"),
       rightHand: node("hand_r"),
+      spine: node("spine_02"),
+      chest: node("spine_03"),
+      neck: node("neck_01"),
     };
     const bones = new Map<string, TransformNode>();
     for (const [bone] of SLIM) {
@@ -138,7 +141,7 @@ export class AvatarFactory {
   }
 }
 
-type Limbs = Record<"leftUp" | "leftLow" | "rightUp" | "rightLow" | "leftArm" | "rightArm" | "rightFore" | "leftFore" | "rightHand", TransformNode | null>;
+type Limbs = Record<"leftUp" | "leftLow" | "rightUp" | "rightLow" | "leftArm" | "rightArm" | "rightFore" | "leftFore" | "rightHand" | "spine" | "chest" | "neck", TransformNode | null>;
 export type Workout = "treadmill" | "bench" | "dumbbells" | "repair";
 
 /**
@@ -180,6 +183,9 @@ const FEMALE_SLIM: Record<string, number> = {
 const FEMALE_BUILD_MAX = 0.4;
 type Instance = ReturnType<AvatarFactory["instantiate"]>;
 
+/** Joint angles (radians) for the sleeping and lounging poses. */
+const P = { sleepArm: 0.35, sleepIn: 0.3, sleepFore: 1.5, sleepHead: 0.5, loungeBack: -0.35, loungeArm: -1.2, loungeArmBack: -0.3, loungeFore: 0.9, loungeLegs: 0.4 };
+export const POSE_TUNING = P;
 const flex = new Quaternion();
 /** Rotates a joint about one of its local axes, on top of the pose the clips set this frame. */
 function bend(joint: TransformNode | null, angle: number, axis = Axis.X) {
@@ -362,6 +368,37 @@ export class Avatar {
         bend(fore, side * (-1.6 + 1.3 * phase), Axis.Z);
       }
     }
+  }
+
+  /**
+   * Asleep on the back, over the idle clip (the caller lays the root flat): hands folded on the belly, head rolled to
+   * one side, and slow breathing.
+   */
+  sleep(time: number) {
+    const limbs = this.instance.limbs;
+    const breath = Math.sin(time * 1.3);
+    bend(limbs.rightArm, P.sleepArm);
+    bend(limbs.leftArm, P.sleepArm);
+    bend(limbs.rightArm, P.sleepIn, Axis.Z);
+    bend(limbs.leftArm, -P.sleepIn, Axis.Z);
+    bend(limbs.rightFore, P.sleepFore);
+    bend(limbs.leftFore, P.sleepFore);
+    bend(limbs.neck, P.sleepHead, Axis.Y);
+    bend(limbs.chest, breath * 0.025);
+  }
+
+  /** Chilling on a sofa, over the sit clip: leaning back, one arm along the backrest, legs stretched out a little. */
+  lounge(time: number) {
+    const limbs = this.instance.limbs;
+    const sway = Math.sin(time * 0.6) * 0.03;
+    bend(limbs.spine, P.loungeBack + sway);
+    bend(limbs.neck, -P.loungeBack * 0.6);
+    bend(limbs.rightArm, P.loungeArm, Axis.Z);
+    bend(limbs.rightArm, P.loungeArmBack);
+    bend(limbs.rightFore, P.loungeFore, Axis.Z);
+    bend(limbs.leftLow, P.loungeLegs);
+    bend(limbs.rightLow, P.loungeLegs * 0.6);
+    bend(limbs.leftUp, -P.loungeLegs * 0.4);
   }
 
   /** The animation library has no wave, so the right arm is raised and the forearm swings on top of idle. */

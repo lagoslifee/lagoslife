@@ -1394,6 +1394,8 @@ export class GameEngine {
         this.player.root.rotation.y = chair ? chair.yaw : seatedTravel ? this.seatYaw : this.controller.yaw;
         this.player.root.setEnabled(!bus && !inCar);
         if (!inCar) this.player.update(speed, lying ? "idle" : motion, dt);
+        if (lying) this.player.sleep(now * 0.001);
+        else if (chair?.rest === "sofa" && chair.pose === "sit") this.player.lounge(now * 0.001);
       }
     } else if (this.playerFallback) {
       this.playerFallback.position.set(x, this.groundY + 0.88, z);
@@ -2206,6 +2208,7 @@ export class GameEngine {
         }
         remote.avatar.root.setEnabled(!b.busId && !b.vehicleId);
         remote.avatar.update(remote.speed, b.motion, dt);
+        if (seat?.rest === "sofa" && b.motion === "sit") remote.avatar.lounge(performance.now() * 0.001);
       }
     }
   }
