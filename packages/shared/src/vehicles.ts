@@ -291,12 +291,14 @@ const ASSETS: Record<string, VehicleAsset> = { ...VEHICLE_ASSETS, ...REAL_VEHICL
  * keep most drives to two or three minutes (Lekki to Ikoyi about 3 in a saloon). Bicycles stay at their natural pace.
  */
 export const SPEED_SCALE = { topSpeed: 2.5, acceleration: 2.2, braking: 1.6 } as const;
+/** Game-wide speed limit: no car goes faster than 150 km/h. */
+export const MAX_VEHICLE_SPEED = 150 / 3.6;
 
 function scaled(model: VehicleModel): VehicleModel {
   if (model.body === "bicycle") return model;
   return {
     ...model,
-    topSpeed: model.topSpeed * SPEED_SCALE.topSpeed,
+    topSpeed: Math.min(MAX_VEHICLE_SPEED, model.topSpeed * SPEED_SCALE.topSpeed),
     acceleration: model.acceleration * SPEED_SCALE.acceleration,
     braking: model.braking * SPEED_SCALE.braking,
   };

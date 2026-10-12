@@ -788,7 +788,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const topSpeed = vehicle
       ? effectiveTopSpeed(getVehicleModel(vehicle.modelId), vehicle.condition)
       : MOVEMENT.sprintSpeed;
-    const allowed = topSpeed * 1.35 * elapsed + 0.75;
+    // Packets bunch up on mobile networks; judging bunched updates over at least a quarter-second stops false snap-backs.
+    const allowed = topSpeed * 1.35 * Math.max(0.25, elapsed) + 0.75;
     const distance = Math.hypot(parsed.data.x - player.x, parsed.data.z - player.z);
     const inInterior = player.location !== "street";
     const travelKind = inInterior ? travelInteriorOf(player.location) : null;
