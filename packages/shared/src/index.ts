@@ -131,6 +131,7 @@ export * from "./home-services.js";
 export * from "./business.js";
 export * from "./gym.js";
 export * from "./home-living.js";
+export * from "./account.js";
 import { worldVehicleSchema } from "./vehicles.js";
 
 export const motionStates = ["idle", "walk", "jog", "sprint", "sit", "wave", "dance", "drive"] as const;

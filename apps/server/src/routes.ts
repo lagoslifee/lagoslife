@@ -1,4 +1,7 @@
 import {
+  claimAccountSchema,
+  GUEST_EMAIL_DOMAIN,
+  lifeGoalsSchema,
   enrolSchema,
   gymSetSchema,
   startBusinessSchema,
@@ -70,6 +73,7 @@ import { applyCleaner, collectParcel, dismissStaff, eatParcel, hireStaff, homeSt
 import { cancelGig, completeGig, gigStatus, repairGig, startGigWork, takeGig } from "./gig-service.js";
 import { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, marketStatus, sprayMoney, trade, transferMoney } from "./finance-service.js";
 import { auth } from "./auth.js";
+import { accountSummary, claimGuestAccount, getGoals, resetAddress, saveGoals } from "./account-service.js";
 import { acquirePlot, buildingEvents, buyReadyBuilt, listPlots, payNextStage, releasePlotsOf, renewPlotLease, startConstruction } from "./building-service.js";
 import { matchMaker } from "@colyseus/core";
 import { config, webOrigins } from "./config.js";
@@ -362,7 +366,7 @@ export function configureRoutes(app: Express) {
       const tag = randomBytes(4).toString("hex").slice(0, 6);
       const result = await auth.api.signUpEmail({
         body: {
-          email: `guest-${randomUUID()}@guest.lagosliving.local`,
+          email: `guest-${randomUUID()}@${GUEST_EMAIL_DOMAIN}`,
           password: randomBytes(24).toString("base64url"),
           name: `Guest ${tag}`,
           username: `Guest_${tag}`,
@@ -676,6 +680,37 @@ export function configureRoutes(app: Express) {
     const { userName, details } = policeReportSchema.parse(req.body);
     return reportRobbery(userId, userName, details);
   }));
+
+  app.get("/api/account", requireSession, guarded("Account unavailable", (_req, userId) => accountSummary(userId)));
+
+  app.post("/api/account/claim", requireSession, rateLimited, guarded("Could not create your account", (req, userId) =>
+    claimGuestAccount(userId, claimAccountSchema.parse(req.body))));
+
+  // Lets players who signed up with a username (and an email) ask for a reset link without remembering the email.
+  app.post("/api/account/forgot", async (req, res) => {
+    const parsed = z.object({ identifier: z.string().trim().min(3).max(120), redirectTo: z.string().url().max(300) }).safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Enter your username or email." });
+      return;
+    }
+    try {
+      if (!(await withinRate(`forgot:${req.ip ?? "unknown"}`, 8, 900_000))) {
+        res.status(429).json({ error: "Too many reset requests. Try again in a few minutes." });
+        return;
+      }
+      const email = await resetAddress(parsed.data.identifier);
+      if (email) await auth.api.requestPasswordReset({ body: { email, redirectTo: parsed.data.redirectTo }, headers: fromNodeHeaders(req.headers) });
+    } catch (error) {
+      console.error("Password reset request failed", error);
+    }
+    res.json({ ok: true });
+  });
+
+  app.get("/api/goals", requirePlayer, guarded("Goals unavailable", async (_req, userId) => ({ goals: await getGoals(userId) })));
+
+  app.put("/api/goals", requirePlayer, rateLimited, guarded("Could not save your goals", async (req, userId) => ({
+    goals: await saveGoals(userId, lifeGoalsSchema.parse(req.body)),
+  })));
 
   app.get("/api/account/standing", requireSession, guarded("Standing unavailable", async (_req, userId) => {
     const suspension = await activeSuspension(userId);

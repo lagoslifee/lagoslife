@@ -32,6 +32,10 @@ const configSchema = z
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
     SMTP_FROM: z.string().default("Naija World <no-reply@naijaworld.local>"),
+    /** When set, account email (password resets) goes through Resend's API instead of SMTP. */
+    RESEND_API_KEY: z.string().optional(),
+    /** Sender for Resend. `onboarding@resend.dev` only delivers to the Resend account's own address until a domain is verified. */
+    RESEND_FROM: z.string().default("Naija World <onboarding@resend.dev>"),
     STARTING_NAIRA: z.coerce.number().int().nonnegative().default(250_000),
     /**
      * Testing only: when above 0, every wallet is refilled to this amount whenever it is read, so testers can buy
