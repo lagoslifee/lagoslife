@@ -10,6 +10,7 @@ import { TravelApp } from "./TravelApp";
 import { VehiclesApp } from "./VehicleSheets";
 import { JusticeApp, SafetyApp, type ReportTarget } from "./SafetyUI";
 import { GoApp } from "./GoApp";
+import { FriendsApp } from "./FriendsApp";
 import { PlacesApp, type CabDestination } from "./PlacesApp";
 import { GamesApp } from "./games/GamesApp";
 import { BusinessApp } from "./BusinessApp";
@@ -189,12 +190,7 @@ export function Phone(props: Props) {
         {app === "community" && <CommunityApp onNavigate={props.onNavigate} onClose={onClose} />}
         {app === "justice" && <JusticeApp onToast={props.onToast} onRefresh={props.onRefresh} />}
         {app === "safety" && <SafetyApp onToast={props.onToast} onReport={props.onReport} />}
-        {app === "friends" && (
-          <div className="app-section">
-            <p><strong>{props.hud?.online ?? 1}</strong> resident{props.hud?.online === 1 ? "" : "s"} online in this world.</p>
-            <p className="muted">Name tags show nearby residents. Press Enter to chat with anyone within 40 m. To travel together or join someone, open Phone → Go. Saved friend lists are not available yet.</p>
-          </div>
-        )}
+        {app === "friends" && <FriendsApp online={props.hud?.online ?? 1} onToast={props.onToast} />}
         {app === "notifications" && (
           <ul className="notice-log">
             {props.notices.length === 0 && <li className="muted">No notifications yet.</li>}

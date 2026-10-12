@@ -4,6 +4,7 @@ import type { BusinessStatus, BusinessTypeId, CourseId, ExerciseId, GymStatus, R
 import type { FoodParcel, HomeStaffRole, HomeStaffState, HomeTier } from "@lagos-living/shared";
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick, RepairAction } from "@lagos-living/shared";
 import type { AccountSummary, ClaimAccount, LifeGoals } from "@lagos-living/shared";
+import type { DirectMessage, FriendsStatus } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -194,6 +195,13 @@ export const api = {
     post<VehicleResult>(`/api/vehicles/${id}/garage`, { propertyId, idempotencyKey: crypto.randomUUID() }),
   lockVehicle: (id: string, locked: boolean) => post<VehicleResult>(`/api/vehicles/${id}/lock`, { locked }),
   retrieveVehicle: (id: string) => post<VehicleResult>(`/api/vehicles/${id}/retrieve`),
+  friends: () => request<FriendsStatus>("/api/friends"),
+  friendRequest: (userName: string) => post<FriendsStatus & { result: string }>("/api/friends/request", { userName }),
+  friendRespond: (userId: string, accept: boolean) => post<FriendsStatus>("/api/friends/respond", { userId, accept }),
+  friendRemove: (userId: string) => request<FriendsStatus>(`/api/friends/${encodeURIComponent(userId)}`, { method: "DELETE" }),
+  messages: (userId: string) =>
+    request<{ friend: { userId: string; userName: string; online: boolean; where: string | null }; messages: DirectMessage[] }>(`/api/messages/${encodeURIComponent(userId)}`),
+  sendMessage: (to: string, text: string) => post<DirectMessage>("/api/messages", { to, text }),
   community: () => request<CommunityStatus>("/api/community"),
   visitQuietPlace: (placeId: string) => post<QuietVisitResult>("/api/community/visit", { placeId }),
   volunteer: (placeId: string) => post<VolunteerResult>("/api/community/volunteer", { placeId }),

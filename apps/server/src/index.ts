@@ -7,11 +7,13 @@ import { releaseAbandonedTables } from "./club-service.js";
 import { bridgeEmitter, joinCluster } from "./cluster.js";
 import { config } from "./config.js";
 import { installCrashHandlers } from "./diagnostics.js";
+import { playerEvents } from "./player-events.js";
 import { profileEvents } from "./profile-service.js";
 import { LagosRoom } from "./rooms/LagosRoom.js";
 import { configureRoutes } from "./routes.js";
 import { purgeExpiredRates } from "./request-rate.js";
 import { purgeExpiredChat, safetyEvents } from "./safety-service.js";
+import { purgeExpiredMessages } from "./social-service.js";
 import { vehicleEvents } from "./vehicle-events.js";
 
 installCrashHandlers();
@@ -22,6 +24,7 @@ if (presence) {
   bridgeEmitter("profile", profileEvents);
   bridgeEmitter("safety", safetyEvents);
   bridgeEmitter("building", buildingEvents);
+  bridgeEmitter("player", playerEvents);
   await joinCluster(presence);
 }
 
@@ -34,7 +37,8 @@ const gameServer = defineServer({
     ...(config.PUBLIC_ADDRESS && { publicAddress: config.PUBLIC_ADDRESS }),
   }),
   rooms: {
-    lagos: defineRoom(LagosRoom),
+    // Residents starting in the same district share a room, so neighbours see each other.
+    lagos: defineRoom(LagosRoom).filterBy(["area"]),
   },
   express: (app) => {
     app.use(express.json({ limit: "32kb" }));
@@ -48,6 +52,7 @@ const purgeChat = () =>
     .catch((error) => console.error("Chat retention purge failed", error));
 purgeChat();
 setInterval(purgeChat, 6 * 3_600_000).unref();
+setInterval(() => void purgeExpiredMessages().catch((error) => console.error("Direct message purge failed", error)), 6 * 3_600_000).unref();
 setInterval(() => void purgeExpiredRates().catch((error) => console.error("Rate-limit purge failed", error)), 3_600_000).unref();
 setInterval(() => void releaseIdleGuestPlots().catch((error) => console.error("Idle guest plot release failed", error)), 3_600_000).unref();
 setInterval(() => void releaseAbandonedTables().catch((error) => console.error("VIP table release failed", error)), 15_000).unref();

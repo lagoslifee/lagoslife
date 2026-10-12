@@ -1096,6 +1096,12 @@ export function GameView({
           }}
           onReport={setReportTarget}
           onBlock={blockResident}
+          onFriend={(userName) =>
+            void api
+              .friendRequest(userName)
+              .then(({ result }) => toast({ tone: "success", text: result }))
+              .catch((error: Error) => toast({ tone: "error", text: error.message }))
+          }
         />
       )}
       {reportTarget && <ReportDialog target={reportTarget} onClose={() => setReportTarget(null)} onToast={toast} />}

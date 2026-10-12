@@ -1,5 +1,10 @@
 import {
   claimAccountSchema,
+  directMessageSendSchema,
+  friendRequestSchema,
+  friendRespondSchema,
+  getPlace,
+  roomArea,
   GUEST_EMAIL_DOMAIN,
   lifeGoalsSchema,
   enrolSchema,
@@ -108,6 +113,8 @@ import {
   unblockPlayer,
 } from "./safety-service.js";
 import { createMultiplayerToken } from "./multiplayer-token.js";
+import { conversation, friendsStatus, removeFriend, requestFriend, respondFriend, sendDirectMessage } from "./social-service.js";
+import { loadPlayerPlace } from "./economy-service.js";
 import { loadCharacter, saveAppearance, wardrobe } from "./profile-service.js";
 import { getCommunityStatus, visitQuietPlace, volunteerShift } from "./community-service.js";
 import { bookTable, buyWristband, getClubStatus, listTables, orderAtBar, orderBottle, setTableGuest } from "./club-service.js";
@@ -381,10 +388,24 @@ export function configureRoutes(app: Express) {
     }
   });
 
-  app.post("/api/multiplayer-token", requirePlayer, (req, res) => {
+  app.post("/api/multiplayer-token", requirePlayer, async (req, res) => {
     const { userId, name } = (req as AuthenticatedRequest).player;
-    res.json({ token: createMultiplayerToken({ userId, name }) });
+    const place = await loadPlayerPlace(userId).catch(() => null);
+    res.json({ token: createMultiplayerToken({ userId, name }), area: place ? roomArea(place.x, place.z) : roomArea(...getPlace("starter-home").door) });
   });
+
+  app.get("/api/friends", requirePlayer, guarded("Friends unavailable", (_req, userId) => friendsStatus(userId)));
+  app.post("/api/friends/request", requirePlayer, rateLimited, guarded("Could not send the friend request", (req, userId) => requestFriend(userId, friendRequestSchema.parse(req.body).userName)));
+  app.post("/api/friends/respond", requirePlayer, rateLimited, guarded("Could not answer the friend request", (req, userId) => {
+    const { userId: from, accept } = friendRespondSchema.parse(req.body);
+    return respondFriend(userId, from, accept);
+  }));
+  app.delete("/api/friends/:id", requirePlayer, rateLimited, guarded("Could not remove the friend", (req, userId) => removeFriend(userId, z.string().min(1).max(100).parse(req.params.id))));
+  app.get("/api/messages/:id", requirePlayer, guarded("Messages unavailable", (req, userId) => conversation(userId, z.string().min(1).max(100).parse(req.params.id))));
+  app.post("/api/messages", requirePlayer, rateLimited, guarded("Message not sent", (req, userId) => {
+    const { to, text } = directMessageSendSchema.parse(req.body);
+    return sendDirectMessage(userId, to, text);
+  }));
 
   app.get("/api/character", requirePlayer, guarded("Character unavailable", (_req, userId) => loadCharacter(userId)));
 

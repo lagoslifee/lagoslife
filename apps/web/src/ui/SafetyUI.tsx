@@ -24,6 +24,7 @@ export function ChatPanel({
   onSend,
   onReport,
   onBlock,
+  onFriend,
 }: {
   messages: Array<ChatMessage & { own: boolean }>;
   open: boolean;
@@ -32,6 +33,7 @@ export function ChatPanel({
   onSend: (text: string) => boolean;
   onReport: (target: ReportTarget) => void;
   onBlock: (userName: string) => void;
+  onFriend: (userName: string) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [menu, setMenu] = useState<string | null>(null);
@@ -78,6 +80,7 @@ export function ChatPanel({
               <time>{time(message.at)}</time>
               {menu === message.id && (
                 <span className="chat-actions">
+                  <button className="link small" onClick={() => { setMenu(null); onFriend(message.userName); }}>Add friend</button>
                   <button className="link small" onClick={() => { setMenu(null); onReport({ userName: message.userName, message }); }}>Report</button>
                   <button className="link small" onClick={() => { setMenu(null); onBlock(message.userName); }}>Block</button>
                 </span>

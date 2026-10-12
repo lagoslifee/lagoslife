@@ -589,6 +589,23 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .chat-lines time { margin-left: auto; font-size: 10px; opacity: .6; }
 .chat-actions { display: flex; gap: 10px; width: 100%; }
 .chat-actions .link { color: #ffcf3a; }
+.friends-add { display: flex; gap: 8px; margin: 8px 0; }
+.friends-add input { flex: 1; min-width: 0; }
+.friends-list { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; }
+.friends-list > li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 12px; background: rgba(127,127,127,.1); }
+.friends-actions { display: flex; gap: 6px; }
+.friend-open { display: flex; align-items: center; gap: 10px; width: 100%; padding: 0; border: 0; background: none; text-align: left; color: inherit; }
+.friend-open > span:nth-child(2) { display: grid; flex: 1; min-width: 0; }
+.friend-open small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friend-open .badge { min-width: 20px; padding: 2px 6px; border-radius: 10px; background: #ff3b30; color: #fff; font-size: 12px; text-align: center; }
+.presence { width: 10px; height: 10px; flex: none; border-radius: 50%; background: #8e8e93; }
+.presence.on { background: #34c759; box-shadow: 0 0 0 3px rgba(52,199,89,.25); }
+.friends-chat-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.friends-chat-head > span { display: grid; text-align: center; }
+.dm-lines { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow-y: auto; }
+.dm-lines li { align-self: flex-start; max-width: 80%; padding: 7px 11px; border-radius: 16px 16px 16px 4px; background: rgba(127,127,127,.18); overflow-wrap: anywhere; }
+.dm-lines li.mine { align-self: flex-end; border-radius: 16px 16px 4px 16px; background: #0a84ff; color: #fff; }
+.dm-lines time { display: block; font-size: 10px; opacity: .65; margin-top: 2px; }
 .chat-input { display: flex; gap: 6px; }
 .chat-input input { flex: 1; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--hud-line); background: rgba(10,20,18,.88); color: #fff; }
 .chat-open { justify-self: start; padding: 6px 10px; border-radius: 10px; backdrop-filter: blur(8px); background: var(--hud-bg); border: 1px solid var(--hud-line); color: #f5f2e8; font-size: calc(12px * var(--text-scale)); }

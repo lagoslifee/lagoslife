@@ -102,10 +102,10 @@ export class MultiplayerConnection {
     try {
       const response = await fetch(`${apiUrl}/api/multiplayer-token`, { method: "POST", credentials: "include", headers: authHeaders() });
       if (!response.ok) throw new Error("Could not authenticate multiplayer");
-      const { token } = (await response.json()) as { token: string };
+      const { token, area } = (await response.json()) as { token: string; area?: string };
       if (this.closed) return;
       const client = new Client(apiUrl);
-      const room = await client.joinOrCreate("lagos", { token });
+      const room = await client.joinOrCreate("lagos", { token, area: area ?? "lagos" });
       if (this.closed) {
         await room.leave();
         return;
