@@ -105,6 +105,7 @@ import {
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
 import { EntranceMarkers, type EntranceCandidate } from "./entrance-markers";
 import { TourGuide, tourStops } from "./tour-guide";
+import { PropLibrary } from "./props";
 import { HomeStaffView, type StaffPost } from "./home-staff-view";
 import { PartyLights } from "./party-lights";
 import { Escort, type EscortLeader } from "./escort";
@@ -349,6 +350,8 @@ export class GameEngine {
   data!: WorldData;
   private world!: BuiltWorld;
   private avatars: AvatarFactory | null = null;
+  private props: PropLibrary | null = null;
+  private readonly streetProps: Array<{ dispose(): void }> = [];
   private staff!: ServiceStaff;
   private danfos: DanfoFactory | null = null;
   private player: Avatar | null = null;
@@ -714,6 +717,11 @@ export class GameEngine {
     this.navigator = new RoadNavigator(this.data.roads.filter((road) => road.kind !== "service" || road.name));
 
     this.callbacks.loading("Loading residents…", 0.65);
+    void PropLibrary.load(scene).then((props) => {
+      if (this.disposed) return;
+      this.props = props;
+      this.placeStreetProps(props);
+    });
     try {
       this.avatars = await AvatarFactory.load(scene);
     } catch {
@@ -2585,7 +2593,7 @@ export class GameEngine {
     if (travel) {
       this.interior?.dispose();
       this.clearCrew();
-      const view = buildTravelInterior(this.scene, this.materials, this.atlas, travel, this.trip);
+      const view = buildTravelInterior(this.scene, this.materials, this.atlas, travel, this.trip, this.props);
       this.interior = view;
       this.travelView = view;
       this.club = null;
@@ -2831,6 +2839,23 @@ export class GameEngine {
   /** Road distance and route between two points, for fares and ETAs. */
   planRoute(from: Vec2, to: Vec2) {
     return this.navigator.plan(from, to);
+  }
+
+  /** Outdoor table sets beside the entrance path of every restaurant, buka and café. */
+  private placeStreetProps(props: PropLibrary) {
+    for (const place of PLACES) {
+      if (place.kind !== "food" && place.kind !== "restaurant" && place.kind !== "cafe") continue;
+      const dx = place.kerb[0] - place.door[0];
+      const dz = place.kerb[1] - place.door[1];
+      const length = Math.hypot(dx, dz) || 1;
+      const [fx, fz] = [dx / length, dz / length];
+      const out = Math.min(4, Math.max(2.2, length * 0.35));
+      for (const side of [-1, 1]) {
+        const x = place.door[0] + fx * out - fz * side * 3.2;
+        const z = place.door[1] + fz * out + fx * side * 3.2;
+        props.place("restaurant-table", x, z, Math.atan2(fx, fz), this.streetProps, this.world.groundHeight(x, z));
+      }
+    }
   }
 
   /** Starts the free Dubai Marina walking tour with a guide beside the player; only on the street in Dubai. */
@@ -3618,6 +3643,7 @@ export class GameEngine {
 
   async dispose() {
     this.endTour();
+    for (const prop of this.streetProps.splice(0)) prop.dispose();
     this.disposed = true;
     window.removeEventListener("resize", this.resize);
     await this.net.disconnect().catch(() => undefined);

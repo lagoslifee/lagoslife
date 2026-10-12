@@ -24,6 +24,7 @@ import {
   type Vec2,
 } from "@lagos-living/shared";
 import { buildExitDoor } from "./exit-door";
+import type { PropLibrary } from "./props";
 import { MeshBuilderBatch } from "./geometry";
 import type { InteriorSpot } from "./interior";
 import type { Materials } from "./materials";
@@ -121,7 +122,7 @@ function board(scene: Scene, name: string, width: number, height: number, lines:
 }
 
 /** Builds one travel interior at the interior origin, in the same shape as a home interior view. */
-export function buildTravelInterior(scene: Scene, materials: Materials, atlas: SignAtlas, kind: TravelInterior, trip: TripState | null): TravelView {
+export function buildTravelInterior(scene: Scene, materials: Materials, atlas: SignAtlas, kind: TravelInterior, trip: TripState | null, props: PropLibrary | null = null): TravelView {
   const layout = TRAVEL_LAYOUTS[kind];
   const [HX, HZ] = layout.half;
   const open = kind === "rooftop" || kind === "dhow" || kind === "safari" || kind === "pool";
@@ -296,9 +297,14 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
     const cz = layout.spots.checkin![1];
     solid("wood", -14.2, 0.55, tz, 1.2, 1.1, 3.2, accent);
     sign("Tickets", "Lagos ⇄ Dubai · LL 721 / 722", -14.7, 2.0, -3.5, 2.6, "east");
-    for (const z of [0.8, 2.5, 4.2]) {
-      solid("concrete", -14.2, 0.55, z, 1.2, 1.1, 1.2, [0.85, 0.86, 0.88]);
-      deco("rubber", -13.4, 0.35, z, 0.6, 0.12, 1.1);
+    if (props?.has("checkin-counter")) {
+      props.place("checkin-counter", OX - 14.2, OZ + cz, -Math.PI / 2, disposables);
+      boxes.push({ x: OX - 14.2, z: OZ + cz, hx: 0.6, hz: 2.4 });
+    } else {
+      for (const z of [0.8, 2.5, 4.2]) {
+        solid("concrete", -14.2, 0.55, z, 1.2, 1.1, 1.2, [0.85, 0.86, 0.88]);
+        deco("rubber", -13.4, 0.35, z, 0.6, 0.12, 1.1);
+      }
     }
     sign("Check-in", "Economy · Business priority", -14.7, 2.0, 2.5, 2.6, "east");
     // Counter tops and staff monitors facing the agents' side of each desk.
@@ -308,10 +314,12 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
     };
     deco("chrome", -14.15, 1.12, tz, 1.35, 0.04, 3.3, [0.9, 0.88, 0.84]);
     for (const dz of [-1, 0, 1]) monitors(tz + dz);
-    for (const z of [0.8, 2.5, 4.2]) {
-      deco("chrome", -14.15, 1.12, z, 1.35, 0.04, 1.25, [0.9, 0.88, 0.84]);
-      monitors(z);
-      deco("darkFrame", -13.75, 1.6, z + 0.4, 0.04, 0.3, 0.42, [0.05, 0.05, 0.07]);
+    if (!props?.has("checkin-counter")) {
+      for (const z of [0.8, 2.5, 4.2]) {
+        deco("chrome", -14.15, 1.12, z, 1.35, 0.04, 1.25, [0.9, 0.88, 0.84]);
+        monitors(z);
+        deco("darkFrame", -13.75, 1.6, z + 0.4, 0.04, 0.3, 0.42, [0.05, 0.05, 0.07]);
+      }
     }
     const [gx] = layout.spots.gate!;
     solid("concrete", gx, 0.55, 9.4, 2.6, 1.1, 0.7, accent);
@@ -373,9 +381,14 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
     if (dubai) {
       // Fictional immigration booths, a baggage carousel and arrivals signage.
       const [ix, iz] = layout.spots.immigration!;
-      for (const dx of [-2.4, 0, 2.4]) {
-        solid("wood", ix + dx, 0.6, iz + 1.2, 1.4, 1.2, 1.0, [0.86, 0.8, 0.7]);
-        get("glass").box(OX + ix + dx, 1.6, OZ + iz + 1.2, 1.4, 0.8, 0.04);
+      for (const dx of [-2.6, 0, 2.6]) {
+        if (props?.has("immigration-booth")) {
+          props.place("immigration-booth", OX + ix + dx, OZ + iz + 0.6, Math.PI, disposables);
+          boxes.push({ x: OX + ix + dx, z: OZ + iz + 0.6, hx: 1.05, hz: 1.05 });
+        } else {
+          solid("wood", ix + dx, 0.6, iz + 1.2, 1.4, 1.2, 1.0, [0.86, 0.8, 0.7]);
+          get("glass").box(OX + ix + dx, 1.6, OZ + iz + 1.2, 1.4, 0.8, 0.04);
+        }
       }
       sign("Immigration", "Fictional · game roleplay", ix, 2.6, iz + 1.8, 2.6);
       hang("sign immigration", ix, iz - 1.0, 6, [{ text: "A  IMMIGRATION", colour: Y, size: 40 }, { text: "All arrivals start here · passport control", size: 20 }], "north");

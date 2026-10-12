@@ -185,8 +185,47 @@ if (target === "avatar") {
   };
   await Promise.all(Array.from({ length: Number(process.env.MESHY_CONCURRENCY ?? 5) }, worker));
   if (failures.length) console.log(`failed: ${failures.join(" ")}`);
+} else if (target === "props") {
+  const PROPS = [
+    {
+      label: "prop-immigration-booth",
+      prompt:
+        "Airport immigration passport control desk, a waist-high dark walnut wood counter with a white quartz top, " +
+        "a curved frosted glass partition on top, a small stainless steel canopy above, two computer monitors, " +
+        "realistic, single object, no people, no text",
+      texturePrompt: "dark walnut wood panels, white quartz counter top, frosted glass, brushed stainless steel canopy",
+    },
+    {
+      label: "prop-checkin-counter",
+      prompt:
+        "Airline check-in counter with a luggage weighing scale and short conveyor belt beside it, modern airport " +
+        "design, white and navy blue panels, computer monitor on the desk, realistic, single object, no people, no text",
+      texturePrompt: "white laminate desk with navy blue front panels, black rubber conveyor belt, brushed steel scale",
+    },
+    {
+      label: "prop-restaurant-table",
+      prompt:
+        "Outdoor restaurant dining set: a square wooden table with four wooden chairs and a large cream canvas patio " +
+        "umbrella in the middle, realistic, single object on the ground, no people, no text",
+      texturePrompt: "warm teak wood table and chairs, cream canvas umbrella, dark metal umbrella pole",
+    },
+  ];
+  const wanted = process.argv.slice(3);
+  const queue = PROPS.filter((prop) => (!wanted.length || wanted.includes(prop.label)) && !existsSync(path.join(outDir, `${prop.label}.glb`)));
+  const failures = [];
+  await Promise.all(
+    queue.map(async (prop) => {
+      try {
+        await generateModel({ ...prop, polycount: 15000 });
+      } catch (error) {
+        failures.push(prop.label);
+        console.error(`${prop.label} failed: ${error.message}`);
+      }
+    }),
+  );
+  if (failures.length) console.log(`failed: ${failures.join(" ")}`);
 } else {
-  console.log("usage: node scripts/meshy/generate.mjs <avatar|danfo|cars [id...]>");
+  console.log("usage: node scripts/meshy/generate.mjs <avatar|danfo|cars [id...]|props [label...]>");
   process.exit(1);
 }
 console.log(`credits spent this run: ${spent}`);

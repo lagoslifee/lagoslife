@@ -467,6 +467,78 @@
       "consumedCredits": 10,
       "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12b17-9dc3-70fc-9fb0-7e2c36654298/output/preview.png",
       "recordedAt": "2026-10-11T13:13:21.512Z"
+    },
+    {
+      "label": "prop-checkin-counter preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12ff0-b229-7639-99bf-713d12a3d6db",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12ff0-b229-7639-99bf-713d12a3d6db/output/preview.png",
+      "recordedAt": "2026-10-12T11:48:18.103Z"
+    },
+    {
+      "label": "prop-immigration-booth preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12ff0-b22b-7503-a154-9ab1414cee73",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12ff0-b22b-7503-a154-9ab1414cee73/output/preview.png",
+      "recordedAt": "2026-10-12T11:48:23.120Z"
+    },
+    {
+      "label": "prop-restaurant-table preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12ff0-b24a-74f9-8cc5-282407412981",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12ff0-b24a-74f9-8cc5-282407412981/output/preview.png",
+      "recordedAt": "2026-10-12T11:48:43.418Z"
+    },
+    {
+      "label": "prop-checkin-counter refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12ff1-3055-74d4-92b9-39d9240781cf",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12ff1-3055-74d4-92b9-39d9240781cf/output/preview.png",
+      "recordedAt": "2026-10-12T11:49:56.346Z"
+    },
+    {
+      "label": "prop-immigration-booth refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12ff1-43ef-7046-9410-0d3a6e997f57",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12ff1-43ef-7046-9410-0d3a6e997f57/output/preview.png",
+      "recordedAt": "2026-10-12T11:50:16.545Z"
+    },
+    {
+      "label": "prop-restaurant-table refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12ff1-9337-736f-8fe4-4913a79c2b44",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12ff1-9337-736f-8fe4-4913a79c2b44/output/preview.png",
+      "recordedAt": "2026-10-12T11:50:26.691Z"
+    },
+    {
+      "label": "prop-immigration-booth preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12ff4-132d-7652-a224-fa72d7b7f935",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12ff4-132d-7652-a224-fa72d7b7f935/output/preview.png",
+      "recordedAt": "2026-10-12T11:52:14.949Z"
+    },
+    {
+      "label": "prop-immigration-booth refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a12ff4-cd84-710e-b555-9bbe1acb3fd7",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a12ff4-cd84-710e-b555-9bbe1acb3fd7/output/preview.png",
+      "recordedAt": "2026-10-12T11:53:37.848Z"
     }
   ]
 }
