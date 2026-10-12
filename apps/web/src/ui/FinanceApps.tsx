@@ -322,13 +322,14 @@ function Wheel({ rotation, spinning }: { rotation: number; spinning: boolean }) 
   );
 }
 
-function SpinTab({ status, reload, onToast, onRefresh }: { status: BettingStatus; reload: () => Promise<void> } & Omit<MoneyProps, "economy">) {
+type TabProps = { status: BettingStatus; offset: number; reload: () => Promise<void> } & Omit<MoneyProps, "economy">;
+
+function SpinTab({ status, offset, reload, onToast, onRefresh }: TabProps) {
   const now = useNow(250);
   const [stake, setStake] = useState(1_000);
   const [busy, setBusy] = useState(false);
   const [rotation, setRotation] = useState(0);
   const shown = useRef<number | null>(null);
-  const offset = Date.now() - status.now;
   const last = status.spin.last[0];
   useEffect(() => {
     if (!last || shown.current === last.round) return;
@@ -361,7 +362,7 @@ function SpinTab({ status, reload, onToast, onRefresh }: { status: BettingStatus
   return (
     <div className="spin-tab">
       <Wheel rotation={rotation} spinning={closed && last?.round !== status.spin.round} />
-      <p className="spin-timer" data-testid="spin-timer">{closed ? `Spinning… next round opens in ${left}s` : `Wheel stops in ${left}s`}</p>
+      <p className="spin-timer" data-testid="spin-timer">{closed ? `No more bets · wheel stops in ${left}s` : `Wheel stops in ${left}s`}</p>
       <div className="spin-history">
         {status.spin.last.map((entry) => <span key={entry.round} style={{ background: segmentColour(entry.multiplier) }}>{entry.multiplier}×</span>)}
       </div>
@@ -391,9 +392,8 @@ function FixtureRow({ fixture, children }: { fixture: Fixture; children: React.R
   );
 }
 
-function FootballTab({ status, reload, onToast, onRefresh }: { status: BettingStatus; reload: () => Promise<void> } & Omit<MoneyProps, "economy">) {
+function FootballTab({ status, offset, reload, onToast, onRefresh }: TabProps) {
   const now = useNow(1000);
-  const offset = Date.now() - status.now;
   const [slip, setSlip] = useState<{ fixture: Fixture; pick: Pick } | null>(null);
   const [stake, setStake] = useState(2_000);
   const [busy, setBusy] = useState(false);
@@ -474,7 +474,15 @@ function FootballTab({ status, reload, onToast, onRefresh }: { status: BettingSt
 export function BetApp({ onRefresh, onToast }: Omit<MoneyProps, "economy">) {
   const [tab, setTab] = useState<"spin" | "football" | "mine">("spin");
   const [status, setStatus] = useState<BettingStatus | null>(null);
-  const reload = useCallback(() => api.betting().then(setStatus).catch(() => undefined), []);
+  const [offset, setOffset] = useState(0);
+  const reload = useCallback(
+    () =>
+      api.betting().then((next) => {
+        setOffset(Date.now() - next.now);
+        setStatus(next);
+      }).catch(() => undefined),
+    [],
+  );
   useEffect(() => {
     void reload();
   }, [reload]);
@@ -486,8 +494,8 @@ export function BetApp({ onRefresh, onToast }: Omit<MoneyProps, "economy">) {
         <button className={`chip${tab === "football" ? " selected" : ""}`} onClick={() => setTab("football")} data-testid="bet-football">⚽ Football</button>
         <button className={`chip${tab === "mine" ? " selected" : ""}`} onClick={() => { setTab("mine"); void reload(); }}>My bets</button>
       </div>
-      {tab === "spin" && <SpinTab status={status} reload={reload} onToast={onToast} onRefresh={onRefresh} />}
-      {tab === "football" && <FootballTab status={status} reload={reload} onToast={onToast} onRefresh={onRefresh} />}
+      {tab === "spin" && <SpinTab status={status} offset={offset} reload={reload} onToast={onToast} onRefresh={onRefresh} />}
+      {tab === "football" && <FootballTab status={status} offset={offset} reload={reload} onToast={onToast} onRefresh={onRefresh} />}
       {tab === "mine" && (
         <ul className="transactions">
           {status.bets.length === 0 && <li className="muted">No bets yet.</li>}
