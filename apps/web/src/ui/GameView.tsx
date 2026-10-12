@@ -328,6 +328,16 @@ export function GameView({
           if (!encounter) void refresh();
         },
         arrived: (label) => setArrival({ label, at: Date.now() }),
+        spray: async (amount) => {
+          try {
+            await api.spray(amount);
+            void refresh();
+            return true;
+          } catch (error) {
+            toast({ tone: "error", text: (error as Error).message });
+            return false;
+          }
+        },
         rideAsk: (ask) => setRideAsks((list) => [...list.filter((entry) => entry.sessionId !== ask.sessionId), ask].slice(-3)),
         travelPrompt: (prompt) => setTravelPrompts((list) => [...list.filter((entry) => entry.requestId !== prompt.requestId), prompt].slice(-3)),
         ride: (next) => {

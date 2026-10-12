@@ -16,6 +16,7 @@ import {
   takeGigSchema,
   hireStaffSchema,
   orderDeliverySchema,
+  spraySchema,
   tenancyActionSchema,
   homeActionSchema,
   inviteGuestSchema,
@@ -59,7 +60,7 @@ import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
 import { applyCleaner, dismissStaff, hireStaff, homeStaff, orderDelivery, partyUntil, staffByHome, startParty, stopParty } from "./home-services-service.js";
 import { cancelGig, completeGig, gigStatus, startGigWork, takeGig } from "./gig-service.js";
-import { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, marketStatus, trade, transferMoney } from "./finance-service.js";
+import { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, marketStatus, sprayMoney, trade, transferMoney } from "./finance-service.js";
 import { auth } from "./auth.js";
 import { acquirePlot, buildingEvents, buyReadyBuilt, listPlots, payNextStage, releasePlotsOf, renewPlotLease, startConstruction } from "./building-service.js";
 import { matchMaker } from "@colyseus/core";
@@ -508,6 +509,11 @@ export function configureRoutes(app: Express) {
     dismissStaff(userId, String(req.params.propertyId), hireStaffSchema.pick({ role: true }).parse(req.body).role)));
   app.post("/api/properties/:propertyId/party", requirePlayer, rateLimited, guarded("Party could not start", (req, userId) =>
     z.object({ on: z.boolean() }).parse(req.body).on ? startParty(userId, String(req.params.propertyId)) : stopParty(userId, String(req.params.propertyId))));
+  app.post("/api/spray", requirePlayer, rateLimited, guarded("Could not spray", (req, userId) => {
+    const body = spraySchema.parse(req.body);
+    return sprayMoney(userId, body.amount, body.idempotencyKey);
+  }));
+
   app.post("/api/delivery/order", requirePlayer, rateLimited, guarded("Order failed", (req, userId) => {
     const body = orderDeliverySchema.parse(req.body);
     return orderDelivery(userId, body.itemId, body.idempotencyKey);

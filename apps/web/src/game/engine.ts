@@ -187,6 +187,8 @@ export type Interaction =
 export type EngineCallbacks = {
   hud: (state: HudState) => void;
   notice: (notice: Notice) => void;
+  /** Pays for spraying money at the car spotters; resolves false when refused. */
+  spray: (amount: number) => Promise<boolean>;
   /** Speech is shown in quotes; sound captions describe meaningful non-speech audio. */
   subtitle: (text: string, kind?: "speech" | "sound") => void;
   interact: (interaction: Interaction) => void;
@@ -748,6 +750,7 @@ export class GameEngine {
         (x, z) => walkable(x, z) && this.navigator.snap([x, z]).distance > 4.5,
         (x, y, z) => this.project(x, y, z),
         (text) => this.callbacks.notice({ tone: "success", text }),
+        (amount) => this.callbacks.spray(amount),
       );
       this.spotters.enabled = this.settings.carSpotters;
     }

@@ -344,3 +344,15 @@ export async function splitCabFare(hostUserId: string, guestUserId: string, half
     await creditWallet(client, hostUserId, half, "ride_refund", `${guestName} paid half the cab fare`, `cab-share-in:${rideId}:${guestUserId}`);
   });
 }
+
+/** Throws game naira to the (NPC) car spotters round the player's car. */
+export async function sprayMoney(userId: string, amount: number, idempotencyKey: string) {
+  return withTransaction(async (client) => {
+    await ensureWallet(client, userId);
+    await client.query(`SELECT 1 FROM wallet WHERE user_id = $1 FOR UPDATE`, [userId]);
+    const key = `spray:${idempotencyKey}`;
+    if (await replayed(client, userId, key)) return { balance: await balanceOf(client, userId), replayed: true };
+    const balance = await debitWallet(client, userId, amount, "spray_money", `Sprayed ₦${amount.toLocaleString("en-NG")} to car spotters`, key);
+    return { balance, replayed: false };
+  });
+}

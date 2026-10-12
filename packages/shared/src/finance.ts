@@ -261,3 +261,12 @@ export type BettingStatus = {
   bets: BetRecord[];
   returnToPlayer: number;
 };
+
+/* ---------- Spraying money ---------- */
+
+/** Notes thrown to the car spotters. The money leaves the player's wallet and goes to NPCs, not to other players. */
+export const SPRAY_AMOUNTS = [2_000, 5_000, 20_000] as const;
+export const spraySchema = z.object({
+  amount: z.union([z.literal(SPRAY_AMOUNTS[0]), z.literal(SPRAY_AMOUNTS[1]), z.literal(SPRAY_AMOUNTS[2])]),
+  idempotencyKey: z.string().min(8).max(80),
+});

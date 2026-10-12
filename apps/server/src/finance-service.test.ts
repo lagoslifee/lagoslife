@@ -3,7 +3,7 @@ import { FOOTBALL_ROUND_MS, footballRound, matchResult, pickOf, SPIN_ROUND_MS, s
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const { pool } = await import("./database.js");
-const { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, fixturesFor, fortune, marketStatus, spinResult, splitCabFare, trade, transferMoney } = await import("./finance-service.js");
+const { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, fixturesFor, fortune, marketStatus, spinResult, splitCabFare, sprayMoney, trade, transferMoney } = await import("./finance-service.js");
 
 const make = () => ({ id: `fin-${randomUUID()}`, username: `fin${randomUUID().replaceAll("-", "").slice(0, 12)}` });
 const alice = make();
@@ -61,6 +61,16 @@ describe("shared cab", () => {
     await expect(splitCabFare(alice.id, bob.id, 1_500, rideId, "Bob", "Alice")).rejects.toThrow(/already sharing/);
     expect(await balance(alice.id)).toBe(a0 + 1_500);
     expect(await balance(bob.id)).toBe(b0 - 1_500);
+  });
+});
+
+describe("spraying money", () => {
+  it("debits the sprayer once per key", async () => {
+    const start = await balance(bob.id);
+    const key = randomUUID();
+    await sprayMoney(bob.id, 5_000, key);
+    expect((await sprayMoney(bob.id, 5_000, key)).replayed).toBe(true);
+    expect(await balance(bob.id)).toBe(start - 5_000);
   });
 });
 

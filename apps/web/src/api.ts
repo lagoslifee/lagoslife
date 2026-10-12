@@ -215,6 +215,7 @@ export const api = {
   hireStaff: (propertyId: string, role: HomeStaffRole) => post<{ balance: number }>(`/api/properties/${propertyId}/staff`, { role, idempotencyKey: crypto.randomUUID() }),
   dismissStaff: (propertyId: string, role: HomeStaffRole) => post<{ dismissed: boolean }>(`/api/properties/${propertyId}/staff/dismiss`, { role }),
   party: (propertyId: string, on: boolean) => post<{ partyUntil: string | null; invited?: number }>(`/api/properties/${propertyId}/party`, { on }),
+  spray: (amount: number) => post<{ replayed: boolean; balance: number }>("/api/spray", { amount, idempotencyKey: crypto.randomUUID() }),
   orderDelivery: (itemId: string) =>
     post<{ balance: number; item: { id: string; name: string; emoji: string; shop: string }; needs: { hunger: number; energy: number } }>("/api/delivery/order", { itemId, idempotencyKey: crypto.randomUUID() }),
   gigs: () => request<GigStatus>("/api/gigs"),
