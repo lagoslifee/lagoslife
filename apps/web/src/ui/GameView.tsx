@@ -51,9 +51,8 @@ function loadQuality(): Quality {
   if (valid(session)) return session;
   const stored = localStorage.getItem("lagos-quality");
   if (valid(stored)) return stored;
-  // Phones start on low; tablets (coarse pointer, large screen) start on medium.
-  const tablet = Math.min(screen.width, screen.height) >= 700;
-  return matchMedia("(pointer: coarse)").matches && !tablet ? "low" : "medium";
+  // Every device starts on high; a one-time tip points phones and tablets at medium if it runs slowly.
+  return "high";
 }
 
 /** Netlify adds its own badge in the bottom-right corner of netlify.app sites. */
@@ -202,6 +201,13 @@ export function GameView({
     const label = (quality: Quality) => quality[0]!.toUpperCase() + quality.slice(1);
     toast({ tone: "info", text: `Your device ran out of graphics memory, so graphics went from ${label(from)} to ${label(to)} for now. Your choice comes back next time you open the game, or pick it again in Phone → Settings.` });
   }, [engine, toast]);
+
+  useEffect(() => {
+    if (!engine || quality !== "high" || localStorage.getItem("lagos-quality-tip") || !matchMedia("(pointer: coarse)").matches) return;
+    localStorage.setItem("lagos-quality-tip", "1");
+    const timer = setTimeout(() => toast({ tone: "info", text: "Graphics are on High. If the game feels slow or your phone gets hot, switch to Medium in Phone → Settings → Graphics." }), 8_000);
+    return () => clearTimeout(timer);
+  }, [engine, quality, toast]);
 
   const refreshPlots = useCallback(async () => {
     try {
