@@ -285,7 +285,7 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
     disposables.push(sky);
     deco("concrete", 0, 0.0, HZ + 40, 400, 0.05, 80, [0.55, 0.55, 0.55]);
     for (const x of [-9, 9]) deco("paintWhite", x, 0.04, HZ + 22, 0.25, 0.02, 40, [0.95, 0.85, 0.2]);
-    const jet = buildAirliner(scene, "parked airliner", { accent: dubai ? "#b8913c" : "#0d7a3e", title: "LAGOS LIVING AIR" });
+    const jet = buildAirliner(scene, "parked airliner", { accent: dubai ? "#b8913c" : "#0d7a3e", title: "NAIJA WORLD AIR" });
     jet.root.position.x = OX;
     jet.root.position.z = OZ + HZ + 22;
     disposables.push(jet);
@@ -416,7 +416,7 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
         });
       };
     } else {
-      sign("Murtala Muhammed Terminal", "Lagos Living Air · fictional", 0, 3.4, -HZ + 0.04, 4.2, "north");
+      sign("Murtala Muhammed Terminal", "Naija World Air · fictional", 0, 3.4, -HZ + 0.04, 4.2, "north");
     }
     for (const x of [-8, 8]) light(x, height - 0.4, 0, "#fff6e8", 22, 22).excludedMeshes.push(...jet.meshes);
   } else if (kind === "cabin") {
@@ -465,7 +465,7 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
     deco("plaster", 1.2, 1.2, 4.0, 1.4, 2.3, 0.08, [0.85, 0.84, 0.8]);
     sign("Business", CABINS.business.seat, 0, 1.95, 4.05, 1.0, "south");
     deco("concrete", 0, 1.1, HZ - 0.6, HX * 2 - 0.2, 2.2, 0.9, [0.82, 0.83, 0.85]);
-    sign("Galley", "Lagos Living Air", 0, 1.6, HZ - 1.06, 1.2);
+    sign("Galley", "Naija World Air", 0, 1.6, HZ - 1.06, 1.2);
     for (const z of [-HZ + 0.5]) deco("concrete", 0, 1.1, z, HX * 2 - 0.2, 2.2, 0.6, [0.82, 0.83, 0.85]);
     const cabinLight = light(0, height - 0.2, 2, "#fff4e2", 10, 22);
     const rear = light(0, height - 0.2, -7, "#fff4e2", 10, 22);

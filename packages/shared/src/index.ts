@@ -39,7 +39,7 @@ export const shopOutfits = ["kandura", "abaya", "resort-linen", "beach-day"] as 
 export const isStarterOutfit = (outfit: string) => (starterOutfits as readonly string[]).includes(outfit);
 
 /**
- * Lagos Living Boutique, sold from the phone (catalogue items `outfit:<id>` with no vendor, so no shop visit).
+ * Naija World Boutique, sold from the phone (catalogue items `outfit:<id>` with no vendor, so no shop visit).
  * `body` is who the cut is made for; the app lists the collection for the body chosen in the character studio.
  * Keep in step with migration 0025_boutique.sql.
  */

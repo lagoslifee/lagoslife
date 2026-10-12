@@ -60,7 +60,7 @@ export function ModerationConsole({ staffName }: { staffName: string }) {
     <main className="mod-console" data-testid="moderation-console">
       <header className="mod-header">
         <div>
-          <p className="eyebrow">LAGOS LIVING · MODERATION</p>
+          <p className="eyebrow">NAIJA WORLD · MODERATION</p>
           <h1>Signed in as {staffName} <span className="pill">{role}</span></h1>
         </div>
         {overview && (

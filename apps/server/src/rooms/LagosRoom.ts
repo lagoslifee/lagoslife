@@ -1355,7 +1355,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     }
     const straight = Math.hypot(dropoff[0] - pickup[0], dropoff[1] - pickup[1]);
     if (straight < RIDE.minMetres) return fail(`${label} is a short walk from here.`);
-    if (straight > RIDE.maxMetres) return fail(`${label} is outside the Lagos Living Ride service area.`);
+    if (straight > RIDE.maxMetres) return fail(`${label} is outside the Naija World Ride service area.`);
     const metres = Math.min(straight * RIDE.maxRoadFactor, Math.max(straight * RIDE.minRoadFactor, roadMetres));
     const fare = rideFare(metres);
     const id = randomUUID();
@@ -1486,7 +1486,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (Math.hypot(player.x - ride.dropoff[0], player.z - ride.dropoff[1]) > RIDE.arriveRange) {
       return this.notify(client, { tone: "error", text: "Not there yet." });
     }
-    await this.endRide(player, "completed", `Arrived at ${ride.label}. Thanks for riding with Lagos Living Ride!`, "arrived");
+    await this.endRide(player, "completed", `Arrived at ${ride.label}. Thanks for riding with Naija World Ride!`, "arrived");
   }
 
   private async handleRideSkip(client: Client) {
@@ -1532,7 +1532,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     }
     [player.x, player.z] = [x, z];
     player.lastAcceptedAt = now;
-    await this.endRide(player, "completed", `Arrived at ${ride.label}. Thanks for riding with Lagos Living Ride!`, "arrived");
+    await this.endRide(player, "completed", `Arrived at ${ride.label}. Thanks for riding with Naija World Ride!`, "arrived");
     if (!aboard) {
       setPlayerPosition(player.userId, player.x, player.z, "street");
       const latest = this.clientFor(player);
@@ -1634,7 +1634,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         const vehicle: RoomVehicle = {
           id: `ride-${ride.id}`,
           ownerUserId: player.userId,
-          ownerName: `Lagos Living Ride · ${ride.driverName}`,
+          ownerName: `Naija World Ride · ${ride.driverName}`,
           modelId: ride.modelId,
           colour: ride.colour,
           plate: ride.plate,
@@ -1760,7 +1760,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       return this.notify(client, { tone: "error", text: "Walk up to the car door." });
     }
     if (vehicle.tow) return this.notify(client, { tone: "error", text: "That is an Ade Recovery truck." });
-    if (vehicle.npc) return this.notify(client, { tone: "error", text: "That is a Lagos Living Ride car. Book your own from Phone → Ride." });
+    if (vehicle.npc) return this.notify(client, { tone: "error", text: "That is a Naija World Ride car. Book your own from Phone → Ride." });
     if (this.tows.busy(vehicle.id)) return this.notify(client, { tone: "error", text: "Ade Recovery is collecting this car. Phone → Vehicles shows its progress." });
     if (vehicle.testDrive && !owner) return this.notify(client, { tone: "error", text: "That is someone's dealer test car." });
     if (vehicle.rental) {

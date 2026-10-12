@@ -13,7 +13,7 @@ const mailer = nodemailer.createTransport({
 });
 
 export const auth = betterAuth({
-  appName: "Lagos Living",
+  appName: "Naija World",
   baseURL: config.BETTER_AUTH_URL,
   secret: config.BETTER_AUTH_SECRET,
   database: pool,
@@ -28,7 +28,7 @@ export const auth = betterAuth({
       await mailer.sendMail({
         from: config.SMTP_FROM,
         to: user.email,
-        subject: "Reset your Lagos Living password",
+        subject: "Reset your Naija World password",
         text: `Reset your password: ${url}\n\nIf you did not request this, ignore this email.`,
       });
     },

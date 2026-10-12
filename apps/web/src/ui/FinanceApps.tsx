@@ -266,7 +266,7 @@ export function BankApp(props: MoneyProps) {
       {tab === "account" ? (
         <>
           <div className="balance-card">
-            <span>Lagos Living Bank · game naira</span>
+            <span>Naija World Bank · game naira</span>
             <strong>{economy ? naira(economy.balance) : "…"}</strong>
           </div>
           <DailyBonusCard onRefresh={props.onRefresh} onToast={props.onToast} />
@@ -529,7 +529,7 @@ export function DocumentsApp({ playerName, vehicles }: { playerName: string; veh
     <div className="app-section documents">
       <article className="id-card passport" data-testid="passport">
         <i className="watermark">GAME ID · NOT A REAL DOCUMENT</i>
-        <header><span>🦅</span><div><strong>LAGOS LIVING</strong><small>Passport · in-game</small></div></header>
+        <header><span>🦅</span><div><strong>NAIJA WORLD</strong><small>Passport · in-game</small></div></header>
         <div className="id-body">
           <div className="photo">{initials}</div>
           <dl>
@@ -543,7 +543,7 @@ export function DocumentsApp({ playerName, vehicles }: { playerName: string; veh
       </article>
       <article className="id-card licence" data-testid="licence">
         <i className="watermark">GAME ID · NOT A REAL DOCUMENT</i>
-        <header><span>🚗</span><div><strong>LAGOS LIVING</strong><small>Driving licence · in-game</small></div></header>
+        <header><span>🚗</span><div><strong>NAIJA WORLD</strong><small>Driving licence · in-game</small></div></header>
         <div className="id-body">
           <div className="photo">{initials}</div>
           <dl>

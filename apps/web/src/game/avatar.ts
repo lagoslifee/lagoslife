@@ -54,7 +54,7 @@ export function appearanceFor(seed: number): CharacterAppearance {
   };
 }
 
-/** Lagos Living Ride drivers wear the yellow-and-black company uniform and cap; the face and body vary by ride. */
+/** Naija World Ride drivers wear the yellow-and-black company uniform and cap; the face and body vary by ride. */
 export function taxiDriverLook(rideKey: string): CharacterAppearance {
   let seed = 0;
   for (let index = 0; index < rideKey.length; index += 1) seed = (Math.imul(seed, 31) + rideKey.charCodeAt(index)) >>> 0;

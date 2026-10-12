@@ -44,7 +44,7 @@ export function BoutiqueApp({ engine, economy, onRefresh, onToast }: Props) {
   return (
     <div className="app-section boutique-app" data-testid="boutique-app">
       <div className="boutique-hero">
-        <strong>Lagos Living Boutique</strong>
+        <strong>Naija World Boutique</strong>
         <span>{body === "female" ? "Women's" : "Men's"} collection · delivered to your wardrobe instantly</span>
       </div>
       <ul className="boutique-grid">

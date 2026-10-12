@@ -108,10 +108,10 @@ function AuthScreen() {
   return (
     <main className="landing-shell">
       <section className="brand-panel">
-        <div className="wordmark"><span>LL</span> LAGOS LIVING</div>
+        <div className="wordmark"><span>NW</span> NAIJA WORLD</div>
         <div className="hero-copy">
-          <p className="eyebrow">YOUR CITY. YOUR STORY.</p>
-          <h1>Live Lagos<br />your way.</h1>
+          <p className="eyebrow">NAIJA WORLD</p>
+          <h1>Your life. Your city.<br />Your story.</h1>
           <p>
             Build a life across the islands. Find work, make a home, meet people,
             and shape a city that remembers you.
@@ -125,7 +125,7 @@ function AuthScreen() {
 
       <section className="auth-panel">
         <form className="auth-card" onSubmit={submit}>
-          <p className="step-label">LAGOS LIVING / EARLY DEVELOPMENT</p>
+          <p className="step-label">NAIJA WORLD / EARLY DEVELOPMENT</p>
           <h2>{title}</h2>
           <p className="muted">
             {mode === "register"
@@ -360,7 +360,7 @@ function ServerMissingScreen() {
     <main className="loading-screen" role="alert" data-testid="server-missing">
       <div className="auth-card">
         <p className="step-label">GAME SERVER NOT CONFIGURED</p>
-        <h2>Lagos Living can't reach its game server</h2>
+        <h2>Naija World can't reach its game server</h2>
         <p>This site was built without <code>VITE_API_URL</code>, so it doesn't know where accounts and multiplayer are hosted.</p>
         <p className="muted small">Set <code>VITE_API_URL</code> to the game server's HTTPS address in the hosting environment, then rebuild.</p>
       </div>

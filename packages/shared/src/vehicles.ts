@@ -456,7 +456,7 @@ export const worldVehicleSchema = z.object({
   testDriveEndsAt: z.number().nullable().default(null),
   /** Hired bicycle: when the meter started. */
   rentalStartedAt: z.number().nullable().default(null),
-  /** Driven by a non-player driver (Lagos Living Ride). */
+  /** Driven by a non-player driver (Naija World Ride). */
   npc: z.boolean().default(false),
   /** Recovery truck: the car on its bed (if loaded) and how far the winch has raised it (0–1). */
   tow: z

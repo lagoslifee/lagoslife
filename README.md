@@ -1,4 +1,6 @@
-# Lagos Living
+# Naija World
+
+*Your life. Your city. Your story.*
 
 A browser-based multiplayer virtual-life game set in a 1:1 reconstruction of
 Lekki Phase 1, Ikoyi and Victoria Island (Eti-Osa, Lagos), joined by the

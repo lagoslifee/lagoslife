@@ -397,7 +397,7 @@ export type RoomVehicle = {
   locked: boolean;
   /** Present only on temporary dealer cars, which are never written to the database. */
   testDrive?: { endsAt: number; origin: [number, number]; yaw: number; warned: boolean };
-  /** Lagos Living Ride car, driven for a rider by a non-player driver; never stored. */
+  /** Naija World Ride car, driven for a rider by a non-player driver; never stored. */
   npc?: boolean;
   /** Ade Recovery truck: the car on its bed and the winch position (0 down, 1 loaded). */
   tow?: { carrying: { modelId: string; colour: string; plate: string } | null; lift: number };

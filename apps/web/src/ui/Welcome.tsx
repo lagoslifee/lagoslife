@@ -46,7 +46,7 @@ export function Welcome({ playerName, economy, properties, touch, bindings, onCh
   return (
     <div className="modal-backdrop welcome-backdrop">
       <section className="welcome" role="dialog" aria-labelledby="welcome-title" data-testid="welcome">
-        <p className="eyebrow">WELCOME TO LAGOS LIVING, {playerName.toUpperCase()}</p>
+        <p className="eyebrow">WELCOME TO NAIJA WORLD, {playerName.toUpperCase()}</p>
         <h2 id="welcome-title">Live a life in Lagos — with real people</h2>
         <p className="welcome-lead">
           Everyone you see walking or driving with a name over their head is another real player. You have <strong>{naira(balance)}</strong> game naira

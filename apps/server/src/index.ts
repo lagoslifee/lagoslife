@@ -51,4 +51,4 @@ setInterval(() => void purgeExpiredRates().catch((error) => console.error("Rate-
 setInterval(() => void releaseIdleGuestPlots().catch((error) => console.error("Idle guest plot release failed", error)), 3_600_000).unref();
 
 await gameServer.listen(config.PORT);
-console.log(`Lagos Living server listening on ${config.BETTER_AUTH_URL}`);
+console.log(`Naija World server listening on ${config.BETTER_AUTH_URL}`);

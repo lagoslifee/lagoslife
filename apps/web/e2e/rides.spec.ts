@@ -4,8 +4,8 @@ import { apiGet, prompt, resetProgress, state, until, useLowGraphics, waitForGam
 type Economy = { balance: number };
 type Place = { id: string; name: string; door: [number, number]; kerb: [number, number] };
 
-/** Lagos Living Ride: quote, book, driver arrives, board, ride on real roads, arrive; then a free cancellation. */
-test("books a Lagos Living Ride, boards, arrives, and gets a full refund for a quick cancel", async ({ page }) => {
+/** Naija World Ride: quote, book, driver arrives, board, ride on real roads, arrive; then a free cancellation. */
+test("books a Naija World Ride, boards, arrives, and gets a full refund for a quick cancel", async ({ page }) => {
   test.setTimeout(12 * 60_000);
   await useLowGraphics(page);
   const errors: string[] = [];
@@ -64,7 +64,7 @@ test("books a Lagos Living Ride, boards, arrives, and gets a full refund for a q
   const car = await until(async () => (await page.evaluate(() => window.__lagos.vehicles())).find((v) => v.id === waiting.vehicleId), 10_000, "ride car");
   expect(car.npc).toBe(true);
   await walk(page, [car.x + Math.cos(car.yaw) * 1.9, car.z - Math.sin(car.yaw) * 1.9]);
-  await until(async () => (await prompt(page))?.label.includes("Lagos Living Ride"), 10_000, "get in prompt");
+  await until(async () => (await prompt(page))?.label.includes("Naija World Ride"), 10_000, "get in prompt");
   await shot("ride-waiting");
   await page.evaluate(() => window.__lagos.interact());
   await until(async () => (await page.evaluate(() => window.__lagos.ride()))?.status === "riding", 10_000, "riding");

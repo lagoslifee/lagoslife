@@ -25,7 +25,7 @@ const configSchema = z
     SMTP_SECURE: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
-    SMTP_FROM: z.string().default("Lagos Living <no-reply@lagosliving.local>"),
+    SMTP_FROM: z.string().default("Naija World <no-reply@naijaworld.local>"),
     STARTING_NAIRA: z.coerce.number().int().nonnegative().default(250_000),
     /**
      * Testing only: when above 0, every wallet is refilled to this amount whenever it is read, so testers can buy

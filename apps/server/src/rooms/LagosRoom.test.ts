@@ -889,7 +889,7 @@ describe("LagosRoom sessions", () => {
   });
 });
 
-describe("LagosRoom Lagos Living Ride", () => {
+describe("LagosRoom Naija World Ride", () => {
   type RideRoom = {
     handleRideBook(client: FakeClient, payload: unknown): Promise<void>;
     handleRideCancel(client: FakeClient, payload: unknown): Promise<void>;

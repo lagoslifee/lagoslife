@@ -120,7 +120,7 @@ export function buildAirfield(scene: Scene, origin: [number, number], airport: "
   sign.rotation.y = -Math.PI / 2;
   disposables.push(texture, signMaterial, sign);
 
-  const jet = buildAirliner(scene, `airfield ${airport} jet`, { accent: "#0d7a3e", title: "LAGOS LIVING AIR" });
+  const jet = buildAirliner(scene, `airfield ${airport} jet`, { accent: "#0d7a3e", title: "NAIJA WORLD AIR" });
   jet.root.parent = root;
   const gearHeight = jet.root.position.y;
   const parked = [-60, 40].map((z, index) => {

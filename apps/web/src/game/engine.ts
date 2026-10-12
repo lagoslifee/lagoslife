@@ -1739,7 +1739,7 @@ export class GameEngine {
       if (state.npc) {
         const ride = this.ride;
         if (ride?.vehicleId === state.id && ride.status === "waiting") {
-          offer(distance - 1, { key: bind("interact"), label: "Get in · Lagos Living Ride", detail: `${ride.driverName} · ${ride.plate} → ${ride.label}` }, () => this.net.send("rideBoard"));
+          offer(distance - 1, { key: bind("interact"), label: "Get in · Naija World Ride", detail: `${ride.driverName} · ${ride.plate} → ${ride.label}` }, () => this.net.send("rideBoard"));
         } else {
           offer(distance + 1, { key: bind("interact"), label: "Ask to share this cab", detail: free > 0 ? "Split the fare with the rider who booked it" : "Full", disabled: free <= 0 }, () => this.net.send("rideAsk", { vehicleId: state.id }));
         }
@@ -3444,7 +3444,7 @@ export class GameEngine {
       this.beginTransfer(label);
       return;
     }
-    this.showVeil("🚕", `Heading to ${label}…`, "Lagos Living Ride express", 2_700);
+    this.showVeil("🚕", `Heading to ${label}…`, "Naija World Ride express", 2_700);
     const el = this.transfer?.el;
     if (!el) return;
     const step = Math.max(1, Math.ceil(points.length / 160));
@@ -3492,7 +3492,7 @@ export class GameEngine {
   }
 
   private beginTransfer(label: string) {
-    this.showVeil("🚕", `Heading to ${label}…`, "Lagos Living Ride express", 900);
+    this.showVeil("🚕", `Heading to ${label}…`, "Naija World Ride express", 900);
   }
 
   private showVeil(icon: string, title: string, caption: string, minMs: number) {

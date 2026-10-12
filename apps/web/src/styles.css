@@ -760,7 +760,7 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .game-view.touch .nav-line { font-size: 12px; }
 .game-view.touch .nav-line small { display: none; }
 
-/* Lagos Living Ride */
+/* Naija World Ride */
 .ride-line { display: block; width: 100%; margin-top: 6px; padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255, 207, 58, .45); background: rgba(255, 207, 58, .12); color: #ffe59a; font-weight: 700; font-size: 12px; text-align: left; cursor: pointer; }
 .ride-app .ride-driver { display: flex; align-items: center; gap: 10px; }
 .ride-app .ride-driver > div { flex: 1; }

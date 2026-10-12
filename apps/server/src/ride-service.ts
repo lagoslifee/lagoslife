@@ -8,7 +8,7 @@ import { creditWallet, debitWallet, ensureWallet, withTransaction } from "./econ
 export async function chargeRide(userId: string, fare: number, label: string, idempotencyKey: string, rideId: string) {
   return withTransaction(async (client) => {
     await ensureWallet(client, userId);
-    const balance = await debitWallet(client, userId, fare, "ride_fare", `Lagos Living Ride to ${label}`, `ride:${idempotencyKey}`, { label });
+    const balance = await debitWallet(client, userId, fare, "ride_fare", `Naija World Ride to ${label}`, `ride:${idempotencyKey}`, { label });
     await client.query("INSERT INTO ride_open (ride_id, user_id, fare, label) VALUES ($1, $2, $3, $4)", [rideId, userId, fare, label]);
     return balance;
   });
@@ -17,7 +17,7 @@ export async function chargeRide(userId: string, fare: number, label: string, id
 /** At most one refund per ride: the key `ride-refund:<id>` is unique per user. */
 export async function refundRide(userId: string, rideId: string, amount: number, reason: string) {
   if (amount <= 0) return null;
-  return withTransaction((client) => creditWallet(client, userId, amount, "ride_refund", `Lagos Living Ride refund · ${reason}`, `ride-refund:${rideId}`));
+  return withTransaction((client) => creditWallet(client, userId, amount, "ride_refund", `Naija World Ride refund · ${reason}`, `ride-refund:${rideId}`));
 }
 
 /** The ride was settled (arrived, cancelled or refunded), so a later restart has nothing to give back. */
@@ -40,7 +40,7 @@ export async function refundOrphanedRides(userId: string, liveRideId: string | n
       const removed = await client.query("DELETE FROM ride_open WHERE ride_id = $1", [row.ride_id]);
       if (!removed.rowCount) return 0;
       if (row.fare > 0) {
-        await creditWallet(client, userId, row.fare, "ride_refund", `Lagos Living Ride refund · ride to ${row.label} interrupted by a server restart`, `ride-refund:${row.ride_id}`);
+        await creditWallet(client, userId, row.fare, "ride_refund", `Naija World Ride refund · ride to ${row.label} interrupted by a server restart`, `ride-refund:${row.ride_id}`);
       }
       return row.fare;
     }).catch((error) => {

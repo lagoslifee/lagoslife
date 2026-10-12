@@ -141,7 +141,7 @@ export function GameView({
     setGraphicsPaused(false);
     if (restartsRef.current >= 3) {
       setFatal(
-        `${why} Close any other tab with Lagos Living open, then press Try again. If it still fails, fully quit and reopen the browser: browsers switch 3D graphics off for a site after the graphics driver crashes, until they restart.`,
+        `${why} Close any other tab with Naija World open, then press Try again. If it still fails, fully quit and reopen the browser: browsers switch 3D graphics off for a site after the graphics driver crashes, until they restart.`,
       );
       return;
     }
@@ -814,21 +814,21 @@ export function GameView({
 
       {loading && (
         <div className="loading-overlay" role="status">
-          <div className="wordmark"><span>LL</span> LAGOS LIVING</div>
+          <div className="wordmark"><span>NW</span> NAIJA WORLD</div>
           <p>{loading.text}</p>
           <div className="progress"><i style={{ width: `${Math.round(loading.progress * 100)}%` }} /></div>
         </div>
       )}
       {elsewhere && (
         <div className="loading-overlay" role="alert" data-testid="open-elsewhere">
-          <div className="wordmark"><span>LL</span> LAGOS LIVING</div>
-          <p>Lagos Living is open in another tab, so this one paused to save your device's graphics memory.</p>
+          <div className="wordmark"><span>NW</span> NAIJA WORLD</div>
+          <p>Naija World is open in another tab, so this one paused to save your device's graphics memory.</p>
           <button className="primary" onClick={playHere}>Play here instead</button>
         </div>
       )}
       {graphicsPaused && !fatal && (
         <div className="loading-overlay" role="status" data-testid="graphics-paused">
-          <div className="wordmark"><span>LL</span> LAGOS LIVING</div>
+          <div className="wordmark"><span>NW</span> NAIJA WORLD</div>
           <p>Your device paused the graphics to free memory. Restoring the city…</p>
         </div>
       )}

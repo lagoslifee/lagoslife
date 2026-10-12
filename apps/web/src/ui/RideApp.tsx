@@ -32,7 +32,7 @@ function useNow(active: boolean) {
   return now;
 }
 
-/** Lagos Living Ride: book an NPC driver to any mapped place reachable by road. */
+/** Naija World Ride: book an NPC driver to any mapped place reachable by road. */
 export function RideApp({ engine, ride, properties, initial, onNavigate, onClose }: Props) {
   const active = ride && (ride.status === "approaching" || ride.status === "waiting" || ride.status === "riding");
   const now = useNow(Boolean(active));

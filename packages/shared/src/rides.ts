@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** Lagos Living Ride: fictional NPC ride-hailing, paid in game naira. */
+/** Naija World Ride: fictional NPC ride-hailing, paid in game naira. */
 export const RIDE = {
   baseFare: 400,
   perKm: 160,
