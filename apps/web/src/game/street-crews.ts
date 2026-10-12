@@ -11,6 +11,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import { CLUBS, PLACES, POLICE_CHECKPOINTS, type CharacterAppearance, type Vec2 } from "@lagos-living/shared";
 import type { Avatar, AvatarFactory } from "./avatar";
 import { equipPolice, equipSecurity } from "./security-kit";
+import { CHECKPOINT_BOOM } from "./traffic";
 import type { VehicleFactory, VehicleView } from "./vehicles";
 
 /** Crews are built when the player comes this close and removed past SHOW + 80 m. */
@@ -28,6 +29,9 @@ type Crew = {
   flash: PointLight | null;
   scan: { beam: Mesh; from: Vec2; to: Vec2; y: number } | null;
   torches: Mesh[];
+  /** One boom per direction; together they close the whole road. `way` 1 is traffic along the checkpoint's yaw. */
+  booms: Array<{ hinge: TransformNode; way: 1 | -1; at: Vec2; lift: number; openUntil: number }>;
+  oneway: boolean;
 };
 
 const OFFICER: CharacterAppearance = { body: "male", skinTone: "rich", hairstyle: "low-fade", outfit: "police-uniform", accessory: "cap" };
@@ -47,8 +51,9 @@ const SITES: Site[] = [
 
 /**
  * Police checkpoints and bouncers at club doors. A checkpoint is a marked Hilux with a flashing light bar, a row of
- * striped drums down the centre line, a cone taper and barrier on the kerb side, a sign, and uniformed officers: one
- * flags traffic at the line, two inspect a pulled-over car with a torch and a handheld scanner whose beam sweeps it.
+ * striped drums down the centre line, a red-and-white boom across each side of the road (so the whole road is shut
+ * until the officers wave a car through), a cone taper and barrier on the kerb side, a sign, and uniformed officers:
+ * one flags traffic at the line, two inspect a pulled-over car with a torch and a handheld scanner whose beam sweeps it.
  */
 export class StreetCrews {
   private crews = new Map<string, Crew>();
@@ -72,6 +77,8 @@ export class StreetCrews {
     private readonly vehicles: VehicleFactory,
     private readonly ground: (x: number, z: number) => number,
     private readonly addCaster: (meshes: AbstractMesh[]) => void,
+    /** The carriageway at a point (half its width, and whether it is one-way), so the booms reach kerb to kerb. */
+    private readonly roadAt: (x: number, z: number) => { half: number; oneway: boolean } = () => ({ half: 5, oneway: false }),
   ) {
     const flat = (name: string, hex: string, glow = 0) => {
       const material = new StandardMaterial(name, scene);
@@ -145,6 +152,17 @@ export class StreetCrews {
     return mesh;
   }
 
+  /** Officers wave an ambient car through: lift that direction's boom for a few seconds. */
+  openGate(checkpointId: string, way: 1 | -1) {
+    const crew = this.crews.get(checkpointId);
+    for (const boom of crew?.booms ?? []) if (crew!.oneway || boom.way === way) boom.openUntil = this.time + 4;
+  }
+
+  /** How far each boom at a checkpoint is lifted (0 shut, 1 up); for tests. */
+  booms(checkpointId: string) {
+    return this.crews.get(checkpointId)?.booms.map((boom) => ({ way: boom.way, lift: boom.lift, at: boom.at })) ?? null;
+  }
+
   /** The officers at this checkpoint wave the player down; null when no stop is pending. */
   setFlagged(checkpointId: string | null) {
     this.flagged = checkpointId;
@@ -167,7 +185,7 @@ export class StreetCrews {
     const rx = Math.cos(site.yaw);
     const rz = -Math.sin(site.yaw);
     const at = (forward: number, right: number): Vec2 => [px + fx * forward + rx * right, pz + fz * forward + rz * right];
-    const crew: Crew = { id: site.id, point: site.point, root, people: [], truck: null, stopped: null, lights: [], flash: null, scan: null, torches: [] };
+    const crew: Crew = { id: site.id, point: site.point, root, people: [], truck: null, stopped: null, lights: [], flash: null, scan: null, torches: [], booms: [], oneway: false };
     if (site.kind === "club") {
       const [ax, az] = at(0.6, -1.5);
       const [bx, bz] = at(0.6, 1.5);
@@ -207,6 +225,33 @@ export class StreetCrews {
       const drum = this.part(MeshBuilder.CreateCylinder(`drum ${site.id}`, { diameter: 0.58, height: 0.88, tessellation: 14 }, this.scene), this.drum, root);
       drum.position.set(dx, y(dx, dz) + 0.44, dz);
     }
+    // A boom across each side of the road, hinged at the kerb, from kerb to the centre drums.
+    // On a one-way carriageway both booms close the same line, so every lane meets one.
+    const road = this.roadAt(px, pz);
+    const roadHalf = Math.max(3, Math.min(9, road.half));
+    crew.oneway = road.oneway;
+    for (const way of [1, -1] as const) {
+      const line = road.oneway ? CHECKPOINT_BOOM : way * CHECKPOINT_BOOM;
+      const [hx, hz] = at(line, way * (roadHalf + 0.6));
+      const post = this.part(MeshBuilder.CreateBox(`boom post ${site.id}`, { width: 0.3, height: 1.2, depth: 0.3 }, this.scene), this.dark, root);
+      post.position.set(hx, y(hx, hz) + 0.6, hz);
+      post.rotation.y = site.yaw;
+      const hinge = new TransformNode(`boom hinge ${site.id} ${way}`, this.scene);
+      hinge.parent = root;
+      hinge.position.set(hx, y(hx, hz) + 1.05, hz);
+      hinge.rotation.y = site.yaw;
+      const reach = roadHalf + 0.3;
+      const pieces = 6;
+      for (let index = 0; index < pieces; index += 1) {
+        const arm = this.part(MeshBuilder.CreateBox(`boom arm ${site.id}`, { width: reach / pieces, height: 0.14, depth: 0.1 }, this.scene), index % 2 ? this.white : this.red, hinge);
+        arm.position.set(-way * (index + 0.5) * (reach / pieces), 0, 0);
+      }
+      const drum = this.part(MeshBuilder.CreateCylinder(`boom rest ${site.id}`, { diameter: 0.5, height: 0.9, tessellation: 12 }, this.scene), this.drum, root);
+      const [rx0, rz0] = at(line, way * 0.5);
+      drum.position.set(rx0, y(rx0, rz0) + 0.45, rz0);
+      crew.booms.push({ hinge, way, at: at(line, way * roadHalf * 0.5), lift: 0, openUntil: 0 });
+    }
+
     const [mx, mz] = at(1.5, 0);
     const plank = this.part(MeshBuilder.CreateBox(`stop plank ${site.id}`, { width: 0.12, height: 0.22, depth: 3.6 }, this.scene), this.white, root);
     plank.position.set(mx, y(mx, mz) + 0.98, mz);
@@ -307,6 +352,14 @@ export class StreetCrews {
         const f = 0.5 - 0.5 * Math.cos(this.time * 1.6);
         const { from, to } = crew.scan;
         crew.scan.beam.position.set(from[0] + (to[0] - from[0]) * f, crew.scan.y, from[1] + (to[1] - from[1]) * f);
+      }
+      for (const boom of crew.booms) {
+        // The player isn't held at the boom by force: it lifts as they come up unless they've been flagged down
+        // (and still lifts if they push on through, which counts as driving off).
+        const playerGap = Math.hypot(boom.at[0] - x, boom.at[1] - z);
+        const open = this.time < boom.openUntil || (playerGap < 14 && (this.flagged !== crew.id || playerGap < 4));
+        boom.lift += Math.max(-1.5 * dt, Math.min(1.5 * dt, (open ? 1 : 0) - boom.lift));
+        boom.hinge.rotation.z = -boom.way * boom.lift * 1.35;
       }
       for (const [index, person] of crew.people.entries()) {
         const waving = index === 0 && this.flagged === crew.id;

@@ -23,6 +23,9 @@ type Car = {
   /** Police checkpoint this car has already been waved through, and how long it has waited at the current one. */
   checked: string | null;
   checkWait: number;
+  /** Sideways shift off the lane to get round something parked in it, and the shift it is easing towards. */
+  offset: number;
+  wantOffset: number;
   /** Ikoyi cars only drive Ikoyi's roads, and hide while the player is nowhere near Ikoyi. */
   ikoyi?: boolean;
 };
@@ -33,6 +36,17 @@ type Parked = { view: VehicleView; ikoyi: boolean; x: number; z: number; yaw: nu
 /** Cars crawl within this distance of a police checkpoint and stop briefly at the officers' line. */
 const CHECKPOINT_ZONE = 30;
 const CHECKPOINT_WAIT = 2.5;
+/** Each direction's boom sits this far past the checkpoint point, in that direction of travel (see StreetCrews). */
+export const CHECKPOINT_BOOM = 5.2;
+
+/** Something standing still that cars steer round: a kerbside car, or one of the players' parked cars. */
+export type StaticCar = { x: number; z: number; yaw: number; length: number; width: number };
+
+/** A go-slow on one main road near the player: cars bunch up on it and move stop-and-go. */
+type Jam = { road: WorldRoad; points: Vec2[]; length: number; s0: number; until: number };
+const JAM_CHECK_SECONDS = 75;
+const JAM_CHANCE = 0.35;
+const JAM_REACH = 150;
 
 type Walker = {
   avatar: Avatar;
@@ -86,6 +100,18 @@ export class AmbientLife {
   private parkedAround: Vec2 | null = null;
   honks = 0;
   onHonk: (() => void) | null = null;
+  /** Police at a checkpoint wave a car through: lift the boom for that direction (1 along the checkpoint's yaw, -1 against). */
+  onCheckpointClear: ((checkpointId: string, direction: 1 | -1) => void) | null = null;
+  /** A go-slow has started on a road near the player. */
+  onJam: ((roadName: string | null) => void) | null = null;
+  private jam: Jam | null = null;
+  private clock = 0;
+  private nextJamCheck = 40;
+  /** Road vertices by 20 m cell, to find where one road meets another. */
+  private junctionGrid = new Map<string, Array<{ road: WorldRoad; point: Vec2 }>>();
+  /** Every road a car may turn into, however short (main roads are often split into short pieces). */
+  private drivable = new Set<WorldRoad>();
+  private ikoyiDrivable = new Set<WorldRoad>();
   /** Where the first cars are placed before the player's position is known. */
   private home: Vec2 | null = null;
 
@@ -101,6 +127,17 @@ export class AmbientLife {
     this.sidewalkRoads = roads.filter((road) => ["primary", "tertiary", "unclassified", "residential"].includes(road.kind) && polylineLength(road.points) > 60);
     this.ikoyiRoads = this.sidewalkRoads.filter((road) => road.points.some((point) => districtAt(point[0], point[1])?.id === "ikoyi"));
     this.home = getPlace("starter-home").door;
+    const drivable = roads.filter((road) => ["primary", "tertiary", "unclassified", "residential"].includes(road.kind));
+    this.drivable = new Set(drivable);
+    this.ikoyiDrivable = new Set(drivable.filter((road) => road.points.some((point) => districtAt(point[0], point[1])?.id === "ikoyi")));
+    for (const road of drivable) {
+      for (const point of road.points) {
+        const key = `${Math.floor(point[0] / 20)}:${Math.floor(point[1] / 20)}`;
+        const list = this.junctionGrid.get(key) ?? [];
+        list.push({ road, point });
+        this.junctionGrid.set(key, list);
+      }
+    }
     const carCount = quality === "low" ? 10 : quality === "medium" ? 20 : 28;
     const walkerCount = avatars ? (quality === "low" ? 5 : quality === "medium" ? 10 : 16) : 0;
     const mix = trafficModels(quality);
@@ -109,7 +146,7 @@ export class AmbientLife {
       const colours = getVehicleModel(modelId).colours;
       const view = vehicles.create(`traffic-${index}`, modelId, colours[Math.floor(hash(index * 13 + 5) * colours.length)]!);
       view.setDetail(false);
-      const car: Car = { view, road: this.roads[0]!, points: [], length: 0, s: 0, direction: 1, speed: 0, cruise: 8, lane: 1.9, stoppedFor: 0, yaw: 0, checked: null, checkWait: 0 };
+      const car: Car = { view, road: this.roads[0]!, points: [], length: 0, s: 0, direction: 1, speed: 0, cruise: 8, lane: 1.9, stoppedFor: 0, yaw: 0, checked: null, checkWait: 0, offset: 0, wantOffset: 0 };
       this.spawnCar(car, index * 7.31, null);
       this.cars.push(car);
     }
@@ -127,7 +164,7 @@ export class AmbientLife {
         const modelId = luxury[index % luxury.length]!;
         const view = vehicles.create(`ikoyi-${index}`, modelId, paint(modelId, index));
         view.setDetail(false);
-        const car: Car = { view, road: this.ikoyiRoads[0]!, points: [], length: 0, s: 0, direction: 1, speed: 0, cruise: 8, lane: 1.9, stoppedFor: 0, yaw: 0, checked: null, checkWait: 0, ikoyi: true };
+        const car: Car = { view, road: this.ikoyiRoads[0]!, points: [], length: 0, s: 0, direction: 1, speed: 0, cruise: 8, lane: 1.9, stoppedFor: 0, yaw: 0, checked: null, checkWait: 0, offset: 0, wantOffset: 0, ikoyi: true };
         this.spawnCar(car, 500 + index * 5.17, null);
         this.cars.push(car);
       }
@@ -196,6 +233,18 @@ export class AmbientLife {
       }
     }
     const pool = near.length ? near : roads;
+    const jam = this.jam;
+    if (jam && !car.ikoyi && player && hash(Math.round(seed * 313)) < 0.7) {
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const s = Math.max(4, Math.min(jam.length - 4, jam.s0 + (hash(Math.round(seed * 557) + attempt * 11) - 0.5) * JAM_REACH * 2));
+        const p = pointAt(jam.points, s);
+        if (Math.hypot(p.x - player[0], p.z - player[1]) < 60) continue;
+        if (this.cars.some((other) => other !== car && other.points.length > 0 && Math.hypot(other.view.x - p.x, other.view.z - p.z) < 9)) continue;
+        this.joinRoad(car, jam.road, jam.points, s, jam.road.oneway ? 1 : hash(Math.round(seed * 91) + attempt) > 0.5 ? 1 : -1);
+        car.speed = 0;
+        return;
+      }
+    }
     for (let attempt = 0; attempt < 12; attempt += 1) {
       const road = pool[Math.floor(hash(Math.round(seed * 1000) + attempt * 17) * pool.length)]!;
       const points = densify(road.points, 4);
@@ -203,16 +252,120 @@ export class AmbientLife {
       const s = hash(Math.round(seed * 777) + attempt) * length;
       const p = pointAt(points, s);
       if (player && Math.hypot(p.x - player[0], p.z - player[1]) < 70) continue;
-      car.road = road;
-      car.points = points;
-      car.length = length;
-      car.s = s;
-      car.direction = road.oneway ? 1 : hash(Math.round(seed * 91)) > 0.5 ? 1 : -1;
-      car.cruise = road.kind === "primary" ? 21 : road.kind === "tertiary" ? 16 : 11;
-      car.lane = road.kind === "primary" ? -1.9 : road.oneway ? 0 : Math.min(1.7, road.width / 4);
+      this.joinRoad(car, road, points, s, road.oneway ? 1 : hash(Math.round(seed * 91)) > 0.5 ? 1 : -1);
       car.speed = car.cruise * 0.6;
       return;
     }
+  }
+
+  private joinRoad(car: Car, road: WorldRoad, points: Vec2[], s: number, direction: 1 | -1) {
+    car.road = road;
+    car.points = points;
+    car.length = polylineLength(points);
+    car.s = s;
+    car.direction = direction;
+    car.cruise = road.kind === "primary" ? 21 : road.kind === "tertiary" ? 16 : 11;
+    car.lane = road.kind === "primary" ? -1.9 : road.oneway ? 0 : Math.min(1.7, road.width / 4);
+  }
+
+  /**
+   * At the end of its road a car turns into a road that meets it there, the way traffic actually flows; only at a
+   * real dead end (no road to carry on into) does it turn round. False when it should be respawned instead.
+   */
+  private carryOn(car: Car, seed: number) {
+    const end = car.s <= 0 ? car.road.points[0]! : car.road.points[car.road.points.length - 1]!;
+    const allowed = car.ikoyi ? this.ikoyiDrivable : this.drivable;
+    const options: Array<{ road: WorldRoad; points: Vec2[]; s: number; direction: 1 | -1 }> = [];
+    const cx = Math.floor(end[0] / 20);
+    const cz = Math.floor(end[1] / 20);
+    const seen = new Set<WorldRoad>([car.road]);
+    for (let ix = cx - 1; ix <= cx + 1; ix += 1) {
+      for (let iz = cz - 1; iz <= cz + 1; iz += 1) {
+        for (const { road, point } of this.junctionGrid.get(`${ix}:${iz}`) ?? []) {
+          if (seen.has(road) || !allowed.has(road) || Math.hypot(point[0] - end[0], point[1] - end[1]) > 4) continue;
+          seen.add(road);
+          const points = densify(road.points, 4);
+          const length = polylineLength(points);
+          let best = 0;
+          let bestDistance = Infinity;
+          let along = 0;
+          for (let index = 0; index < points.length; index += 1) {
+            if (index) along += Math.hypot(points[index]![0] - points[index - 1]![0], points[index]![1] - points[index - 1]![1]);
+            const distance = Math.hypot(points[index]![0] - end[0], points[index]![1] - end[1]);
+            if (distance < bestDistance) {
+              bestDistance = distance;
+              best = along;
+            }
+          }
+          if (best < length - 3) options.push({ road, points, s: best, direction: 1 });
+          if (best > 3 && !road.oneway) options.push({ road, points, s: best, direction: -1 });
+        }
+      }
+    }
+    if (!options.length) {
+      if (car.road.oneway) return false;
+      car.direction = car.direction === 1 ? -1 : 1;
+      car.s = Math.max(0, Math.min(car.length, car.s));
+      return true;
+    }
+    const pick = options[Math.floor(hash(Math.round(seed * 4099)) * options.length)]!;
+    this.joinRoad(car, pick.road, pick.points, pick.s, pick.direction);
+    car.offset = 0;
+    car.wantOffset = 0;
+    return true;
+  }
+
+  /** Every so often a go-slow builds up on the nearest main road, and clears a few minutes later. */
+  private updateJam(player: Vec2, seed: number, force = false) {
+    if (this.jam && this.clock > this.jam.until) this.jam = null;
+    if (!force && this.clock < this.nextJamCheck) return;
+    this.nextJamCheck = this.clock + JAM_CHECK_SECONDS;
+    if (!force && (this.jam || hash(Math.round(seed * 37) + Math.floor(this.clock)) > JAM_CHANCE)) return;
+    let best: { road: WorldRoad; distance: number } | null = null;
+    for (const road of this.roads) {
+      if (road.kind !== "primary" && road.kind !== "tertiary") continue;
+      for (const point of road.points) {
+        const distance = Math.hypot(point[0] - player[0], point[1] - player[1]);
+        if (distance < 220 && (!best || distance < best.distance)) best = { road, distance };
+      }
+    }
+    if (!best) return;
+    const points = densify(best.road.points, 4);
+    const length = polylineLength(points);
+    let s0 = 0;
+    let closest = Infinity;
+    let along = 0;
+    for (let index = 0; index < points.length; index += 1) {
+      if (index) along += Math.hypot(points[index]![0] - points[index - 1]![0], points[index]![1] - points[index - 1]![1]);
+      const distance = Math.hypot(points[index]![0] - player[0], points[index]![1] - player[1]);
+      if (distance < closest) {
+        closest = distance;
+        s0 = along;
+      }
+    }
+    this.jam = { road: best.road, points, length, s0, until: this.clock + 150 + hash(Math.round(seed * 71)) * 120 };
+    this.onJam?.(best.road.name);
+    // Cars out of sight join the queue straight away so it builds up instead of trickling in.
+    this.cars.forEach((car, index) => {
+      if (!car.ikoyi && car.points.length && Math.hypot(car.view.x - player[0], car.view.z - player[1]) > 110) this.spawnCar(car, seed + index * 0.37, player);
+    });
+  }
+
+  /** Every moving car's state; for tests. */
+  debugCars() {
+    return this.cars.filter((car) => car.points.length > 0).map((car) => ({ x: car.view.x, z: car.view.z, speed: car.speed, road: car.road.id, oneway: car.road.oneway, s: car.s, length: car.length, direction: car.direction, offset: car.offset, checked: car.checked, wait: car.checkWait }));
+  }
+
+  /** Whether a go-slow is on, and on which road; for tests. */
+  jamInfo() {
+    return this.jam ? { roadId: this.jam.road.id, name: this.jam.road.name, s0: this.jam.s0, secondsLeft: this.jam.until - this.clock } : null;
+  }
+
+  /** Dev-only: starts a go-slow now (for tests). */
+  forceJam(player: Vec2) {
+    this.jam = null;
+    this.updateJam(player, this.clock, true);
+    return this.jamInfo();
   }
 
   private spawnWalker(walker: Walker, seed: number, player: Vec2 | null) {
@@ -309,7 +462,13 @@ export class AmbientLife {
     });
   }
 
-  update(dt: number, player: Vec2, buses: DanfoView[], seed: number) {
+  update(dt: number, player: Vec2, buses: DanfoView[], seed: number, playerCars: StaticCar[] = []) {
+    this.clock += dt;
+    this.updateJam(player, seed);
+    const statics: StaticCar[] = [
+      ...playerCars,
+      ...this.parked.filter((parked) => parked.placed).map((parked) => ({ x: parked.x, z: parked.z, yaw: parked.yaw, length: parked.view.model.length, width: parked.view.model.width })),
+    ];
     if (this.parked.length && (!this.parkedAround || Math.hypot(player[0] - this.parkedAround[0], player[1] - this.parkedAround[1]) > 110)) this.parkAround(player);
     for (const car of this.cars) {
       if (!car.points.length) {
@@ -325,8 +484,9 @@ export class AmbientLife {
       const p = pointAt(car.points, car.s);
       const dirX = p.dx * car.direction;
       const dirZ = p.dz * car.direction;
-      const x = p.x + dirZ * car.lane;
-      const z = p.z - dirX * car.lane;
+      const lane = car.lane + car.offset;
+      const x = p.x + dirZ * lane;
+      const z = p.z - dirX * lane;
       const blockedBy = (bx: number, bz: number, width: number, reach: number) => {
         const dx = bx - x;
         const dz = bz - z;
@@ -338,8 +498,43 @@ export class AmbientLife {
       const gap = car.speed * 0.9;
       if (blockedBy(player[0], player[1], 1.7, 10 + gap)) target = 0;
       for (const bus of buses) if (blockedBy(bus.root.position.x, bus.root.position.z, 2.0, 12 + gap)) target = 0;
-      for (const parked of this.parked) {
-        if (parked.placed && blockedBy(parked.x, parked.z, 1.5, 6 + gap)) target = Math.min(target, 0);
+      // Something parked in the lane: ease out round it if the road is wide enough, otherwise wait behind it.
+      const halfCar = car.view.model.width / 2;
+      const roadYaw = Math.atan2(dirX, dirZ);
+      let nearest: { forward: number; want: number | null; length: number } | null = null;
+      for (const still of statics) {
+        const forward = (still.x - x) * dirX + (still.z - z) * dirZ;
+        const reach = still.length / 2 + car.view.model.length / 2;
+        if (forward < -reach || forward > 26 + gap) continue;
+        const across = (still.x - p.x) * dirZ - (still.z - p.z) * dirX;
+        const turn = still.yaw - roadYaw;
+        const halfStill = Math.abs(Math.sin(turn)) * still.length / 2 + Math.abs(Math.cos(turn)) * still.width / 2;
+        const need = halfStill + halfCar + 0.35;
+        if (Math.abs(across - lane) >= need) continue;
+        if (nearest && forward > nearest.forward) continue;
+        const edge = car.road.width / 2 + 0.3 - halfCar;
+        const fits = [across - need, across + need].filter((candidate) => Math.abs(candidate) <= edge).sort((a, b) => Math.abs(a - car.lane) - Math.abs(b - car.lane));
+        nearest = { forward, want: fits.length ? fits[0]! - car.lane : null, length: reach };
+      }
+      if (nearest) {
+        if (nearest.want === null) {
+          if (nearest.forward > 0 && nearest.forward < nearest.length + 2 + gap) target = 0;
+          // No way past on this street: after a while the driver gives up and turns round, like anyone would.
+          if (target === 0 && car.stoppedFor > 6 && !car.road.oneway) {
+            car.direction = car.direction === 1 ? -1 : 1;
+            car.stoppedFor = 0;
+          }
+        } else {
+          car.wantOffset = nearest.want;
+          if (Math.abs(car.offset - car.wantOffset) > 0.4) target = Math.min(target, nearest.forward < nearest.length + 3 ? 0.8 : 4);
+        }
+      } else car.wantOffset = 0;
+      car.offset += Math.max(-1.6 * dt, Math.min(1.6 * dt, car.wantOffset - car.offset));
+      const jam = this.jam;
+      if (jam && car.road === jam.road && Math.abs(car.s - jam.s0) < JAM_REACH) {
+        // Stop-and-go: the queue creeps forward in waves.
+        const wave = Math.sin(this.clock * 0.45 + car.s * 0.04);
+        target = Math.min(target, wave > 0.25 ? 0 : 2.6);
       }
       for (const other of this.cars) {
         if (other !== car && other.points.length > 0 && blockedBy(other.view.x, other.view.z, 1.6, 7 + gap + other.view.model.length / 2 + car.view.model.length / 2)) target = Math.min(target, 0);
@@ -354,11 +549,18 @@ export class AmbientLife {
         }
         if (distance > CHECKPOINT_ZONE) continue;
         target = Math.min(target, 3.5);
-        const ahead = dx * dirX + dz * dirZ;
+        // Stop with the bumper just short of this direction's boom, which lifts once the officers wave the car on.
+        const fx = Math.sin(checkpoint.yaw);
+        const fz = Math.cos(checkpoint.yaw);
+        const way = dirX * fx + dirZ * fz >= 0 ? 1 : -1;
+        const line = car.road.oneway ? CHECKPOINT_BOOM : way * CHECKPOINT_BOOM;
+        const toBoom = (dx + fx * line) * dirX + (dz + fz * line) * dirZ - car.view.model.length / 2;
         const lateral = Math.abs(dx * dirZ - dz * dirX);
-        if (car.checked === checkpoint.id || ahead < 0 || ahead > 4 || lateral > 8) continue;
+        if (car.checked === checkpoint.id || toBoom < 0.3 || lateral > 8) continue;
+        if (toBoom > 1.6 + car.speed * car.speed / 6) continue;
         target = 0;
         if (car.speed < 0.3) car.checkWait += dt;
+        if (car.checkWait > CHECKPOINT_WAIT - 1 && car.checkWait - dt <= CHECKPOINT_WAIT - 1) this.onCheckpointClear?.(checkpoint.id, way);
         if (car.checkWait > CHECKPOINT_WAIT) {
           car.checked = checkpoint.id;
           car.checkWait = 0;
@@ -380,12 +582,9 @@ export class AmbientLife {
         continue;
       }
       if (car.s < 0 || car.s > car.length) {
-        const far = Math.hypot(x - player[0], z - player[1]) > 90;
-        if (far) this.spawnCar(car, seed + car.view.root.uniqueId * 0.13, player);
-        else if (!car.road.oneway) {
-          car.direction = car.direction === 1 ? -1 : 1;
-          car.s = Math.max(0, Math.min(car.length, car.s));
-        } else this.spawnCar(car, seed + car.view.root.uniqueId * 0.17, player);
+        const far = Math.hypot(x - player[0], z - player[1]) > 140;
+        if (far || !this.carryOn(car, seed + car.view.root.uniqueId * 0.13)) this.spawnCar(car, seed + car.view.root.uniqueId * 0.17, player);
+        continue;
       }
       const yaw = Math.atan2(dirX, dirZ);
       let delta = yaw - car.yaw;

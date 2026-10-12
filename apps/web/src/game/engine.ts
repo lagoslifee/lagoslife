@@ -151,7 +151,7 @@ import { buildInterior, interiorModels, type ClubSeat, type HomeRest, type Inter
 import { createMaterials, type Materials, type Quality } from "./materials";
 import { SignAtlas } from "./sign-atlas";
 import { RoadNavigator, StreetTracker, type WorldData, type WorldTile } from "./street-index";
-import { AmbientLife, trafficModels } from "./traffic";
+import { AmbientLife, trafficModels, type StaticCar } from "./traffic";
 import { buildWorld, type BuiltWorld } from "./world-builder";
 
 export type Prompt = { key: string; label: string; detail?: string | undefined; disabled?: boolean };
@@ -806,6 +806,8 @@ export class GameEngine {
       this.audio.horn(0.8);
       this.caption("A car honks — you are blocking the road");
     };
+    this.life.onCheckpointClear = (checkpointId, way) => this.crews?.openGate(checkpointId, way);
+    this.life.onJam = (roadName) => this.callbacks.notice({ tone: "info", text: `🚗 Go-slow building up${roadName ? ` on ${roadName}` : " nearby"}: traffic is crawling.` });
     buildServiceBay(scene, getPlace("ade-auto-works"), (x, z) => this.world.groundHeight(x, z));
     this.showroom = this.buildShowroom(this.vehicleFactory);
     this.bikeStations = new BikeStationsView(scene, this.materials, (x, z) => this.world.groundHeight(x, z), this.vehicleFactory, (meshes) => this.addCaster(meshes));
@@ -813,7 +815,12 @@ export class GameEngine {
     this.listingBoards = new ListingBoards(scene);
     this.couriers = new Couriers(scene, () => this.avatars, () => this.vehicleFactory, () => this.navigator ?? null, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) this.homeStaff = new HomeStaffView(this.avatars, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
-    if (this.avatars) this.crews = new StreetCrews(scene, this.avatars, this.vehicleFactory, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
+    if (this.avatars) {
+      this.crews = new StreetCrews(scene, this.avatars, this.vehicleFactory, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes), (x, z) => {
+        const road = this.world.roads.nearest(x, z)?.road;
+        return { half: (road?.width ?? 10) / 2, oneway: road?.oneway ?? false };
+      });
+    }
     if (this.avatars) {
       this.spotters = new CarSpotters(
         this.avatars,
@@ -1472,7 +1479,7 @@ export class GameEngine {
       const [ax, az] = this.streamAhead(sx, sz, dt);
       this.world.stream(sx, sz, ax, az);
       this.world.pump(!this.readyFired ? 200 : this.transfer ? 40 : Math.min(50, Math.max(8, elapsed * 0.35)));
-      this.life?.update(dt, [x, z], [...this.buses.values()], now * 0.001);
+      this.life?.update(dt, [x, z], [...this.buses.values()], now * 0.001, this.parkedPlayerCars(x, z));
       this.world.updateDetail(probe ? probe.x : this.camera.position.x, probe ? probe.z : this.camera.position.z);
       probe?.costs.push(performance.now() - probeStart);
       if (probe && this.world.pendingNear() > 0) probe.bare += 1;
@@ -1971,6 +1978,16 @@ export class GameEngine {
     const hotel = this.trip.room ? placeById.get(this.trip.room.hotelId)?.name ?? "Hotel" : "Hotel";
     if (kind === "pool") return `${hotel} · pool deck`;
     return this.self?.previewOnly ? `${hotel} · room preview` : `${hotel} · your room`;
+  }
+
+  /** Players' cars standing on the street near here, which ambient traffic treats as solid and steers round. */
+  private parkedPlayerCars(x: number, z: number): StaticCar[] {
+    const cars: StaticCar[] = [];
+    for (const [id, { view, state }] of this.vehicles) {
+      if (id === this.driving?.vehicleId || state.driverSessionId || state.npc || state.tow || !view.root.isEnabled() || Math.hypot(view.x - x, view.z - z) > 200) continue;
+      cars.push({ x: view.x, z: view.z, yaw: view.yaw, length: view.model.length, width: view.model.width });
+    }
+    return cars;
   }
 
   private streamAhead(x: number, z: number, dt: number): [number, number] {
@@ -4041,6 +4058,10 @@ export class GameEngine {
       route: () => this.routePoints,
       plan: (from: Vec2, to: Vec2, approach?: Vec2) => this.navigator.plan(from, to, approach),
       honks: () => this.life?.honks ?? 0,
+      jam: () => this.life?.jamInfo() ?? null,
+      trafficCars: () => this.life?.debugCars() ?? [],
+      forceJam: () => this.life?.forceJam([this.controller.x, this.controller.z]) ?? null,
+      booms: (checkpointId: string) => this.crews?.booms(checkpointId) ?? null,
       cameraInsideCar: () => Boolean(this.life?.carAt(this.camera.position.x, this.camera.position.y, this.camera.position.z, 0)),
       lanesAhead: (seconds: number) => this.life?.lanesAhead(seconds) ?? [],
       prompt: () => this.prompt,
