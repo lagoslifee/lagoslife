@@ -1,4 +1,4 @@
-import { COMMUNITY, type CommunityStatus, lagosDay, placeById, QUIET_PLACE_KINDS, type QuietPlaceKind } from "@lagos-living/shared";
+import { COMMUNITY, GYM, type CommunityStatus, lagosDay, placeById, QUIET_PLACE_KINDS, type QuietPlaceKind } from "@lagos-living/shared";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "./database.js";
@@ -121,9 +121,9 @@ export async function volunteerShift(userId: string, placeId: string) {
     );
     const updated = await client.query(
       `UPDATE player_profile
-       SET energy = GREATEST(0, energy - $2), hunger = GREATEST(0, hunger - $3), updated_at = NOW()
+       SET energy = GREATEST(0, energy - ROUND($2 * (1 - LEAST(1, GREATEST(0, fitness)) * $4))), hunger = GREATEST(0, hunger - $3), updated_at = NOW()
        WHERE user_id = $1 RETURNING hunger, energy`,
-      [userId, COMMUNITY.volunteerEnergyCost, COMMUNITY.volunteerHungerCost],
+      [userId, COMMUNITY.volunteerEnergyCost, COMMUNITY.volunteerHungerCost, GYM.staminaAtFullFitness],
     );
     return {
       replayed: false,

@@ -1,4 +1,4 @@
-import { BED_ITEM_IDS, BUSINESS, getPlace, MOVEMENT, placeById } from "@lagos-living/shared";
+import { BED_ITEM_IDS, BUSINESS, getPlace, GYM, MOVEMENT, placeById } from "@lagos-living/shared";
 import { hasCertificate } from "./certificates.js";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
@@ -376,9 +376,10 @@ export async function completeDelivery(userId: string, jobId: string) {
     );
     await ensureProfile(client, userId);
     await client.query(
-      `UPDATE player_profile SET hunger = GREATEST(0, hunger - 10), energy = GREATEST(0, energy - 10)
+      `UPDATE player_profile SET hunger = GREATEST(0, hunger - 10),
+              energy = GREATEST(0, energy - ROUND(10 * (1 - LEAST(1, GREATEST(0, fitness)) * $2)))
        WHERE user_id = $1`,
-      [userId],
+      [userId, GYM.staminaAtFullFitness],
     );
     await markProgress(client, userId, "first_wage");
     return { balance, replayed: false, reward };
