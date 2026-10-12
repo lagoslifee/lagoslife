@@ -258,6 +258,99 @@ if (target === "avatar") {
       prompt: "Standing electric pedestal fan with a round wire guard and three blades on a tall pole and round base, realistic, single object, no text",
       texturePrompt: "white plastic body, white wire guard, translucent blue blades, chrome pole",
     },
+    {
+      label: "prop-king-bed",
+      prompt:
+        "Luxury hotel king size bed with a tall tufted upholstered headboard, two matching bedside tables with small lamps, " +
+        "plush white bedding, four pillows and a folded throw at the foot, realistic, single object, no people",
+      texturePrompt: "lilac grey velvet tufted headboard, crisp white cotton bedding, dusty purple throw, walnut bedside tables, brass lamps with cream shades",
+    },
+    {
+      label: "prop-sectional",
+      prompt: "Large modern L-shaped sectional sofa with a chaise, deep seat cushions and scatter cushions, realistic, single object, no people",
+      texturePrompt: "light grey woven fabric upholstery, mustard and cream scatter cushions, thin black metal legs",
+    },
+    {
+      label: "prop-armchair",
+      prompt: "Mid-century velvet lounge armchair with a curved back and slim wooden legs, realistic, single object, no people",
+      texturePrompt: "mustard yellow velvet upholstery, walnut wood legs",
+    },
+    {
+      label: "prop-coffee-table",
+      prompt: "Low rectangular white marble coffee table with a black metal base, a small vase and two books on top, realistic, single object",
+      texturePrompt: "polished white carrara marble with grey veins, matte black metal base, ceramic vase, hardback books",
+    },
+    {
+      label: "prop-side-table",
+      prompt: "Small rectangular wooden side table with a woven rattan lower shelf and a potted succulent on top, realistic, single object",
+      texturePrompt: "warm teak wood, natural woven rattan shelf, terracotta pot",
+    },
+    {
+      label: "prop-tv-console",
+      prompt: "Large flat screen television on a long low modern media console with drawers, a soundbar under the screen, realistic, single object, no text",
+      texturePrompt: "glossy black television screen with thin bezel, dark walnut media console with brass handles, black soundbar",
+    },
+    {
+      label: "prop-wardrobe",
+      prompt: "Tall modern double sliding door wardrobe with full height mirrored doors, simple box shape, realistic, single object",
+      texturePrompt: "cream lacquered wood frame, silver mirror glass doors, brushed steel trim",
+    },
+    {
+      label: "prop-bookshelf",
+      prompt: "Tall open wooden bookshelf with five shelves filled with books, small plants and keepsakes, realistic, single object",
+      texturePrompt: "walnut wood shelves, colourful book spines, green plants, ceramic ornaments",
+    },
+    {
+      label: "prop-work-desk",
+      prompt: "Modern home office desk with an open laptop and a desk lamp, and a black ergonomic office chair tucked in, realistic, single object, no text",
+      texturePrompt: "white oak desk top, black metal legs, silver laptop, black mesh office chair",
+    },
+    {
+      label: "prop-floor-lamp",
+      prompt: "Brass arc floor lamp with a curved arm, a round marble base and a dome lamp shade, realistic, single object",
+      texturePrompt: "polished brass arm, white marble base, cream fabric dome shade",
+    },
+    {
+      label: "prop-potted-palm",
+      prompt: "Tall indoor areca palm plant in a large round ceramic planter, lush green fronds, realistic, single object",
+      texturePrompt: "vivid green palm fronds, matte terracotta ceramic planter",
+    },
+    {
+      label: "prop-grand-piano",
+      prompt: "Glossy black concert grand piano with the lid propped open and a matching piano bench, realistic, single object, no text",
+      texturePrompt: "high gloss black lacquer, white and black ivory keys, polished brass pedals, gold strings inside",
+    },
+    {
+      label: "prop-chandelier",
+      prompt:
+        "Large luxury crystal chandelier for a mansion foyer, three tiers of hanging crystal drops on a gold frame, " +
+        "candle style lights, realistic, single object",
+      texturePrompt: "polished gold metal frame, clear sparkling crystal drops, warm white candle bulbs",
+    },
+    {
+      label: "prop-kitchen-island",
+      prompt:
+        "Modern luxury kitchen island with a thick white marble waterfall counter top, a built in sink, and three upholstered " +
+        "bar stools along one side, realistic, single object, no people",
+      texturePrompt: "white calacatta marble with gold veins, matte navy blue cabinet fronts, brass tap, cream leather stools with brass legs",
+    },
+    {
+      label: "prop-kitchen-wall",
+      prompt:
+        "Straight run of modern fitted kitchen cabinets against a wall: tall fridge, built in oven, a gas hob, upper cabinets " +
+        "and a marble backsplash, simple flat back, realistic, single object, no text",
+      texturePrompt: "matte navy blue cabinet doors with brass handles, white marble counter and backsplash, stainless steel fridge and oven",
+    },
+    {
+      label: "prop-wall-art",
+      prompt: "Large framed abstract canvas painting, a modern African inspired abstract artwork in a thin gold frame, flat rectangular panel, realistic, single object",
+      texturePrompt: "abstract painting in ochre, indigo, terracotta and gold brush strokes, thin gold frame",
+    },
+    {
+      label: "prop-console-vase",
+      prompt: "Narrow marble hallway console table with a tall ceramic vase of white orchids and a round mirror above it, realistic, single object",
+      texturePrompt: "white marble top, brushed gold legs, white ceramic vase, white orchid flowers, gold framed round mirror",
+    },
   ];
   const wanted = process.argv.slice(3);
   const queue = PROPS.filter((prop) => (!wanted.length || wanted.includes(prop.label)) && !existsSync(path.join(outDir, `${prop.label}.glb`)));

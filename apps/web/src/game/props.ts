@@ -19,7 +19,24 @@ export type PropId =
   | "sofa"
   | "dining-set"
   | "gas-cooker"
-  | "standing-fan";
+  | "standing-fan"
+  | "king-bed"
+  | "sectional"
+  | "armchair"
+  | "coffee-table"
+  | "side-table"
+  | "tv-console"
+  | "wardrobe"
+  | "bookshelf"
+  | "work-desk"
+  | "floor-lamp"
+  | "potted-palm"
+  | "kitchen-wall"
+  | "kitchen-island"
+  | "grand-piano"
+  | "chandelier"
+  | "wall-art"
+  | "console-vase";
 /** Props the street and airports use everywhere; the rest load the first time something asks for them. */
 const STARTUP_PROPS: PropId[] = ["immigration-booth", "checkin-counter", "restaurant-table"];
 
@@ -60,7 +77,7 @@ export class PropLibrary {
     return this.containers.has(id);
   }
 
-  place(id: PropId, x: number, z: number, yaw: number, disposables: Array<{ dispose(): void }>, y = 0) {
+  place(id: PropId, x: number, z: number, yaw: number, disposables: Array<{ dispose(): void }>, y = 0, scale = 1) {
     const container = this.containers.get(id);
     if (!container) return null;
     const copy = container.instantiateModelsToScene((name) => `${id} ${name}`, false, { doNotInstantiate: false });
@@ -68,6 +85,7 @@ export class PropLibrary {
     for (const node of copy.rootNodes) node.parent = root;
     root.position.set(x, y, z);
     root.rotation.y = yaw;
+    root.scaling.setAll(scale);
     for (const mesh of root.getChildMeshes()) {
       mesh.isPickable = false;
       mesh.freezeWorldMatrix();

@@ -714,6 +714,312 @@
       "consumedCredits": 10,
       "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a1301b-53ed-7625-acd6-a9c048773d2f/output/preview.png",
       "recordedAt": "2026-10-12T12:35:32.911Z"
+    },
+    {
+      "label": "prop-floor-lamp preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bc5e-767d-9b0a-3450f5044fc5",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bc5e-767d-9b0a-3450f5044fc5/output/preview.png",
+      "recordedAt": "2026-10-12T17:58:52.728Z"
+    },
+    {
+      "label": "prop-coffee-table preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bc07-7791-bb33-01c1c621d692",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bc07-7791-bb33-01c1c621d692/output/preview.png",
+      "recordedAt": "2026-10-12T17:58:57.437Z"
+    },
+    {
+      "label": "prop-wardrobe preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bc2b-7626-b204-42dd84f50e56",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bc2b-7626-b204-42dd84f50e56/output/preview.png",
+      "recordedAt": "2026-10-12T17:59:02.482Z"
+    },
+    {
+      "label": "prop-kitchen-island preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bc85-76a3-a95d-7289fcd1e0fe",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bc85-76a3-a95d-7289fcd1e0fe/output/preview.png",
+      "recordedAt": "2026-10-12T17:59:02.550Z"
+    },
+    {
+      "label": "prop-armchair preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bc04-74ee-9152-97b24375de59",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bc04-74ee-9152-97b24375de59/output/preview.png",
+      "recordedAt": "2026-10-12T17:59:07.329Z"
+    },
+    {
+      "label": "prop-tv-console preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bc1f-77b5-8f32-a8f8d72fdaf5",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bc1f-77b5-8f32-a8f8d72fdaf5/output/preview.png",
+      "recordedAt": "2026-10-12T17:59:07.634Z"
+    },
+    {
+      "label": "prop-wall-art preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bc94-7568-a047-08965de5930e",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bc94-7568-a047-08965de5930e/output/preview.png",
+      "recordedAt": "2026-10-12T17:59:07.785Z"
+    },
+    {
+      "label": "prop-kitchen-wall preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bca6-7657-8cbc-d3335bcca8f7",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bca6-7657-8cbc-d3335bcca8f7/output/preview.png",
+      "recordedAt": "2026-10-12T17:59:08.432Z"
+    },
+    {
+      "label": "prop-work-desk preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bc70-708f-9bc9-3f7d98ba0a82",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bc70-708f-9bc9-3f7d98ba0a82/output/preview.png",
+      "recordedAt": "2026-10-12T17:59:12.246Z"
+    },
+    {
+      "label": "prop-grand-piano preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bc74-74e3-8828-f4b087f56c54",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bc74-74e3-8828-f4b087f56c54/output/preview.png",
+      "recordedAt": "2026-10-12T17:59:17.470Z"
+    },
+    {
+      "label": "prop-console-vase preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bca1-7383-98c0-97182323efa1",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bca1-7383-98c0-97182323efa1/output/preview.png",
+      "recordedAt": "2026-10-12T17:59:18.246Z"
+    },
+    {
+      "label": "prop-sectional preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bbe9-778c-8279-6f39cb09b8d9",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bbe9-778c-8279-6f39cb09b8d9/output/preview.png",
+      "recordedAt": "2026-10-12T17:59:22.330Z"
+    },
+    {
+      "label": "prop-bookshelf preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bc50-7765-b001-4859748d0aa5",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bc50-7765-b001-4859748d0aa5/output/preview.png",
+      "recordedAt": "2026-10-12T17:59:22.737Z"
+    },
+    {
+      "label": "prop-king-bed preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bc00-716b-b16e-4e9af2484a38",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bc00-716b-b16e-4e9af2484a38/output/preview.png",
+      "recordedAt": "2026-10-12T17:59:33.742Z"
+    },
+    {
+      "label": "prop-side-table preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bc48-7379-82ef-5db89dcfc9b3",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bc48-7379-82ef-5db89dcfc9b3/output/preview.png",
+      "recordedAt": "2026-10-12T17:59:42.686Z"
+    },
+    {
+      "label": "prop-chandelier preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bc7f-70cf-8907-da40e718e0ca",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bc7f-70cf-8907-da40e718e0ca/output/preview.png",
+      "recordedAt": "2026-10-12T17:59:53.549Z"
+    },
+    {
+      "label": "prop-potted-palm preview",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13143-bc6c-7617-b35d-8823b7d30011",
+      "status": "SUCCEEDED",
+      "consumedCredits": 20,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13143-bc6c-7617-b35d-8823b7d30011/output/preview.png",
+      "recordedAt": "2026-10-12T18:00:28.064Z"
+    },
+    {
+      "label": "prop-floor-lamp refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13144-764a-710d-be0f-f4441dd6331d",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13144-764a-710d-be0f-f4441dd6331d/output/preview.png",
+      "recordedAt": "2026-10-12T18:00:55.485Z"
+    },
+    {
+      "label": "prop-kitchen-island refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13144-9ca8-7245-84ec-351705b87b42",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13144-9ca8-7245-84ec-351705b87b42/output/preview.png",
+      "recordedAt": "2026-10-12T18:01:00.037Z"
+    },
+    {
+      "label": "prop-coffee-table refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13144-88ab-735b-9b26-19eb32b38e90",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13144-88ab-735b-9b26-19eb32b38e90/output/preview.png",
+      "recordedAt": "2026-10-12T18:01:00.464Z"
+    },
+    {
+      "label": "prop-tv-console refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13144-b07f-77a5-ab92-d8306a2e292e",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13144-b07f-77a5-ab92-d8306a2e292e/output/preview.png",
+      "recordedAt": "2026-10-12T18:01:10.333Z"
+    },
+    {
+      "label": "prop-wardrobe refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13144-9c63-705e-aa55-0c3ec5db987f",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13144-9c63-705e-aa55-0c3ec5db987f/output/preview.png",
+      "recordedAt": "2026-10-12T18:01:10.363Z"
+    },
+    {
+      "label": "prop-kitchen-wall refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13144-b39f-76b6-96ae-44187dd58454",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13144-b39f-76b6-96ae-44187dd58454/output/preview.png",
+      "recordedAt": "2026-10-12T18:01:10.854Z"
+    },
+    {
+      "label": "prop-work-desk refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13144-c28a-70dd-80f2-ce7e8e469fe6",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13144-c28a-70dd-80f2-ce7e8e469fe6/output/preview.png",
+      "recordedAt": "2026-10-12T18:01:14.761Z"
+    },
+    {
+      "label": "prop-wall-art refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13144-b11b-71b0-af91-d22b54c831b6",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13144-b11b-71b0-af91-d22b54c831b6/output/preview.png",
+      "recordedAt": "2026-10-12T18:01:15.466Z"
+    },
+    {
+      "label": "prop-console-vase refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13144-d9f8-7610-8ced-60bed1791a28",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13144-d9f8-7610-8ced-60bed1791a28/output/preview.png",
+      "recordedAt": "2026-10-12T18:01:15.721Z"
+    },
+    {
+      "label": "prop-sectional refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13144-e9eb-70a4-89bc-41952cafa3b7",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13144-e9eb-70a4-89bc-41952cafa3b7/output/preview.png",
+      "recordedAt": "2026-10-12T18:01:19.813Z"
+    },
+    {
+      "label": "prop-armchair refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13144-af53-7285-ba65-62885a61cbd7",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13144-af53-7285-ba65-62885a61cbd7/output/preview.png",
+      "recordedAt": "2026-10-12T18:01:20.038Z"
+    },
+    {
+      "label": "prop-grand-piano refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13144-d6ec-72f0-a0ef-2c381e5dc065",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13144-d6ec-72f0-a0ef-2c381e5dc065/output/preview.png",
+      "recordedAt": "2026-10-12T18:01:20.215Z"
+    },
+    {
+      "label": "prop-bookshelf refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13144-eb7e-7188-919e-06c6ed614cc9",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13144-eb7e-7188-919e-06c6ed614cc9/output/preview.png",
+      "recordedAt": "2026-10-12T18:01:20.327Z"
+    },
+    {
+      "label": "prop-king-bed refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13145-1681-7709-9299-3d2043280b47",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13145-1681-7709-9299-3d2043280b47/output/preview.png",
+      "recordedAt": "2026-10-12T18:01:36.042Z"
+    },
+    {
+      "label": "prop-chandelier refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13145-63e3-7494-8368-126e533b149f",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13145-63e3-7494-8368-126e533b149f/output/preview.png",
+      "recordedAt": "2026-10-12T18:01:52.023Z"
+    },
+    {
+      "label": "prop-side-table refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13145-396e-7116-a80f-76389ecbbb2d",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13145-396e-7116-a80f-76389ecbbb2d/output/preview.png",
+      "recordedAt": "2026-10-12T18:02:05.488Z"
+    },
+    {
+      "label": "prop-potted-palm refine",
+      "endpoint": "/v2/text-to-3d",
+      "id": "01a13145-eab3-75ca-adb0-4355ab34342a",
+      "status": "SUCCEEDED",
+      "consumedCredits": 10,
+      "thumbnail": "https://assets.meshy.ai/5045d5b2-2450-43f7-9f43-970822cc0d49/tasks/01a13145-eab3-75ca-adb0-4355ab34342a/output/preview.png",
+      "recordedAt": "2026-10-12T18:02:21.469Z"
     }
   ]
 }
