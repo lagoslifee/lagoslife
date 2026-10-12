@@ -195,6 +195,7 @@ export class DanfoView {
   dispose() {
     this.driver?.dispose();
     this.conductor?.dispose();
-    this.root.dispose(false, true);
+    // Every material here is shared (model materials, rubber, the city sign atlas); disposing them would blank every sign.
+    this.root.dispose(false, false);
   }
 }
