@@ -130,7 +130,7 @@ import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, MAX_AUTO_SCALING
 import { CityAudio } from "./audio";
 import { appearanceFor, Avatar, AvatarFactory, dubaiDriverLook, taxiDriverLook } from "./avatar";
 import { CLUB_BARTENDER, clubWaitress, deskStaffFor, seatsFor, serviceOrigin, ServiceStaff, staffLook, type StaffProp } from "./service-staff";
-import { buildMenuItem, buildServingTray } from "./drinks";
+import { buildBottle, buildMenuItem, buildServingTray } from "./drinks";
 import { addTaxiLivery } from "./taxi-livery";
 import { CarController } from "./car-controller";
 import { VehicleFactory, type VehicleView } from "./vehicles";
@@ -2938,8 +2938,21 @@ export class GameEngine {
       const prop = this.staff.buildProp("bottle");
       prop.parent = avatar.root;
       prop.position.set(0.05, 1.55, 0.3);
-      const sparkler = fresh.some((id) => bottleById.get(table.bottles.find((bottle) => bottle.id === id)?.itemId ?? "")?.sparkler);
+      const orders = fresh.map((id) => table.bottles.find((bottle) => bottle.id === id)!).filter(Boolean);
+      // The tray carries the actual bottle (the first one ordered) in place of the generic one.
+      for (const child of prop.getChildMeshes(false)) if (/bottle|neck/.test(child.name)) child.setEnabled(false);
+      const carried = buildBottle(this.scene, orders[0]!.itemId);
+      carried.parent = prop;
+      carried.position.y = 0.012;
+      const sparkler = orders.some((order) => bottleById.get(order.itemId)?.sparkler);
       this.waiters.push({ avatar, path, t: 0, table: table.no, bottles: table.bottles, prop, sparkler });
+      // Everyone in the club sees who is buying: "2x DON JULIO 1942 / 1x CLASE AZUL / FOR @TOBI" on the LED wall.
+      const counts = new Map<string, number>();
+      for (const order of orders) counts.set(order.itemId, (counts.get(order.itemId) ?? 0) + 1);
+      const buyers = [...new Set(orders.map((order) => order.byName))];
+      const lines = [...counts].slice(0, 2).map(([itemId, count]) => `${count}x ${(bottleById.get(itemId)?.name ?? itemId).replace(/ \(alcohol-free\)/, "").toUpperCase()}`);
+      lines.push(`FOR ${buyers.map((name) => `@${name}`).join(" & ").toUpperCase()} · VIP ${table.no}`);
+      if ("announce" in this.interior) this.interior.announce(lines, 14);
     }
   }
 

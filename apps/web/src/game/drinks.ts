@@ -1,6 +1,8 @@
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
-import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
@@ -112,5 +114,110 @@ export function buildServingTray(scene: Scene, itemId: string) {
   const item = buildMenuItem(scene, itemId);
   item.parent = root;
   item.position.y = 0.012;
+  return root;
+}
+
+/** Clase Azul's hand-painted look: cobalt brush strokes winding round white ceramic. */
+function claseAzulCeramic(scene: Scene) {
+  let materials = cache.get(scene);
+  if (!materials) cache.set(scene, (materials = new Map()));
+  const existing = materials.get("clase-azul");
+  if (existing) return existing;
+  const texture = new DynamicTexture("clase azul ceramic", { width: 256, height: 256 }, scene, true);
+  const context = texture.getContext() as CanvasRenderingContext2D;
+  context.fillStyle = "#f7f6f1";
+  context.fillRect(0, 0, 256, 256);
+  context.strokeStyle = "#1d3f9e";
+  context.lineCap = "round";
+  for (let index = 0; index < 9; index += 1) {
+    const x = index * 30 + 8;
+    context.lineWidth = 7 + (index % 3) * 2;
+    context.beginPath();
+    context.moveTo(x, 256);
+    context.bezierCurveTo(x + 28, 190, x - 26, 120, x + 18, 30);
+    context.stroke();
+    context.lineWidth = 3;
+    for (let leaf = 0; leaf < 3; leaf += 1) {
+      const y = 200 - leaf * 60;
+      context.beginPath();
+      context.ellipse(x + 12, y, 9, 4, -0.6, 0, Math.PI * 2);
+      context.stroke();
+    }
+  }
+  context.fillStyle = "#1d3f9e";
+  context.fillRect(0, 0, 256, 14);
+  context.fillRect(0, 242, 256, 14);
+  texture.update();
+  const material = new StandardMaterial("clase azul ceramic", scene);
+  material.diffuseTexture = texture;
+  material.specularColor = new Color3(0.9, 0.9, 0.9);
+  material.specularPower = 96;
+  material.emissiveColor = new Color3(0.12, 0.12, 0.14);
+  materials.set("clase-azul", material);
+  return material;
+}
+
+/**
+ * The VIP bottles as their real shapes, about 30 cm tall with the base at the origin: Clase Azul's tall white-and-blue
+ * ceramic decanter with a silver stopper, Don Julio 1942's slender amber bottle, Dom Pérignon's shield-labelled dark
+ * champagne, Moët's white label and gold foil, Hennessy's squat amber cognac bottle, and the alcohol-free jugs.
+ */
+export function buildBottle(scene: Scene, itemId: string) {
+  const root = new TransformNode(`bottle ${itemId}`, scene);
+  const lathe = (name: string, profile: Array<[number, number]>, material: StandardMaterial) => {
+    const mesh = MeshBuilder.CreateLathe(name, { shape: profile.map(([r, y]) => new Vector3(r, y, 0)), tessellation: 18, sideOrientation: Mesh.DOUBLESIDE }, scene);
+    mesh.material = material;
+    mesh.parent = root;
+    mesh.isPickable = false;
+    return mesh;
+  };
+  const band = (name: string, radius: number, y0: number, y1: number, hex: string, glow = 0.15) => {
+    const mesh = MeshBuilder.CreateCylinder(name, { height: y1 - y0, diameter: radius * 2, tessellation: 18 }, scene);
+    mesh.material = paint(scene, hex, 1, glow);
+    mesh.position.y = (y0 + y1) / 2;
+    mesh.parent = root;
+    mesh.isPickable = false;
+    return mesh;
+  };
+  const champagne = (glass: string, label: string, foil: string) => {
+    lathe("champagne", [[0, 0], [0.046, 0], [0.047, 0.17], [0.04, 0.215], [0.018, 0.255], [0.015, 0.3], [0, 0.3]], paint(scene, glass, 1, 0.08));
+    band("label", 0.0485, 0.07, 0.14, label, 0.25);
+    band("foil", 0.0175, 0.25, 0.31, foil, 0.3);
+  };
+  switch (itemId) {
+    case "clase-azul": {
+      lathe("decanter", [[0, 0], [0.05, 0], [0.058, 0.04], [0.062, 0.12], [0.056, 0.2], [0.04, 0.245], [0.02, 0.265], [0.018, 0.285], [0, 0.285]], claseAzulCeramic(scene));
+      band("collar", 0.022, 0.282, 0.292, "#c9ccd1", 0.25);
+      const stopper = MeshBuilder.CreateSphere("stopper", { diameterX: 0.05, diameterY: 0.07, diameterZ: 0.05, segments: 8 }, scene);
+      stopper.material = paint(scene, "#d7dadf", 1, 0.25);
+      stopper.position.y = 0.33;
+      stopper.parent = root;
+      break;
+    }
+    case "don-julio-1942":
+      lathe("bottle", [[0, 0], [0.034, 0], [0.036, 0.04], [0.04, 0.25], [0.03, 0.285], [0.016, 0.3], [0.015, 0.34], [0, 0.34]], paint(scene, "#8a4f14", 1, 0.3));
+      band("label", 0.0405, 0.12, 0.19, "#efe6cf", 0.25);
+      band("stopper", 0.022, 0.34, 0.375, "#2a2420", 0.05);
+      break;
+    case "dom-perignon":
+      champagne("#14251a", "#d9cfb4", "#1b1b1b");
+      band("shield", 0.0488, 0.085, 0.125, "#1b1b1b", 0.1);
+      break;
+    case "moet":
+      champagne("#1b3322", "#f4f2ea", "#d4a537");
+      band("ribbon", 0.0488, 0.135, 0.145, "#b5121b", 0.2);
+      break;
+    case "hennessy-vs":
+      lathe("bottle", [[0, 0], [0.05, 0], [0.056, 0.03], [0.058, 0.13], [0.048, 0.18], [0.02, 0.215], [0.018, 0.25], [0, 0.25]], paint(scene, "#6b3510", 1, 0.15));
+      band("label", 0.0585, 0.05, 0.11, "#e8dcc0", 0.25);
+      band("cap", 0.02, 0.25, 0.28, "#1b1b1b", 0.05);
+      break;
+    case "sparkling-juice":
+      champagne("#2e4d1f", "#6a2a7a", "#c9ccd1");
+      break;
+    default:
+      lathe("chapman", [[0, 0.005], [0.058, 0.005], [0.067, 0.12], [0.057, 0.19], [0, 0.19]], paint(scene, "#d5321f", 1, 0.25));
+      lathe("jug", [[0, 0], [0.06, 0], [0.07, 0.12], [0.06, 0.2], [0.05, 0.24], [0, 0.24]], paint(scene, "#dfeef5", 0.35));
+  }
   return root;
 }

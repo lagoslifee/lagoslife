@@ -28,6 +28,7 @@ import { buildExitDoor } from "./exit-door";
 import { MeshBuilderBatch } from "./geometry";
 import type { Materials } from "./materials";
 import type { PropId, PropLibrary } from "./props";
+import { buildBottle } from "./drinks";
 import { SignAtlas } from "./sign-atlas";
 
 export type InteriorKind = "starter" | "preview" | "home" | "club";
@@ -309,6 +310,10 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     /** Club only: strobes and boosts the lights over a VIP table when its bottles arrive. */
     celebrate(no: number) {
       clubView?.celebrate(no);
+    },
+    /** Club only: puts a bottle-service call-out ("1x CLASE AZUL FOR @TOBI") up on the DJ's LED wall for everyone. */
+    announce(lines: string[], seconds: number) {
+      clubView?.announce(lines, seconds);
     },
     dispose() {
       for (const mesh of meshes) mesh.dispose();
@@ -899,7 +904,7 @@ function buildClub(
     solid("darkFrame", djX + side * 2.0, 0.9, djZ + 0.2, 0.8, 1.8, 0.7, 0, [0.07, 0.07, 0.08]);
     for (const [y, size] of [[1.4, 0.3], [0.7, 0.55]] as const) get("chrome").box(djX + side * 2.0, y, djZ - 0.16, size, size, 0.04, 0, 1, [0.2, 0.2, 0.22]);
   }
-  const ledSize = { w: 256, h: 96 };
+  const ledSize = { w: 512, h: 168 };
   const led = new DynamicTexture("club led wall", { width: ledSize.w, height: ledSize.h }, scene, false);
   led.wrapV = Texture.WRAP_ADDRESSMODE;
   led.vScale = -1;
@@ -1083,16 +1088,7 @@ function buildClub(
   disposables.push(vipLight);
 
   // Bottles on each table, with sparklers on the showpiece bottles for a few seconds after they arrive.
-  const glass = new PBRMaterial("club bottle glass", scene);
-  glass.albedoColor = new Color3(0.05, 0.18, 0.08);
-  glass.metallic = 0.1;
-  glass.roughness = 0.1;
-  const gold = new PBRMaterial("club bottle foil", scene);
-  gold.albedoColor = new Color3(0.85, 0.65, 0.2);
-  gold.metallic = 1;
-  gold.roughness = 0.3;
   const spark = neon(scene, "club sparkler", Color3.FromHexString("#fff2b0"), disposables);
-  disposables.push(glass, gold);
   const tableBottles = new Map<number, { ids: string; root: TransformNode; sparks: Array<{ mesh: ReturnType<typeof MeshBuilder.CreateBox>; until: number }> }>();
   let clock = 0;
   const setBottles = (no: number, bottles: Array<{ id: string; itemId: string }>) => {
@@ -1107,21 +1103,21 @@ function buildClub(
     const sparks: Array<{ mesh: ReturnType<typeof MeshBuilder.CreateBox>; until: number }> = [];
     bottles.forEach((bottle, index) => {
       const [tx, tz] = table.table;
-      const x = tx + (index % 2 ? 0.14 : -0.14);
+      const x = tx + (index % 2 ? 0.15 : -0.15);
       const z = tz - 0.45 + Math.floor(index / 2) * 0.42;
-      const body = MeshBuilder.CreateCylinder(`bottle ${bottle.id}`, { height: 0.26, diameter: 0.09, tessellation: 10 }, scene);
-      body.position.set(x, 0.6, z);
-      body.material = glass;
-      body.parent = root;
-      const neck = MeshBuilder.CreateCylinder(`bottle neck ${bottle.id}`, { height: 0.1, diameterTop: 0.03, diameterBottom: 0.07, tessellation: 8 }, scene);
-      neck.position.set(x, 0.78, z);
-      neck.material = gold;
-      neck.parent = root;
+      const model = buildBottle(scene, bottle.itemId);
+      model.position.set(x, 0.465, z);
+      model.rotation.y = index * 1.3;
+      model.parent = root;
       if (bottleById.get(bottle.itemId)?.sparkler && !known.has(bottle.id)) {
-        const flare = MeshBuilder.CreateBox(`sparkler ${bottle.id}`, { size: 0.07 }, scene);
-        flare.position.set(x, 0.9, z);
+        const flare = MeshBuilder.CreateBox(`sparkler ${bottle.id}`, { width: 0.012, height: 0.16, depth: 0.012 }, scene);
+        flare.position.set(x, 0.465 + 0.46, z);
         flare.material = spark;
         flare.parent = root;
+        const tip = MeshBuilder.CreateSphere(`sparkler tip ${bottle.id}`, { diameter: 0.045, segments: 4 }, scene);
+        tip.position.y = 0.09;
+        tip.material = spark;
+        tip.parent = flare;
         sparks.push({ mesh: flare, until: clock + 12 });
       }
     });
@@ -1133,6 +1129,10 @@ function buildClub(
   let party = { until: -1, table: 0 };
   const celebrate = (no: number) => {
     party = { until: clock + 8, table: no };
+  };
+  let shout = { lines: [] as string[], until: -1 };
+  const announce = (lines: string[], seconds: number) => {
+    shout = { lines, until: clock + seconds };
   };
   const animate = (seconds: number) => {
     clock = seconds;
@@ -1164,7 +1164,7 @@ function buildClub(
       for (const flare of entry.sparks) {
         const live = seconds < flare.until;
         flare.mesh.setEnabled(live);
-        if (live) flare.mesh.scaling.setAll(0.6 + Math.random() * 0.9);
+        if (live) flare.mesh.getChildMeshes()[0]?.scaling.setAll(0.6 + Math.random() * 1.2);
       }
     }
     if (seconds - lastLed > 1 / 15) {
@@ -1179,12 +1179,31 @@ function buildClub(
         ledContext.fillStyle = colour.toHexString();
         ledContext.fillRect(index * (ledSize.w / bars) + 1, ledSize.h - height, ledSize.w / bars - 2, height);
       }
-      ledContext.fillStyle = "rgba(255,255,255,0.9)";
-      ledContext.font = "bold 18px Inter, Arial, sans-serif";
-      ledContext.textAlign = "center";
-      ledContext.fillText(partying ? `BOTTLE SERVICE · VIP ${party.table}` : club ? club.dj.toUpperCase() : "LIVE", ledSize.w / 2, 24);
+      if (seconds < shout.until && shout.lines.length) {
+        // Bottle-service call-out: gold lettering flashing on the beat over the equaliser, names in white.
+        ledContext.fillStyle = `rgba(5,3,10,${0.55 + 0.25 * pulse})`;
+        ledContext.fillRect(0, 0, ledSize.w, ledSize.h);
+        ledContext.textAlign = "center";
+        // The speakers stand in front of the lower third of the wall, so the call-out keeps to the top.
+        const lines = shout.lines.slice(0, 3);
+        const size = lines.length > 2 ? 24 : 34;
+        lines.forEach((line, index) => {
+          const y = 12 + size + index * (size + 4);
+          ledContext.font = `900 ${size}px Inter, Arial, sans-serif`;
+          ledContext.fillStyle = index === lines.length - 1 ? "#ffffff" : step % 2 ? "#ffd84a" : "#ffb21e";
+          ledContext.shadowColor = "#ffcf40";
+          ledContext.shadowBlur = 12 * pulse;
+          ledContext.fillText(line, ledSize.w / 2, y, ledSize.w - 24);
+        });
+        ledContext.shadowBlur = 0;
+      } else {
+        ledContext.fillStyle = "rgba(255,255,255,0.9)";
+        ledContext.font = "bold 34px Inter, Arial, sans-serif";
+        ledContext.textAlign = "center";
+        ledContext.fillText(partying ? `BOTTLE SERVICE · VIP ${party.table}` : club ? club.dj.toUpperCase() : "LIVE", ledSize.w / 2, 44);
+      }
       led.update(false);
     }
   };
-  return { animate, setBottles, celebrate, seats };
+  return { animate, setBottles, celebrate, announce, seats };
 }

@@ -64,6 +64,7 @@ export const TABLE_GUESTS_MAX = 5;
 export const BOTTLE_MENU = [
   { id: "dom-perignon", name: "Dom Pérignon", price: 150_000, sparkler: true },
   { id: "clase-azul", name: "Clase Azul Reposado", price: 120_000, sparkler: true },
+  { id: "don-julio-1942", name: "Don Julio 1942", price: 110_000, sparkler: true },
   { id: "moet", name: "Moët & Chandon Impérial", price: 60_000, sparkler: true },
   { id: "hennessy-vs", name: "Hennessy VS", price: 45_000, sparkler: false },
   { id: "sparkling-juice", name: "Sparkling grape juice (alcohol-free)", price: 12_000, sparkler: false },
