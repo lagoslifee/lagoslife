@@ -79,6 +79,11 @@ export class Couriers {
     return best?.parcel ?? null;
   }
 
+  /** Test hook: each courier's phase and position. */
+  debug() {
+    return [...this.couriers.values()].map((courier) => ({ id: courier.parcel.id, phase: courier.phase, mode: courier.mode, at: [courier.rider.root.position.x, courier.rider.root.position.z], stand: courier.stand }));
+  }
+
   /** The courier gives up the bag and heads off. */
   handOver(parcelId: string) {
     const courier = this.couriers.get(parcelId);
@@ -161,7 +166,9 @@ export class Couriers {
     const gap = Math.hypot(toDrop[0], toDrop[1]) || 1;
     const parked: Vec2 = [kerb.point[0] + (toDrop[0] / gap) * Math.min(2.2, gap * 0.6), kerb.point[1] + (toDrop[1] / gap) * Math.min(2.2, gap * 0.6)];
     const stand: Vec2 = gap > 1.6 ? [parcel.drop[0] - (toDrop[0] / gap) * 1.1, parcel.drop[1] - (toDrop[1] / gap) * 1.1] : parcel.drop;
-    const remaining = (arriveAt - now) / 1000;
+    // The bike reaches the kerb early enough for the walk over, so the rider is at the drop on time.
+    const walkSeconds = Math.hypot(stand[0] - parked[0], stand[1] - parked[1]) / WALK_SPEED;
+    const remaining = (arriveAt - now) / 1000 - walkSeconds;
     let path: Vec2[] = [parked];
     if (remaining > 2) {
       const reach = Math.min(140, Math.max(25, remaining * RIDE_SPEED));
@@ -186,7 +193,7 @@ export class Couriers {
     const last = path.length > 1 ? path[path.length - 2]! : kerb.point;
     const parkedYaw = path.length > 1 ? Math.atan2(parked[0] - last[0], parked[1] - last[1]) : kerb.yaw;
     const riding = path.length > 1 && remaining > 2;
-    const courier: Courier = { parcel, mode, rider, bag, bike, path, along, startAt: now, arriveAt, phase: riding ? "riding" : "walking", parked, parkedYaw, stand, door: parked, offAt: 0 };
+    const courier: Courier = { parcel, mode, rider, bag, bike, path, along, startAt: now, arriveAt: now + Math.max(0, remaining) * 1000, phase: riding ? "riding" : "walking", parked, parkedYaw, stand, door: parked, offAt: 0 };
     this.carry(rider, bag, !riding);
     if (!riding) rider.root.position.set(parked[0], this.ground(parked[0], parked[1]), parked[1]);
     this.addCaster(rider.meshes);

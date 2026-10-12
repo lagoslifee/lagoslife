@@ -1626,7 +1626,7 @@ export class GameEngine {
       if (!best || distance < best.distance) best = { distance, prompt, run };
     };
     const parcel = this.couriers?.reachable({ x, z, location: "street" });
-    if (parcel) offer(0.2, { key: bind("interact"), label: `Take your ${parcel.emoji} ${parcel.name}`, detail: "From the delivery rider" }, () => this.callbacks.interact({ kind: "parcel", parcelId: parcel.id }));
+    if (parcel) offer(-5, { key: bind("interact"), label: `Take your ${parcel.emoji} ${parcel.name}`, detail: "From the delivery rider" }, () => this.callbacks.interact({ kind: "parcel", parcelId: parcel.id }));
     for (const danfo of this.buses.values()) {
       const [dx, dz] = danfo.doorPoint();
       const distance = Math.hypot(dx - x, dz - z);
@@ -3722,6 +3722,7 @@ export class GameEngine {
           this.autopilot = { path: [[x, z]], index: 0, sprint: false, resolve, lastProgress: performance.now(), lastPoint: [this.controller.x, this.controller.z], deadline: performance.now() + timeoutMs };
         }),
       interact: () => this.triggerInteract(),
+      couriers: () => this.couriers?.debug() ?? [],
       ride: () => this.ride,
       bikes: () => this.bikeStatus(),
       bookRide: (x: number, z: number, label: string) => this.bookRide([x, z], label),
