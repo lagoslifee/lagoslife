@@ -2811,7 +2811,53 @@ export class GameEngine {
       express,
       idempotencyKey: crypto.randomUUID(),
     });
-    if (express) this.beginTransfer(label);
+    if (express) this.beginExpressRide(label, quote.plan.points);
+  }
+
+  /** The express veil draws the real road route and drives a taxi along it, then shows the drop-off. */
+  private beginExpressRide(label: string, points: Vec2[]) {
+    if (points.length < 2) {
+      this.beginTransfer(label);
+      return;
+    }
+    this.showVeil("🚕", `Heading to ${label}…`, "Lagos Living Ride express", 2_700);
+    const el = this.transfer?.el;
+    if (!el) return;
+    const step = Math.max(1, Math.ceil(points.length / 160));
+    const route = points.filter((_, index) => index % step === 0 || index === points.length - 1);
+    const xs = route.map((point) => point[0]);
+    const zs = route.map((point) => point[1]);
+    const [minX, maxX, minZ, maxZ] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+    const size = 240;
+    const scale = (size - 40) / Math.max(maxX - minX, maxZ - minZ, 1);
+    const offsetX = (size - (maxX - minX) * scale) / 2;
+    const offsetY = (size - (maxZ - minZ) * scale) / 2;
+    const projected = route.map(([px, pz]) => [offsetX + (px - minX) * scale, offsetY + (maxZ - pz) * scale] as const);
+    const d = projected.map(([px, py], index) => `${index ? "L" : "M"}${px.toFixed(1)} ${py.toFixed(1)}`).join(" ");
+    const [startX, startY] = projected[0]!;
+    const [endX, endY] = projected.at(-1)!;
+    const map = document.createElement("div");
+    map.className = "express-map";
+    map.innerHTML = `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true">
+      <rect x="0" y="0" width="${size}" height="${size}" rx="18" class="express-ground"/>
+      <path d="${d}" class="express-road"/>
+      <path d="${d}" class="express-trail" pathLength="1"/>
+      <circle cx="${startX}" cy="${startY}" r="6" class="express-start"/>
+      <circle cx="${endX}" cy="${endY}" r="8" class="express-end"/>
+      <g class="express-taxi"><animateMotion dur="2.3s" fill="freeze" rotate="auto" keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines="0.45 0 0.55 1" path="${d}"/>
+        <rect x="-9" y="-5" width="18" height="10" rx="3" fill="#ffcf3a" stroke="#1a1a1a" stroke-width="1.5"/>
+        <rect x="-2" y="-4" width="6" height="8" rx="1.5" fill="#25343a"/>
+      </g>
+    </svg>`;
+    el.querySelector(".transfer-car")?.remove();
+    el.prepend(map);
+    const title = el.querySelector("strong");
+    const caption = el.querySelector("small");
+    setTimeout(() => {
+      if (title) title.textContent = `Dropped off at ${label}`;
+      if (caption) caption.textContent = "Thanks for riding · the driver pulls away";
+      map.classList.add("arrived");
+    }, 2_350);
   }
 
   /** Skips the rest of the current ride: the screen fades while the rider is placed at the drop-off. */
