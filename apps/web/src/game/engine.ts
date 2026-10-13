@@ -407,6 +407,7 @@ export class GameEngine {
   private tracker!: StreetTracker;
   navigator!: RoadNavigator;
   private remotes = new Map<string, Remote>();
+  private rankBadges = new Map<string, string>();
   /** Hired escorts by session id; "self" is the player's own. */
   private escorts = new Map<string, Escort>();
   private guardChases: GuardsChase[] = [];
@@ -2181,7 +2182,7 @@ export class GameEngine {
       if (!remote) {
         const tag = document.createElement("div");
         tag.className = "world-tag";
-        tag.textContent = player.name;
+        tag.textContent = this.tagText(player.name);
         this.overlay.appendChild(tag);
         remote = { avatar: null, tag, samples: [], speed: 0, lastSeen: now, name: player.name, guards: 0 };
         this.remotes.set(player.sessionId, remote);
@@ -2229,6 +2230,17 @@ export class GameEngine {
         if (!this.remotes.has(sessionId)) this.looks.delete(sessionId);
       }
     }
+  }
+
+  /** Medals over the heads of the richest residents, by name, so everyone can see who is on top. */
+  setRankBadges(badges: Map<string, string>) {
+    this.rankBadges = badges;
+    for (const remote of this.remotes.values()) remote.tag.textContent = this.tagText(remote.name);
+  }
+
+  private tagText(name: string) {
+    const badge = this.rankBadges.get(name);
+    return badge ? `${badge} ${name}` : name;
   }
 
   currentAppearance() {

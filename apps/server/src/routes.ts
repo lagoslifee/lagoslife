@@ -67,6 +67,7 @@ import {
   hireSecuritySchema,
   policeReportSchema,
   ROBBERY,
+  isRankingBoard,
 } from "@lagos-living/shared";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
@@ -117,6 +118,7 @@ import {
 import { createMultiplayerToken } from "./multiplayer-token.js";
 import { conversation, friendsStatus, removeFriend, requestFriend, respondFriend, sendDirectMessage } from "./social-service.js";
 import { claimReferral, referralStatus } from "./referral-service.js";
+import { rankings } from "./ranking-service.js";
 import { loadPlayerPlace } from "./economy-service.js";
 import { loadCharacter, saveAppearance, wardrobe } from "./profile-service.js";
 import { getCommunityStatus, visitQuietPlace, volunteerShift } from "./community-service.js";
@@ -399,6 +401,11 @@ export function configureRoutes(app: Express) {
 
   app.get("/api/referral", requirePlayer, guarded("Invites unavailable", (_req, userId) => referralStatus(userId)));
   app.post("/api/referral/claim", requirePlayer, rateLimited, guarded("Could not use the invite", (req, userId) => claimReferral(userId, String(req.body?.code ?? ""))));
+  app.get("/api/rankings/:board", requirePlayer, guarded("Rankings unavailable", (req, userId) => {
+    const board = String(req.params.board);
+    if (!isRankingBoard(board)) throw new EconomyError("No such ranking.", 404);
+    return rankings(userId, board);
+  }));
   app.get("/api/friends", requirePlayer, guarded("Friends unavailable", (_req, userId) => friendsStatus(userId)));
   app.post("/api/friends/request", requirePlayer, rateLimited, guarded("Could not send the friend request", (req, userId) => requestFriend(userId, friendRequestSchema.parse(req.body).userName)));
   app.post("/api/friends/respond", requirePlayer, rateLimited, guarded("Could not answer the friend request", (req, userId) => {

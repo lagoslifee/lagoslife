@@ -801,6 +801,18 @@ export function GameView({
       window.clearInterval(timer);
     };
   }, []);
+  useEffect(() => {
+    if (!engine) return;
+    const medals = ["👑", "🥈", "🥉"];
+    const load = () =>
+      api
+        .rankings("worth")
+        .then((state) => engine.setRankBadges(new Map(state.entries.filter((entry) => entry.rank <= 3).map((entry) => [entry.username, medals[entry.rank - 1]!]))))
+        .catch(() => undefined);
+    void load();
+    const timer = window.setInterval(load, 120_000);
+    return () => window.clearInterval(timer);
+  }, [engine]);
   useEffect(() => engine?.setParcels(parcels), [engine, parcels]);
   useEffect(() => engine?.setListings(properties), [engine, properties]);
   useEffect(() => {

@@ -4,7 +4,7 @@ import type { BusinessStatus, BusinessTypeId, CourseId, ExerciseId, GymStatus, R
 import type { FoodParcel, HomeStaffRole, HomeStaffState, HomeTier } from "@lagos-living/shared";
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick, RepairAction } from "@lagos-living/shared";
 import type { AccountSummary, ClaimAccount, LifeGoals } from "@lagos-living/shared";
-import type { DirectMessage, FriendsStatus, ReferralStatus } from "@lagos-living/shared";
+import type { DirectMessage, FriendsStatus, RankingBoard, RankingState, ReferralStatus } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -197,6 +197,7 @@ export const api = {
   lockVehicle: (id: string, locked: boolean) => post<VehicleResult>(`/api/vehicles/${id}/lock`, { locked }),
   retrieveVehicle: (id: string) => post<VehicleResult>(`/api/vehicles/${id}/retrieve`),
   referral: () => request<ReferralStatus>("/api/referral"),
+  rankings: (board: RankingBoard) => request<RankingState>(`/api/rankings/${board}`),
   claimReferral: (code: string) => post<{ referredBy: string; bonus: number }>("/api/referral/claim", { code }),
   friends: () => request<FriendsStatus>("/api/friends"),
   friendRequest: (userName: string) => post<FriendsStatus & { result: string }>("/api/friends/request", { userName }),
