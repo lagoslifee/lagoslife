@@ -137,6 +137,7 @@ import { CityAudio } from "./audio";
 import { appearanceFor, Avatar, AvatarFactory, dubaiDriverLook, liftDepth, taxiDriverLook } from "./avatar";
 import { GymGear } from "./gym-gear";
 import { Blanket } from "./bedding";
+import { Book, BOOKS } from "./book";
 import { LIE_ABOVE_MATTRESS } from "./seat-fit";
 import { CLUB_BARTENDER, clubWaitress, deskStaffFor, seatsFor, serviceOrigin, ServiceStaff, staffLook, type StaffProp } from "./service-staff";
 import { buildBottle, buildMenuItem, buildServingTray } from "./drinks";
@@ -505,6 +506,8 @@ export class GameEngine {
   /** Seated (or, on a club stool, standing up and dancing) on a fixed seat; `y` is the cushion height. */
   private sitting: { seat: Vec2; yaw: number; y: number; pose: "sit" | "dance"; stool?: boolean; rest?: HomeRest; width?: number | undefined } | null = null;
   private blanket: Blanket | null = null;
+  private reading: { book: Book; title: string; since: number } | null = null;
+  private bookIndex = -1;
   private restingAs: HomeRest | null = null;
   private heldItem: { node: TransformNode; name: string; left: number; food: boolean } | null = null;
   private autopilot: { path: Vec2[]; index: number; sprint: boolean; resolve: (ok: boolean) => void; lastProgress: number; lastPoint: Vec2; deadline: number } | null = null;
@@ -1432,11 +1435,16 @@ export class GameEngine {
         this.player.root.rotation.y = chair ? chair.yaw : seatedTravel ? this.seatYaw : this.controller.yaw;
         this.player.root.setEnabled(!bus && !inCar);
         if (!inCar) this.player.update(speed, lying ? "idle" : motion, dt);
+        if (this.reading && (!chair || chair.pose !== "sit" || (chair.rest !== "sofa" && chair.rest !== "bed"))) this.closeBook();
+        if (this.reading && chair) {
+          this.player.read(now * 0.001, lying);
+          this.reading.book.follow(this.player, now * 0.001);
+        }
         if (lying && chair) {
-          this.player.sleep(now * 0.001);
+          if (!this.reading) this.player.sleep(now * 0.001);
           this.blanket ??= new Blanket(this.scene);
           this.blanket.show(chair.seat[0], chair.y - LIE_ABOVE_MATTRESS, chair.seat[1], chair.yaw, chair.width ?? 1.3);
-        } else if (chair?.rest === "sofa" && chair.pose === "sit") this.player.lounge(now * 0.001);
+        } else if (chair?.rest === "sofa" && chair.pose === "sit" && !this.reading) this.player.lounge(now * 0.001);
         if (!lying) this.blanket?.hide();
         if (this.goalCheer && !lying && !inCar) this.player.cheer(now * 0.001);
         if (chair && !lying && chair.pose === "sit") this.player.seatHips(chair.y, chair.seat);
@@ -3241,6 +3249,32 @@ export class GameEngine {
     return this.trainer && this.workout ? this.trainer.says : null;
   }
 
+  /**
+   * Opens a novel while resting on a sofa or in bed (the next one on the shelf each time), or closes it again. Returns
+   * the title being read, or null when the book was closed or you aren't somewhere to read.
+   */
+  toggleReading() {
+    if (this.reading) {
+      this.closeBook();
+      return null;
+    }
+    const chair = this.sitting;
+    if (!chair || chair.pose !== "sit" || (chair.rest !== "sofa" && chair.rest !== "bed")) return null;
+    this.bookIndex = (this.bookIndex + 1) % BOOKS.length;
+    const pick = BOOKS[this.bookIndex]!;
+    this.reading = { book: new Book(this.scene, pick.cover), title: pick.title, since: Date.now() };
+    return `${pick.title} by ${pick.author}`;
+  }
+
+  isReading() {
+    return this.reading !== null;
+  }
+
+  private closeBook() {
+    this.reading?.book.dispose();
+    this.reading = null;
+  }
+
   /** Puts the personal trainer by your side until `until` (ms), or sends him home with null. */
   setTrainer(until: number | null) {
     if (!until || until <= Date.now()) {
@@ -4364,6 +4398,8 @@ export class GameEngine {
       enterProperty: (propertyId: string, mode: "enter" | "preview") => this.enterProperty(propertyId, mode),
       estateViewing: (propertyId: string) => this.estateViewing(propertyId, propertyId),
       room: () => (this.interior && !this.travelView ? (this.interior as InteriorView).bounds : null),
+      seats: () => (this.interior && !this.travelView ? (this.interior as InteriorView).seats : []),
+      homeSeat: (kind: HomeRest) => this.homeSeat(kind),
       repair: () => ({ site: this.repairSite?.site.at ?? null, stand: this.repairSite?.site.stand ?? null, workingFor: this.repairing ? Math.max(0, this.repairing.until - performance.now()) : 0 }),
       repairWork: (seconds: number) => this.repairWork(seconds),
       remoteAppearances: () =>

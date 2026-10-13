@@ -186,6 +186,8 @@ export function GameView({
   const [tows, setTows] = useState<TowState[]>([]);
   const towsRef = useRef<TowState[]>([]);
   const restingRef = useRef(false);
+  const [restKind, setRestKind] = useState<"sofa" | "dining" | "bed" | null>(null);
+  const [reading, setReading] = useState<string | null>(null);
   const [visitedHome, setVisitedHome] = useState(() => localStorage.getItem("lagos-visited-home") === "1");
   const touch = useMemo(() => matchMedia("(pointer: coarse)").matches, []);
   const toastId = useRef(0);
@@ -398,6 +400,8 @@ export function GameView({
         },
         holding: (item) => setHolding(item),
         resting: (kind) => {
+          setRestKind(kind);
+          if (kind !== "sofa" && kind !== "bed") setReading(null);
           if (kind === "sofa" || kind === "dining") {
             restingRef.current = true;
             api.rest().catch(() => (restingRef.current = false));
@@ -1084,6 +1088,20 @@ export function GameView({
                 <strong>{hud.prompt.label}</strong>
                 {hud.prompt.detail && <span>{hud.prompt.detail}</span>}
               </div>
+            </button>
+          )}
+          {(restKind === "sofa" || restKind === "bed") && !blocking && (
+            <button
+              type="button"
+              className={`read-button${reading ? " open" : ""}`}
+              data-testid="read-book"
+              onClick={() => {
+                const title = engine.toggleReading();
+                setReading(title);
+                if (title) toast({ tone: "info", text: `📖 Reading ${title}. Resting while you read still restores energy.` });
+              }}
+            >
+              {reading ? `📕 Close the book` : "📖 Read a book"}
             </button>
           )}
           {hud.secondaryPrompt && !blocking && (

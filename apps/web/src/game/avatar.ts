@@ -224,7 +224,7 @@ const FEMALE_BUILD_MAX = 0.4;
 type Instance = ReturnType<AvatarFactory["instantiate"]>;
 
 /** Joint angles (radians) for the sleeping and lounging poses. */
-const P = { sleepArm: 0.5, sleepIn: 1.35, sleepFore: 1.7, sleepHead: 0.5, sleepLegs: 0, sleepKnee: 0.08, loungeBack: -0.35, loungeArm: -1.2, loungeArmBack: -0.3, loungeFore: 0.9, loungeLegs: 0.4 };
+const P = { sleepArm: 0.5, sleepIn: 1.35, sleepFore: 1.7, sleepHead: 0.5, sleepLegs: 0, sleepKnee: 0.08, readIn: 1.2, readUp: 0.62, readFore: 1.4, readHead: 0.35, readLieIn: 1.0, readLieUp: 1.35, readLieFore: 1.2, readLieHead: 0.45, loungeBack: -0.35, loungeArm: -1.2, loungeArmBack: -0.3, loungeFore: 0.9, loungeLegs: 0.4 };
 export const POSE_TUNING = P;
 /** The hip joints sit this far above the surface you sit on (the sit bones and flesh below them). */
 const HIP_ABOVE_CUSHION = 0.1;
@@ -483,6 +483,45 @@ export class Avatar {
       this.root.position.z += hip[1] - (left.z + right.z) / 2;
     }
     this.root.computeWorldMatrix(true);
+  }
+
+  /** Roughly where the eyes are this frame, and which way is up the body (toward the crown), for things held to be looked at. */
+  headPoint() {
+    const { neck, chest } = this.instance.limbs;
+    if (!neck || !chest) return null;
+    neck.computeWorldMatrix(true);
+    chest.computeWorldMatrix(true);
+    const at = neck.getAbsolutePosition().clone();
+    const up = at.subtract(chest.getAbsolutePosition()).normalize();
+    const face = this.root.getDirection(Axis.Z).normalize();
+    return { eyes: at.add(up.scale(0.11)).addInPlace(face.scale(0.09)), up };
+  }
+
+  /**
+   * Reading, over the sit clip or (lying, the caller lays the root flat) the idle one: both hands hold an open book
+   * up in front of the face, the head tipped toward it.
+   */
+  read(time: number, lying = false) {
+    const limbs = this.instance.limbs;
+    const sway = Math.sin(time * 0.8) * 0.02;
+    for (const limb of [limbs.leftArm, limbs.rightArm, limbs.leftFore, limbs.rightFore]) this.relax(limb);
+    if (lying) for (const limb of [limbs.leftUp, limbs.rightUp, limbs.leftLow, limbs.rightLow]) this.relax(limb);
+    if (lying) {
+      bend(limbs.leftLow, P.sleepKnee);
+      bend(limbs.rightLow, P.sleepKnee);
+    }
+    for (const [arm, fore, side] of [[limbs.rightArm, limbs.rightFore, 1], [limbs.leftArm, limbs.leftFore, -1]] as const) {
+      if (lying) {
+        bend(arm, side * P.readLieIn, Axis.Z);
+        bend(arm, P.readLieUp + sway);
+        bend(fore, P.readLieFore);
+      } else {
+        bend(arm, side * P.readIn, Axis.Z);
+        bend(arm, P.readUp + sway);
+        bend(fore, P.readFore);
+      }
+    }
+    bend(limbs.neck, lying ? P.readLieHead : P.readHead);
   }
 
   /** The shoulder joints and neck this frame, for a bar resting across the upper back in the squat. */

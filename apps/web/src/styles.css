@@ -1351,3 +1351,5 @@ button.wide { width: 100%; margin: 6px 0; }
 [data-theme="dark"] :is(.venue-list li, .bag li, .transactions li, .bindings li, .notice-log li) { border-bottom-color: #2c2c2e; }
 [data-theme="dark"] .notice-log li.error { color: #ff8a75; }
 [data-theme="dark"] .chat-bubble { color: #f2f2f7; background: #1c1c1e; }
+.read-button { position: absolute; left: 50%; bottom: 158px; transform: translateX(-50%); padding: 8px 16px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.35); background: rgba(20, 28, 36, 0.78); color: #fff; font: inherit; font-weight: 700; font-size: 14px; }
+.read-button.open { background: rgba(120, 52, 30, 0.85); }
