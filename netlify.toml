@@ -13,7 +13,7 @@
   # restarts and stops when the VM does. Remove this line once the Render server (render.yaml) is up and set
   # VITE_API_URL in the Netlify dashboard instead, since values in this file override the dashboard.
   VITE_API_URL = "https://build-draft-cursor-prepaid.trycloudflare.com"
-  VITE_API_FALLBACK_URL = "https://build-draft-cursor-prepaid.trycloudflare.com"
+  VITE_API_FALLBACK_URL = "https://dresses-flight-chancellor-jumping.trycloudflare.com"
   # Testing only: visitors get a guest account instead of the sign-in page.
   VITE_GUEST_MODE = "false"
 
