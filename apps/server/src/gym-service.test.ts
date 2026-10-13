@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EXERCISES, fitnessNow, getPlace, GYM, gymLocation, INTERIOR_SPAWN, maxLiftKg, setEnergyCost, setGain } from "@lagos-living/shared";
 
 const { pool } = await import("./database.js");
-const { finishSet, gymStatus, joinGym, startSet } = await import("./gym-service.js");
+const { finishSet, gymStatus, hireTrainer, joinGym, startSet } = await import("./gym-service.js");
 const { setPlayerPosition } = await import("./player-presence.js");
 const { profileEvents } = await import("./profile-service.js");
 
@@ -78,7 +78,7 @@ describe("gym", () => {
     setPlayerPosition(user.id, INTERIOR_SPAWN[0], INTERIOR_SPAWN[1], gymLocation());
     await pool.query(`UPDATE player_profile SET energy = 100, fitness = 0, trained_at = NOW() WHERE user_id = $1`, [user.id]);
     await expect(startSet(user.id, "bench", 140)).rejects.toThrow(/too heavy for you yet: you can lift up to 40 kg/);
-    await expect(startSet(user.id, "bench", 33)).rejects.toThrow(/Pick one of the weights/);
+    await expect(startSet(user.id, "bench", 33)).rejects.toThrow(/5 kg steps/);
     expect(await startSet(user.id, "bench", 20)).toMatchObject({ kg: 20 });
     await pool.query(`UPDATE player_profile SET gym_set_started_at = NOW() - make_interval(secs => $2) WHERE user_id = $1`, [user.id, GYM.setSeconds + 1]);
     const light = await finishSet(user.id);
@@ -90,8 +90,31 @@ describe("gym", () => {
     await pool.query(`UPDATE player_profile SET fitness = 1, trained_at = NOW() WHERE user_id = $1`, [user.id]);
     expect(await startSet(user.id, "bench", 140)).toMatchObject({ kg: 140 });
     expect(maxLiftKg("dumbbells", 0)).toBe(10);
-    expect(maxLiftKg("dumbbells", 0.5)).toBe(20);
+    expect(maxLiftKg("dumbbells", 0.5)).toBe(22);
     expect(maxLiftKg("treadmill", 1)).toBeNull();
+  });
+
+  it("hires a trainer for an hour who spots one weight above your limit and makes each set count for more", async () => {
+    setPlayerPosition(user.id, door[0], door[1]);
+    await expect(hireTrainer(user.id, randomUUID())).rejects.toThrow(/Come inside/);
+    setPlayerPosition(user.id, INTERIOR_SPAWN[0], INTERIOR_SPAWN[1], gymLocation());
+    await pool.query(`UPDATE player_profile SET energy = 100, fitness = 0, trained_at = NOW(), gym_exercise = NULL WHERE user_id = $1`, [user.id]);
+    await expect(startSet(user.id, "squat", 55)).rejects.toThrow(/too heavy/);
+    const before = Number((await pool.query<{ balance: string }>(`SELECT balance FROM wallet WHERE user_id = $1`, [user.id])).rows[0]!.balance);
+    const hired = await hireTrainer(user.id, randomUUID());
+    expect(hired.charged).toBe(GYM.trainer.fee);
+    expect(hired.balance).toBe(before - GYM.trainer.fee);
+    expect((await hireTrainer(user.id, randomUUID())).charged).toBe(0);
+    expect((await gymStatus(user.id)).trainerUntil).not.toBeNull();
+    expect(maxLiftKg("squat", 0, true)).toBe(55);
+    expect(await startSet(user.id, "squat", 55)).toMatchObject({ kg: 55 });
+    // Switching machines mid-set starts the new one.
+    expect(await startSet(user.id, "dumbbells", 10)).toMatchObject({ exercise: "dumbbells", kg: 10 });
+    await pool.query(`UPDATE player_profile SET gym_set_started_at = NOW() - make_interval(secs => $2) WHERE user_id = $1`, [user.id, GYM.setSeconds + 1]);
+    const coached = await finishSet(user.id);
+    expect(coached).toMatchObject({ counted: true, coached: true, kg: 10 });
+    expect(coached.counted && coached.fitness).toBeCloseTo(setGain("dumbbells", 0, 10, true));
+    expect(setGain("dumbbells", 0, 10, true)).toBeCloseTo(setGain("dumbbells", 0, 10) * (1 + GYM.trainer.gainBonus));
   });
 
   it("holds fitness for the grace days, then fades it", () => {

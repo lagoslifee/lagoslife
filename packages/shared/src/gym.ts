@@ -23,31 +23,45 @@ export const GYM = {
   /** Days without training before fitness starts to fade, and how much it fades each day after that. */
   graceDays: 3,
   fadePerDay: 0.03,
+  /** A personal trainer for an hour: counts your reps, spots you one weight above your limit, and each set builds more. */
+  trainer: { fee: 12_000, minutes: 60, gainBonus: 0.5, name: "Coach Tunde" },
+  /** Seconds per rep on the lifts, so a 40-second set is ten reps. */
+  repSeconds: 4,
 } as const;
 
-export const exerciseIds = ["treadmill", "bench", "dumbbells"] as const;
+export const exerciseIds = ["treadmill", "bench", "squat", "dumbbells"] as const;
 export type ExerciseId = (typeof exerciseIds)[number];
 export const EXERCISES: Record<ExerciseId, { name: string; emoji: string; blurb: string; energy: number }> = {
   treadmill: { name: "Treadmill run", emoji: "🏃", blurb: "Cardio: 40 seconds at a steady pace. Hardest on your energy.", energy: 12 },
-  bench: { name: "Bench press", emoji: "🏋️", blurb: "Chest and arms: one heavy set.", energy: 8 },
-  dumbbells: { name: "Dumbbell curls", emoji: "💪", blurb: "Arms and shoulders: one set.", energy: 6 },
+  bench: { name: "Bench press", emoji: "🏋️", blurb: "Chest and arms: lie back, lower the bar to your chest and press it up.", energy: 8 },
+  squat: { name: "Barbell squat", emoji: "🦵", blurb: "Legs and core: bar across your back, sit down deep and drive up.", energy: 10 },
+  dumbbells: { name: "Dumbbell curls", emoji: "💪", blurb: "Biceps: a dumbbell in each hand, curl up and lower slowly.", energy: 6 },
 };
 
 /**
  * Weights on the lifting machines. What you can safely lift grows with fitness, from `untrained` to `trained` kg, like
  * real training: you can't walk in and bench 140. A heavier set (closer to your limit) builds more and tires you more.
  */
-export const LIFTS: Partial<Record<ExerciseId, { unit: string; weights: readonly number[]; untrained: number; trained: number }>> = {
-  bench: { unit: "kg on the bar", weights: [20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140], untrained: 40, trained: 140 },
-  dumbbells: { unit: "kg each hand", weights: [4, 6, 8, 10, 12, 14, 16, 18, 20, 25, 30, 36], untrained: 10, trained: 36 },
+const steps = (from: number, to: number, by: number) => Array.from({ length: Math.round((to - from) / by) + 1 }, (_, index) => from + index * by);
+export const LIFTS: Partial<Record<ExerciseId, { unit: string; weights: readonly number[]; step: number; untrained: number; trained: number }>> = {
+  bench: { unit: "kg on the bar", weights: steps(20, 160, 5), step: 5, untrained: 40, trained: 140 },
+  squat: { unit: "kg on the bar", weights: steps(20, 200, 5), step: 5, untrained: 50, trained: 180 },
+  dumbbells: { unit: "kg each hand", weights: steps(2, 40, 2), step: 2, untrained: 10, trained: 36 },
 };
 
-/** The heaviest weight on offer you can lift at this fitness, or null for machines without weights. */
-export function maxLiftKg(exercise: ExerciseId, fitness: number) {
+/**
+ * The heaviest weight on offer you can lift at this fitness, or null for machines without weights. With a trainer
+ * spotting you, one weight more.
+ */
+export function maxLiftKg(exercise: ExerciseId, fitness: number, spotted = false) {
   const lift = LIFTS[exercise];
   if (!lift) return null;
   const limit = lift.untrained + (lift.trained - lift.untrained) * Math.max(0, Math.min(1, fitness));
-  return [...lift.weights].reverse().find((kg) => kg <= limit + 1e-9) ?? lift.weights[0]!;
+  let index = 0;
+  lift.weights.forEach((kg, at) => {
+    if (kg <= limit + 1e-9) index = at;
+  });
+  return lift.weights[Math.min(lift.weights.length - 1, index + (spotted ? 1 : 0))]!;
 }
 
 /** How hard a set is, 0..1 of your current limit; 1 for machines without weights. */
@@ -57,18 +71,18 @@ function effort(exercise: ExerciseId, fitness: number, kg?: number | null) {
   return Math.max(0, Math.min(1, kg / max));
 }
 
-/** Fitness one finished set adds: the full gain at your limit, half for the lightest weights. */
-export function setGain(exercise: ExerciseId, fitness: number, kg?: number | null) {
-  return GYM.gainPerSet * (LIFTS[exercise] && kg ? 0.5 + 0.5 * effort(exercise, fitness, kg) : 1);
+/** Fitness one finished set adds: the full gain at your limit, half for the lightest weights, more with a trainer. */
+export function setGain(exercise: ExerciseId, fitness: number, kg?: number | null, coached = false) {
+  return GYM.gainPerSet * (LIFTS[exercise] && kg ? 0.5 + 0.5 * Math.min(1, effort(exercise, fitness, kg)) : 1) * (coached ? 1 + GYM.trainer.gainBonus : 1);
 }
 
 /** Why this weight can't be lifted (not offered, or heavier than your training allows), or null when it can. */
-export function liftProblem(exercise: ExerciseId, fitness: number, kg: number) {
+export function liftProblem(exercise: ExerciseId, fitness: number, kg: number, spotted = false) {
   const lift = LIFTS[exercise];
   if (!lift) return null;
-  if (!lift.weights.includes(kg)) return `Pick one of the weights on the rack: ${lift.weights.join(", ")} kg.`;
-  const max = maxLiftKg(exercise, fitness)!;
-  if (kg > max) return `${kg} kg is too heavy for you yet: you can lift up to ${max} kg. Keep training and your limit goes up.`;
+  if (!lift.weights.includes(kg)) return `Load the bar in ${lift.step} kg steps, from ${lift.weights[0]} to ${lift.weights[lift.weights.length - 1]} kg.`;
+  const max = maxLiftKg(exercise, fitness, spotted)!;
+  if (kg > max) return `${kg} kg is too heavy for you yet: you can lift up to ${max} kg${spotted ? " with your trainer spotting" : ""}. Keep training and your limit goes up.`;
   return null;
 }
 
@@ -105,6 +119,8 @@ export type GymStatus = {
   fitness: number;
   energy: number;
   memberUntil: string | null;
+  /** When the personal trainer you hired goes home, or null without one. */
+  trainerUntil: string | null;
   set: { exercise: ExerciseId; endsAt: string; kg: number | null } | null;
   /** Other residents at the gym right now. */
   peopleHere: string[];

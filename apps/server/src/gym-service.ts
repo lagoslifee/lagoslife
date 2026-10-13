@@ -25,8 +25,33 @@ export async function loadFitness(userId: string) {
   return rows[0] ? fitnessNow(rows[0].fitness, rows[0].trained_at) : 0;
 }
 
+/** When the trainer hired in the last hour goes home, or null. */
+export async function trainerUntil(userId: string, client: Pool | PoolClient = pool) {
+  const { rows } = await client.query<{ created_at: Date }>(
+    `SELECT created_at FROM game_transaction WHERE user_id = $1 AND kind = 'personal_trainer' AND created_at > NOW() - make_interval(mins => $2) ORDER BY created_at DESC LIMIT 1`,
+    [userId, GYM.trainer.minutes],
+  );
+  return rows[0] ? new Date(rows[0].created_at.getTime() + GYM.trainer.minutes * 60_000) : null;
+}
+
+/** Hires the trainer for an hour; members only, at the front desk inside. One already working for you is not charged again. */
+export async function hireTrainer(userId: string, idempotencyKey: string) {
+  return withTransaction(async (client) => {
+    await ensureWallet(client, userId);
+    await client.query(`SELECT 1 FROM wallet WHERE user_id = $1 FOR UPDATE`, [userId]);
+    const row = await gymRow(userId, true, client);
+    if (!row.gym_member_until || row.gym_member_until.getTime() <= Date.now()) throw new EconomyError(`Join ${GYM.name} first; trainers only work with members.`, 403);
+    if (!atGym(userId)) throw new EconomyError(`Come inside ${GYM.name} to meet your trainer.`, 409);
+    const charged = (await trainerUntil(userId, client)) ? 0 : GYM.trainer.fee;
+    if (charged) await debitWallet(client, userId, charged, "personal_trainer", `${GYM.trainer.name} · ${GYM.trainer.minutes}-minute session`, `trainer:${idempotencyKey}`);
+    const balance = Number((await client.query<{ balance: string }>(`SELECT balance FROM wallet WHERE user_id = $1`, [userId])).rows[0]!.balance);
+    return { charged, balance, trainerUntil: (await trainerUntil(userId, client))!.toISOString() };
+  });
+}
+
 export async function gymStatus(userId: string): Promise<GymStatus> {
   const row = await gymRow(userId);
+  const coach = await trainerUntil(userId);
   const here = getPlayerPosition(userId)?.location;
   const others = usersIn(here && venueOf(here) === gymLocation() ? here : gymLocation()).filter((id) => id !== userId);
   const names = others.length
@@ -37,6 +62,7 @@ export async function gymStatus(userId: string): Promise<GymStatus> {
     fitness: fitnessNow(row.fitness, row.trained_at),
     energy: Math.round(Number(row.energy)),
     memberUntil: row.gym_member_until && row.gym_member_until.getTime() > Date.now() ? row.gym_member_until.toISOString() : null,
+    trainerUntil: coach?.toISOString() ?? null,
     set: live ? { exercise: row.gym_exercise!, endsAt: new Date(row.gym_set_started_at!.getTime() + GYM.setSeconds * 1_000).toISOString(), kg: row.gym_set_kg } : null,
     peopleHere: names,
   };
@@ -71,8 +97,9 @@ export async function startSet(userId: string, exercise: ExerciseId, kg?: number
     }
     if (!atGym(userId)) throw new EconomyError(`Go inside ${GYM.name} on Admiralty Way to train.`, 409);
     const fitness = fitnessNow(row.fitness, row.trained_at);
+    const spotted = Boolean(await trainerUntil(userId, client));
     const weight = LIFTS[exercise] ? (kg ?? maxLiftKg(exercise, fitness)!) : null;
-    const tooHeavy = weight === null ? null : liftProblem(exercise, fitness, weight);
+    const tooHeavy = weight === null ? null : liftProblem(exercise, fitness, weight, spotted);
     if (tooHeavy) throw new EconomyError(tooHeavy, 409);
     const cost = setEnergyCost(exercise, fitness, weight);
     if (row.energy < Math.max(GYM.minimumEnergy, cost)) {
@@ -94,13 +121,14 @@ export async function finishSet(userId: string) {
     if (elapsed > GYM.setExpirySeconds) return { counted: false as const, reason: "That set timed out. Start another." };
     if (!atGym(userId)) return { counted: false as const, reason: "You left the gym before the set was done." };
     const before = fitnessNow(row.fitness, row.trained_at);
-    const fitness = Math.min(1, before + setGain(row.gym_exercise, before, row.gym_set_kg));
+    const coached = Boolean(await trainerUntil(userId, client));
+    const fitness = Math.min(1, before + setGain(row.gym_exercise, before, row.gym_set_kg, coached));
     const cost = setEnergyCost(row.gym_exercise, before, row.gym_set_kg);
     const updated = await client.query<{ energy: number }>(
       `UPDATE player_profile SET fitness = $2, trained_at = NOW(), energy = GREATEST(0, energy - $3), updated_at = NOW() WHERE user_id = $1 RETURNING energy`,
       [userId, fitness, cost],
     );
-    return { counted: true as const, fitness, energy: Number(updated.rows[0]!.energy), cost, kg: row.gym_set_kg };
+    return { counted: true as const, fitness, energy: Number(updated.rows[0]!.energy), cost, kg: row.gym_set_kg, coached };
   });
   if (result.counted) profileEvents.emit("build", userId, result.fitness);
   return result;

@@ -73,7 +73,7 @@ import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
 import { businessStatus, collectBusiness, enrol, startBusiness, upgradeBusiness } from "./business-service.js";
-import { finishSet, gymStatus, joinGym, startSet } from "./gym-service.js";
+import { finishSet, gymStatus, hireTrainer, joinGym, startSet } from "./gym-service.js";
 import { buyViewingPass, viewingStatus } from "./viewing-service.js";
 import { finishRest, startRest } from "./home-living-service.js";
 import { applyCleaner, collectParcel, dismissStaff, eatParcel, hireStaff, homeStaff, openParcels, orderDelivery, partyUntil, staffByHome, startParty, stopParty } from "./home-services-service.js";
@@ -575,6 +575,8 @@ export function configureRoutes(app: Express) {
     const { exercise, kg } = gymSetSchema.parse(req.body);
     return startSet(userId, exercise, kg);
   }));
+  app.post("/api/gym/trainer", requirePlayer, rateLimited, guarded("Could not hire a trainer", (req, userId) =>
+    hireTrainer(userId, z.object({ idempotencyKey: z.string().uuid() }).parse(req.body).idempotencyKey)));
   app.post("/api/gym/finish", requirePlayer, rateLimited, guarded("Could not finish the set", (_req, userId) => finishSet(userId)));
 
   app.get("/api/viewing", requirePlayer, guarded("Viewing centre unavailable", (req, userId) =>
