@@ -1,8 +1,10 @@
 #!/bin/sh
 # Testing setup only (a Cloudflare quick tunnel to a cloud VM). Quick tunnels can be dropped by Cloudflare at any time
-# ("Tunnel not found"), which leaves the Netlify site unable to reach the server. Every minute this checks the public
-# health URL; after three failures it starts a new tunnel, restarts the game server with the new address, and pushes
-# netlify.toml and vercel.json with the new VITE_API_URL to main so Netlify and Vercel rebuild the client (about a minute).
+# ("Tunnel not found"), which leaves the Netlify site unable to reach the server. Every 15 seconds this checks the
+# public health URL; on "Tunnel not found" in the tunnel log, or after two failed checks in a row, it starts a new
+# tunnel, restarts the game server with the new address, and pushes netlify.toml and vercel.json with the new
+# VITE_API_URL to main so Netlify and Vercel rebuild the client (about a minute). Open tabs pick the new address up
+# from /server.json and reload.
 # Usage (in tmux): scripts/ops/tunnel-watchdog.sh <web-origin>
 set -u
 WEB_ORIGIN="$1"
@@ -14,7 +16,10 @@ fails=0
 while true; do
   current="$(url)"
   if [ -n "$current" ] && curl -sf -m 10 "$current/api/health" > /dev/null; then fails=0; else fails=$((fails + 1)); fi
-  if [ "$fails" -ge 3 ]; then
+  # A game server mid-restart fails the public check too; replacing a healthy tunnel then would only move the address.
+  if [ "$fails" -gt 0 ] && ! curl -sf -m 5 http://localhost:2567/api/health > /dev/null; then fails=0; fi
+  if tail -n 5 /tmp/tunnel.log 2>/dev/null | rg -q 'Tunnel not found'; then fails=2; fi
+  if [ "$fails" -ge 2 ]; then
     echo "$(date -u +%FT%TZ) tunnel $current unreachable; replacing it"
     $TM kill-session -t game-tunnel 2>/dev/null
     mv /tmp/tunnel.log /tmp/tunnel.old.log 2>/dev/null
@@ -35,5 +40,5 @@ while true; do
     fi
     fails=0
   fi
-  sleep 60
+  sleep 15
 done
