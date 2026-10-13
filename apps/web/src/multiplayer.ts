@@ -29,7 +29,7 @@ import {
   type OwambeParty,
   ROBBERY,
 } from "@lagos-living/shared";
-import { apiUrl, authHeaders } from "./auth-client";
+import { apiUrl, authHeaders, findServer } from "./auth-client";
 
 export type MultiplayerStatus =
   | { state: "connecting" }
@@ -218,6 +218,7 @@ export class MultiplayerConnection {
         this.room = undefined;
         report("disconnect", `Room closed (${code})`, { detail: { code, online: navigator.onLine, hidden: document.hidden } });
         this.handlers.status({ state: "offline", reason: "Connection lost — reconnecting…" });
+        void findServer();
         this.retry = setTimeout(() => void this.connect(), 3000);
       });
       room.send("requestLooks");
@@ -225,6 +226,7 @@ export class MultiplayerConnection {
     } catch (error) {
       if (this.closed) return;
       this.handlers.status({ state: "offline", reason: error instanceof Error ? error.message : "Multiplayer unavailable" });
+      void findServer();
       this.retry = setTimeout(() => void this.connect(), 4000);
     } finally {
       this.connecting = false;

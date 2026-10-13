@@ -2,13 +2,14 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
 /**
- * `/server.json` names the game server this build talks to. Open tabs poll it, so when the testing tunnel moves and
- * the site is rebuilt they reload onto the new address instead of failing every request to the old one.
+ * `/server.json` lists the game server addresses (live and standby). Open tabs re-read it whenever the address in use
+ * stops answering, so they move to the standby at once, without a reload or waiting for a rebuild.
  */
 const serverManifest = (): Plugin => ({
   name: "server-manifest",
   generateBundle() {
-    this.emitFile({ type: "asset", fileName: "server.json", source: JSON.stringify({ apiUrl: process.env.VITE_API_URL ?? null }) });
+    const servers = [process.env.VITE_API_URL, process.env.VITE_API_FALLBACK_URL].filter(Boolean);
+    this.emitFile({ type: "asset", fileName: "server.json", source: JSON.stringify({ apiUrl: servers[0] ?? null, servers }) });
   },
 });
 
