@@ -1,7 +1,7 @@
 import type { CabinClass, CharacterAppearance, OutfitId, HotelBookingState, RoomType, TicketState, TravelStatus, VisaPlan, VisaState } from "@lagos-living/shared";
 import type { BottleItem, Citation, PoliceCase, StreetIncident, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
 import type { BusinessStatus, BusinessTypeId, CourseId, ExerciseId, GymStatus, RestResult, ViewingStatus } from "@lagos-living/shared";
-import type { FloorFinishId, FoodParcel, HomeFinish, HomeStaffRole, HomeStaffState, HomeTier } from "@lagos-living/shared";
+import type { FloorFinishId, FoodParcel, GeneratorId, HomeFinish, HomePower, HomeStaffRole, HomeStaffState, HomeTier } from "@lagos-living/shared";
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick, RepairAction } from "@lagos-living/shared";
 import type { AccountSummary, ClaimAccount, LifeGoals } from "@lagos-living/shared";
 import type { DirectMessage, FriendsStatus, RankingBoard, RankingState, ReferralStatus } from "@lagos-living/shared";
@@ -191,6 +191,13 @@ export const api = {
     post<{ id: string }>(`/api/properties/${propertyId}/furniture/move`, { placementId, x, z, rotation, level }),
   inviteGuest: (propertyId: string, username: string) => post<{ invited: boolean }>(`/api/properties/${propertyId}/guests`, { username }),
   removeGuest: (propertyId: string, username: string) => post<{ removed: boolean }>(`/api/properties/${propertyId}/guests/remove`, { username }),
+  power: (propertyId: string, home: boolean) => request<HomePower>(`/api/properties/${propertyId}/power${home ? "?home=1" : ""}`),
+  buyGenerator: (propertyId: string, model: GeneratorId) =>
+    post<{ balance: number; power: HomePower }>(`/api/properties/${propertyId}/generator`, { model, idempotencyKey: crypto.randomUUID() }),
+  buyDiesel: (propertyId: string, litres: number) =>
+    post<{ balance: number; litres: number; power: HomePower }>(`/api/properties/${propertyId}/diesel`, { litres, idempotencyKey: crypto.randomUUID() }),
+  switchGenerator: (propertyId: string, parts: { running?: boolean; autoDiesel?: boolean }) =>
+    post<{ power: HomePower }>(`/api/properties/${propertyId}/generator/switch`, parts),
   setFinish: (propertyId: string, parts: { style?: string; floor?: FloorFinishId; exterior?: string }) =>
     post<{ balance: number; cost: number; finish: HomeFinish }>(`/api/properties/${propertyId}/finish`, { ...parts, idempotencyKey: crypto.randomUUID() }),
   removeFurniture: (propertyId: string, placementId: string) => post(`/api/properties/${propertyId}/furniture/remove`, { placementId }),

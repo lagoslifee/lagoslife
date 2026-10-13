@@ -75,6 +75,9 @@ import {
   policeReportSchema,
   ROBBERY,
   isRankingBoard,
+  buyDieselSchema,
+  buyGeneratorSchema,
+  generatorSwitchSchema,
 } from "@lagos-living/shared";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
@@ -84,6 +87,7 @@ import { businessMarket, businessStatus, buyBusiness, collectBusiness, enrol, li
 import { finishSet, gymStatus, hireTrainer, joinGym, startSet } from "./gym-service.js";
 import { buyViewingPass, viewingStatus } from "./viewing-service.js";
 import { finishRest, startRest } from "./home-living-service.js";
+import { agePower, buyDiesel, buyGenerator, homePower, switchGenerator } from "./power-service.js";
 import { applyCleaner, collectParcel, dismissStaff, eatParcel, hireStaff, homeStaff, openParcels, orderDelivery, partyUntil, staffByHome, startParty, stopParty } from "./home-services-service.js";
 import { addSong, listSongs, removeSong, songAudio } from "./song-service.js";
 import { cancelGig, completeGig, gigStatus, repairGig, startGigWork, takeGig } from "./gig-service.js";
@@ -628,6 +632,15 @@ export function configureRoutes(app: Express) {
   app.post("/api/properties/:propertyId/furniture/move", requirePlayer, rateLimited, guarded("Furniture could not be moved", (req, userId) =>
     moveFurniture(userId, String(req.params.propertyId), moveFurnitureSchema.parse(req.body))));
 
+  app.get("/api/properties/:propertyId/power", requirePlayer, guarded("Could not check the light", (req, userId) =>
+    homePower(userId, String(req.params.propertyId), req.query.home === "1")));
+  app.post("/api/properties/:propertyId/generator", requirePlayer, rateLimited, guarded("The generator could not be installed", (req, userId) =>
+    buyGenerator(userId, String(req.params.propertyId), buyGeneratorSchema.parse(req.body))));
+  app.post("/api/properties/:propertyId/diesel", requirePlayer, rateLimited, guarded("Diesel could not be delivered", (req, userId) =>
+    buyDiesel(userId, String(req.params.propertyId), buyDieselSchema.parse(req.body))));
+  app.post("/api/properties/:propertyId/generator/switch", requirePlayer, rateLimited, guarded("Could not reach the generator", (req, userId) =>
+    switchGenerator(userId, String(req.params.propertyId), generatorSwitchSchema.parse(req.body))));
+
   app.post("/api/properties/:propertyId/finish", requirePlayer, rateLimited, guarded("Your home could not be redecorated", (req, userId) =>
     setFinish(userId, String(req.params.propertyId), homeFinishSchema.parse(req.body))));
 
@@ -890,6 +903,13 @@ export function configureRoutes(app: Express) {
     removeSong(String(req.params.songId))));
 
   /** Local test harness: makes the signed-in account staff, recorded in the audit log as a console action. */
+  /** Local test harness: winds the generator's clocks back as if the house had sat through a cut. */
+  app.post("/api/dev/age-power", devOnly, requirePlayer, guarded("Age power failed", async (req) => {
+    const body = z.object({ propertyId: z.string().min(1), minutes: z.number().int().min(1).max(10_000) }).parse(req.body);
+    await agePower(body.propertyId, body.minutes);
+    return { aged: true };
+  }));
+
   app.post("/api/dev/staff", devOnly, requireSession, guarded("Role change failed", async (req) => {
     const { role } = z.object({ role: z.enum(["moderator", "admin"]).nullable() }).parse(req.body);
     return setStaffRole({ userId: "console", name: "dev console" }, actorOf(req).name, role, "local development");

@@ -398,6 +398,25 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     floor(_x: number, z: number) {
       return upstairs ? levelHeight(level, upstairs, z) : 0.02;
     },
+    /**
+     * NEPA took light and no generator is running: the bulbs go out, leaving a candle's glow, and the painted walls
+     * lose their self-light. `lit` brings everything back.
+     */
+    setPower(lit: boolean) {
+      lights.forEach((light, index) => {
+        light.metadata ??= { intensity: light.intensity, diffuse: light.diffuse.clone() };
+        const base = light.metadata as { intensity: number; diffuse: Color3 };
+        light.intensity = lit ? base.intensity : index === 0 ? base.intensity * 0.12 : 0;
+        light.diffuse = lit ? base.diffuse : Color3.FromHexString("#ff9a4a");
+      });
+      for (const key of ["homeWall", "homeCeiling", "homePaper"]) {
+        const material = local_.byKey[key] as PBRMaterial | undefined;
+        if (!material) continue;
+        material.metadata ??= { emissive: material.emissiveColor.clone() };
+        const base = (material.metadata as { emissive: Color3 }).emissive;
+        material.emissiveColor = lit ? base : base.scale(0.15);
+      }
+    },
     /** Lifts the ceiling off so the room can be seen from above. */
     setCutaway(open: boolean) {
       roof?.setEnabled(!open);

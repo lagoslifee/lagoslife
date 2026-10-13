@@ -26,6 +26,7 @@ import { PlotSheet } from "./PlotSheet";
 import { DroneView } from "./DroneView";
 import { CrashGuard } from "./CrashGuard";
 import { HomeDesigner } from "./HomeDesigner";
+import { HomePower } from "./HomePower";
 import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
 import { CheckpointPrompt, HoldUpPrompt, PoliceStationSheet, SecuritySheet } from "./PoliceSheets";
 import { GymSheet } from "./GymSheet";
@@ -1395,6 +1396,7 @@ export function GameView({
         />
       )}
       {engine && homeId && partyOn && <ClubRadio clubId={homeId} volume={settings.muted ? 0 : settings.masterVolume} onPlaying={() => undefined} />}
+      {engine && homeId && <HomePower key={homeId} hidden={blocking} engine={engine} propertyId={homeId} balance={economy?.balance ?? 0} onToast={toast} onRefresh={refresh} />}
       {clubTable !== null && inClub && hud?.propertyId && (
         <ClubTableSheet
           place={propertyPlace(hud.propertyId)!}

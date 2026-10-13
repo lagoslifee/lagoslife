@@ -444,6 +444,8 @@ export class GameEngine {
   private staffPosts: StaffPost[] = [];
   private staffPostsAt = 0;
   private partyLights: PartyLights | null = null;
+  /** Where the home's light is coming from; null outside a home. */
+  private homePower: "nepa" | "generator" | "none" | null = null;
   private spotters: CarSpotters | null = null;
   /** The agbero boys who scramble for notes sprayed at a bus stop; never spawns on its own. */
   private agberoCrowd: CarSpotters | null = null;
@@ -966,11 +968,14 @@ export class GameEngine {
     this.scene.fogColor = new Color3(look.fog[0]!, look.fog[1]!, look.fog[2]!);
     this.sun.intensity = look.sun;
     this.sun.diffuse = Color3.FromHexString(look.sunColor);
-    this.fill.intensity = look.fill;
     this.fill.diffuse = Color3.FromHexString(look.fillColor);
     this.fill.groundColor = Color3.FromHexString(look.ground);
-    this.scene.environmentIntensity = look.env;
-    this.scene.imageProcessingConfiguration.exposure = look.exposure;
+    // A cut at home leaves the room to its candle: daylight through the windows and the sky fill barely reach in.
+    const cut = this.homePower === "none" && Boolean(this.interior);
+    this.fill.intensity = cut ? look.fill * 0.25 : look.fill;
+    this.sun.intensity = cut ? look.sun * 0.3 : look.sun;
+    this.scene.environmentIntensity = cut ? look.env * 0.12 : look.env;
+    this.scene.imageProcessingConfiguration.exposure = cut ? look.exposure * 0.52 : look.exposure;
   }
 
   private frameErrors = { count: 0, loggedAt: 0, firstAt: 0, told: false };
@@ -2397,6 +2402,15 @@ export class GameEngine {
   }
 
   /** Coloured lights inside the home while a house party is on. */
+  /** NEPA or the generator at home: a cut darkens the room, and a running generator hums outside. */
+  setHomePower(source: "nepa" | "generator" | "none" | null) {
+    if (source === this.homePower) return;
+    this.homePower = source;
+    if (this.interior && "setPower" in this.interior) this.interior.setPower(source !== "none");
+    this.setEvening(this.evening);
+    this.audio.setCabinHum(source === "generator" ? 0.45 : 0);
+  }
+
   setHomeParty(on: boolean) {
     if (on && !this.partyLights) this.partyLights = new PartyLights(this.scene);
     if (!on && this.partyLights) {
@@ -3281,6 +3295,7 @@ export class GameEngine {
     this.interior?.dispose();
     this.interior = buildInterior(this.scene, this.materials, this.atlas, kind, title, placements, club, { layout, props: this.props, finish });
     this.interior.setCutaway(this.planShare !== null);
+    if (kind === "home") this.interior.setPower(this.homePower !== "none");
     this.staff.setDesks(
       club
         ? [{ id: "bar", at: CLUB_BARTENDER, yaw: Math.PI / 2, look: staffLook(70 + club.bpm, regionOf(self.x, self.z) === "dubai" || club.id === TRAVEL_PLACES.club, "hostess") }]
@@ -4694,6 +4709,7 @@ export class GameEngine {
       emote: (emote: "wave" | "dance" | "sit" | "none") => this.playEmote(emote),
       fastTravel: (placeId: string) => this.fastTravel({ placeId }, placeId),
       enterProperty: (propertyId: string, mode: "enter" | "preview") => this.enterProperty(propertyId, mode),
+      homePower: (source: "nepa" | "generator" | "none" | null) => this.setHomePower(source),
       estateViewing: (propertyId: string) => this.estateViewing(propertyId, propertyId),
       room: () => (this.interior && !this.travelView ? (this.interior as InteriorView).bounds : null),
       seats: () => (this.interior && !this.travelView ? (this.interior as InteriorView).seats : []),
