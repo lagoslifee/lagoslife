@@ -1553,3 +1553,14 @@ button.wide { width: 100%; margin: 6px 0; }
 .football-controls button.shoot.ready { background: #d0461c; }
 .football-controls button:disabled { opacity: .45; }
 .football-controls kbd { font-size: 11px; padding: 1px 5px; border-radius: 4px; background: rgba(255,255,255,.18); }
+
+/* Owambe */
+.owambe-prompt { position: absolute; left: 50%; bottom: 200px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; max-width: 92vw; }
+.owambe-prompt button { padding: 11px 16px; border-radius: 999px; font-weight: 700; box-shadow: 0 6px 18px rgba(0,0,0,.3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60vw; }
+.owambe-sheet { max-width: 460px; }
+.owambe-menu { display: grid; gap: 8px; }
+.owambe-menu button { display: grid; grid-template-columns: 40px 1fr; grid-template-rows: auto auto; column-gap: 8px; align-items: center; padding: 10px; border-radius: 12px; text-align: left; }
+.owambe-dish-emoji { grid-row: span 2; font-size: 28px; text-align: center; }
+.owambe-menu small { opacity: .75; }
+.owambe-host { display: grid; gap: 10px; }
+.owambe-host label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }

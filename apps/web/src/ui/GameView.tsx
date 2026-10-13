@@ -1,4 +1,4 @@
-import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type ClubMusicState, type FootballState, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL, EXERCISES, GYM, type ExerciseId, type FoodParcel, SEATED_MEAL_ENERGY, placeById, venueOf, venueRoom } from "@lagos-living/shared";
+import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type ClubMusicState, type FootballState, type OwambeParty, OWAMBE_MENU, OWAMBE_STYLE, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL, EXERCISES, GYM, type ExerciseId, type FoodParcel, SEATED_MEAL_ENERGY, placeById, venueOf, venueRoom } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { noteFps, report, setReportedQuality } from "../diagnostics";
@@ -29,6 +29,7 @@ import { HomeDesigner } from "./HomeDesigner";
 import { HomePower } from "./HomePower";
 import { FuelSheet } from "./FuelSheet";
 import { FootballHud, StreetFootballSheet } from "./StreetFootball";
+import { OwambeSheet, owambeTitle } from "./OwambeSheet";
 import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
 import { CheckpointPrompt, HoldUpPrompt, PoliceStationSheet, SecuritySheet } from "./PoliceSheets";
 import { GymSheet } from "./GymSheet";
@@ -137,6 +138,8 @@ export function GameView({
   const [football, setFootball] = useState<FootballState | null>(null);
   const [footballOpen, setFootballOpen] = useState(false);
   const footballRef = useRef<FootballState | null>(null);
+  const [owambe, setOwambe] = useState<OwambeParty | null>(null);
+  const [owambeOpen, setOwambeOpen] = useState(false);
   const [plots, setPlots] = useState<PlotState[]>([]);
   const [workout, setWorkout] = useState<{ exercise: ExerciseId; endsAt: number; kg: number | null } | null>(null);
   const [parcels, setParcels] = useState<FoodParcel[]>([]);
@@ -414,6 +417,12 @@ export function GameView({
           setClubMusic(state);
           void refresh();
         },
+        owambe: (party) => setOwambe(party),
+        owambeServed: (dish) => {
+          const plate = OWAMBE_MENU.find((entry) => entry.id === dish);
+          toast({ tone: "success", text: `${plate?.emoji ?? "🍛"} Your ${plate?.name.toLowerCase() ?? "plate"} is here.${plate?.hand ? " Wash your hand and dig in!" : ""}` });
+          void refresh();
+        },
         football: (state) => {
           const self = instance.sessionId;
           const playing = (entry: FootballState | null) => Boolean(entry?.players.some((player) => player.sessionId === self));
@@ -671,7 +680,7 @@ export function GameView({
   }, [engine, settings.theme]);
 
   const warnings = safety?.warnings ?? [];
-  const blocking = Boolean(welcomeOpen || designing || sheet || plotSheet || travelSpot || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length || holdUp || robTarget || fuelStop || footballOpen);
+  const blocking = Boolean(welcomeOpen || designing || sheet || plotSheet || travelSpot || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length || holdUp || robTarget || fuelStop || footballOpen || owambeOpen);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -1148,6 +1157,17 @@ export function GameView({
             </button>
           )}
 
+          {hud.owambe && owambe && !blocking && (
+            <div className="owambe-prompt">
+              {hud.owambe.seated ? (
+                <button className="primary" onClick={() => setOwambeOpen(true)} data-testid="owambe-waiter">🍛 Call the waiter</button>
+              ) : (
+                <button className="primary" onClick={() => engine.owambeSit() || toast({ tone: "info", text: "Every chair is taken. Dance a little; a seat will free up." })} data-testid="owambe-sit">🪑 Find a seat</button>
+              )}
+              <button className="secondary" onClick={() => setOwambeOpen(true)}>{OWAMBE_STYLE[owambe.kind].emoji} {owambeTitle(owambe)}</button>
+            </div>
+          )}
+
           {hud.pitch && !blocking && !(football?.phase === "playing" && football.players.some((player) => player.sessionId === engine.sessionId)) && (
             <button className="football-prompt primary" onClick={() => setFootballOpen(true)} data-testid="football-prompt">
               ⚽ Street football · {hud.pitch.name}
@@ -1433,6 +1453,9 @@ export function GameView({
         />
       )}
       {engine && homeId && partyOn && <ClubRadio clubId={homeId} volume={settings.muted ? 0 : settings.masterVolume} onPlaying={() => undefined} />}
+      {engine && owambeOpen && owambe && (
+        <OwambeSheet engine={engine} party={owambe} seated={Boolean(hud?.owambe?.seated)} balance={economy?.balance ?? 0} onClose={() => setOwambeOpen(false)} onToast={toast} onRefresh={refresh} />
+      )}
       {engine && footballOpen && football && hud?.pitch?.id === football.pitchId && (
         <StreetFootballSheet engine={engine} state={football} selfId={engine.sessionId} pitchName={hud.pitch.name} balance={economy?.balance ?? 0} onClose={() => setFootballOpen(false)} />
       )}

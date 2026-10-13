@@ -5,7 +5,7 @@ import type { FloorFinishId, FoodParcel, FuelStationState, GeneratorId, HomeFini
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick, RepairAction } from "@lagos-living/shared";
 import type { AccountSummary, ClaimAccount, LifeGoals } from "@lagos-living/shared";
 import type { DirectMessage, FriendsStatus, RankingBoard, RankingState, ReferralStatus } from "@lagos-living/shared";
-import type { BusinessListing, ClubSong } from "@lagos-living/shared";
+import type { BusinessListing, ClubSong, OwambeKind, OwambeParty } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -192,6 +192,8 @@ export const api = {
   inviteGuest: (propertyId: string, username: string) => post<{ invited: boolean }>(`/api/properties/${propertyId}/guests`, { username }),
   removeGuest: (propertyId: string, username: string) => post<{ removed: boolean }>(`/api/properties/${propertyId}/guests/remove`, { username }),
   fuelStations: () => request<FuelStationState[]>("/api/fuel/stations"),
+  owambe: () => request<OwambeParty>("/api/owambe"),
+  hostOwambe: (kind: OwambeKind, celebrant: string) => post<{ balance: number; party: OwambeParty }>("/api/owambe/host", { kind, celebrant, idempotencyKey: crypto.randomUUID() }),
   buyFuel: (stationId: string, vehicleId: string, litres: number, price: number) =>
     post<{ balance: number; litres: number; paid: number; fuel: number; tank: number }>("/api/fuel/buy", { stationId, vehicleId, litres, price, idempotencyKey: crypto.randomUUID() }),
   buyFuelStation: (stationId: string) => post<{ balance: number }>(`/api/fuel/stations/${stationId}/buy`, { idempotencyKey: crypto.randomUUID() }),

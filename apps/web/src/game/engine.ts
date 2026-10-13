@@ -130,6 +130,9 @@ import {
   FOOTBALL_KITS,
   nearestPitch,
   type FootballState,
+  OWAMBE,
+  OWAMBE_GROUND,
+  type OwambeParty,
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
 import { COMPOUND_PLACES, compoundCars } from "./compounds";
@@ -168,6 +171,7 @@ import { BAY_SIZE, buildServiceBay, serviceBay } from "./service-bay";
 import { BikeStationsView } from "./bike-stations";
 import { FuelStationsView } from "./fuel-stations";
 import { StreetCagesView } from "./street-cage";
+import { OwambeView } from "./owambe";
 import { defaultBindings, InputState, LocomotionController, MAX_FRAME_DT, SUBSTEP_DT, type Bindings, type MoveMode } from "./controller";
 import { DanfoFactory, type DanfoView } from "./danfo";
 import { MeshBuilderBatch } from "./geometry";
@@ -225,6 +229,8 @@ export type HudState = {
   waypoint: { label: string; distance: number } | null;
   /** A street football cage the player is standing at, on foot. */
   pitch: { id: string; name: string } | null;
+  /** At the owambe on foot, and the chair the player is sitting on there. */
+  owambe: { seated: { table: number; seat: number } | null } | null;
 };
 
 export type Interaction =
@@ -269,6 +275,9 @@ export type EngineCallbacks = {
   agbero: (encounter: AgberoEncounter | null) => void;
   clubMusic?: (state: ClubMusicState) => void;
   football?: (state: FootballState) => void;
+  owambe?: (party: OwambeParty) => void;
+  /** A plate arrived at the player's own seat. */
+  owambeServed?: (dish: string) => void;
   /** The player reached the waypoint; the route has already been cleared. */
   arrived: (label: string) => void;
   /** What the player has in hand (a drink or a plate from the club bar) and how many sips or bites are left; null when empty. */
@@ -542,7 +551,7 @@ export class GameEngine {
   private lastUpdateAt = 0;
   private baseScaling = 1;
   /** Seated (or, on a club stool, standing up and dancing) on a fixed seat; `y` is the cushion height. */
-  private sitting: { seat: Vec2; yaw: number; y: number; pose: "sit" | "dance"; stool?: boolean; rest?: HomeRest; width?: number | undefined } | null = null;
+  private sitting: { seat: Vec2; yaw: number; y: number; pose: "sit" | "dance"; stool?: boolean; rest?: HomeRest; width?: number | undefined; owambe?: { table: number; seat: number } } | null = null;
   private blanket: Blanket | null = null;
   private reading: { book: Book; title: string; since: number } | null = null;
   private bookIndex = -1;
@@ -579,6 +588,7 @@ export class GameEngine {
   private fuel: { vehicleId: string; litres: number; tank: number } | null = null;
   private fuelStations: FuelStationsView | null = null;
   private cages: StreetCagesView | null = null;
+  private owambeView: OwambeView | null = null;
   /** Team kits worn by residents in a match, by session id. */
   private kits = new Map<string, { pitchId: string; team: keyof typeof FOOTBALL_KITS }>();
   private kitsAt = 0;
@@ -705,6 +715,14 @@ export class GameEngine {
       agberoOutcome: (outcome) => this.agberoOutcome(outcome),
       fuel: (fuel) => {
         this.fuel = fuel;
+      },
+      owambe: (party) => {
+        this.owambeView?.setParty(party);
+        this.callbacks.owambe?.(party);
+      },
+      owambeServe: (served) => {
+        this.owambeView?.serve(served);
+        if (served.sessionId === this.net.sessionId) this.callbacks.owambeServed?.(served.dish);
       },
       football: (state) => {
         this.cages?.setState(state);
@@ -899,6 +917,13 @@ export class GameEngine {
     this.couriers = new Couriers(scene, () => this.avatars, () => this.vehicleFactory, () => this.navigator ?? null, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) this.homeStaff = new HomeStaffView(this.avatars, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) this.fuelStations = new FuelStationsView(scene, this.avatars, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
+    if (this.avatars) {
+      this.owambeView = new OwambeView(scene, this.avatars, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes), (sessionId) => {
+        if (sessionId === this.net.sessionId) return this.player ? { avatar: this.player, local: true } : null;
+        const avatar = this.remotes.get(sessionId)?.avatar;
+        return avatar ? { avatar, local: false } : null;
+      });
+    }
     this.cages = new StreetCagesView(scene, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes), (sessionId) => this.footballerPose(sessionId));
     if (this.avatars) {
       this.crews = new StreetCrews(scene, this.avatars, this.vehicleFactory, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes), (x, z) => {
@@ -1509,7 +1534,7 @@ export class GameEngine {
       this.player.update(0, ride.seat === 0 && !bike ? "drive" : "sit", dt);
       if (bike && (ride.seat === 0 || seatView.model.body === "motorbike")) this.player.pedal(seatView.model.body === "motorbike" ? MOTORBIKE_FEET : seatView.crank);
     } else if (this.player) {
-      if (this.sitting && (speed > 0.1 || this.emote !== this.sitting.pose || !this.interior)) this.sitting = null;
+      if (this.sitting && (speed > 0.1 || this.emote !== this.sitting.pose || (!this.interior && !this.sitting.owambe) || (this.interior && this.sitting.owambe))) this.sitting = null;
       const chair = this.sitting;
       const lying = chair?.rest === "bed";
       if ((chair?.rest ?? null) !== this.restingAs) {
@@ -1623,6 +1648,7 @@ export class GameEngine {
     this.crews?.update(dt, x, z, !this.interior);
     this.fuelStations?.update(x, z, Boolean(this.interior), dt);
     this.cages?.update(x, z, Boolean(this.interior), dt);
+    this.owambeView?.update(x, z, Boolean(this.interior), dt);
     if (now - this.kitsAt > 1_000) {
       this.kitsAt = now;
       this.applyKits();
@@ -2159,6 +2185,10 @@ export class GameEngine {
       cameraYaw: this.cameraYaw,
       waypoint: this.waypoint ? { label: this.waypoint.label, distance: Math.hypot(this.waypoint.point[0] - x, this.waypoint.point[1] - z) } : null,
       pitch: this.pitchHere(x, z, Boolean(bus)),
+      owambe:
+        !this.interior && !bus && !this.driving && !this.passenger && Math.hypot(x - OWAMBE_GROUND.centre[0], z - OWAMBE_GROUND.centre[1]) < OWAMBE.range
+          ? { seated: this.sitting?.owambe ?? null }
+          : null,
     });
   }
 
@@ -2191,6 +2221,45 @@ export class GameEngine {
 
   get sessionId() {
     return this.net.sessionId;
+  }
+
+  /** Walks to the nearest free chair at the owambe and sits down. */
+  owambeSit() {
+    const view = this.owambeView;
+    if (!view || this.interior) return false;
+    const here: Vec2 = [this.controller.x, this.controller.z];
+    const taken = [...this.remotes.values()].map((remote) => remote.avatar?.root.position).filter((at): at is NonNullable<typeof at> => Boolean(at));
+    const free = view.seats.filter((seat) => !taken.some((at) => Math.hypot(at.x - seat.at[0], at.z - seat.at[1]) < 0.4));
+    if (!free.length) return false;
+    const seat = free.reduce((best, entry) => (Math.hypot(entry.at[0] - here[0], entry.at[1] - here[1]) < Math.hypot(best.at[0] - here[0], best.at[1] - here[1]) ? entry : best));
+    const behind: Vec2 = [seat.at[0] - Math.sin(seat.yaw) * 0.75, seat.at[1] - Math.cos(seat.yaw) * 0.75];
+    const owambe = { table: Math.floor(seat.table! / 10), seat: seat.table! % 10 };
+    this.autopilot?.resolve(false);
+    this.autopilot = {
+      path: [behind],
+      index: 0,
+      sprint: false,
+      resolve: (ok) => {
+        if (!ok || this.interior) return;
+        this.controller.yaw = seat.yaw;
+        this.emote = "sit";
+        this.net.send("emote", { emote: "sit" });
+        this.sitting = { seat: seat.at, yaw: seat.yaw, y: seat.y, pose: "sit", owambe };
+      },
+      lastProgress: performance.now(),
+      lastPoint: here,
+      deadline: performance.now() + 20_000,
+    };
+    return true;
+  }
+
+  owambeOrder(dish: string) {
+    const seated = this.sitting?.owambe;
+    if (seated) this.net.send("owambeOrder", { ...seated, dish });
+  }
+
+  owambeSync() {
+    this.net.send("owambeSync");
   }
 
   footballJoin(pitchId: string, team: keyof typeof FOOTBALL_KITS, stake: number) {
@@ -2419,7 +2488,7 @@ export class GameEngine {
   private updateRemotes(now: number, dt: number) {
     const renderTime = now - 120;
     // Residents sitting indoors are sent from where they stood; draw them on the nearest free seat instead.
-    const seats = this.interior && !this.travelView && "seats" in this.interior ? this.interior.seats : [];
+    const seats = this.interior && !this.travelView && "seats" in this.interior ? this.interior.seats : !this.interior && this.owambeView ? this.owambeView.seats : [];
     const claimed = new Set<ClubSeat>();
     const own = this.sitting?.seat;
     for (const remote of this.remotes.values()) {

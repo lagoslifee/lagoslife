@@ -26,6 +26,7 @@ import {
   type AgberoOutcome,
   type ClubMusicState,
   type FootballState,
+  type OwambeParty,
   ROBBERY,
 } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
@@ -74,6 +75,8 @@ export type MultiplayerHandlers = {
   agberoOutcome: (outcome: AgberoOutcome) => void;
   clubMusic: (state: ClubMusicState) => void;
   football: (state: FootballState) => void;
+  owambe: (party: OwambeParty) => void;
+  owambeServe: (served: { sessionId: string; table: number; seat: number; dish: string }) => void;
   /** The owner rearranged the home this player is standing in. */
   interior: () => void;
 };
@@ -173,6 +176,8 @@ export class MultiplayerConnection {
       );
       room.onMessage("agbero", (encounter: AgberoEncounter | null) => this.handlers.agbero(encounter && typeof encounter.id === "string" ? encounter : null));
       room.onMessage("clubMusic", (state: ClubMusicState) => typeof state?.club === "string" && Array.isArray(state.queue) && this.handlers.clubMusic(state));
+      room.onMessage("owambe", (party: OwambeParty) => typeof party?.celebrant === "string" && this.handlers.owambe(party));
+      room.onMessage("owambeServe", (served: { sessionId: string; table: number; seat: number; dish: string }) => typeof served?.sessionId === "string" && Number.isInteger(served.table) && this.handlers.owambeServe(served));
       room.onMessage("football", (state: FootballState) => typeof state?.pitchId === "string" && Array.isArray(state.players) && this.handlers.football(state));
       room.onMessage("fuel", (fuel: { vehicleId: string; litres: number; tank: number }) => typeof fuel?.vehicleId === "string" && Number.isFinite(fuel.litres) && this.handlers.fuel(fuel));
       room.onMessage("agberoOutcome", (outcome: AgberoOutcome) => Array.isArray(outcome?.point) && this.handlers.agberoOutcome(outcome));
@@ -272,7 +277,9 @@ export class MultiplayerConnection {
       | "footballLeave"
       | "footballKickoff"
       | "footballKick"
-      | "footballTackle",
+      | "footballTackle"
+      | "owambeOrder"
+      | "owambeSync",
     payload?: unknown,
   ) {
     this.room?.send(type, payload);
