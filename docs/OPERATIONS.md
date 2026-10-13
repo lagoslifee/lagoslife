@@ -91,7 +91,7 @@ on its own host.
 ## Render game server
 
 `render.yaml` is a Render Blueprint for an always-on game server (Starter
-plan, Frankfurt, the closest region to Lagos) on a Neon PostgreSQL
+plan, Ohio, next to the Neon database in us-east-2) on a Neon PostgreSQL
 database. Restore the latest `scripts/ops/backup.sh` dump into Neon first
 (`pg_restore --no-owner -d "$NEON_URL" backups/<latest>.dump`) so every account
 carries over.

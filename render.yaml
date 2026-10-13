@@ -5,10 +5,11 @@ services:
   - type: web
     name: lagos-living-server
     runtime: docker
+    # Same region as the Neon database (us-east-2), since every save is a database round trip.
     # Free instances sleep after 15 idle minutes and take about a minute to wake, which players see as
     # "Connecting to Naija World". Starter stays up.
     plan: starter
-    region: frankfurt
+    region: ohio
     dockerfilePath: ./apps/server/Dockerfile
     dockerContext: .
     # Migrations run on every start (already-applied ones are skipped).
