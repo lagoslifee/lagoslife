@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { findFreeSpot, FURNITURE, legacyCellPosition, nearestCell, placementProblem, type PlacedPiece } from "./furniture.js";
+import { findFreeSpot, FURNITURE, furnitureRect, homeRoomFor, legacyCellPosition, misplacedRoom, nearestCell, placementProblem, type PlacedPiece } from "./furniture.js";
+import { FRONT_WALL, HOME_LAYOUTS, roomAt } from "./home-layouts.js";
 import { HOUSE_DESIGNS, PLOTS } from "./building.js";
 
 describe("home furniture", () => {
@@ -31,6 +32,31 @@ describe("home furniture", () => {
     expect(placed.length).toBeGreaterThan(4);
     expect(findFreeSpot("ikoyi-sectional", placed)).toBeNull();
     for (const piece of placed) expect(placementProblem(piece, placed)).toBeNull();
+  });
+
+  it("delivers each piece to its room, wardrobes and beds backed onto a wall", () => {
+    for (const layout of Object.values(HOME_LAYOUTS)) {
+      for (const item of FURNITURE) {
+        const spot = findFreeSpot(item.id, [], layout);
+        expect(spot, `${layout.tier} ${item.id}`).not.toBeNull();
+        const room = homeRoomFor(item.id, layout);
+        if (room) expect(roomAt(layout, spot!.x, spot!.z), `${layout.tier} ${item.id}`).toBe(room);
+        if (item.wall) {
+          const rect = furnitureRect(item, spot!.x, spot!.z, spot!.rotation);
+          const gaps = [layout.back - rect.z - rect.hz, rect.z - rect.hz - FRONT_WALL, layout.halfX - rect.x - rect.hx, rect.x - rect.hx + layout.halfX];
+          expect(Math.min(...gaps), `${layout.tier} ${item.id}`).toBeLessThan(0.2);
+        }
+      }
+    }
+  });
+
+  it("knows a wardrobe left in the living room belongs in the bedroom", () => {
+    const layout = HOME_LAYOUTS.house;
+    expect(misplacedRoom({ itemId: "wardrobe", x: 0, z: 0, rotation: 0 }, layout)).toBe("bedroom");
+    expect(misplacedRoom({ itemId: "wardrobe", x: 7, z: 6, rotation: 90 }, layout)).toBeNull();
+    expect(misplacedRoom({ itemId: "lagoon-sofa", x: 0, z: 0, rotation: 0 }, layout)).toBeNull();
+    const spot = findFreeSpot("wardrobe", [], layout, "dining")!;
+    expect(roomAt(layout, spot.x, spot.z)).toBe("dining");
   });
 });
 

@@ -7,6 +7,12 @@ export type HomeTier = "flat" | "house" | "apartment" | "mansion";
 
 type Area = { x: number; z: number; hx: number; hz: number; label: string };
 
+export type RoomKind = "living" | "bedroom" | "dining" | "study";
+export const ROOM_NAMES: Record<RoomKind, string> = { living: "Living room", bedroom: "Bedroom", dining: "Dining area", study: "Study" };
+/** Part of an open-plan home set aside for one use, as a room-local rectangle. */
+export type RoomZone = { room: RoomKind; x: number; z: number; hx: number; hz: number };
+const zone = (room: RoomKind, x0: number, x1: number, z0: number, z1: number): RoomZone => ({ room, x: (x0 + x1) / 2, z: (z0 + z1) / 2, hx: (x1 - x0) / 2, hz: (z1 - z0) / 2 });
+
 /**
  * One interior plan. Coordinates are room-local metres from INTERIOR_ORIGIN, the same frame furniture is saved in.
  * Every plan shares the front wall (and so the street door, spawn and exit) at z = FRONT_WALL and grows north, east
@@ -23,6 +29,8 @@ export type HomeLayout = {
   /** Where to stand to cook, and the centre of the storage chest. */
   kitchen: Vec2;
   storage: Vec2;
+  /** The rooms of the plan; furniture is delivered to the room it belongs in. */
+  rooms: RoomZone[];
 };
 
 export const FRONT_WALL = -INTERIOR_HALF[1];
@@ -42,6 +50,7 @@ export const HOME_LAYOUTS: Record<HomeTier, HomeLayout> = {
     ],
     kitchen: [-INTERIOR_HALF[0] + 1.3, -1.2],
     storage: [INTERIOR_HALF[0] - 0.55, INTERIOR_HALF[1] - 0.7],
+    rooms: [zone("living", -4.2, 5.6, -4.8, 0.6), zone("dining", -5.6, 1.6, 0.6, 4.8), zone("bedroom", 1.6, 5.6, 0.6, 4.8)],
   },
   house: {
     tier: "house",
@@ -57,6 +66,7 @@ export const HOME_LAYOUTS: Record<HomeTier, HomeLayout> = {
     ],
     kitchen: [-5.9, -1.0],
     storage: [6.95, 7.7],
+    rooms: [zone("living", -6.3, 7.5, -4.8, 3.4), zone("dining", -7.5, -1.0, 3.4, 8.4), zone("bedroom", 1.6, 7.5, 3.4, 8.4)],
   },
   apartment: {
     tier: "apartment",
@@ -72,6 +82,7 @@ export const HOME_LAYOUTS: Record<HomeTier, HomeLayout> = {
     ],
     kitchen: [-6.65, -1.5],
     storage: [7.95, 9.5],
+    rooms: [zone("living", -4.5, 8.5, -4.8, 4.6), zone("dining", -8.5, -4.5, 0.9, 6.0), zone("bedroom", 1.6, 8.5, 4.6, 10.2), zone("study", -8.5, -1.6, 6.0, 10.2)],
   },
   mansion: {
     tier: "mansion",
@@ -91,6 +102,7 @@ export const HOME_LAYOUTS: Record<HomeTier, HomeLayout> = {
     ],
     kitchen: [-11.1, 0],
     storage: [12.45, 18.5],
+    rooms: [zone("living", 2.6, 13, 2.4, 9.0), zone("dining", -13, -2.6, 3.2, 9.0), zone("bedroom", 2.6, 13, 9.0, 19.2), zone("study", -13, -2.6, 9.0, 19.2)],
   },
 };
 
@@ -119,6 +131,11 @@ export function homeLayout(propertyId: string | null | undefined): HomeLayout {
 }
 
 /** Whether a room-local point is inside the walls, `inset` metres clear of them. */
+/** The room of the plan a room-local point stands in, if any. */
+export function roomAt(layout: HomeLayout, x: number, z: number): RoomKind | null {
+  return layout.rooms.find((room) => Math.abs(x - room.x) <= room.hx && Math.abs(z - room.z) <= room.hz)?.room ?? null;
+}
+
 export function insideHome(layout: HomeLayout, x: number, z: number, inset = 0) {
   return Math.abs(x) <= layout.halfX - inset && z >= FRONT_WALL + inset && z <= layout.back - inset;
 }

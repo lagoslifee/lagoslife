@@ -113,6 +113,13 @@ import {
   broadcastAt,
   hash01,
   GYM,
+  furnitureItem,
+  furnitureRect,
+  misplacedRoom,
+  ROOM_NAMES,
+  type FurnitureItem,
+  type HomeLayout,
+  type PlacedPiece,
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
 import { COMPOUND_PLACES, compoundCars } from "./compounds";
@@ -155,7 +162,7 @@ import { MeshBuilderBatch } from "./geometry";
 import { buildMealTray, buildTrolley } from "./flight-scenes";
 import { Couriers } from "./couriers";
 import { ListingBoards, type BoardLabel } from "./listing-boards";
-import { buildInterior, interiorModels, type ClubSeat, type HomeRest, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
+import { buildInterior, interiorModels, placementCentre, type ClubSeat, type HomeRest, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
 import { createMaterials, type Materials, type Quality } from "./materials";
 import { SignAtlas } from "./sign-atlas";
 import { RoadNavigator, StreetTracker, type WorldData, type WorldTile } from "./street-index";
@@ -249,6 +256,8 @@ export type EngineCallbacks = {
   holding: (item: { name: string; left: number; food: boolean } | null) => void;
   /** The player sat down on a home sofa, chair or bed (`kind`), or got up again (null). */
   resting?: (kind: HomeRest | null) => void;
+  /** Open the home designer with one placed piece picked up. */
+  moveFurniture?: (propertyId: string, placementId: string) => void;
 };
 
 type Remote = {
@@ -432,6 +441,8 @@ export class GameEngine {
   private buses = new Map<string, DanfoView>();
   private busTags = new Map<string, HTMLDivElement>();
   private interior: InteriorView | TravelView | null = null;
+  /** The furniture of the home you are standing in, when it is yours to rearrange. */
+  private homePieces: { propertyId: string; placements: Placement[]; layout: HomeLayout } | null = null;
   private travelView: TravelView | null = null;
   private trip: TripState = emptyTrip();
   private seatYaw = 0;
@@ -1819,6 +1830,14 @@ export class GameEngine {
               : travel
                 ? () => this.callbacks.interact({ kind: "travel", interior: travel.kind, spot: spot.id })
                 : () => this.callbacks.interact({ kind: "interior", spot: spot.id as InteriorSpot["id"] });
+        return;
+      }
+      const piece = this.reachablePiece(x, z);
+      if (piece && this.homePieces && this.callbacks.moveFurniture) {
+        const { propertyId, layout } = this.homePieces;
+        const belongs = misplacedRoom(piece.at, layout);
+        this.prompt = { key: bind("interact"), label: `Move the ${piece.item.name.toLowerCase()}`, detail: belongs ? `It belongs in the ${ROOM_NAMES[belongs].toLowerCase()}` : "Drag it anywhere in the house" };
+        this.interaction = () => this.callbacks.moveFurniture?.(propertyId, piece.id);
       }
       return;
     }
@@ -2964,6 +2983,22 @@ export class GameEngine {
     return true;
   }
 
+  /** The placed piece of your own furniture within arm's reach, nearest first. */
+  private reachablePiece(x: number, z: number) {
+    if (!this.homePieces || this.travelView) return null;
+    const [ox, oz] = INTERIOR_ORIGIN;
+    let best: { id: string; item: FurnitureItem; at: PlacedPiece; distance: number } | null = null;
+    for (const placement of this.homePieces.placements) {
+      const item = furnitureItem(placement.itemId);
+      if (!item || item.floor || !placement.id) continue;
+      const [px, pz] = placementCentre(placement);
+      const rect = furnitureRect(item, px, pz, placement.rotation);
+      const distance = Math.hypot(Math.max(0, Math.abs(x - px) - rect.hx), Math.max(0, Math.abs(z - pz) - rect.hz));
+      if (distance < 0.7 && (!best || distance < best.distance)) best = { id: placement.id, item, at: { itemId: placement.itemId, x: px - ox, z: pz - oz, rotation: placement.rotation }, distance };
+    }
+    return best;
+  }
+
   /** Walks to the nearest free sofa seat, dining chair or bed at home and sits or lies down; `onSeated` runs once there. */
   homeSeat(kind: HomeRest, onSeated?: () => void) {
     const view = this.interior && "seats" in this.interior ? this.interior : null;
@@ -3038,12 +3073,14 @@ export class GameEngine {
     const title = self.propertyId ? propertyTitle(self.propertyId) : "Home";
     let placements: Placement[] = [];
     let layout = homeLayout(self.propertyId);
+    this.homePieces = null;
     if (kind === "home" && self.propertyId) {
       const response = await fetch(`${apiUrl}/api/properties/${self.propertyId}/interior`, { credentials: "include", headers: authHeaders() }).catch(() => null);
       if (response?.ok) {
-        const body = (await response.json()) as { furniture: Placement[]; tier?: HomeTier };
+        const body = (await response.json()) as { furniture: Placement[]; tier?: HomeTier; access?: { owner?: boolean } };
         placements = body.furniture;
         if (body.tier) layout = HOME_LAYOUTS[body.tier];
+        this.homePieces = body.access?.owner ? { propertyId: self.propertyId, placements, layout } : null;
       } else this.callbacks.notice({ tone: "error", text: "Could not load your furniture — showing an empty room." });
     }
     if (this.props) await this.props.ensure(interiorModels(kind, layout, placements));

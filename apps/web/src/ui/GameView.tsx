@@ -112,6 +112,7 @@ export function GameView({
   const [plotSheet, setPlotSheet] = useState<string | null>(null);
   /** Property being arranged in the home designer. */
   const [designing, setDesigning] = useState<string | null>(null);
+  const [designFocus, setDesignFocus] = useState<string | null>(null);
   const [travelSpot, setTravelSpot] = useState<{ interior: TravelInterior; spot: string } | null>(null);
   const [trip, setTrip] = useState<TripState | null>(null);
   const [clubBar, setClubBar] = useState<Place | null>(null);
@@ -399,6 +400,10 @@ export function GameView({
           }
         },
         holding: (item) => setHolding(item),
+        moveFurniture: (propertyId, placementId) => {
+          setDesignFocus(placementId);
+          setDesigning(propertyId);
+        },
         resting: (kind) => {
           setRestKind(kind);
           if (kind !== "sofa" && kind !== "bed") setReading(null);
@@ -1435,7 +1440,11 @@ export function GameView({
           homeName={properties.find((listing) => listing.id === designing)?.name ?? "Your home"}
           door={properties.find((listing) => listing.id === designing)?.door ?? null}
           economy={economy}
-          onClose={() => setDesigning(null)}
+          focus={designFocus}
+          onClose={() => {
+            setDesigning(null);
+            setDesignFocus(null);
+          }}
           onToast={toast}
           onRefresh={refresh}
         />

@@ -6,11 +6,14 @@ import {
   furnitureRect,
   HOME_LAYOUTS,
   homeLayout,
+  misplacedRoom,
   placementProblem,
+  ROOM_NAMES,
   snapFloor,
   type FurnitureRotation,
   type Notice,
   type PlacedPiece,
+  type RoomKind,
 } from "@lagos-living/shared";
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { api, naira, type EconomyState, type InteriorState } from "../api";
@@ -24,6 +27,8 @@ type Props = {
   /** Street door, for finding the cars parked outside. */
   door: [number, number] | null;
   economy: EconomyState | null;
+  /** Placement to pick up as soon as the plan opens. */
+  focus?: string | null;
   onClose: () => void;
   onToast: (notice: Notice) => void;
   onRefresh: () => Promise<void>;
@@ -40,10 +45,10 @@ const PAD = 0.25;
  * Home designer: a floor plan to drag, turn and pick up furniture, with the room itself seen from straight above
  * in the top of the screen. Also your cars in the garage and driveway, the furniture catalogue (delivered, so it can be bought from here) and the guest list.
  */
-export function HomeDesigner({ engine, propertyId, homeName, door, economy, onClose, onToast, onRefresh }: Props) {
+export function HomeDesigner({ engine, propertyId, homeName, door, economy, focus = null, onClose, onToast, onRefresh }: Props) {
   const [interior, setInterior] = useState<InteriorState | null>(null);
   const [tab, setTab] = useState<Tab>("arrange");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(focus);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [busy, setBusy] = useState(false);
   const [friend, setFriend] = useState("");
@@ -133,17 +138,55 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, onCl
     void run(null, () => api.moveFurniture(propertyId, selectedPiece.id, selectedPiece.x, selectedPiece.z, rotation));
   };
 
+  /** "in the bedroom" for wherever a spot landed, or nothing in an open part of the floor. */
+  const whereIs = (x: number, z: number) => {
+    const room = layout.rooms.find((zone) => Math.abs(x - zone.x) <= zone.hx && Math.abs(z - zone.z) <= zone.hz)?.room;
+    return room ? ` in the ${ROOM_NAMES[room].toLowerCase()}` : "";
+  };
+
   const placeNew = (itemId: string, name: string) => {
     const spot = findFreeSpot(itemId, pieces, layout);
     if (!spot) return onToast({ tone: "error", text: `No free floor left for the ${name.toLowerCase()}. Pick something up first.` });
-    void run(`${name} placed. Drag it where you want it.`, () => api.placeFurnitureAt(propertyId, itemId, spot.x, spot.z, spot.rotation));
+    void run(`${name} placed${whereIs(spot.x, spot.z)}. Drag it anywhere you like.`, () => api.placeFurnitureAt(propertyId, itemId, spot.x, spot.z, spot.rotation));
   };
+
+  const moveTo = (piece: PlacedPiece & { id: string; name: string }, room: RoomKind) => {
+    const spot = findFreeSpot(piece.itemId, pieces.filter((entry) => entry.id !== piece.id), layout, room);
+    if (!spot) return onToast({ tone: "error", text: `No free floor in the ${ROOM_NAMES[room].toLowerCase()} for the ${piece.name.toLowerCase()}.` });
+    void run(`${piece.name} moved${whereIs(spot.x, spot.z) || ` near the ${ROOM_NAMES[room].toLowerCase()}`}.`, () => api.moveFurniture(propertyId, piece.id, spot.x, spot.z, spot.rotation));
+  };
+
+  const nudge = (dx: number, dz: number) => {
+    if (!selectedPiece) return;
+    const moved = { ...selectedPiece, x: snapFloor(selectedPiece.x + dx), z: snapFloor(selectedPiece.z + dz) };
+    const reason = problem(moved);
+    if (reason) return onToast({ tone: "error", text: reason });
+    setInterior({ ...interior!, furniture: interior!.furniture.map((entry) => (entry.id === moved.id ? { ...entry, x: moved.x, z: moved.z } : entry)) });
+    void run(null, () => api.moveFurniture(propertyId, moved.id, moved.x, moved.z, moved.rotation as FurnitureRotation));
+  };
+
+  const misplaced = pieces.flatMap((piece) => {
+    const room = misplacedRoom(piece, layout);
+    return room ? [{ piece, room }] : [];
+  });
+
+  /** Moves every piece standing in the wrong room to the room it belongs in. */
+  const tidyUp = () =>
+    void run(`Done — ${misplaced.length === 1 ? "it is" : "everything is"} where it belongs.`, async () => {
+      let floor = [...pieces];
+      for (const { piece, room } of misplaced) {
+        const spot = findFreeSpot(piece.itemId, floor.filter((entry) => entry.id !== piece.id), layout, room);
+        if (!spot) continue;
+        await api.moveFurniture(propertyId, piece.id, spot.x, spot.z, spot.rotation);
+        floor = floor.map((entry) => (entry.id === piece.id ? { ...entry, ...spot } : entry));
+      }
+    });
 
   const buyAndPlace = (itemId: string) => {
     const item = furnitureItem(itemId)!;
     const spot = findFreeSpot(itemId, pieces, layout);
     if (!spot) return onToast({ tone: "error", text: `No free floor left for the ${item.name.toLowerCase()}. Pick something up first.` });
-    void run(`${item.name} delivered and placed for ${naira(item.price)}.`, async () => {
+    void run(`${item.name} delivered${whereIs(spot.x, spot.z)} for ${naira(item.price)}.`, async () => {
       await api.purchase(itemId);
       await api.placeFurnitureAt(propertyId, itemId, spot.x, spot.z, spot.rotation);
       setTab("arrange");
@@ -186,6 +229,12 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, onCl
           >
             <rect x={-hx} y={-north} width={hx * 2} height={north - south} className="plan-floor" />
             {[-3, 0, 3].map((x) => <rect key={x} x={x - 0.7} y={-north - 0.08} width={1.4} height={0.16} className="plan-window" />)}
+            {layout.rooms.map((room) => (
+              <g key={room.room} className={`plan-room ${room.room}`}>
+                <rect x={room.x - room.hx} y={-room.z - room.hz} width={room.hx * 2} height={room.hz * 2} />
+                <text x={room.x - room.hx + 0.15} y={-room.z - room.hz + 0.35}>{ROOM_NAMES[room.room]}</text>
+              </g>
+            ))}
             {layout.fixtures.map((fixture) => (
               <g key={`${fixture.label} ${fixture.x} ${fixture.z}`}>
                 <rect x={fixture.x - fixture.hx} y={-fixture.z - fixture.hz} width={fixture.hx * 2} height={fixture.hz * 2} className="plan-fixture" />
@@ -216,16 +265,39 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, onCl
             })}
           </svg>
           {selectedPiece ? (
-            <div className="designer-toolbar">
-              <strong>{selectedPiece.name}</strong>
+            <div className="designer-toolbar" data-testid="designer-toolbar">
+              <strong>{selectedPiece.name}<small>{whereIs(selectedPiece.x, selectedPiece.z).replace(" in the ", " · ") || " · open floor"}</small></strong>
+              <span className="designer-nudge" aria-label="Nudge">
+                {([["←", -0.5, 0], ["↑", 0, 0.5], ["↓", 0, -0.5], ["→", 0.5, 0]] as const).map(([arrow, dx, dz]) => (
+                  <button key={arrow} className="secondary" disabled={busy || !owner} onClick={() => nudge(dx, dz)} aria-label={`Nudge ${arrow}`}>{arrow}</button>
+                ))}
+              </span>
               <button className="secondary" disabled={busy || !owner} onClick={turn}>⟳ Turn</button>
               <button className="secondary" disabled={busy || !owner} onClick={() => {
                 setSelected(null);
                 void run(`${selectedPiece.name} picked up and back in your bag.`, () => api.removeFurniture(propertyId, selectedPiece.id));
               }}>Pick up</button>
+              <div className="designer-rooms">
+                <span className="muted small">Move to:</span>
+                {layout.rooms.map((room) => (
+                  <button key={room.room} className="chip" disabled={busy || !owner} onClick={() => moveTo(selectedPiece, room.room)} data-testid={`move-to-${room.room}`}>
+                    {ROOM_NAMES[room.room]}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             <p className="muted small">{owner ? "Drag furniture to move it. Tap a piece to turn it or pick it up. The dot marks its back." : "Only the owner can rearrange this home."}</p>
+          )}
+          {owner && misplaced.length > 0 && (
+            <div className="designer-misplaced" data-testid="designer-misplaced">
+              <span>
+                {misplaced.length === 1
+                  ? `The ${misplaced[0]!.piece.name.toLowerCase()} belongs in the ${ROOM_NAMES[misplaced[0]!.room].toLowerCase()}.`
+                  : `${misplaced.length} pieces are in the wrong room.`}
+              </span>
+              <button className="primary" disabled={busy} onClick={tidyUp} data-testid="designer-tidy">{misplaced.length === 1 ? "Move it there" : "Put everything in its room"}</button>
+            </div>
           )}
           {owner && interior && interior.availableFurniture.length > 0 && (
             <div className="designer-bag">

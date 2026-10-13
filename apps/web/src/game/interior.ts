@@ -113,7 +113,7 @@ function previewPieces(layout: HomeLayout): Placement[] {
     piece("potted-palm", cx - 2.4, cz - 0.2, 0),
     piece("dining-set", wide ? -7 : -3.6, wide ? 6.5 : 5, 0),
     piece("eko-king-bed", wide ? 9.5 : layout.halfX - 3.2, wide ? 12.5 : layout.back - 1.6, 0),
-    piece("wardrobe", wide ? 11.8 : layout.halfX - 0.5, wide ? 5 : layout.back - 4.6, 90),
+    piece("wardrobe", wide ? 12.6 : layout.halfX - 0.5, wide ? 15 : layout.back - 4.6, 90),
     piece("bookshelf", wide ? -12.7 : -layout.halfX + 0.3, wide ? 9 : 4.5, 270),
   ];
 }
@@ -290,6 +290,11 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
       get("darkFrame").box(OX - HX + 0.35, 0.92, OZ - 0.6, 0.55, 0.04, 0.55);
       get("chrome").box(OX - HX + 0.35, 0.93, OZ - 1.8, 0.45, 0.03, 0.35);
       get("fabric").polygon([[OX - 1.5, OZ - 1], [OX + 2, OZ - 1], [OX + 2, OZ + 1.6], [OX - 1.5, OZ + 1.6]], 0.03, 1, [0.55, 0.3, 0.25]);
+    }
+    // A soft carpet marks out the bedroom of the open plan, so it reads as where the bed and wardrobe go.
+    for (const room of layout.rooms.filter((entry) => entry.room === "bedroom")) {
+      const [x0, x1, z0, z1] = [OX + room.x - room.hx + 0.3, OX + room.x + room.hx - 0.3, OZ + room.z - room.hz + 0.3, OZ + room.z + room.hz - 0.3];
+      get("bedding").polygon([[x0, z0], [x1, z0], [x1, z1], [x0, z1]], 0.025, 1, [0.78, 0.71, 0.62]);
     }
     spots.push({ id: "kitchen", point: [OX + layout.kitchen[0], OZ + layout.kitchen[1]], label: "Cook a meal" });
     if (kind === "home") {

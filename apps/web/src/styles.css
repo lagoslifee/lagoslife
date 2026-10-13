@@ -1095,6 +1095,12 @@ table.departures td { padding: 6px 10px; border-bottom: 1px solid #23413d; }
 .plan-floor { fill: #efe6d3; stroke: #3b3a36; stroke-width: 0.12; }
 .plan-window { fill: #9fd3ea; }
 .plan-door { fill: #6d4127; }
+.plan-room rect { fill: rgba(255, 255, 255, 0.35); stroke: rgba(59, 58, 54, 0.45); stroke-width: 0.05; stroke-dasharray: 0.25 0.12; }
+.plan-room.bedroom rect { fill: rgba(143, 179, 224, 0.18); }
+.plan-room.dining rect { fill: rgba(176, 122, 70, 0.14); }
+.plan-room.study rect { fill: rgba(92, 107, 122, 0.14); }
+.plan-room text { font-size: 0.3px; font-weight: 700; fill: #6b6556; pointer-events: none; dominant-baseline: middle; }
+.plan-room { pointer-events: none; }
 .plan-fixture { fill: rgba(60, 70, 70, 0.12); stroke: rgba(60,70,70,.35); stroke-width: 0.03; stroke-dasharray: 0.12 0.08; }
 .plan-fixture-label { font-size: 0.24px; fill: #5f6c68; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
 .plan-piece { cursor: grab; }
@@ -1124,6 +1130,14 @@ table.departures td { padding: 6px 10px; border-bottom: 1px solid #23413d; }
 .parking-elsewhere em { font-style: normal; color: #5f6c68; font-size: calc(12px * var(--text-scale)); }
 .designer-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .designer-toolbar strong { flex: 1; }
+.designer-toolbar strong small { font-weight: 500; opacity: 0.7; margin-left: 4px; }
+.designer-nudge { display: inline-flex; gap: 4px; }
+.designer-nudge button { min-width: 36px; padding-inline: 0; }
+.designer-rooms { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.designer-rooms .chip { padding: 5px 10px; border-radius: 999px; border: 1px solid rgba(23,49,46,.25); background: #fff; font-weight: 600; font-size: calc(12px * var(--text-scale)); }
+.designer-misplaced { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border-radius: 12px; background: #fff4d6; border: 1px solid #e8c56a; color: #5a4310; font-size: calc(13px * var(--text-scale)); }
+.designer-misplaced span { flex: 1; }
+@media (max-height: 500px) { .designer-rooms { flex-basis: auto; } .designer-toolbar strong { flex-basis: 100%; } }
 .designer-bag { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .designer-bag .chip { padding: 5px 10px; border-radius: 999px; border: 1px solid rgba(23,49,46,.25); background: #fff; font-weight: 600; font-size: calc(12px * var(--text-scale)); }
 .designer-shop { flex: 1; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; align-content: start; }
@@ -1330,7 +1344,8 @@ button.wide { width: 100%; margin: 6px 0; }
 [data-theme="dark"] .map-results button { color: #f2f2f7; }
 [data-theme="dark"] .map-results button:hover { background: #2c2c2e; }
 [data-theme="dark"] :is(.job-card, .home-card, .vehicle-card, .menu li, .choice, .stages li, .citation-list li, .parking-elsewhere li, .designer-shop li, .designer-guests li, .house-card, .repair-parts li, .travel-card, .trade-sheet, .bet-slip, .boutique-item, .place-card, .claim-card, .reported-line) { background: #1c1c1e; border-color: #38383a; color: #f2f2f7; box-shadow: none; }
-[data-theme="dark"] :is(.key, .designer-tabs button, .designer-bag .chip, .category-chips .chip, .fixture .odds button, .studio-chips button) { background: #2c2c2e; border-color: #48484a; color: #f2f2f7; }
+[data-theme="dark"] .designer-misplaced { background: #3a3220; border-color: #6b5520; color: #f5dfa6; }
+[data-theme="dark"] :is(.key, .designer-tabs button, .designer-bag .chip, .designer-rooms .chip, .category-chips .chip, .fixture .odds button, .studio-chips button) { background: #2c2c2e; border-color: #48484a; color: #f2f2f7; }
 [data-theme="dark"] :is(.designer-tabs button.active, .studio-chips button[aria-pressed="true"]) { background: #f2f2f7; border-color: #f2f2f7; color: #000; }
 [data-theme="dark"] .category-chips .chip.selected { background: #e6bd62; border-color: #e6bd62; color: #1d1a12; }
 [data-theme="dark"] .fixture .odds button.selected { background: #116c60; border-color: #116c60; color: #fff; }

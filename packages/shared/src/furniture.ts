@@ -1,4 +1,4 @@
-import { FRONT_WALL, HOME_LAYOUTS, type HomeLayout } from "./home-layouts.js";
+import { FRONT_WALL, HOME_LAYOUTS, roomAt, type HomeLayout, type RoomKind } from "./home-layouts.js";
 import { INTERIOR_HALF, type Vec2 } from "./world.js";
 
 export type FurnitureRotation = 0 | 90 | 180 | 270;
@@ -18,6 +18,10 @@ export type FurnitureItem = {
   floor?: boolean;
   /** Lets the owner (and invited guests) sleep at home. */
   bed?: boolean;
+  /** Rooms it belongs in, best first; a new piece is delivered to the first one the home has. */
+  rooms: RoomKind[];
+  /** Stands with its back (or headboard) against a wall. */
+  wall?: boolean;
   /** Colour used for the piece on the floor plan. */
   plan: string;
   /** Label on the floor plan. */
@@ -25,21 +29,21 @@ export type FurnitureItem = {
 };
 
 export const FURNITURE: FurnitureItem[] = [
-  { id: "island-bed", name: "Island Double Bed", description: "A comfortable bed that enables sleeping at home.", price: 36_000, size: [1.7, 2.2], bed: true, plan: "#8fb3e0", short: "Bed" },
-  { id: "lagoon-sofa", name: "Lagoon Sofa", description: "A compact teal sofa for a Lagos living room.", price: 28_000, size: [2.4, 1.0], plan: "#3a9a8f", short: "Sofa" },
-  { id: "woven-table", name: "Woven Side Table", description: "A locally inspired table for small interiors.", price: 9_500, size: [1.3, 0.8], plan: "#b07a46", short: "Table" },
-  { id: "eko-king-bed", name: "Eko King Bed", description: "A wide upholstered king bed with bedside tables.", price: 78_000, size: [2.9, 2.4], bed: true, plan: "#c9b7e8", short: "King bed" },
-  { id: "ikoyi-sectional", name: "Ikoyi Sectional Sofa", description: "An L-shaped grey sectional that seats six.", price: 95_000, size: [2.8, 2.0], plan: "#8d939b", short: "Sectional" },
-  { id: "velvet-armchair", name: "Velvet Armchair", description: "A deep mustard armchair for reading by the window.", price: 22_000, size: [0.95, 0.95], plan: "#d9a526", short: "Chair" },
-  { id: "marble-coffee-table", name: "Marble Coffee Table", description: "A low white marble table for the sitting room.", price: 18_000, size: [1.2, 0.65], plan: "#e8e4dc", short: "Coffee" },
-  { id: "dining-set", name: "Six-seat Dining Set", description: "A walnut dining table with six chairs for Sunday rice.", price: 65_000, size: [2.2, 1.7], plan: "#7a5232", short: "Dining" },
-  { id: "tv-console", name: "TV and Media Console", description: "A 65-inch TV on a long low console.", price: 55_000, size: [1.9, 0.5], plan: "#2b2f36", short: "TV" },
-  { id: "wardrobe", name: "Sliding Wardrobe", description: "A tall wardrobe with mirrored sliding doors.", price: 48_000, size: [1.7, 0.65], plan: "#cfc6b6", short: "Wardrobe" },
-  { id: "bookshelf", name: "Open Bookshelf", description: "Five open shelves of books and keepsakes.", price: 21_000, size: [1.0, 0.4], plan: "#9c6b3f", short: "Books" },
-  { id: "work-desk", name: "Work Desk and Chair", description: "A desk with a laptop and an office chair.", price: 32_000, size: [1.4, 1.2], plan: "#5c6b7a", short: "Desk" },
-  { id: "floor-lamp", name: "Arc Floor Lamp", description: "A brass floor lamp with a warm shade.", price: 9_000, size: [0.45, 0.45], plan: "#f2d27a", short: "Lamp" },
-  { id: "potted-palm", name: "Potted Palm", description: "A tall areca palm in a clay pot.", price: 7_500, size: [0.6, 0.6], plan: "#4f9a4a", short: "Palm" },
-  { id: "aso-rug", name: "Aso-oke Pattern Rug", description: "A large woven rug in indigo and gold.", price: 16_000, size: [2.6, 1.8], floor: true, plan: "#3b4f8f", short: "Rug" },
+  { id: "island-bed", name: "Island Double Bed", description: "A comfortable bed that enables sleeping at home.", price: 36_000, size: [1.7, 2.2], bed: true, rooms: ["bedroom"], wall: true, plan: "#8fb3e0", short: "Bed" },
+  { id: "lagoon-sofa", name: "Lagoon Sofa", description: "A compact teal sofa for a Lagos living room.", price: 28_000, size: [2.4, 1.0], rooms: ["living"], plan: "#3a9a8f", short: "Sofa" },
+  { id: "woven-table", name: "Woven Side Table", description: "A locally inspired table for small interiors.", price: 9_500, size: [1.3, 0.8], rooms: ["living", "bedroom"], plan: "#b07a46", short: "Table" },
+  { id: "eko-king-bed", name: "Eko King Bed", description: "A wide upholstered king bed with bedside tables.", price: 78_000, size: [2.9, 2.4], bed: true, rooms: ["bedroom"], wall: true, plan: "#c9b7e8", short: "King bed" },
+  { id: "ikoyi-sectional", name: "Ikoyi Sectional Sofa", description: "An L-shaped grey sectional that seats six.", price: 95_000, size: [2.8, 2.0], rooms: ["living"], plan: "#8d939b", short: "Sectional" },
+  { id: "velvet-armchair", name: "Velvet Armchair", description: "A deep mustard armchair for reading by the window.", price: 22_000, size: [0.95, 0.95], rooms: ["living", "study", "bedroom"], plan: "#d9a526", short: "Chair" },
+  { id: "marble-coffee-table", name: "Marble Coffee Table", description: "A low white marble table for the sitting room.", price: 18_000, size: [1.2, 0.65], rooms: ["living"], plan: "#e8e4dc", short: "Coffee" },
+  { id: "dining-set", name: "Six-seat Dining Set", description: "A walnut dining table with six chairs for Sunday rice.", price: 65_000, size: [2.2, 1.7], rooms: ["dining"], plan: "#7a5232", short: "Dining" },
+  { id: "tv-console", name: "TV and Media Console", description: "A 65-inch TV on a long low console.", price: 55_000, size: [1.9, 0.5], rooms: ["living"], wall: true, plan: "#2b2f36", short: "TV" },
+  { id: "wardrobe", name: "Sliding Wardrobe", description: "A tall wardrobe with mirrored sliding doors.", price: 48_000, size: [1.7, 0.65], rooms: ["bedroom"], wall: true, plan: "#cfc6b6", short: "Wardrobe" },
+  { id: "bookshelf", name: "Open Bookshelf", description: "Five open shelves of books and keepsakes.", price: 21_000, size: [1.0, 0.4], rooms: ["study", "living"], wall: true, plan: "#9c6b3f", short: "Books" },
+  { id: "work-desk", name: "Work Desk and Chair", description: "A desk with a laptop and an office chair.", price: 32_000, size: [1.4, 1.2], rooms: ["study", "bedroom"], wall: true, plan: "#5c6b7a", short: "Desk" },
+  { id: "floor-lamp", name: "Arc Floor Lamp", description: "A brass floor lamp with a warm shade.", price: 9_000, size: [0.45, 0.45], rooms: ["living", "bedroom"], plan: "#f2d27a", short: "Lamp" },
+  { id: "potted-palm", name: "Potted Palm", description: "A tall areca palm in a clay pot.", price: 7_500, size: [0.6, 0.6], rooms: ["living"], wall: true, plan: "#4f9a4a", short: "Palm" },
+  { id: "aso-rug", name: "Aso-oke Pattern Rug", description: "A large woven rug in indigo and gold.", price: 16_000, size: [2.6, 1.8], floor: true, rooms: ["living"], plan: "#3b4f8f", short: "Rug" },
 ];
 
 const furnitureIndex = new Map(FURNITURE.map((item) => [item.id, item]));
@@ -116,17 +120,60 @@ export function placementProblem(piece: PlacedPiece, others: PlacedPiece[], layo
   return null;
 }
 
-/** A free spot for a newly bought piece, scanning from the middle of the room outwards; null when the room is full. */
-export function findFreeSpot(itemId: string, others: PlacedPiece[], layout: HomeLayout = HOME_LAYOUTS.flat): { x: number; z: number; rotation: FurnitureRotation } | null {
-  const candidates: Array<[number, number]> = [];
-  for (let x = -layout.halfX; x <= layout.halfX; x += 0.2) {
-    for (let z = FRONT_WALL; z <= layout.back; z += 0.2) candidates.push([snapFloor(x), snapFloor(z)]);
-  }
-  candidates.sort((a, b) => Math.hypot(a[0], a[1] - 0.6) - Math.hypot(b[0], b[1] - 0.6));
-  for (const rotation of [0, 90] as const) {
-    for (const [x, z] of candidates) {
-      if (!placementProblem({ itemId, x, z, rotation }, others, layout)) return { x, z, rotation };
+/** The room a piece should stand in on this plan: the first of its rooms the home has. */
+export function homeRoomFor(itemId: string, layout: HomeLayout = HOME_LAYOUTS.flat): RoomKind | null {
+  const item = furnitureItem(itemId);
+  return item?.rooms.find((room) => layout.rooms.some((zone) => zone.room === room)) ?? null;
+}
+
+/** The room a piece belongs in when it stands somewhere else (a wardrobe left in the living room), or null. */
+export function misplacedRoom(piece: PlacedPiece, layout: HomeLayout = HOME_LAYOUTS.flat): RoomKind | null {
+  const item = furnitureItem(piece.itemId);
+  if (!item) return null;
+  const here = roomAt(layout, piece.x, piece.z);
+  if (here && item.rooms.includes(here)) return null;
+  const home = homeRoomFor(piece.itemId, layout);
+  return home && home !== here ? home : null;
+}
+
+/** How far the back of a piece stands off the wall it faces away from. */
+function wallGap(rect: FloorRect, rotation: number, layout: HomeLayout) {
+  if (rotation === 0) return layout.back - (rect.z + rect.hz);
+  if (rotation === 180) return rect.z - rect.hz - FRONT_WALL;
+  if (rotation === 90) return layout.halfX - (rect.x + rect.hx);
+  return rect.x - rect.hx + layout.halfX;
+}
+
+/**
+ * The best free spot for a piece: inside its room (or `room` when given), backed onto a wall if it is a wardrobe,
+ * bed, shelf or TV, with a little space around it. Falls back to the nearest free floor; null when the home is full.
+ */
+export function findFreeSpot(itemId: string, others: PlacedPiece[], layout: HomeLayout = HOME_LAYOUTS.flat, room?: RoomKind | null): { x: number; z: number; rotation: FurnitureRotation } | null {
+  const item = furnitureItem(itemId);
+  if (!item) return null;
+  const target = room ?? homeRoomFor(itemId, layout);
+  const zone = layout.rooms.find((entry) => entry.room === target) ?? { x: 0, z: 0.6, hx: layout.halfX, hz: (layout.back - FRONT_WALL) / 2 };
+  const rotations: FurnitureRotation[] = item.wall ? [0, 90, 180, 270] : [0, 90];
+  const solids = others.flatMap((other) => {
+    const otherItem = furnitureItem(other.itemId);
+    return otherItem && !otherItem.floor ? [furnitureRect(otherItem, other.x, other.z, other.rotation)] : [];
+  });
+  let best: { x: number; z: number; rotation: FurnitureRotation; score: number } | null = null;
+  for (const rotation of rotations) {
+    for (let gx = -layout.halfX; gx <= layout.halfX + 1e-6; gx += 0.1) {
+      for (let gz = FRONT_WALL; gz <= layout.back + 1e-6; gz += 0.1) {
+        const [x, z] = [snapFloor(gx), snapFloor(gz)];
+        const rect = furnitureRect(item, x, z, rotation);
+        const outside = Math.max(0, Math.abs(x - zone.x) - zone.hx) + Math.max(0, Math.abs(z - zone.z) - zone.hz);
+        const spill = Math.max(0, Math.abs(x - zone.x) + rect.hx - zone.hx) + Math.max(0, Math.abs(z - zone.z) + rect.hz - zone.hz);
+        let score = (outside > 0 ? 100 + outside * 10 : 0) + spill * 4 + Math.hypot(x - zone.x, z - zone.z) * (item.wall ? 0.05 : 0.15);
+        if (item.wall) score += Math.max(0, wallGap(rect, rotation, layout) - 0.05) * 8;
+        if (!item.floor && solids.some((other) => overlaps(rect, other, 0.35))) score += 2;
+        if (best && score >= best.score) continue;
+        if (placementProblem({ itemId, x, z, rotation }, others, layout)) continue;
+        best = { x, z, rotation, score };
+      }
     }
   }
-  return null;
+  return best && { x: best.x, z: best.z, rotation: best.rotation };
 }
