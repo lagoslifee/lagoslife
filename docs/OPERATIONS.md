@@ -80,7 +80,8 @@ on its own host.
   `vercel.json` when the tunnel changes.
 - Add the Vercel site to the server as `EXTRA_WEB_ORIGINS=https://<project>.vercel.app`
   (comma-separated for several) so CORS and sign-in accept it alongside
-  `WEB_ORIGIN`.
+  `WEB_ORIGIN`. `https://*.vercel.app` covers every deployment and preview URL;
+  without it, sign-up from Vercel fails with "Invalid origin".
 - Keep Vercel access tokens out of the repository; add them as secrets in the
   host's dashboard.
 

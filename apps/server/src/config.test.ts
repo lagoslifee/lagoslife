@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseConfig } from "./config.js";
+import { originMatcher, parseConfig } from "./config.js";
 
 const production = {
   NODE_ENV: "production",
@@ -30,6 +30,16 @@ describe("production configuration", () => {
     expect(config.EXTRA_WEB_ORIGINS).toEqual(["https://naija-world.vercel.app", "https://play2.example.com"]);
     expect(() => parseConfig({ ...production, EXTRA_WEB_ORIGINS: "http://naija-world.example.com" })).toThrow(/EXTRA_WEB_ORIGINS must use https/);
     expect(() => parseConfig({ ...production, EXTRA_WEB_ORIGINS: "not a url" })).toThrow();
+  });
+
+  it("lets a wildcard origin cover every deployment on a host, and nothing else", () => {
+    expect(parseConfig({ ...production, EXTRA_WEB_ORIGINS: "https://*.vercel.app" }).EXTRA_WEB_ORIGINS).toEqual(["https://*.vercel.app"]);
+    const vercel = originMatcher("https://*.vercel.app");
+    expect(vercel.test("https://naija-world-git-main-lagos.vercel.app")).toBe(true);
+    expect(vercel.test("https://evil.com/.vercel.app")).toBe(false);
+    expect(vercel.test("https://a.b.vercel.app")).toBe(false);
+    expect(vercel.test("http://naija.vercel.app")).toBe(false);
+    expect(originMatcher("https://play.example.com").test("https://playxexample.com")).toBe(false);
   });
 
   it("keeps development defaults outside production", () => {

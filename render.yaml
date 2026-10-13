@@ -38,6 +38,6 @@ services:
         generateValue: true
       - key: WEB_ORIGIN
         value: https://silver-elf-acde6c.netlify.app
-      # Testing only: visitors get a guest account instead of the sign-in page. Matches VITE_GUEST_MODE on Netlify.
+      # Guest accounts are off: everyone plays with a signed-up account. Matches VITE_GUEST_MODE on Netlify.
       - key: GUEST_MODE
-        value: "true"
+        value: "false"

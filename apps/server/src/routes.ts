@@ -84,7 +84,7 @@ import { auth } from "./auth.js";
 import { accountSummary, claimGuestAccount, getGoals, resetAddress, saveGoals } from "./account-service.js";
 import { acquirePlot, buildingEvents, buyReadyBuilt, listPlots, payNextStage, releasePlotsOf, renewPlotLease, startConstruction } from "./building-service.js";
 import { matchMaker } from "@colyseus/core";
-import { config, webOrigins } from "./config.js";
+import { config, isWebOrigin } from "./config.js";
 import { pool } from "./database.js";
 import { clientReportSchema, processHealth, recordClientReport } from "./diagnostics.js";
 import { getPlayerPosition, markProgressReset } from "./player-presence.js";
@@ -228,6 +228,10 @@ async function requireSession(req: Request, res: Response, next: NextFunction) {
     res.status(401).json({ error: "Authentication required" });
     return;
   }
+  if (!config.GUEST_MODE && config.NODE_ENV !== "development" && session.user.email.endsWith(`@${GUEST_EMAIL_DOMAIN}`)) {
+    res.status(401).json({ error: "Guest play is closed. Create a free account to keep playing." });
+    return;
+  }
   (req as AuthenticatedRequest).player = {
     userId: session.user.id,
     name: session.user.displayUsername ?? session.user.username ?? session.user.name,
@@ -278,7 +282,7 @@ export function configureRoutes(app: Express) {
   if (config.TRUSTED_PROXIES.length) app.set("trust proxy", config.TRUSTED_PROXIES);
   app.use(
     cors({
-      origin: webOrigins,
+      origin: (origin, done) => done(null, !origin || isWebOrigin(origin)),
       credentials: true,
       methods: ["GET", "POST", "PUT", "OPTIONS"],
       exposedHeaders: ["set-auth-token"],

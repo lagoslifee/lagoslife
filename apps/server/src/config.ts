@@ -8,12 +8,15 @@ const configSchema = z
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     PORT: z.coerce.number().int().positive().default(2567),
     WEB_ORIGIN: z.url().default("http://localhost:5173"),
-    /** Further sites serving the same web client (comma-separated), e.g. a Vercel mirror of the Netlify site. */
+    /**
+     * Further sites serving the same web client (comma-separated), e.g. a Vercel mirror of the Netlify site. A `*` stands
+     * for one subdomain label, so `https://*.vercel.app` covers every Vercel deployment and preview.
+     */
     EXTRA_WEB_ORIGINS: z
       .string()
       .default("")
       .transform((value) => value.split(",").map((entry) => entry.trim().replace(/\/+$/, "")).filter(Boolean))
-      .pipe(z.array(z.url())),
+      .pipe(z.array(z.string().refine((entry) => URL.canParse(entry.replace("*", "wildcard")), "Invalid origin"))),
     DATABASE_URL: z
       .string()
       .default("postgresql://lagos:lagos_dev@localhost:5432/lagos_living"),
@@ -86,5 +89,11 @@ export const parseConfig = (env: NodeJS.ProcessEnv) => configSchema.parse(env);
 
 export const config = parseConfig(process.env);
 
-/** Every site allowed to call the API with credentials. */
+/** Every site allowed to call the API with credentials; entries may contain a `*` subdomain wildcard. */
 export const webOrigins = [config.WEB_ORIGIN, ...config.EXTRA_WEB_ORIGINS];
+
+/** Turns an allowed origin into a matcher; `*` (left alone by the escaping) matches one subdomain label. */
+export const originMatcher = (origin: string) => new RegExp(`^${origin.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace("*", "[a-z0-9-]+")}$`, "i");
+const originPatterns = webOrigins.map(originMatcher);
+
+export const isWebOrigin = (origin: string) => originPatterns.some((pattern) => pattern.test(origin));
