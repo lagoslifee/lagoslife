@@ -377,6 +377,18 @@ describe("LagosRoom driving", () => {
     expect(player(ada).x).toBeCloseTo(parked.x);
   });
 
+  it("burns petrol as the car is driven and only lets a dry car creep", async () => {
+    const { room, ada, player } = withCar();
+    room.vehicles.get("car-1")!.fuel = 0.01;
+    await room.handleEnterVehicle(ada, { vehicleId: "car-1" });
+    expect(ada.send.mock.calls.some(([type, body]) => type === "fuel" && (body as { litres: number }).litres === 0)).toBe(true);
+    const pose = drive(room, ada, 1, 12, 1);
+    expect(room.vehicles.get("car-1")!.fuel).toBe(0);
+    drive(room, ada, 2, 12 + 15, 1);
+    expect(player(ada).x).toBeCloseTo(pose.x);
+    expect(ada.send.mock.calls.some(([type]) => type === "correction")).toBe(true);
+  });
+
   it("parks where the driver stops, records the distance and puts them beside the car", async () => {
     const { room, ada, player } = withCar();
     await room.handleEnterVehicle(ada, { vehicleId: "car-1" });
@@ -405,7 +417,7 @@ describe("LagosRoom driving", () => {
     await room.handleEnterVehicle(ada, { vehicleId: "car-1" });
     room.allowReconnection = () => Promise.reject(new Error("gone"));
     await room.onLeave(ada);
-    expect(vehicles.saveDrivingVehicle).toHaveBeenCalledWith("car-1", expect.anything(), expect.any(Number), true);
+    expect(vehicles.saveDrivingVehicle).toHaveBeenCalledWith("car-1", expect.anything(), expect.any(Number), true, undefined);
     expect(room.vehicles.get("car-1")!.driverSessionId).toBeNull();
   });
 });

@@ -1488,3 +1488,40 @@ button.wide { width: 100%; margin: 6px 0; }
 .power-models span { display: block; font-size: 11px; color: #6a7773; }
 [data-theme="dark"] .power-card { background: #1c1c1e; color: #f2f2f7; }
 [data-theme="dark"] .power-tank, [data-theme="dark"] .power-models li { background: #2c2c2e; }
+.fuel-line { display: flex; align-items: center; gap: 6px; }
+.fuel-line i { display: inline-block; width: 90px; height: 7px; border-radius: 4px; background: rgba(255,255,255,.18); overflow: hidden; }
+.fuel-line b { display: block; height: 100%; background: #6fd18b; }
+.fuel-line.low b { background: #ff6b4a; }
+.fuel-line.low { color: #ffb4a3; }
+.fuel-prompt { position: absolute; left: 50%; bottom: 170px; transform: translateX(-50%); padding: 11px 18px; border-radius: 999px; font-weight: 700; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
+.fuel-sheet { max-width: 420px; }
+.fuel-tabs { display: flex; gap: 6px; margin: 4px 0 10px; }
+.fuel-tabs button { flex: 1; padding: 7px; border-radius: 8px; border: 1px solid rgba(20,40,60,.15); background: transparent; font-weight: 600; }
+.fuel-tabs button.active { background: #1e5a3c; color: #fff; border-color: #1e5a3c; }
+.fuel-gauge { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+.fuel-gauge i, .pump-bar { flex: 1; display: block; height: 9px; border-radius: 5px; background: rgba(20,40,60,.12); overflow: hidden; }
+.fuel-gauge b, .pump-bar b { display: block; height: 100%; background: linear-gradient(90deg, #d08a1c, #f2b84b); }
+.attendant-line { margin: 0 0 10px; padding: 10px 12px; border-radius: 12px; background: rgba(30,90,60,.08); font-style: italic; }
+.fuel-options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.fuel-options button { display: grid; gap: 2px; padding: 10px; border-radius: 10px; text-align: left; }
+.fuel-options button span { font-size: 12px; opacity: .8; }
+.pos-terminal { display: grid; gap: 10px; }
+.pos-device { justify-self: center; width: 200px; padding: 14px 12px 16px; border-radius: 18px 18px 26px 26px; background: linear-gradient(#2b2f36, #15181d); box-shadow: 0 10px 24px rgba(0,0,0,.35); display: grid; gap: 12px; }
+.pos-screen { display: grid; gap: 2px; padding: 10px; border-radius: 8px; background: #b9e3c6; color: #0d2a18; font-family: ui-monospace, monospace; text-align: center; }
+.pos-screen strong { font-size: 22px; }
+.pos-screen small, .pos-screen span { font-size: 11px; }
+.pos-tap { display: grid; place-items: center; gap: 4px; padding: 14px; border-radius: 12px; border: 2px dashed rgba(255,255,255,.35); background: rgba(255,255,255,.06); color: #fff; font-weight: 700; cursor: pointer; }
+.pos-tap .contactless { font-size: 22px; letter-spacing: -3px; transform: rotate(-90deg); animation: pos-wave 1.2s ease-in-out infinite; }
+@keyframes pos-wave { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+.fuel-filling { display: grid; gap: 8px; text-align: center; }
+.pump-counter { margin: 0; font-family: ui-monospace, monospace; font-size: 18px; }
+.pump-counter strong { font-size: 40px; color: #d08a1c; }
+.fuel-done { display: grid; gap: 10px; }
+.fuel-owner { display: grid; gap: 10px; }
+.fuel-owner p { margin: 0; }
+.fuel-owner label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
+.fuel-owner input { padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(20,40,60,.2); }
+.fuel-stats { display: flex; gap: 12px; font-weight: 700; }
+[data-theme="dark"] .attendant-line { background: #2c2c2e; }
+[data-theme="dark"] .fuel-owner input { background: #1c1c1e; color: #f2f2f7; border-color: #48484a; }
+@media (prefers-reduced-motion: reduce) { .pos-tap .contactless { animation: none; } }

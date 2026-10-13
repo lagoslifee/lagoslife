@@ -27,6 +27,7 @@ import { DroneView } from "./DroneView";
 import { CrashGuard } from "./CrashGuard";
 import { HomeDesigner } from "./HomeDesigner";
 import { HomePower } from "./HomePower";
+import { FuelSheet } from "./FuelSheet";
 import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
 import { CheckpointPrompt, HoldUpPrompt, PoliceStationSheet, SecuritySheet } from "./PoliceSheets";
 import { GymSheet } from "./GymSheet";
@@ -131,6 +132,7 @@ export function GameView({
   const [clubMusic, setClubMusic] = useState<ClubMusicState | null>(null);
   const [holdUp, setHoldUp] = useState<HoldUp | null>(null);
   const [robTarget, setRobTarget] = useState<{ sessionId: string; name: string } | null>(null);
+  const [fuelStop, setFuelStop] = useState<{ id: string; name: string } | null>(null);
   const [plots, setPlots] = useState<PlotState[]>([]);
   const [workout, setWorkout] = useState<{ exercise: ExerciseId; endsAt: number; kg: number | null } | null>(null);
   const [parcels, setParcels] = useState<FoodParcel[]>([]);
@@ -656,7 +658,7 @@ export function GameView({
   }, [engine, settings.theme]);
 
   const warnings = safety?.warnings ?? [];
-  const blocking = Boolean(welcomeOpen || designing || sheet || plotSheet || travelSpot || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length || holdUp || robTarget);
+  const blocking = Boolean(welcomeOpen || designing || sheet || plotSheet || travelSpot || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length || holdUp || robTarget || fuelStop);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -1114,11 +1116,23 @@ export function GameView({
                     ? `Test drive · ${Math.floor(hud.vehicle.testDriveLeft / 60)}:${String(hud.vehicle.testDriveLeft % 60).padStart(2, "0")} left · stay near Lekki Motors`
                     : `Condition ${hud.vehicle.condition}%${hud.vehicle.limp ? ` · LIMP MODE (max ${hud.vehicle.topKmh} km/h)` : ""}`}
                 </p>
+                {hud.vehicle.fuel && (
+                  <p className={`fuel-line ${hud.vehicle.fuel.litres <= hud.vehicle.fuel.tank * 0.15 ? "low" : ""}`}>
+                    ⛽ <i><b style={{ width: `${Math.round((hud.vehicle.fuel.litres / hud.vehicle.fuel.tank) * 100)}%` }} /></i>
+                    {hud.vehicle.fuel.litres <= 0 ? "Empty — find a filling station" : `${Math.round(hud.vehicle.fuel.litres)} L`}
+                  </p>
+                )}
                 <p className="muted small">
                   <kbd>{keyLabel(bindings.forward)}</kbd>/<kbd>{keyLabel(bindings.back)}</kbd> drive · <kbd>{keyLabel(bindings.left)}</kbd>/<kbd>{keyLabel(bindings.right)}</kbd> steer · <kbd>{keyLabel(bindings.jump)}</kbd> handbrake · <kbd>{keyLabel(bindings.stop)}</kbd> horn · <kbd>{keyLabel(bindings.lights)}</kbd> lights · <kbd>{keyLabel(bindings.camera)}</kbd> camera
                 </p>
               </div>
             </section>
+          )}
+
+          {hud.vehicle?.pump && hud.vehicle.fuel && !fuelStop && !blocking && (
+            <button className="fuel-prompt primary" onClick={() => setFuelStop(hud.vehicle!.pump)}>
+              ⛽ Fuel up · {hud.vehicle.pump.name}
+            </button>
           )}
 
           {hud.vehicleCamera && (
@@ -1396,6 +1410,18 @@ export function GameView({
         />
       )}
       {engine && homeId && partyOn && <ClubRadio clubId={homeId} volume={settings.muted ? 0 : settings.masterVolume} onPlaying={() => undefined} />}
+      {engine && fuelStop && hud?.vehicle?.fuel && (
+        <FuelSheet
+          engine={engine}
+          station={fuelStop}
+          vehicleId={hud.vehicle.id}
+          fuel={hud.vehicle.fuel}
+          balance={economy?.balance ?? 0}
+          onClose={() => setFuelStop(null)}
+          onToast={toast}
+          onRefresh={refresh}
+        />
+      )}
       {engine && homeId && <HomePower key={homeId} hidden={blocking} engine={engine} propertyId={homeId} balance={economy?.balance ?? 0} onToast={toast} onRefresh={refresh} />}
       {clubTable !== null && inClub && hud?.propertyId && (
         <ClubTableSheet

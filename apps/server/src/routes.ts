@@ -78,6 +78,8 @@ import {
   buyDieselSchema,
   buyGeneratorSchema,
   generatorSwitchSchema,
+  buyFuelSchema,
+  fuelStationPriceSchema,
 } from "@lagos-living/shared";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
@@ -87,6 +89,7 @@ import { businessMarket, businessStatus, buyBusiness, collectBusiness, enrol, li
 import { finishSet, gymStatus, hireTrainer, joinGym, startSet } from "./gym-service.js";
 import { buyViewingPass, viewingStatus } from "./viewing-service.js";
 import { finishRest, startRest } from "./home-living-service.js";
+import { buyFuel, buyStation, fuelStations, setStationPrice } from "./fuel-service.js";
 import { agePower, buyDiesel, buyGenerator, homePower, switchGenerator } from "./power-service.js";
 import { applyCleaner, collectParcel, dismissStaff, eatParcel, hireStaff, homeStaff, openParcels, orderDelivery, partyUntil, staffByHome, startParty, stopParty } from "./home-services-service.js";
 import { addSong, listSongs, removeSong, songAudio } from "./song-service.js";
@@ -631,6 +634,13 @@ export function configureRoutes(app: Express) {
 
   app.post("/api/properties/:propertyId/furniture/move", requirePlayer, rateLimited, guarded("Furniture could not be moved", (req, userId) =>
     moveFurniture(userId, String(req.params.propertyId), moveFurnitureSchema.parse(req.body))));
+
+  app.get("/api/fuel/stations", requirePlayer, guarded("Filling stations unavailable", (_req, userId) => fuelStations(userId)));
+  app.post("/api/fuel/buy", requirePlayer, rateLimited, guarded("The attendant could not fill the tank", (req, userId) => buyFuel(userId, buyFuelSchema.parse(req.body))));
+  app.post("/api/fuel/stations/:stationId/buy", requirePlayer, rateLimited, guarded("The station could not be bought", (req, userId) =>
+    buyStation(userId, String(req.params.stationId), z.object({ idempotencyKey: z.string().min(8).max(120) }).parse(req.body).idempotencyKey)));
+  app.post("/api/fuel/stations/:stationId/price", requirePlayer, rateLimited, guarded("The pump price could not be changed", (req, userId) =>
+    setStationPrice(userId, String(req.params.stationId), fuelStationPriceSchema.parse(req.body).price)));
 
   app.get("/api/properties/:propertyId/power", requirePlayer, guarded("Could not check the light", (req, userId) =>
     homePower(userId, String(req.params.propertyId), req.query.home === "1")));

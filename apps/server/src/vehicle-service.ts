@@ -14,6 +14,8 @@ import {
   vehicleModelById,
   type OwnedVehicle,
   type Place,
+  fuelSpec,
+  usesFuel,
 } from "@lagos-living/shared";
 import { randomInt, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
@@ -34,7 +36,7 @@ export const DEALERSHIP_ID = "lekki-motors";
 export const MECHANIC_ID = "ade-auto-works";
 
 export const vehicleColumns = `id, owner_user_id, model_id, colour, plate, condition, odometer_m, service_odometer_m,
-  status, driver_session_id, x, z, yaw, garage_property_id, insured_until, locked, dents`;
+  status, driver_session_id, x, z, yaw, garage_property_id, insured_until, locked, dents, fuel_l`;
 
 export type VehicleRow = {
   id: string;
@@ -54,6 +56,7 @@ export type VehicleRow = {
   garage_property_id: string | null;
   insured_until: Date | null;
   locked: boolean;
+  fuel_l?: number | null;
 };
 
 export function isInsured(row: Pick<VehicleRow, "insured_until">) {
@@ -94,6 +97,8 @@ export function toOwned(row: VehicleRow) {
     premium: insurancePremium(model),
     serviceDue: metresSinceService >= VEHICLE_RULES.serviceIntervalMetres,
     serviceQuote: serviceQuote(row),
+    tank: fuelSpec(model).tank,
+    fuel: usesFuel(model) ? Math.round((row.fuel_l == null ? fuelSpec(model).tank : Number(row.fuel_l)) * 10) / 10 : null,
   };
 }
 
@@ -411,10 +416,12 @@ export type RoomVehicle = {
   rental?: { id: string; stationId: string; startedAt: number };
   /** Dubai hire car: lives only in the room and is collected when the hire ends. */
   hire?: { id: string; endsAt: number };
+  /** Litres in an owned motor vehicle's tank, burned as it is driven; absent for bicycles and the room's own cars. */
+  fuel?: number;
 };
 
 const roomColumns = `vehicle.id, vehicle.owner_user_id, vehicle.model_id, vehicle.colour, vehicle.plate,
-  vehicle.condition, vehicle.x, vehicle.z, vehicle.yaw, vehicle.driver_session_id, vehicle.status, vehicle.locked,
+  vehicle.condition, vehicle.x, vehicle.z, vehicle.yaw, vehicle.driver_session_id, vehicle.status, vehicle.locked, vehicle.fuel_l,
   COALESCE("user".username, "user".name) AS owner_name`;
 
 function toRoomVehicle(row: Record<string, unknown>): RoomVehicle {
@@ -432,6 +439,7 @@ function toRoomVehicle(row: Record<string, unknown>): RoomVehicle {
     driverSessionId: (row.driver_session_id as string | null) ?? null,
     lights: false,
     locked: row.locked !== false,
+    ...(usesFuel(getVehicleModel(String(row.model_id))) ? { fuel: row.fuel_l == null ? fuelSpec(getVehicleModel(String(row.model_id))).tank : Number(row.fuel_l) } : {}),
   };
 }
 
@@ -478,14 +486,15 @@ export async function saveDrivingVehicle(
   pose: { x: number; z: number; yaw: number },
   metres: number,
   park: boolean,
+  fuel?: number,
 ) {
   await pool.query(
     `UPDATE player_vehicle
-     SET x = $2, z = $3, yaw = $4, odometer_m = odometer_m + $5, updated_at = NOW(),
+     SET x = $2, z = $3, yaw = $4, odometer_m = odometer_m + $5, updated_at = NOW(), fuel_l = COALESCE($7, fuel_l),
          status = CASE WHEN $6 THEN 'parked' ELSE status END,
          driver_session_id = CASE WHEN $6 THEN NULL ELSE driver_session_id END
      WHERE id = $1 AND status = 'driving'`,
-    [vehicleId, pose.x, pose.z, pose.yaw, Math.max(0, metres), park],
+    [vehicleId, pose.x, pose.z, pose.yaw, Math.max(0, metres), park, fuel ?? null],
   );
 }
 

@@ -1,7 +1,7 @@
 import type { CabinClass, CharacterAppearance, OutfitId, HotelBookingState, RoomType, TicketState, TravelStatus, VisaPlan, VisaState } from "@lagos-living/shared";
 import type { BottleItem, Citation, PoliceCase, StreetIncident, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
 import type { BusinessStatus, BusinessTypeId, CourseId, ExerciseId, GymStatus, RestResult, ViewingStatus } from "@lagos-living/shared";
-import type { FloorFinishId, FoodParcel, GeneratorId, HomeFinish, HomePower, HomeStaffRole, HomeStaffState, HomeTier } from "@lagos-living/shared";
+import type { FloorFinishId, FoodParcel, FuelStationState, GeneratorId, HomeFinish, HomePower, HomeStaffRole, HomeStaffState, HomeTier } from "@lagos-living/shared";
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick, RepairAction } from "@lagos-living/shared";
 import type { AccountSummary, ClaimAccount, LifeGoals } from "@lagos-living/shared";
 import type { DirectMessage, FriendsStatus, RankingBoard, RankingState, ReferralStatus } from "@lagos-living/shared";
@@ -191,6 +191,11 @@ export const api = {
     post<{ id: string }>(`/api/properties/${propertyId}/furniture/move`, { placementId, x, z, rotation, level }),
   inviteGuest: (propertyId: string, username: string) => post<{ invited: boolean }>(`/api/properties/${propertyId}/guests`, { username }),
   removeGuest: (propertyId: string, username: string) => post<{ removed: boolean }>(`/api/properties/${propertyId}/guests/remove`, { username }),
+  fuelStations: () => request<FuelStationState[]>("/api/fuel/stations"),
+  buyFuel: (stationId: string, vehicleId: string, litres: number, price: number) =>
+    post<{ balance: number; litres: number; paid: number; fuel: number; tank: number }>("/api/fuel/buy", { stationId, vehicleId, litres, price, idempotencyKey: crypto.randomUUID() }),
+  buyFuelStation: (stationId: string) => post<{ balance: number }>(`/api/fuel/stations/${stationId}/buy`, { idempotencyKey: crypto.randomUUID() }),
+  setFuelPrice: (stationId: string, price: number) => post<{ price: number }>(`/api/fuel/stations/${stationId}/price`, { price }),
   power: (propertyId: string, home: boolean) => request<HomePower>(`/api/properties/${propertyId}/power${home ? "?home=1" : ""}`),
   buyGenerator: (propertyId: string, model: GeneratorId) =>
     post<{ balance: number; power: HomePower }>(`/api/properties/${propertyId}/generator`, { model, idempotencyKey: crypto.randomUUID() }),

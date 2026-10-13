@@ -52,6 +52,7 @@ export type MultiplayerHandlers = {
   saved: (at: number) => void;
   status: (status: MultiplayerStatus) => void;
   vehicleStatus: (status: { vehicleId: string; condition: number; damage?: number }) => void;
+  fuel: (fuel: { vehicleId: string; litres: number; tank: number }) => void;
   horn: (at: { x: number; z: number }) => void;
   chat: (message: ChatMessage) => void;
   suspended: (info: { reason: string; until: string | null }) => void;
@@ -170,6 +171,7 @@ export class MultiplayerConnection {
       );
       room.onMessage("agbero", (encounter: AgberoEncounter | null) => this.handlers.agbero(encounter && typeof encounter.id === "string" ? encounter : null));
       room.onMessage("clubMusic", (state: ClubMusicState) => typeof state?.club === "string" && Array.isArray(state.queue) && this.handlers.clubMusic(state));
+      room.onMessage("fuel", (fuel: { vehicleId: string; litres: number; tank: number }) => typeof fuel?.vehicleId === "string" && Number.isFinite(fuel.litres) && this.handlers.fuel(fuel));
       room.onMessage("agberoOutcome", (outcome: AgberoOutcome) => Array.isArray(outcome?.point) && this.handlers.agberoOutcome(outcome));
       room.onMessage("goState", (state: FastTravelState) => Array.isArray(state?.discovered) && this.handlers.goState(state));
       room.onMessage("rideAsk", (ask: RideAsk) => typeof ask?.sessionId === "string" && typeof ask.name === "string" && this.handlers.rideAsk(ask));

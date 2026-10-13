@@ -18,6 +18,9 @@ import {
   type Look,
   districtAt,
   effectiveTopSpeed,
+  burnFuel,
+  FUEL,
+  fuelSpec,
   filterChat,
   JUSTICE,
   type ChatMessage,
@@ -175,7 +178,7 @@ import { homeEvents } from "../home-events.js";
 import { playerEvents } from "../player-events.js";
 import { splitCabFare } from "../finance-service.js";
 import { previewTarget, requirePropertyAccess } from "../property-service.js";
-import { vehicleEvents } from "../vehicle-events.js";
+import { liveVehicles, vehicleEvents } from "../vehicle-events.js";
 import { issueCitation } from "../justice-service.js";
 import { activeMute, activeSuspension, hiddenPlayers, recordChat, safetyEvents } from "../safety-service.js";
 import { friendIds } from "../social-service.js";
@@ -478,6 +481,16 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
 
   async onCreate() {
     vehicleEvents.on("changed", this.onVehicleChanged);
+    liveVehicles.fuel = (vehicleId) => {
+      const vehicle = this.vehicles.get(vehicleId);
+      return vehicle?.fuel === undefined ? undefined : { litres: vehicle.fuel, x: vehicle.x, z: vehicle.z };
+    };
+    liveVehicles.refuel = (vehicleId, litres) => {
+      const vehicle = this.vehicles.get(vehicleId);
+      if (vehicle?.fuel === undefined) return;
+      vehicle.fuel = Math.min(fuelSpec(getVehicleModel(vehicle.modelId)).tank, vehicle.fuel + litres);
+      this.sendFuel(vehicle);
+    };
     vehicleEvents.on("ownerReset", this.onVehicleOwnerReset);
     safetyEvents.on("sanctioned", this.onSanctioned);
     safetyEvents.on("blocksChanged", this.onBlocksChanged);
@@ -787,6 +800,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
 
   async onDispose() {
     vehicleEvents.off("changed", this.onVehicleChanged);
+    delete liveVehicles.fuel;
+    delete liveVehicles.refuel;
     vehicleEvents.off("ownerReset", this.onVehicleOwnerReset);
     safetyEvents.off("sanctioned", this.onSanctioned);
     safetyEvents.off("blocksChanged", this.onBlocksChanged);
@@ -850,6 +865,13 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     return this.clients.find(({ sessionId }) => sessionId === player.sessionId);
   }
 
+  /** Tells the driver how much is in the tank. */
+  private sendFuel(vehicle: RoomVehicle) {
+    if (vehicle.fuel === undefined || !vehicle.driverSessionId) return;
+    const tank = fuelSpec(getVehicleModel(vehicle.modelId)).tank;
+    this.clients.find(({ sessionId }) => sessionId === vehicle.driverSessionId)?.send("fuel", { vehicleId: vehicle.id, litres: Math.round(vehicle.fuel * 10) / 10, tank });
+  }
+
   private handlePosition(client: Client, payload: unknown) {
     const player = this.players.get(client.sessionId);
     if (!player || this.limited(player.rate, 30)) return;
@@ -865,7 +887,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const elapsed = Math.min(4, Math.max(0.03, (now - player.lastAcceptedAt) / 1_000));
     const vehicle = player.vehicleId ? this.vehicles.get(player.vehicleId) : undefined;
     const topSpeed = vehicle
-      ? effectiveTopSpeed(getVehicleModel(vehicle.modelId), vehicle.condition)
+      ? vehicle.fuel === 0
+        ? Math.min(FUEL.dryCrawl, effectiveTopSpeed(getVehicleModel(vehicle.modelId), vehicle.condition))
+        : effectiveTopSpeed(getVehicleModel(vehicle.modelId), vehicle.condition)
       : MOVEMENT.sprintSpeed;
     // Packets bunch up on mobile networks; judging bunched updates over at least a quarter-second stops false snap-backs.
     const allowed = topSpeed * 1.35 * Math.max(0.25, elapsed) + 0.75;
@@ -912,12 +936,18 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       }
       if (distance > 0.05) player.heading = [(player.x - from[0]) / distance, (player.z - from[1]) / distance];
       player.driveMetres += distance;
+      if (vehicle.fuel !== undefined && !player.vehicleSeat && vehicle.fuel > 0) {
+        const before = vehicle.fuel;
+        vehicle.fuel = burnFuel(getVehicleModel(vehicle.modelId), vehicle.fuel, distance);
+        if (Math.ceil(vehicle.fuel) !== Math.ceil(before)) this.sendFuel(vehicle);
+        if (vehicle.fuel === 0) this.notify(client, { tone: "error", text: "⛽ Out of petrol. The car only creeps now — push it to a filling station or call Ade Recovery." });
+      }
       if (!vehicle.npc && !vehicle.tow && !player.vehicleSeat) this.watchCheckpoints(client, player, vehicle, now);
       if (!vehicle.testDrive && !vehicle.npc && !vehicle.rental && !vehicle.hire && now - player.lastVehicleSaveAt > VEHICLE_SAVE_MS) {
         const metres = player.driveMetres;
         player.driveMetres = 0;
         player.lastVehicleSaveAt = now;
-        void saveDrivingVehicle(vehicle.id, vehicle, metres, false).catch(() => {
+        void saveDrivingVehicle(vehicle.id, vehicle, metres, false, vehicle.fuel).catch(() => {
           player.driveMetres += metres;
         });
       }
@@ -1301,7 +1331,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       return vehicle;
     }
     if (vehicle.rental || vehicle.hire) return vehicle;
-    await saveDrivingVehicle(vehicleId, vehicle, metres, true);
+    await saveDrivingVehicle(vehicleId, vehicle, metres, true, vehicle.fuel);
     return vehicle;
   }
 
@@ -1963,6 +1993,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
             : `${model.name} · ${vehicle.plate}. Drive safely.`,
       });
       this.sendSelf(client, player, "drive");
+      this.sendFuel(vehicle);
       client.send("vehicleStatus", { vehicleId: vehicle.id, condition: vehicle.condition });
     } finally {
       player.entering = false;

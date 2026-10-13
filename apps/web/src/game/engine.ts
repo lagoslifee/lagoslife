@@ -83,6 +83,8 @@ import {
   BIKE_RENTAL,
   BIKE_STATIONS,
   nearestBikeStation,
+  nearestFuelStation,
+  FUEL,
   rentalUsage,
   type RideState,
   type TowDestination,
@@ -160,6 +162,7 @@ import { RoutePilot } from "./route-pilot";
 import { TowRig } from "./tow-rig";
 import { BAY_SIZE, buildServiceBay, serviceBay } from "./service-bay";
 import { BikeStationsView } from "./bike-stations";
+import { FuelStationsView } from "./fuel-stations";
 import { defaultBindings, InputState, LocomotionController, MAX_FRAME_DT, SUBSTEP_DT, type Bindings, type MoveMode } from "./controller";
 import { DanfoFactory, type DanfoView } from "./danfo";
 import { MeshBuilderBatch } from "./geometry";
@@ -201,7 +204,7 @@ export type HudState = {
   secondaryPrompt: Prompt | null;
   bus: { id: string; routeNumber: string; routeName: string; seat: number | null; nextStop: string; atStop: string | null; stopRequested: boolean; occupied: number; capacity: number } | null;
   vehicleCamera: VehicleCameraView | null;
-  vehicle: { id: string; name: string; plate: string; kmh: number; topKmh: number; condition: number; limp: boolean; reversing: boolean; bicycle: boolean; lights: boolean; seats: number; testDriveLeft: number | null; hire: { minutes: number; cost: number; dockName: string | null } | null } | null;
+  vehicle: { id: string; name: string; plate: string; kmh: number; topKmh: number; condition: number; limp: boolean; reversing: boolean; bicycle: boolean; lights: boolean; seats: number; testDriveLeft: number | null; hire: { minutes: number; cost: number; dockName: string | null } | null; fuel: { litres: number; tank: number } | null; pump: { id: string; name: string } | null } | null;
   passenger: { owner: string; model: string } | null;
   speed: number;
   mode: MoveMode;
@@ -564,6 +567,9 @@ export class GameEngine {
   private rideApproach: { rideId: string; view: VehicleView; driver: Avatar | null; path: Vec2[]; along: number[]; startAt: number; arrivesAt: number } | null = null;
   private car: CarController | null = null;
   private driving: { vehicleId: string; condition: number } | null = null;
+  /** Petrol in the tank of the car being driven, as the server last reported it. */
+  private fuel: { vehicleId: string; litres: number; tank: number } | null = null;
+  private fuelStations: FuelStationsView | null = null;
   private lights = false;
   private passenger: { vehicleId: string; seat: number } | null = null;
   private pendingDrive: string | null = null;
@@ -684,6 +690,9 @@ export class GameEngine {
         this.callbacks.agbero(encounter);
       },
       agberoOutcome: (outcome) => this.agberoOutcome(outcome),
+      fuel: (fuel) => {
+        this.fuel = fuel;
+      },
       clubMusic: (state) => this.callbacks.clubMusic?.(state),
       react: ({ sessionId, emoji }) => {
         if (sessionId === this.net.sessionId) return;
@@ -869,6 +878,7 @@ export class GameEngine {
     this.listingBoards = new ListingBoards(scene);
     this.couriers = new Couriers(scene, () => this.avatars, () => this.vehicleFactory, () => this.navigator ?? null, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) this.homeStaff = new HomeStaffView(this.avatars, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
+    if (this.avatars) this.fuelStations = new FuelStationsView(scene, this.avatars, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) {
       this.crews = new StreetCrews(scene, this.avatars, this.vehicleFactory, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes), (x, z) => {
         const road = this.world.roads.nearest(x, z)?.road;
@@ -1162,7 +1172,8 @@ export class GameEngine {
       throttle = car.speed > 0.5 ? -1 : car.speed < -0.5 ? 1 : 0;
     }
     const handbrake = this.input.held("jump") || this.input.touchSprint || (this.flaggedDown && Math.abs(car.speed) < 3);
-    const topSpeed = effectiveTopSpeed(car.model, driving.condition);
+    const dry = this.fuel?.vehicleId === driving.vehicleId && this.fuel.litres <= 0;
+    const topSpeed = dry ? Math.min(FUEL.dryCrawl, effectiveTopSpeed(car.model, driving.condition)) : effectiveTopSpeed(car.model, driving.condition);
     const steps = Math.max(1, Math.ceil(dt / SUBSTEP_DT));
     let impact = 0;
     for (let step = 0; step < steps; step += 1) {
@@ -1589,6 +1600,7 @@ export class GameEngine {
       outdoors: !this.interior && !bus,
     });
     this.crews?.update(dt, x, z, !this.interior);
+    this.fuelStations?.update(x, z, Boolean(this.interior), dt);
     if (this.homeStaff) {
       if (now - this.staffPostsAt > 1000) {
         this.staffPostsAt = now;
@@ -2185,6 +2197,13 @@ export class GameEngine {
       })(),
       lights: this.lights,
       seats: car.model.seats,
+      fuel: this.fuel?.vehicleId === driving.vehicleId ? { litres: this.fuel.litres, tank: this.fuel.tank } : null,
+      /** Stopped at a filling station's pumps in your own car. */
+      pump: (() => {
+        if (this.fuel?.vehicleId !== driving.vehicleId || Math.abs(car.speed) > 1.5) return null;
+        const { station, distance } = nearestFuelStation(car.x, car.z);
+        return distance <= FUEL.pumpRange ? { id: station.id, name: station.name } : null;
+      })(),
       hire: (() => {
         const started = this.vehicles.get(driving.vehicleId)?.state.rentalStartedAt;
         if (!started) return null;
@@ -2409,6 +2428,23 @@ export class GameEngine {
     if (this.interior && "setPower" in this.interior) this.interior.setPower(source !== "none");
     this.setEvening(this.evening);
     this.audio.setCabinHum(source === "generator" ? 0.45 : 0);
+  }
+
+  /** The pump attendant comes to the driver's door with the POS (`coming`), or goes back to the island. */
+  fuelAttendant(stationId: string, coming: boolean) {
+    const car = this.car;
+    if (!coming || !car) return this.fuelStations?.release(stationId);
+    // Left-hand drive: the driver's door is on the car's left.
+    this.fuelStations?.serve(stationId, [car.x - Math.cos(car.yaw) * 1.4, car.z + Math.sin(car.yaw) * 1.4]);
+  }
+
+  /** The gauge after a fill, before the server's next report. */
+  setFuelLevel(fuel: { vehicleId: string; litres: number; tank: number }) {
+    this.fuel = fuel;
+  }
+
+  setFuelPrices(prices: Record<string, number>) {
+    this.fuelStations?.setPrices(prices);
   }
 
   setHomeParty(on: boolean) {
