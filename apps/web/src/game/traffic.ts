@@ -38,6 +38,8 @@ const CHECKPOINT_ZONE = 30;
 const CHECKPOINT_WAIT = 2.5;
 /** Each direction's boom sits this far past the checkpoint point, in that direction of travel (see StreetCrews). */
 export const CHECKPOINT_BOOM = 5.2;
+/** How much room a standing person takes up, for bumping into residents and passers-by. */
+export const PERSON_RADIUS = 0.3;
 
 /** Something standing still that cars steer round: a kerbside car, or one of the players' parked cars. */
 export type StaticCar = { x: number; z: number; yaw: number; length: number; width: number };
@@ -59,6 +61,8 @@ type Walker = {
   x: number;
   z: number;
   yaw: number;
+  /** Sideways step to get round someone standing in the way. */
+  dodge?: number;
 };
 
 /**
@@ -451,6 +455,31 @@ export class AmbientLife {
     return this.cars.some((car) => car.points.length > 0 && inside(car.view, car.yaw)) || this.parked.some((car) => car.placed && inside(car.view, car.yaw));
   }
 
+  /** Moves a circle out of the passing traffic and kerbside cars, so nobody walks or drives through them. */
+  pushOutOfCars(px: number, pz: number, radius: number): [number, number] {
+    for (const car of this.cars) if (car.points.length > 0 && Math.abs(car.view.x - px) < 8 && Math.abs(car.view.z - pz) < 8) [px, pz] = car.view.pushOut(px, pz, radius);
+    for (const car of this.parked) if (car.placed && Math.abs(car.x - px) < 8 && Math.abs(car.z - pz) < 8) [px, pz] = car.view.pushOut(px, pz, radius);
+    return [px, pz];
+  }
+
+  /** Moves a circle off the pavement walkers; returns null when nobody was in the way. */
+  pushOutOfWalkers(px: number, pz: number, radius: number): [number, number] | null {
+    let hit = false;
+    for (const walker of this.walkers) {
+      if (!walker.avatar.root.isEnabled()) continue;
+      const reach = radius + PERSON_RADIUS;
+      const dx = px - walker.x;
+      const dz = pz - walker.z;
+      const distance = Math.hypot(dx, dz);
+      if (distance >= reach) continue;
+      const [nx, nz] = distance > 1e-4 ? [dx / distance, dz / distance] : [1, 0];
+      px = walker.x + nx * reach;
+      pz = walker.z + nz * reach;
+      hit = true;
+    }
+    return hit ? [px, pz] : null;
+  }
+
   /** Dev-only: where each car's lane will be after `seconds` at cruise speed, for tests that need to meet one. */
   lanesAhead(seconds: number) {
     return this.cars.filter((car) => car.points.length > 0).map((car) => {
@@ -598,7 +627,9 @@ export class AmbientLife {
     }
 
     for (const walker of this.walkers) {
-      walker.s += walker.speed * walker.direction * dt;
+      // Someone right in front: wait a beat rather than walk through them.
+      const blocked = Math.hypot(walker.x - player[0], walker.z - player[1]) < 0.85 && ((player[0] - walker.x) * Math.sin(walker.yaw) + (player[1] - walker.z) * Math.cos(walker.yaw)) > 0;
+      if (!blocked) walker.s += walker.speed * walker.direction * dt;
       if (walker.s < 0 || walker.s > walker.length) {
         walker.direction = walker.direction === 1 ? -1 : 1;
         walker.s = Math.max(0, Math.min(walker.length, walker.s));
@@ -611,6 +642,16 @@ export class AmbientLife {
         const bz = p.z - p.dx * lateral;
         // Step out around a car parked on the pavement.
         if (Math.hypot(bx - parked.x, bz - parked.z) < 3.4) lateral += Math.sign(lateral) * 1.1;
+      }
+      {
+        const bx = p.x + p.dz * lateral;
+        const bz = p.z - p.dx * lateral;
+        const forward = ((player[0] - bx) * p.dx + (player[1] - bz) * p.dz) * walker.direction;
+        const side = (player[0] - bx) * p.dz - (player[1] - bz) * p.dx;
+        const want = forward > -0.4 && forward < 3 && Math.abs(side) < 1 ? -Math.sign(side || 1) * 1.1 : 0;
+        const dodge = walker.dodge ?? 0;
+        walker.dodge = dodge + Math.max(-1.8 * dt, Math.min(1.8 * dt, want - dodge));
+        lateral += walker.dodge;
       }
       const x = p.x + p.dz * lateral;
       const z = p.z - p.dx * lateral;
@@ -633,7 +674,7 @@ export class AmbientLife {
       if (!visible) continue;
       walker.avatar.root.position.set(x, 0.16, z);
       walker.avatar.root.rotation.y = walker.yaw;
-      walker.avatar.update(walker.speed, "walk", dt);
+      walker.avatar.update(blocked ? 0 : walker.speed, blocked ? "idle" : "walk", dt);
     }
 
     for (const npc of this.statics) {

@@ -184,7 +184,7 @@ import { buildInterior, interiorModels, placementCentre, type ClubSeat, type Hom
 import { createMaterials, type Materials, type Quality } from "./materials";
 import { SignAtlas } from "./sign-atlas";
 import { RoadNavigator, StreetTracker, type WorldData, type WorldTile } from "./street-index";
-import { AmbientLife, trafficModels, type StaticCar } from "./traffic";
+import { AmbientLife, PERSON_RADIUS, trafficModels, type StaticCar } from "./traffic";
 import { buildWorld, type BuiltWorld } from "./world-builder";
 
 /** How far the hips drop at the bottom of a squat (the legs fold under the body over the idle stance). */
@@ -438,6 +438,7 @@ export class GameEngine {
   private tracker!: StreetTracker;
   navigator!: RoadNavigator;
   private remotes = new Map<string, Remote>();
+  private bumpedAt = 0;
   private rankBadges = new Map<string, string>();
   /** Hired escorts by session id; "self" is the player's own. */
   private escorts = new Map<string, Escort>();
@@ -1162,10 +1163,53 @@ export class GameEngine {
     });
   }
 
+  /**
+   * Other residents and passers-by are solid: you slide off them instead of walking through their bodies, and the first
+   * bump in a while gets a little "sorry o" over their head.
+   */
+  private pushOffPeople(px: number, pz: number, radius: number, driving = false): [number, number] {
+    let bumped: Remote | null = null;
+    const reach = radius + PERSON_RADIUS;
+    for (const remote of this.remotes.values()) {
+      const avatar = remote.avatar;
+      const last = remote.samples.at(-1);
+      if (!avatar || !avatar.root.isEnabled() || !last || last.vehicleId || last.busId || last.motion === "sit" || last.motion === "drive") continue;
+      const { x, z } = avatar.root.position;
+      const dx = px - x;
+      const dz = pz - z;
+      const distance = Math.hypot(dx, dz);
+      if (distance >= reach) continue;
+      const [nx, nz] = distance > 1e-4 ? [dx / distance, dz / distance] : [1, 0];
+      px = x + nx * reach;
+      pz = z + nz * reach;
+      bumped = remote;
+    }
+    const walkers = this.interior ? null : this.life?.pushOutOfWalkers(px, pz, radius);
+    if (walkers) [px, pz] = walkers;
+    const now = performance.now();
+    if (bumped && now - this.bumpedAt > 4_000) {
+      this.bumpedAt = now;
+      bumped.tag.querySelector(".chat-bubble")?.remove();
+      const bubble = document.createElement("span");
+      bubble.className = "chat-bubble reaction";
+      bubble.textContent = driving ? "😠 Ah ah! Watch it!" : "😅 Sorry o!";
+      bumped.tag.prepend(bubble);
+      setTimeout(() => bubble.remove(), 2_200);
+    }
+    return [px, pz];
+  }
+
   private collide(x: number, z: number): [number, number] {
-    if (this.interior) return this.interior.collide(x, z, MOVEMENT.radius);
+    if (this.interior) {
+      const [ix, iz] = this.interior.collide(x, z, MOVEMENT.radius);
+      const [px, pz] = this.pushOffPeople(ix, iz, MOVEMENT.radius);
+      // Never let a crowd shove someone through a wall.
+      return px === ix && pz === iz ? [ix, iz] : this.interior.collide(px, pz, MOVEMENT.radius);
+    }
     let [px, pz] = resolveBuildingCollision(x, z, MOVEMENT.radius);
     [px, pz] = this.world.obstacles.resolve(px, pz, MOVEMENT.radius);
+    [px, pz] = this.pushOffPeople(px, pz, MOVEMENT.radius);
+    if (this.life) [px, pz] = this.life.pushOutOfCars(px, pz, MOVEMENT.radius);
     for (const bus of this.buses.values()) [px, pz] = bus.pushOut(px, pz, MOVEMENT.radius);
     for (const { view } of this.vehicles.values()) [px, pz] = view.pushOut(px, pz, MOVEMENT.radius);
     for (const view of this.showroom) [px, pz] = view.pushOut(px, pz, MOVEMENT.radius);
@@ -1190,6 +1234,8 @@ export class GameEngine {
     }
     for (const view of this.showroom) [px, pz] = view.pushOut(px, pz, radius);
     for (const views of this.compoundViews.values()) for (const view of views) [px, pz] = view.pushOut(px, pz, radius);
+    if (this.life) [px, pz] = this.life.pushOutOfCars(px, pz, radius);
+    [px, pz] = this.pushOffPeople(px, pz, radius, true);
     // Water and district edges count as a fixed overlap, so the car stops at the shore but can always reverse off it.
     if (!this.onLand(px, pz)) return [px + radius, pz];
     return [px, pz];
