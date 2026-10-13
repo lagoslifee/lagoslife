@@ -95,13 +95,14 @@ export function FuelSheet({ engine, station, vehicleId, fuel, balance, onClose, 
 
   const gauge = Math.round((fuel.litres / fuel.tank) * 100);
   return (
-    <section className="sheet fuel-sheet" role="dialog" aria-label={station.name}>
+    <div className="sheet-backdrop" onClick={step.kind === "filling" || step.kind === "pos" ? undefined : onClose}>
+    <section className="sheet fuel-sheet" role="dialog" aria-label={station.name} onClick={(event) => event.stopPropagation()}>
       <header className="sheet-header">
         <div>
           <p className="eyebrow">⛽ {info.brand}{info.owner ? ` · owned by ${info.mine ? "you" : info.owner}` : ""}</p>
           <h2>{station.name}</h2>
         </div>
-        <button className="close" onClick={onClose} aria-label="Close">✕</button>
+        <button className="icon-button" onClick={onClose} aria-label="Close">✕</button>
       </header>
       <nav className="fuel-tabs">
         <button className={step.kind !== "owner" ? "active" : ""} onClick={() => setStep({ kind: "ask" })} disabled={step.kind === "filling"}>Pump</button>
@@ -191,5 +192,6 @@ export function FuelSheet({ engine, station, vehicleId, fuel, balance, onClose, 
         </div>
       )}
     </section>
+    </div>
   );
 }
