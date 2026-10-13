@@ -82,6 +82,9 @@ on its own host.
   (comma-separated for several) so CORS and sign-in accept it alongside
   `WEB_ORIGIN`. `https://*.vercel.app` covers every deployment and preview URL;
   without it, sign-up from Vercel fails with "Invalid origin".
+- A custom domain on the Vercel project is a separate origin and must be listed
+  too: `https://9jaworld.com,https://*.9jaworld.com` (the wildcard covers `www`,
+  which `9jaworld.com` redirects to).
 - Keep Vercel access tokens out of the repository; add them as secrets in the
   host's dashboard.
 
