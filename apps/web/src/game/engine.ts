@@ -2271,12 +2271,11 @@ export class GameEngine {
   }
 
   /** Walks to the nearest free chair at the owambe and sits down. */
-  owambeSit() {
+  owambeSit(retry = true): boolean {
     const view = this.owambeView;
     if (!view || this.interior) return false;
     const here: Vec2 = [this.controller.x, this.controller.z];
-    const taken = [...this.remotes.values()].map((remote) => remote.avatar?.root.position).filter((at): at is NonNullable<typeof at> => Boolean(at));
-    const free = view.seats.filter((seat) => !taken.some((at) => Math.hypot(at.x - seat.at[0], at.z - seat.at[1]) < 0.4));
+    const free = this.freeSeats(view.seats, true);
     if (!free.length) return false;
     const seat = free.reduce((best, entry) => (Math.hypot(entry.at[0] - here[0], entry.at[1] - here[1]) < Math.hypot(best.at[0] - here[0], best.at[1] - here[1]) ? entry : best));
     const behind: Vec2 = [seat.at[0] - Math.sin(seat.yaw) * 0.75, seat.at[1] - Math.cos(seat.yaw) * 0.75];
@@ -2288,6 +2287,10 @@ export class GameEngine {
       sprint: false,
       resolve: (ok) => {
         if (!ok || this.interior) return;
+        if (this.seatTaken(seat.at)) {
+          if (retry) this.owambeSit(false);
+          return;
+        }
         this.controller.yaw = seat.yaw;
         this.emote = "sit";
         this.net.send("emote", { emote: "sit" });
@@ -3285,11 +3288,25 @@ export class GameEngine {
     }, true);
   }
 
-  /** Walks to the nearest seat in this venue (lounge sofa, rooftop chair, pool lounger) and sits down. */
-  takeSeat() {
+  /** Seats nobody else is sitting on; tells the player when every one is taken. */
+  private freeSeats<T extends { at: Vec2 }>(seats: T[], quiet = false) {
+    const taken = [...this.remotes.values()].map((remote) => remote.avatar?.root.position).filter((at): at is NonNullable<typeof at> => Boolean(at));
+    const free = seats.filter((seat) => !taken.some((at) => Math.hypot(at.x - seat.at[0], at.z - seat.at[1]) < 0.45));
+    if (!quiet && seats.length && !free.length) this.callbacks.notice({ tone: "info", text: "Every seat here is taken right now. Give it a minute or stand with your people." });
+    return free;
+  }
+
+  private seatTaken(at: Vec2) {
+    return this.freeSeats([{ at }], true).length === 0;
+  }
+
+  /** Walks to the nearest free seat in this venue (lounge sofa, rooftop chair, pool lounger) and sits down. */
+  takeSeat(retry = true): boolean {
     const kind = this.travelView?.kind;
-    const seats = kind ? seatsFor(kind) : [];
-    if (!seats.length) return false;
+    const all = kind ? seatsFor(kind) : [];
+    if (!all.length) return false;
+    const seats = this.freeSeats(all);
+    if (!seats.length) return true;
     const here: Vec2 = [this.controller.x, this.controller.z];
     const seat = seats.reduce((best, entry) => (Math.hypot(entry.at[0] - here[0], entry.at[1] - here[1]) < Math.hypot(best.at[0] - here[0], best.at[1] - here[1]) ? entry : best));
     const front: Vec2 = [seat.at[0] + Math.sin(seat.yaw) * seat.approach, seat.at[1] + Math.cos(seat.yaw) * seat.approach];
@@ -3300,6 +3317,10 @@ export class GameEngine {
       sprint: false,
       resolve: (ok) => {
         if (!ok) return;
+        if (this.seatTaken(seat.at)) {
+          if (retry) this.takeSeat(false);
+          return;
+        }
         this.controller.yaw = seat.yaw;
         this.emote = "sit";
         this.net.send("emote", { emote: "sit" });
@@ -3379,14 +3400,13 @@ export class GameEngine {
   }
 
   /** Walks to the nearest free bar stool, or a sofa at VIP table `table`, and sits down. */
-  clubSeat(kind: "stool" | "sofa", table?: number) {
+  clubSeat(kind: "stool" | "sofa", table?: number, retry = true): boolean {
     const view = this.interior && "seats" in this.interior ? this.interior : null;
     const seats = (view?.seats ?? []).filter((seat) => seat.stool === (kind === "stool") && (table === undefined || seat.table === table));
     if (!seats.length || !this.club) return false;
     const here: Vec2 = [this.controller.x, this.controller.z];
-    const taken = [...this.remotes.values()].map((remote) => remote.avatar?.root.position).filter((at): at is NonNullable<typeof at> => Boolean(at));
-    const free = seats.filter((seat) => !taken.some((at) => Math.hypot(at.x - seat.at[0], at.z - seat.at[1]) < 0.35));
-    const pool = free.length ? free : seats;
+    const pool = this.freeSeats(seats);
+    if (!pool.length) return true;
     const seat = pool.reduce((best, entry) => (Math.hypot(entry.at[0] - here[0], entry.at[1] - here[1]) < Math.hypot(best.at[0] - here[0], best.at[1] - here[1]) ? entry : best));
     const front: Vec2 = kind === "stool" ? [seat.at[0] + 0.55, seat.at[1]] : (CLUB_TABLES.find((entry) => entry.no === seat.table)?.spot ?? seat.at);
     this.autopilot?.resolve(false);
@@ -3396,6 +3416,10 @@ export class GameEngine {
       sprint: false,
       resolve: (ok) => {
         if (!ok || !this.club) return;
+        if (this.seatTaken(seat.at)) {
+          if (retry) this.clubSeat(kind, table, false);
+          return;
+        }
         this.controller.yaw = seat.yaw;
         this.emote = "sit";
         this.net.send("emote", { emote: "sit" });
@@ -3446,15 +3470,15 @@ export class GameEngine {
   }
 
   /** Walks to the nearest free sofa seat, dining chair or bed at home and sits or lies down; `onSeated` runs once there. */
-  homeSeat(kind: HomeRest, onSeated?: () => void) {
+  homeSeat(kind: HomeRest, onSeated?: () => void, retry = true): boolean {
     const view = this.interior && "seats" in this.interior ? this.interior : null;
     const storey = this.storey();
     const seats = (view?.seats ?? []).filter((seat) => seat.rest === kind && (seat.level ?? 0) === storey);
     if (!seats.length || this.club || this.travelView) return false;
     const here: Vec2 = [this.controller.x, this.controller.z];
-    const taken = [...this.remotes.values()].map((remote) => remote.avatar?.root.position).filter((at): at is NonNullable<typeof at> => Boolean(at));
-    const free = seats.filter((seat) => !taken.some((at) => Math.hypot(at.x - seat.at[0], at.z - seat.at[1]) < 0.35));
-    const pool = free.length ? free : seats;
+    const pool = this.freeSeats(seats, kind === "bed");
+    // A full bed still lets you sleep where you stand.
+    if (!pool.length) return kind !== "bed";
     // Judged from where you would stand to sit, so a bench row behind you never wins over the one in front of you.
     const frontOf = (entry: (typeof seats)[number]): Vec2 => [entry.at[0] + Math.sin(entry.yaw) * 0.6, entry.at[1] + Math.cos(entry.yaw) * 0.6];
     const reach = (entry: (typeof seats)[number]) => Math.hypot(frontOf(entry)[0] - here[0], frontOf(entry)[1] - here[1]);
@@ -3469,6 +3493,10 @@ export class GameEngine {
       resolve: (ok) => {
         if (!this.interior) return;
         if (!ok && Math.hypot(this.controller.x - front[0], this.controller.z - front[1]) > 1.6) return;
+        if (this.seatTaken(seat.at)) {
+          if (retry) this.homeSeat(kind, onSeated, false);
+          return;
+        }
         this.controller.yaw = seat.yaw;
         this.emote = "sit";
         this.net.send("emote", { emote: "sit" });
