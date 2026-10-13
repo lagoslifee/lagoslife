@@ -1432,3 +1432,6 @@ button.wide { width: 100%; margin: 6px 0; }
 [data-theme="dark"] .rank-you { background: rgba(0,0,0,.18); }
 .crash-card { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 60; max-width: 320px; padding: 18px 20px; border-radius: 14px; background: rgba(16,30,28,.94); color: #fff; text-align: center; box-shadow: 0 12px 32px rgba(0,0,0,.35); }
 .crash-card p { margin: 0 0 12px; font-size: calc(14px * var(--text-scale)); }
+[data-theme="dark"] .minimap { border-color: rgba(120,130,160,.7); }
+[data-theme="dark"] .minimap canvas { filter: brightness(.62) saturate(.85) hue-rotate(-8deg); }
+[data-theme="dark"] .minimap .north { color: #f2f2f7; }

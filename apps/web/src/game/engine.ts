@@ -387,6 +387,9 @@ export class GameEngine {
   private scene!: Scene;
   private camera!: TargetCamera;
   private sun!: DirectionalLight;
+  private fill: HemisphericLight | null = null;
+  private skyMaterial: StandardMaterial | null = null;
+  private evening = false;
   private shadows: ShadowGenerator | null = null;
   private materials!: Materials;
   private atlas!: SignAtlas;
@@ -755,6 +758,8 @@ export class GameEngine {
     const fill = new HemisphericLight("sky fill", new Vector3(0, 1, 0), scene);
     fill.intensity = 0.32;
     fill.groundColor = Color3.FromHexString("#b39a7c");
+    this.fill = fill;
+    if (this.evening) this.setEvening(true);
     if (this.quality !== "low") {
       this.shadows = new ShadowGenerator(this.quality === "high" ? 2048 : 1024, this.sun);
       this.shadows.usePercentageCloserFiltering = true;
@@ -928,6 +933,25 @@ export class GameEngine {
   /** A panel (the phone, the full map) covers the city: render it slowly underneath to save battery and heat. */
   setCovered(covered: boolean) {
     this.covered = covered;
+  }
+
+  /** Dark theme: Lagos at dusk, with a low warm sun, a deep blue sky and the lamps and neon carrying the street. */
+  setEvening(evening: boolean) {
+    this.evening = evening;
+    if (!this.scene || !this.fill) return;
+    const look = evening
+      ? { sky: "#5a5f8c", clear: [0.16, 0.18, 0.28], fog: [0.27, 0.27, 0.36], sun: 1.35, sunColor: "#ffb47a", fill: 0.26, fillColor: "#8c9cd8", ground: "#5a4a40", env: 0.42, exposure: 0.92 }
+      : { sky: "#ffffff", clear: [0.74, 0.84, 0.93], fog: [0.78, 0.84, 0.88], sun: 3.1, sunColor: "#fff2dc", fill: 0.32, fillColor: "#ffffff", ground: "#b39a7c", env: 0.9, exposure: 1.05 };
+    if (this.skyMaterial) this.skyMaterial.emissiveColor = Color3.FromHexString(look.sky);
+    this.scene.clearColor = new Color4(look.clear[0]!, look.clear[1]!, look.clear[2]!, 1);
+    this.scene.fogColor = new Color3(look.fog[0]!, look.fog[1]!, look.fog[2]!);
+    this.sun.intensity = look.sun;
+    this.sun.diffuse = Color3.FromHexString(look.sunColor);
+    this.fill.intensity = look.fill;
+    this.fill.diffuse = Color3.FromHexString(look.fillColor);
+    this.fill.groundColor = Color3.FromHexString(look.ground);
+    this.scene.environmentIntensity = look.env;
+    this.scene.imageProcessingConfiguration.exposure = look.exposure;
   }
 
   private frameErrors = { count: 0, loggedAt: 0, firstAt: 0, told: false };
@@ -1626,6 +1650,7 @@ export class GameEngine {
     material.specularColor = Color3.Black();
     material.fogEnabled = false;
     dome.material = material;
+    this.skyMaterial = material;
     dome.infiniteDistance = true;
     dome.applyFog = false;
     dome.isPickable = false;

@@ -645,6 +645,10 @@ export function GameView({
     engine?.setCovered(Boolean(phone || mapOpen));
   }, [engine, phone, mapOpen]);
 
+  useEffect(() => {
+    engine?.setEvening(settings.theme === "dark");
+  }, [engine, settings.theme]);
+
   const warnings = safety?.warnings ?? [];
   const blocking = Boolean(welcomeOpen || designing || sheet || plotSheet || travelSpot || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length || holdUp || robTarget);
 
@@ -1512,7 +1516,7 @@ export function GameView({
         />
       )}
 
-      {engine && hud && !designing && !phone && !overlayOpen && <DailyBonusPopup onRefresh={refresh} onToast={toast} />}
+      {engine && hud && !blocking && !helpOpen && <DailyBonusPopup onRefresh={refresh} onToast={toast} />}
 
       {phone && engine && (
         <CrashGuard area="phone" onCrash={() => { setPhone(null); toast({ tone: "error", text: "That phone app hit a problem and closed. Everything is saved — try it again." }); }}>
