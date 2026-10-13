@@ -62,6 +62,7 @@ export function ClubRadio({ clubId, volume, onPlaying, requests }: { clubId: str
   const [open, setOpen] = useState(true);
   const playingRef = useRef(onPlaying);
   playingRef.current = onPlaying;
+  const requestPlaying = useRef(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -77,6 +78,8 @@ export function ClubRadio({ clubId, volume, onPlaying, requests }: { clubId: str
     const start = clubNowPlaying(clubId, Date.now());
     const target = document.createElement("div");
     host.current.replaceChildren(target);
+    // Buffering and stalls flicker in and out; only a set that stays stopped hands back to the game's own beat.
+    let silent: ReturnType<typeof setTimeout> | undefined;
     youtubeApi()
       .then((YT) => {
         if (!live) return;
@@ -88,8 +91,9 @@ export function ClubRadio({ clubId, volume, onPlaying, requests }: { clubId: str
           events: {
             onReady: () => player.current?.setVolume(Math.round(volume * 100)),
             onStateChange: (event) => {
+              clearTimeout(silent);
               if (event.data === PLAYING) playingRef.current(true);
-              else if (event.data === ENDED) playingRef.current(false);
+              else silent = setTimeout(() => live && !requestPlaying.current && playingRef.current(false), event.data === ENDED ? 0 : 2_500);
             },
             onError: () => playingRef.current(false),
           },
@@ -98,6 +102,7 @@ export function ClubRadio({ clubId, volume, onPlaying, requests }: { clubId: str
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
+      clearTimeout(silent);
       playingRef.current(false);
       player.current?.destroy();
       player.current = null;
@@ -108,6 +113,7 @@ export function ClubRadio({ clubId, volume, onPlaying, requests }: { clubId: str
 
   const requested = requests?.state?.playing ?? null;
   const [requestLive, setRequestLive] = useState(false);
+  requestPlaying.current = requestLive;
   const audio = useRef<HTMLAudioElement | null>(null);
   const syncRef = useRef(requests?.sync);
   syncRef.current = requests?.sync;

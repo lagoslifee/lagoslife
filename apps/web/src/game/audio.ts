@@ -15,23 +15,28 @@ export class CityAudio {
   private wantedClub: { bpm: number } | null = null;
   private club: { bpm: number; gain: GainNode; nextStep: number; step: number } | null = null;
 
+  private clubTimer: ReturnType<typeof setInterval> | null = null;
+
   constructor(settings: PlayerSettings) {
     this.settings = settings;
-    const unlock = () => {
-      this.start();
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("keydown", unlock);
-    };
-    window.addEventListener("pointerdown", unlock);
-    window.addEventListener("keydown", unlock);
+    for (const type of ["pointerdown", "touchend", "keydown"]) window.addEventListener(type, this.gesture, { passive: true });
     document.addEventListener("visibilitychange", this.visibility);
   }
+
+  /**
+   * Phones suspend (iOS: "interrupted") the context for calls, notifications, the lock screen or another app's audio,
+   * and only let it resume inside a user gesture, so every gesture checks rather than just the first.
+   */
+  private gesture = () => {
+    if (!this.context) this.start();
+    else if (this.context.state !== "running" && !document.hidden) void this.context.resume().catch(() => undefined);
+  };
 
   /** A suspended context stops the audio thread, so a backgrounded tab doesn't keep the phone working. */
   private visibility = () => {
     if (!this.context) return;
     if (document.hidden) void this.context.suspend();
-    else void this.context.resume();
+    else void this.context.resume().catch(() => undefined);
   };
 
   private start() {
@@ -40,6 +45,10 @@ export class CityAudio {
     if (!AudioCtor) return;
     const context = new AudioCtor();
     this.context = context;
+    if (context.state !== "running") void context.resume().catch(() => undefined);
+    context.addEventListener("statechange", () => {
+      if (context.state !== "running" && context.state !== "closed" && !document.hidden) void context.resume().catch(() => undefined);
+    });
     this.master = context.createGain();
     this.master.connect(context.destination);
     this.ambience = context.createGain();
@@ -67,9 +76,9 @@ export class CityAudio {
 
   apply(settings: PlayerSettings) {
     this.settings = settings;
-    if (!this.master || !this.ambience) return;
-    this.master.gain.value = settings.muted ? 0 : settings.masterVolume;
-    this.ambience.gain.value = settings.ambienceVolume * 0.5;
+    if (!this.master || !this.ambience || !this.context) return;
+    this.master.gain.setTargetAtTime(settings.muted ? 0 : settings.masterVolume, this.context.currentTime, 0.05);
+    this.ambience.gain.setTargetAtTime(settings.ambienceVolume * 0.5, this.context.currentTime, 0.05);
   }
 
   /** Starts a synthesised four-on-the-floor groove for the club the player is in, or stops it with null. */
@@ -86,15 +95,24 @@ export class CityAudio {
     gain.gain.value = 0.5;
     gain.connect(this.master);
     this.club = { bpm: club.bpm, gain, nextStep: this.context.currentTime + 0.1, step: 0 };
+    // Its own timer rather than the render loop: frames slow to 12 fps under the phone and stall while tiles load,
+    // which used to leave gaps in the beat.
+    this.clubTimer ??= setInterval(() => this.scheduleClub(), 100);
   }
 
   private scheduleClub() {
     const context = this.context;
     const club = this.club;
-    if (!context || !club) return;
+    if (!context || !club) {
+      if (this.clubTimer) clearInterval(this.clubTimer);
+      this.clubTimer = null;
+      return;
+    }
     const sixteenth = 60 / club.bpm / 4;
     const bass = [55, 55, 65.4, 49];
-    while (club.nextStep < context.currentTime + 0.25) {
+    // After a stall (suspended context, frozen tab) carry on from now instead of firing every missed step at once.
+    if (club.nextStep < context.currentTime) club.nextStep = context.currentTime + 0.05;
+    while (club.nextStep < context.currentTime + 0.6) {
       const at = club.nextStep;
       const step = club.step % 16;
       if (step % 4 === 0) this.tone(club.gain, "sine", 120, 45, at, 0.22, 0.9);
@@ -141,10 +159,9 @@ export class CityAudio {
 
   /** Called each frame with how busy the surroundings are (0 indoors, 1 on Admiralty Way). */
   update(now: number, busyness: number) {
-    this.scheduleClub();
     if (!this.context || !this.traffic || !this.ambience) return;
-    this.traffic.frequency.value = 220 + busyness * 520;
-    this.ambience.gain.value = this.settings.ambienceVolume * (0.12 + busyness * 0.45);
+    this.traffic.frequency.setTargetAtTime(220 + busyness * 520, this.context.currentTime, 0.3);
+    this.ambience.gain.setTargetAtTime(this.settings.ambienceVolume * (0.12 + busyness * 0.45), this.context.currentTime, 0.3);
     if (busyness > 0.2 && now > this.nextHorn) {
       this.nextHorn = now + 5000 + Math.random() * 12000;
       this.horn(0.25 + Math.random() * 0.3);
@@ -232,7 +249,11 @@ export class CityAudio {
   }
 
   dispose() {
+    for (const type of ["pointerdown", "touchend", "keydown"]) window.removeEventListener(type, this.gesture);
     document.removeEventListener("visibilitychange", this.visibility);
+    if (this.clubTimer) clearInterval(this.clubTimer);
+    this.clubTimer = null;
+    this.club = null;
     void this.context?.close();
   }
 }
