@@ -35,6 +35,7 @@ export type PlaceKind =
   | "car_rental"
   | "tourism"
   | "gym"
+  | "viewing"
   | "estate";
 
 export type Place = {

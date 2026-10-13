@@ -40,6 +40,7 @@ const PLACE_GLYPH: Record<PlaceKind, { glyph: string; color: string }> = {
   car_rental: { glyph: "🚗", color: "#2e7d32" },
   tourism: { glyph: "ℹ️", color: "#00838f" },
   gym: { glyph: "🏋", color: "#1f6f43" },
+  viewing: { glyph: "⚽", color: "#0f7a3a" },
   estate: { glyph: "🏢", color: "#1b4fa0" },
 };
 

@@ -25,6 +25,8 @@ import {
   enterPropertySchema,
   estateViewingSchema,
   GYM,
+  VIEWING,
+  viewingLocation,
   gymLocation,
   insideGym,
   ESTATE_AGENT,
@@ -185,6 +187,7 @@ import {
 } from "../vehicle-service.js";
 import { loadAppearance, profileEvents } from "../profile-service.js";
 import { loadFitness } from "../gym-service.js";
+import { viewingPassUntil } from "../viewing-service.js";
 import { buildingEvents } from "../building-service.js";
 import { homePropertyOf, loadDiscoveries, recordDiscovery } from "../fast-travel-service.js";
 import { encounterEligible, payEncounter, resolveEncounter, startEncounter } from "../street-encounter-service.js";
@@ -1056,7 +1059,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     let { propertyId } = parsed.data;
     const club = CLUBS[propertyId] ? getPlace(propertyId) : null;
     const gym = propertyId === GYM.placeId ? getPlace(GYM.placeId) : null;
-    const place = club ?? gym ?? (propertyId === "starter-home" ? getPlace("starter-home") : (propertyPlace(propertyId) ?? builtHomePlace(propertyId)));
+    const viewing = placeById.get(propertyId)?.kind === "viewing" ? getPlace(propertyId) : null;
+    const place = club ?? gym ?? viewing ?? (propertyId === "starter-home" ? getPlace("starter-home") : (propertyPlace(propertyId) ?? builtHomePlace(propertyId)));
     if (!place) return this.notify(client, { tone: "error", text: "That home is not on the map." });
     if (Math.hypot(player.x - place.door[0], player.z - place.door[1]) > 4.5) {
       return this.notify(client, { tone: "error", text: `Walk up to the door of ${place.name}.` });
@@ -1071,6 +1075,11 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         location = await this.venueRoomFor(player, clubLocation(propertyId));
       } else if (gym) {
         location = await this.venueRoomFor(player, gymLocation());
+      } else if (viewing) {
+        if (!(await viewingPassUntil(player.userId, viewing.id))) {
+          return this.notify(client, { tone: "error", text: `Pay ₦${VIEWING.entryFee.toLocaleString("en-NG")} at the door of ${viewing.name} first.` });
+        }
+        location = await this.venueRoomFor(player, viewingLocation(viewing.id));
       } else if (propertyId === "starter-home") {
         location = `starter:${player.userId}`;
       } else if (mode === "preview") {
@@ -2860,6 +2869,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private whereIs(player: Player) {
     if (player.location.startsWith("flight:")) return "on a flight";
     if (player.location.startsWith("club:")) return `at ${getPlace(venueOf(player.location).slice(5))?.name ?? "a club"}`;
+    if (player.location.startsWith("viewing:")) return `watching football at ${placeById.get(venueOf(player.location).slice(8))?.name ?? "a viewing centre"}`;
     if (/^(home|starter|preview):/.test(player.location)) return "at home";
     if (player.location !== "street") return "travelling";
     if (player.busId) return "on a danfo";

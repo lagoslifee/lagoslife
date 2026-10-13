@@ -25,6 +25,7 @@
   { "id": "awolowo-rooftop", "kind": "club", "name": "Awolowo Rooftop Club", "building": 625645017, "street": "Awolowo Road" },
   { "id": "eko-nights", "kind": "club", "name": "Eko Nights", "building": 626132127, "street": "Adeola Odeku Street" },
   { "id": "ifitness-lekki", "kind": "gym", "name": "iFitness Lekki", "building": 1268315320, "street": "Admiralty Way" },
+  { "id": "champions-viewing-centre", "kind": "viewing", "name": "Champions Viewing Centre", "building": 1268301907, "street": "Admiralty Way" },
   { "id": "lekki-homes-agency", "kind": "estate", "name": "Lekki Homes Estate Agency", "building": 1268301909, "street": "Admiralty Way" },
   { "id": "lekki-police-division", "kind": "police", "name": "Lekki Police Division", "building": 1270253683, "street": "Admiralty Way" },
   { "id": "ikoyi-police-station", "kind": "police", "name": "Ikoyi Police Station", "building": 597498739, "street": "Awolowo Road" },

@@ -8,6 +8,7 @@ import {
   GUEST_EMAIL_DOMAIN,
   lifeGoalsSchema,
   enrolSchema,
+  viewingEntrySchema,
   gymSetSchema,
   startBusinessSchema,
   upgradeBusinessSchema,
@@ -73,6 +74,7 @@ import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
 import { businessStatus, collectBusiness, enrol, startBusiness, upgradeBusiness } from "./business-service.js";
 import { finishSet, gymStatus, joinGym, startSet } from "./gym-service.js";
+import { buyViewingPass, viewingStatus } from "./viewing-service.js";
 import { finishRest, startRest } from "./home-living-service.js";
 import { applyCleaner, collectParcel, dismissStaff, eatParcel, hireStaff, homeStaff, openParcels, orderDelivery, partyUntil, staffByHome, startParty, stopParty } from "./home-services-service.js";
 import { cancelGig, completeGig, gigStatus, repairGig, startGigWork, takeGig } from "./gig-service.js";
@@ -574,6 +576,11 @@ export function configureRoutes(app: Express) {
     return startSet(userId, exercise, kg);
   }));
   app.post("/api/gym/finish", requirePlayer, rateLimited, guarded("Could not finish the set", (_req, userId) => finishSet(userId)));
+
+  app.get("/api/viewing", requirePlayer, guarded("Viewing centre unavailable", (req, userId) =>
+    viewingStatus(userId, typeof req.query.placeId === "string" ? req.query.placeId : undefined)));
+  app.post("/api/viewing/entry", requirePlayer, rateLimited, guarded("Could not pay at the door", (req, userId) =>
+    buyViewingPass(userId, viewingEntrySchema.parse(req.body).placeId)));
 
   app.post("/api/delivery/order", requirePlayer, rateLimited, guarded("Order failed", (req, userId) => {
     const body = orderDeliverySchema.parse(req.body);

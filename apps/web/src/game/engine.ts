@@ -295,6 +295,7 @@ const PLACE_ACTIONS: Record<Place["kind"], string> = {
   estate: "Estate agent",
 };
 
+  viewing: "Watch football",
 /** Lines the crew say on a 60-second flight, keyed by phase. */
 const CABIN_ANNOUNCEMENTS: Partial<Record<FlightPhase, string>> = {
   takeoff: "Cabin crew, seats for take-off. Please keep your seatbelt fastened.",
