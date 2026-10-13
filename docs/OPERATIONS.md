@@ -101,9 +101,9 @@ carries over.
    and `RESEND_API_KEY` (optional, for password-reset email), builds
    `apps/server/Dockerfile` and generates `BETTER_AUTH_SECRET`. Players sign in
    once more after the move, since sessions are signed with that secret.
-2. Each start runs `node dist/migrate.js` (already-applied migrations are
-   skipped) and then the server. `BETTER_AUTH_URL` defaults to the service's
-   `onrender.com` address.
+2. Render runs `node dist/migrate.js` before each deploy goes live
+   (already-applied migrations are skipped), then the image's `CMD` starts the
+   server. `BETTER_AUTH_URL` is `https://www.9jaworld.com`.
 3. Optional: add `api.9jaworld.com` under the service's **Custom Domains** and
    create the CNAME record it shows at the domain's DNS provider.
 4. Put the service URL (or `https://api.9jaworld.com`) in `VITE_API_URL` and

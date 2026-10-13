@@ -12,11 +12,8 @@ services:
     region: ohio
     dockerfilePath: ./apps/server/Dockerfile
     dockerContext: .
-    # Migrations run on every start (already-applied ones are skipped).
-    # BETTER_AUTH_URL falls back to the service's own onrender.com address.
-    dockerCommand: >-
-      sh -c 'export BETTER_AUTH_URL="${BETTER_AUTH_URL:-$RENDER_EXTERNAL_URL}"
-      && node dist/migrate.js && exec node --enable-source-maps dist/index.js'
+    # Runs before each deploy goes live (already-applied migrations are skipped). The image's CMD starts the server.
+    preDeployCommand: node dist/migrate.js
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
@@ -29,6 +26,8 @@ services:
         value: require
       - key: BETTER_AUTH_SECRET
         generateValue: true
+      - key: BETTER_AUTH_URL
+        value: https://www.9jaworld.com
       # Password-reset email. Paste the Resend API key when Render asks for it, or leave it empty.
       - key: RESEND_API_KEY
         sync: false
