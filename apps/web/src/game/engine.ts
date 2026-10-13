@@ -1830,7 +1830,9 @@ export class GameEngine {
       }
       const reach = travel ? 2.2 : 1.6;
       let nearest: { spot: InteriorSpot | { id: string; point: Vec2; label: string }; distance: number } | null = null;
+      const storey = this.storey();
       for (const spot of this.interior.spots) {
+        if (("level" in spot ? (spot.level ?? 0) : 0) !== storey) continue;
         const distance = Math.hypot(spot.point[0] - x, spot.point[1] - z);
         if (distance < reach && (!nearest || distance < nearest.distance)) nearest = { spot, distance };
       }
@@ -3027,18 +3029,24 @@ export class GameEngine {
     else if (!water.standing) avatar.swim(time, "float", water.surface);
   }
 
+  /** The floor of the home you are on: 1 up the stairs, else 0. */
+  private storey(): 0 | 1 {
+    return this.interior && !this.travelView && "storey" in this.interior ? this.interior.storey() : 0;
+  }
+
   /** The placed piece of your own furniture within arm's reach, nearest first. */
   private reachablePiece(x: number, z: number) {
     if (!this.homePieces || this.travelView) return null;
     const [ox, oz] = INTERIOR_ORIGIN;
     let best: { id: string; item: FurnitureItem; at: PlacedPiece; distance: number } | null = null;
+    const storey = this.storey();
     for (const placement of this.homePieces.placements) {
       const item = furnitureItem(placement.itemId);
-      if (!item || item.floor || !placement.id) continue;
+      if (!item || item.floor || !placement.id || (placement.level === 1 ? 1 : 0) !== storey) continue;
       const [px, pz] = placementCentre(placement);
       const rect = furnitureRect(item, px, pz, placement.rotation);
       const distance = Math.hypot(Math.max(0, Math.abs(x - px) - rect.hx), Math.max(0, Math.abs(z - pz) - rect.hz));
-      if (distance < 0.7 && (!best || distance < best.distance)) best = { id: placement.id, item, at: { itemId: placement.itemId, x: px - ox, z: pz - oz, rotation: placement.rotation }, distance };
+      if (distance < 0.7 && (!best || distance < best.distance)) best = { id: placement.id, item, at: { itemId: placement.itemId, x: px - ox, z: pz - oz, rotation: placement.rotation, level: storey }, distance };
     }
     return best;
   }
@@ -3046,7 +3054,8 @@ export class GameEngine {
   /** Walks to the nearest free sofa seat, dining chair or bed at home and sits or lies down; `onSeated` runs once there. */
   homeSeat(kind: HomeRest, onSeated?: () => void) {
     const view = this.interior && "seats" in this.interior ? this.interior : null;
-    const seats = (view?.seats ?? []).filter((seat) => seat.rest === kind);
+    const storey = this.storey();
+    const seats = (view?.seats ?? []).filter((seat) => seat.rest === kind && (seat.level ?? 0) === storey);
     if (!seats.length || this.club || this.travelView) return false;
     const here: Vec2 = [this.controller.x, this.controller.z];
     const taken = [...this.remotes.values()].map((remote) => remote.avatar?.root.position).filter((at): at is NonNullable<typeof at> => Boolean(at));

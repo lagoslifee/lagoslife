@@ -380,7 +380,7 @@ export async function getInterior(userId: string, propertyId: string) {
     pool.query(
       `SELECT placement.id, placement.item_id AS "itemId", catalog.name,
               placement.grid_x AS "gridX", placement.grid_z AS "gridZ", placement.rotation,
-              placement.pos_x AS x, placement.pos_z AS z
+              placement.pos_x AS x, placement.pos_z AS z, placement.level
        FROM furniture_placement placement
        JOIN shop_catalog catalog ON catalog.id = placement.item_id
        WHERE placement.property_id = $1 ORDER BY placement.created_at`,
@@ -432,10 +432,10 @@ export async function getInterior(userId: string, propertyId: string) {
 async function lockFloor(client: PoolClient, propertyId: string): Promise<PlacedPiece[]> {
   await client.query(`SELECT 1 FROM property_tenure WHERE property_id = $1 FOR UPDATE`, [propertyId]);
   const rows = await client.query(
-    `SELECT id, item_id, pos_x, pos_z, rotation FROM furniture_placement WHERE property_id = $1`,
+    `SELECT id, item_id, pos_x, pos_z, rotation, level FROM furniture_placement WHERE property_id = $1`,
     [propertyId],
   );
-  return rows.rows.map((row) => ({ id: row.id, itemId: row.item_id, x: Number(row.pos_x), z: Number(row.pos_z), rotation: Number(row.rotation) }));
+  return rows.rows.map((row) => ({ id: row.id, itemId: row.item_id, x: Number(row.pos_x), z: Number(row.pos_z), rotation: Number(row.rotation), level: Number(row.level) }));
 }
 
 export async function placeFurniture(
@@ -448,9 +448,11 @@ export async function placeFurniture(
     gridX?: number | undefined;
     gridZ?: number | undefined;
     rotation: 0 | 90 | 180 | 270;
+    level?: 0 | 1 | undefined;
     idempotencyKey: string;
   },
 ) {
+  const level = input.level ?? 0;
   const access = await requirePropertyAccess(userId, propertyId);
   if (!access.owner) throw new EconomyError("Only the owner can place furniture", 403);
   if (!furnitureItem(input.itemId)) throw new EconomyError("That is not furniture.");
@@ -464,7 +466,7 @@ export async function placeFurniture(
       [userId, input.idempotencyKey],
     );
     if (existing.rowCount) return { id: existing.rows[0].id as string, replayed: true };
-    const problem = placementProblem({ itemId: input.itemId, x, z, rotation: input.rotation }, floor, homeLayout(propertyId));
+    const problem = placementProblem({ itemId: input.itemId, x, z, rotation: input.rotation, level }, floor, homeLayout(propertyId));
     if (problem) throw new EconomyError(problem, 409);
     const inventory = await client.query(
       `SELECT quantity FROM inventory_item WHERE user_id = $1 AND item_id = $2 FOR UPDATE`,
@@ -481,9 +483,9 @@ export async function placeFurniture(
     const [gridX, gridZ] = nearestCell(x, z);
     await client.query(
       `INSERT INTO furniture_placement
-        (id, property_id, placed_by, item_id, grid_x, grid_z, rotation, pos_x, pos_z, idempotency_key)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [id, propertyId, userId, input.itemId, gridX, gridZ, input.rotation, x, z, input.idempotencyKey],
+        (id, property_id, placed_by, item_id, grid_x, grid_z, rotation, pos_x, pos_z, idempotency_key, level)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [id, propertyId, userId, input.itemId, gridX, gridZ, input.rotation, x, z, input.idempotencyKey, level],
     );
     return { id, replayed: false };
   });
@@ -495,7 +497,7 @@ export async function placeFurniture(
 export async function moveFurniture(
   userId: string,
   propertyId: string,
-  input: { placementId: string; x: number; z: number; rotation: 0 | 90 | 180 | 270 },
+  input: { placementId: string; x: number; z: number; rotation: 0 | 90 | 180 | 270; level?: 0 | 1 | undefined },
 ) {
   const access = await requirePropertyAccess(userId, propertyId);
   if (!access.owner) throw new EconomyError("Only the owner can move furniture", 403);
@@ -504,15 +506,17 @@ export async function moveFurniture(
     const floor = await lockFloor(client, propertyId);
     const piece = floor.find((entry) => entry.id === input.placementId);
     if (!piece) throw new EconomyError("That furniture is not in this home.", 404);
-    const problem = placementProblem({ ...piece, x, z, rotation: input.rotation }, floor, homeLayout(propertyId));
+    // Older clients do not send a storey; the piece stays on the one it is on.
+    const level = input.level ?? (piece.level === 1 ? 1 : 0);
+    const problem = placementProblem({ ...piece, x, z, rotation: input.rotation, level }, floor, homeLayout(propertyId));
     if (problem) throw new EconomyError(problem, 409);
     const [gridX, gridZ] = nearestCell(x, z);
     await client.query(
-      `UPDATE furniture_placement SET pos_x = $3, pos_z = $4, rotation = $5, grid_x = $6, grid_z = $7
+      `UPDATE furniture_placement SET pos_x = $3, pos_z = $4, rotation = $5, grid_x = $6, grid_z = $7, level = $8
        WHERE id = $1 AND property_id = $2`,
-      [input.placementId, propertyId, x, z, input.rotation, gridX, gridZ],
+      [input.placementId, propertyId, x, z, input.rotation, gridX, gridZ, level],
     );
-    return { id: input.placementId, x, z, rotation: input.rotation };
+    return { id: input.placementId, x, z, rotation: input.rotation, level };
   });
   homeEvents.emit("furniture", propertyId);
   return moved;

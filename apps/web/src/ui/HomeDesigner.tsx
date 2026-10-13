@@ -11,6 +11,7 @@ import {
   ROOM_NAMES,
   snapFloor,
   type FurnitureRotation,
+  type HomeLevel,
   type Notice,
   type PlacedPiece,
   type RoomKind,
@@ -53,6 +54,7 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, focu
   const [drag, setDrag] = useState<Drag | null>(null);
   const [busy, setBusy] = useState(false);
   const [friend, setFriend] = useState("");
+  const [storey, setStorey] = useState<HomeLevel>(0);
   const svg = useRef<SVGSVGElement>(null);
 
   const reload = useCallback(async () => {
@@ -89,7 +91,16 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, focu
   );
   const selectedPiece = pieces.find((piece) => piece.id === selected) ?? null;
   const layout = interior?.tier ? HOME_LAYOUTS[interior.tier] : homeLayout(propertyId);
+  const upper = layout.upper ?? null;
+  const level: HomeLevel = upper ? storey : 0;
+  const onLevel = (piece: PlacedPiece) => (piece.level === 1 ? 1 : 0) === level;
   const problem = (piece: PlacedPiece) => placementProblem(piece, pieces, layout);
+
+  // Open on the floor of the piece being picked up.
+  const focusLevel = interior?.furniture.find((piece) => piece.id === focus)?.level;
+  useEffect(() => {
+    if (focusLevel === 1) setStorey(1);
+  }, [focusLevel]);
 
   const floorPoint = (event: ReactPointerEvent) => {
     const matrix = svg.current?.getScreenCTM();
@@ -116,7 +127,7 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, focu
     const at = floorPoint(event);
     if (!at) return;
     const x = snapFloor(Math.max(-layout.halfX, Math.min(layout.halfX, at.x + drag.dx)));
-    const z = snapFloor(Math.max(FRONT_WALL, Math.min(layout.back, at.z + drag.dz)));
+    const z = snapFloor(Math.max(level && upper ? upper.stair.z - upper.stair.hz : FRONT_WALL, Math.min(layout.back, at.z + drag.dz)));
     if (x !== drag.x || z !== drag.z) setDrag({ ...drag, x, z, moved: true });
   };
 
@@ -139,22 +150,25 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, focu
     void run(null, () => api.moveFurniture(propertyId, selectedPiece.id, selectedPiece.x, selectedPiece.z, rotation));
   };
 
-  /** "in the bedroom" for wherever a spot landed, or nothing in an open part of the floor. */
-  const whereIs = (x: number, z: number) => {
-    const room = layout.rooms.find((zone) => Math.abs(x - zone.x) <= zone.hx && Math.abs(z - zone.z) <= zone.hz)?.room;
-    return room ? ` in the ${ROOM_NAMES[room].toLowerCase()}` : "";
+  /** "in the bedroom upstairs" for wherever a spot landed, or nothing in an open part of the floor. */
+  const whereIs = (x: number, z: number, at: number | null | undefined = 0) => {
+    const up = at === 1;
+    const room = layout.rooms.find((zone) => (zone.level ?? 0) === (up ? 1 : 0) && Math.abs(x - zone.x) <= zone.hx && Math.abs(z - zone.z) <= zone.hz)?.room;
+    return room ? ` in the ${ROOM_NAMES[room].toLowerCase()}${up ? " upstairs" : ""}` : up ? " upstairs" : "";
   };
 
   const placeNew = (itemId: string, name: string) => {
     const spot = findFreeSpot(itemId, pieces, layout);
     if (!spot) return onToast({ tone: "error", text: `No free floor left for the ${name.toLowerCase()}. Pick something up first.` });
-    void run(`${name} placed${whereIs(spot.x, spot.z)}. Drag it anywhere you like.`, () => api.placeFurnitureAt(propertyId, itemId, spot.x, spot.z, spot.rotation));
+    setStorey(spot.level);
+    void run(`${name} placed${whereIs(spot.x, spot.z, spot.level)}. Drag it anywhere you like.`, () => api.placeFurnitureAt(propertyId, itemId, spot.x, spot.z, spot.rotation, spot.level));
   };
 
   const moveTo = (piece: PlacedPiece & { id: string; name: string }, room: RoomKind) => {
     const spot = findFreeSpot(piece.itemId, pieces.filter((entry) => entry.id !== piece.id), layout, room);
     if (!spot) return onToast({ tone: "error", text: `No free floor in the ${ROOM_NAMES[room].toLowerCase()} for the ${piece.name.toLowerCase()}.` });
-    void run(`${piece.name} moved${whereIs(spot.x, spot.z) || ` near the ${ROOM_NAMES[room].toLowerCase()}`}.`, () => api.moveFurniture(propertyId, piece.id, spot.x, spot.z, spot.rotation));
+    setStorey(spot.level);
+    void run(`${piece.name} moved${whereIs(spot.x, spot.z, spot.level) || ` near the ${ROOM_NAMES[room].toLowerCase()}`}.`, () => api.moveFurniture(propertyId, piece.id, spot.x, spot.z, spot.rotation, spot.level));
   };
 
   const nudge = (dx: number, dz: number) => {
@@ -178,7 +192,7 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, focu
       for (const { piece, room } of misplaced) {
         const spot = findFreeSpot(piece.itemId, floor.filter((entry) => entry.id !== piece.id), layout, room);
         if (!spot) continue;
-        await api.moveFurniture(propertyId, piece.id, spot.x, spot.z, spot.rotation);
+        await api.moveFurniture(propertyId, piece.id, spot.x, spot.z, spot.rotation, spot.level);
         floor = floor.map((entry) => (entry.id === piece.id ? { ...entry, ...spot } : entry));
       }
     });
@@ -187,9 +201,10 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, focu
     const item = furnitureItem(itemId)!;
     const spot = findFreeSpot(itemId, pieces, layout);
     if (!spot) return onToast({ tone: "error", text: `No free floor left for the ${item.name.toLowerCase()}. Pick something up first.` });
-    void run(`${item.name} delivered${whereIs(spot.x, spot.z)} for ${naira(item.price)}.`, async () => {
+    void run(`${item.name} delivered${whereIs(spot.x, spot.z, spot.level)} for ${naira(item.price)}.`, async () => {
       await api.purchase(itemId);
-      await api.placeFurnitureAt(propertyId, itemId, spot.x, spot.z, spot.rotation);
+      await api.placeFurnitureAt(propertyId, itemId, spot.x, spot.z, spot.rotation, spot.level);
+      setStorey(spot.level);
       setTab("arrange");
     });
   };
@@ -221,6 +236,16 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, focu
 
       {tab === "arrange" && (
         <div className="designer-body">
+          {upper && (
+            <div className="designer-storeys" role="tablist" aria-label="Floor">
+              {([[0, "Ground floor"], [1, "Upstairs"]] as const).map(([value, label]) => (
+                <button key={value} role="tab" aria-selected={level === value} className={level === value ? "active" : ""} onClick={() => { setStorey(value); setSelected(null); }} data-testid={`storey-${value}`}>
+                  {value ? "⬆" : "⬇"} {label}
+                  <small>{pieces.filter((piece) => (piece.level === 1 ? 1 : 0) === value).length}</small>
+                </button>
+              ))}
+            </div>
+          )}
           <svg
             ref={svg}
             className="floor-plan"
@@ -231,22 +256,33 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, focu
             onPointerDown={() => setSelected(null)}
             data-testid="floor-plan"
           >
-            <rect x={-hx} y={-north} width={hx * 2} height={north - south} className="plan-floor" />
+            <rect x={-hx} y={-north} width={hx * 2} height={north - south} className={level ? "plan-void" : "plan-floor"} />
+            {level === 1 && upper && (
+              <>
+                {upper.floors.map((floor) => <rect key={floor.label} x={floor.x - floor.hx} y={-floor.z - floor.hz} width={floor.hx * 2} height={floor.hz * 2} className="plan-floor" />)}
+                <rect x={upper.stair.x - upper.stair.hx} y={-upper.stair.z - upper.stair.hz} width={upper.stair.hx * 2} height={upper.stair.hz * 2} className="plan-stairs" />
+                {Array.from({ length: 12 }, (_, step) => {
+                  const y = -(upper.stair.z - upper.stair.hz) - ((step + 0.5) * upper.stair.hz * 2) / 12;
+                  return <line key={step} x1={upper.stair.x - upper.stair.hx} x2={upper.stair.x + upper.stair.hx} y1={y} y2={y} className="plan-stair-step" />;
+                })}
+                <text x={upper.stair.x} y={-upper.stair.z} className="plan-fixture-label">Stairs down</text>
+              </>
+            )}
             {[-3, 0, 3].map((x) => <rect key={x} x={x - 0.7} y={-north - 0.08} width={1.4} height={0.16} className="plan-window" />)}
-            {layout.rooms.map((room) => (
+            {layout.rooms.filter((room) => (room.level ?? 0) === level).map((room) => (
               <g key={room.room} className={`plan-room ${room.room}`}>
                 <rect x={room.x - room.hx} y={-room.z - room.hz} width={room.hx * 2} height={room.hz * 2} />
                 <text x={room.x - room.hx + 0.15} y={-room.z - room.hz + 0.35}>{ROOM_NAMES[room.room]}</text>
               </g>
             ))}
-            {layout.fixtures.map((fixture) => (
+            {(level && upper ? upper.fixtures : layout.fixtures).map((fixture) => (
               <g key={`${fixture.label} ${fixture.x} ${fixture.z}`}>
                 <rect x={fixture.x - fixture.hx} y={-fixture.z - fixture.hz} width={fixture.hx * 2} height={fixture.hz * 2} className="plan-fixture" />
                 <text x={fixture.x} y={-fixture.z} className="plan-fixture-label">{fixture.label}</text>
               </g>
             ))}
-            <rect x={-0.55} y={-south - 0.06} width={1.1} height={0.2} className="plan-door" />
-            {[...pieces].sort((a, b) => Number(Boolean(furnitureItem(b.itemId)?.floor)) - Number(Boolean(furnitureItem(a.itemId)?.floor))).map((piece) => {
+            {!level && <rect x={-0.55} y={-south - 0.06} width={1.1} height={0.2} className="plan-door" />}
+            {pieces.filter(onLevel).sort((a, b) => Number(Boolean(furnitureItem(b.itemId)?.floor)) - Number(Boolean(furnitureItem(a.itemId)?.floor))).map((piece) => {
               const item = furnitureItem(piece.itemId);
               if (!item) return null;
               const rect = furnitureRect(item, piece.x, piece.z, piece.rotation);
@@ -270,7 +306,7 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, focu
           </svg>
           {selectedPiece ? (
             <div className="designer-toolbar" data-testid="designer-toolbar">
-              <strong>{selectedPiece.name}<small>{whereIs(selectedPiece.x, selectedPiece.z).replace(" in the ", " · ") || " · open floor"}</small></strong>
+              <strong>{selectedPiece.name}<small>{whereIs(selectedPiece.x, selectedPiece.z, selectedPiece.level).replace(" in the ", " · ") || " · open floor"}</small></strong>
               <span className="designer-nudge" aria-label="Nudge">
                 {([["←", -0.5, 0], ["↑", 0, 0.5], ["↓", 0, -0.5], ["→", 0.5, 0]] as const).map(([arrow, dx, dz]) => (
                   <button key={arrow} className="secondary" disabled={busy || !owner} onClick={() => nudge(dx, dz)} aria-label={`Nudge ${arrow}`}>{arrow}</button>
@@ -285,7 +321,7 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, focu
                 <span className="muted small">Move to:</span>
                 {layout.rooms.map((room) => (
                   <button key={room.room} className="chip" disabled={busy || !owner} onClick={() => moveTo(selectedPiece, room.room)} data-testid={`move-to-${room.room}`}>
-                    {ROOM_NAMES[room.room]}
+                    {ROOM_NAMES[room.room]}{room.level ? " ⬆" : ""}
                   </button>
                 ))}
               </div>

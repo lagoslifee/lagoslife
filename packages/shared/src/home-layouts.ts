@@ -9,9 +9,34 @@ type Area = { x: number; z: number; hx: number; hz: number; label: string };
 
 export type RoomKind = "living" | "bedroom" | "dining" | "study";
 export const ROOM_NAMES: Record<RoomKind, string> = { living: "Living room", bedroom: "Bedroom", dining: "Dining area", study: "Study" };
-/** Part of an open-plan home set aside for one use, as a room-local rectangle. */
-export type RoomZone = { room: RoomKind; x: number; z: number; hx: number; hz: number };
-const zone = (room: RoomKind, x0: number, x1: number, z0: number, z1: number): RoomZone => ({ room, x: (x0 + x1) / 2, z: (z0 + z1) / 2, hx: (x1 - x0) / 2, hz: (z1 - z0) / 2 });
+/** Storey of a home: 0 is the ground floor, 1 the floor up the stairs. */
+export type HomeLevel = 0 | 1;
+/** Part of an open-plan home set aside for one use, as a room-local rectangle. `level` is 0 unless it is upstairs. */
+export type RoomZone = { room: RoomKind; x: number; z: number; hx: number; hz: number; level?: HomeLevel };
+const zone = (room: RoomKind, x0: number, x1: number, z0: number, z1: number, level?: HomeLevel): RoomZone => ({ room, x: (x0 + x1) / 2, z: (z0 + z1) / 2, hx: (x1 - x0) / 2, hz: (z1 - z0) / 2, ...(level ? { level } : {}) });
+const rect = (label: string, x0: number, x1: number, z0: number, z1: number): Area => ({ label, x: (x0 + x1) / 2, z: (z0 + z1) / 2, hx: (x1 - x0) / 2, hz: (z1 - z0) / 2 });
+
+/**
+ * The floor up the stairs: `y` is its height, `floors` the slabs furniture can stand on (inside the walls of the
+ * upstairs rooms and the landing), `walks` everywhere a resident can walk (the floors plus the doorways between them),
+ * `fixtures` what must stay clear (the doorways), and `stair` the stairwell the staircase rises through.
+ */
+export type UpperFloor = { y: number; floors: Area[]; walks: Area[]; fixtures: Area[]; stair: Area };
+
+/** The mansion's upper floor: a suite over each side of the hall, joined by the landing at the head of the stairs. */
+const MANSION_UPPER: UpperFloor = (() => {
+  const [wall, door0, door1] = [2.6, 16.6, 18.2];
+  const floors = [rect("East suite", wall + 0.15, 13, 9.35, 19.2), rect("West suite", -13, -wall - 0.15, 9.35, 19.2), rect("Landing", -wall + 0.15, wall - 0.15, 15.6, 19.2)];
+  // Doorways overlap the landing and the suite on either side, so walking through always stays inside one of them.
+  const doors = [rect("Suite doorway", wall - 1.0, wall + 1.0, door0, door1), rect("Suite doorway", -wall - 1.0, -wall + 1.0, door0, door1)];
+  return {
+    y: 3.6,
+    floors,
+    walks: [...floors, ...doors],
+    fixtures: [rect("Bedroom door", wall + 0.15, wall + 1.2, door0, door1), rect("Study door", -wall - 1.2, -wall - 0.15, door0, door1)],
+    stair: rect("Stairwell", -2.0, 2.0, 9.2, 15.6),
+  };
+})();
 
 /**
  * One interior plan. Coordinates are room-local metres from INTERIOR_ORIGIN, the same frame furniture is saved in.
@@ -31,6 +56,8 @@ export type HomeLayout = {
   storage: Vec2;
   /** The rooms of the plan; furniture is delivered to the room it belongs in. */
   rooms: RoomZone[];
+  /** The floor up the stairs, in homes that have one. */
+  upper?: UpperFloor;
 };
 
 export const FRONT_WALL = -INTERIOR_HALF[1];
@@ -98,11 +125,18 @@ export const HOME_LAYOUTS: Record<HomeTier, HomeLayout> = {
       { label: "Hall console", x: -3.4, z: FRONT_WALL + 0.3, hx: 0.8, hz: 0.3 },
       { label: "Hall console", x: 3.4, z: FRONT_WALL + 0.3, hx: 0.8, hz: 0.3 },
       ...[-9, -4.5, 4.5, 9].map((x) => ({ label: "Gallery column", x, z: 15.8, hx: 0.3, hz: 0.3 })),
+      ...[-2.9, 2.9].map((x) => ({ label: "Gallery column", x, z: 9.45, hx: 0.25, hz: 0.25 })),
       { label: "Storage chest", x: 12.4, z: 18.15, hx: 0.6, hz: 1.05 },
     ],
     kitchen: [-11.1, 0],
     storage: [12.45, 18.5],
-    rooms: [zone("living", 2.6, 13, 2.4, 9.0), zone("dining", -13, -2.6, 3.2, 9.0), zone("bedroom", 2.6, 13, 9.0, 19.2), zone("study", -13, -2.6, 9.0, 19.2)],
+    rooms: [
+      zone("living", 2.6, 13, 2.4, 19.2),
+      zone("dining", -13, -2.6, 3.2, 19.2),
+      zone("bedroom", 2.75, 13, 9.35, 19.2, 1),
+      zone("study", -13, -2.75, 9.35, 19.2, 1),
+    ],
+    upper: MANSION_UPPER,
   },
 };
 
@@ -130,12 +164,12 @@ export function homeLayout(propertyId: string | null | undefined): HomeLayout {
   return HOME_LAYOUTS[tier ?? "flat"];
 }
 
-/** Whether a room-local point is inside the walls, `inset` metres clear of them. */
-/** The room of the plan a room-local point stands in, if any. */
-export function roomAt(layout: HomeLayout, x: number, z: number): RoomKind | null {
-  return layout.rooms.find((room) => Math.abs(x - room.x) <= room.hx && Math.abs(z - room.z) <= room.hz)?.room ?? null;
+/** The room of the plan a room-local point stands in on a storey, if any. */
+export function roomAt(layout: HomeLayout, x: number, z: number, level: HomeLevel = 0): RoomKind | null {
+  return layout.rooms.find((room) => (room.level ?? 0) === level && Math.abs(x - room.x) <= room.hx && Math.abs(z - room.z) <= room.hz)?.room ?? null;
 }
 
+/** Whether a room-local point is inside the walls, `inset` metres clear of them. */
 export function insideHome(layout: HomeLayout, x: number, z: number, inset = 0) {
   return Math.abs(x) <= layout.halfX - inset && z >= FRONT_WALL + inset && z <= layout.back - inset;
 }

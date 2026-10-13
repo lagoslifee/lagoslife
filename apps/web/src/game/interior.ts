@@ -38,8 +38,9 @@ import { buildViewingScreens, VIEWING_BENCH_LENGTH, VIEWING_BENCH_X, VIEWING_KIO
 
 export type InteriorKind = "starter" | "preview" | "home" | "club" | "gym" | "viewing";
 /** `x`/`z` are room-local metres; pieces saved before free placement only have their grid cell. */
-export type Placement = { id?: string; itemId: string; gridX: number; gridZ: number; rotation: number; x?: number | null; z?: number | null };
-export type InteriorSpot = { id: "exit" | "bed" | "storage" | "kitchen" | "bar" | "stool" | "dance" | "tv" | "sofa" | "dining" | "gym" | `table-${number}`; point: Vec2; label: string };
+export type Placement = { id?: string; itemId: string; gridX: number; gridZ: number; rotation: number; x?: number | null; z?: number | null; level?: number | null };
+/** `level` 1 marks spots and seats upstairs, offered only to residents up there. */
+export type InteriorSpot = { id: "exit" | "bed" | "storage" | "kitchen" | "bar" | "stool" | "dance" | "tv" | "sofa" | "dining" | "gym" | `table-${number}`; point: Vec2; label: string; level?: 1 };
 
 const HEIGHT = 3.0;
 const DUBAI_CLUB = "pearl-club-dubai";
@@ -50,7 +51,7 @@ export type HomeRest = "sofa" | "dining" | "bed";
  * `rest`; bed places are lain on, with `at` at the foot end and `yaw` facing away from the headboard, and `width` the
  * mattress width when known. Sitting, `at` is where the hips go.
  */
-export type ClubSeat = { at: Vec2; yaw: number; y: number; stool: boolean; table?: number; rest?: HomeRest; width?: number };
+export type ClubSeat = { at: Vec2; yaw: number; y: number; stool: boolean; table?: number; rest?: HomeRest; width?: number; level?: 1 };
 const [OX, OZ] = INTERIOR_ORIGIN;
 const [HX, HZ] = INTERIOR_HALF;
 
@@ -98,7 +99,7 @@ export function interiorModels(kind: InteriorKind, layout: HomeLayout, placement
 
 /** What a show-home preview is dressed with: a sitting room, a bed and, in the bigger homes, dining and a TV. */
 function previewPieces(layout: HomeLayout): Placement[] {
-  const piece = (itemId: string, x: number, z: number, rotation: number): Placement => ({ itemId, gridX: 0, gridZ: 0, rotation, x, z });
+  const piece = (itemId: string, x: number, z: number, rotation: number, level = 0): Placement => ({ itemId, gridX: 0, gridZ: 0, rotation, x, z, level });
   if (layout.tier === "flat") return [piece("lagoon-sofa", 0.3, -0.2, 0), piece("woven-table", 0.3, 1.4, 0), piece("island-bed", layout.halfX - 1.2, layout.back - 1.4, 0)];
   // The lounge faces away from the door, so the way in looks over a low sofa back; a mansion keeps its foyer clear.
   const wide = layout.tier === "mansion";
@@ -112,9 +113,16 @@ function previewPieces(layout: HomeLayout): Placement[] {
     piece("floor-lamp", cx + 2.4, cz - 0.2, 0),
     piece("potted-palm", cx - 2.4, cz - 0.2, 0),
     piece("dining-set", wide ? -7 : -3.6, wide ? 6.5 : 5, 0),
-    piece("eko-king-bed", wide ? 9.5 : layout.halfX - 3.2, wide ? 12.5 : layout.back - 1.6, 0),
-    piece("wardrobe", wide ? 12.6 : layout.halfX - 0.5, wide ? 15 : layout.back - 4.6, 90),
-    piece("bookshelf", wide ? -12.7 : -layout.halfX + 0.3, wide ? 9 : 4.5, 270),
+    ...(wide
+      ? [
+          piece("eko-king-bed", 8.2, 17.9, 0, 1),
+          piece("wardrobe", 12.6, 12.4, 90, 1),
+          piece("velvet-armchair", 4.4, 11.2, 180, 1),
+          piece("aso-rug", 8.2, 14.6, 0, 1),
+          piece("bookshelf", -12.7, 13.4, 270, 1),
+          piece("work-desk", -8, 18.5, 0, 1),
+        ]
+      : [piece("eko-king-bed", layout.halfX - 3.2, layout.back - 1.6, 0), piece("wardrobe", layout.halfX - 0.5, layout.back - 4.6, 90), piece("bookshelf", -layout.halfX + 0.3, 4.5, 270)]),
   ];
 }
 
@@ -131,12 +139,15 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   // While a Meshy model stands in for a piece, its box geometry goes here and is never built.
   const unused = new MeshBuilderBatch("interior unused");
   let hidden = false;
+  // Furniture upstairs is built at floor height into its own batches, which are then raised onto the upper floor.
+  let lifting = false;
   const get = (key: string) => {
     if (hidden) return unused;
-    let batch = batches.get(key);
+    const name = lifting ? `${key}${LIFTED}` : key;
+    let batch = batches.get(name);
     if (!batch) {
-      batch = new MeshBuilderBatch(`interior ${key}`);
-      batches.set(key, batch);
+      batch = new MeshBuilderBatch(`interior ${name}`);
+      batches.set(name, batch);
     }
     return batch;
   };
@@ -187,7 +198,7 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   }
   let upstairs: Upstairs | null = null;
   if (grand) {
-    upstairs = dressHome(layout, { get, solid, model, boxes });
+    upstairs = dressHome(layout, { get, solid, model, boxes, paint: local_.wall });
   } else if (!gym && !viewing) {
     // Windows with a bright daylight view on the north and east walls.
     for (const x of kind === "club" ? [] : [-3, 0, 3]) {
@@ -245,23 +256,33 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   };
 
   disposables.push(...exitDisposables);
+  const upperFloor = grand && layout.upper ? layout.upper : null;
+  const upperBoxes: typeof boxes = [];
   const placePiece = (placement: Placement) => {
     const build = furniture[placement.itemId];
     if (!build) return;
     const [x, z] = placementCentre(placement);
     const yaw = (placement.rotation * Math.PI) / 180;
     const id = FURNITURE_MODELS[placement.itemId];
+    const lift = placement.level === 1 && upperFloor ? upperFloor.y : 0;
     // Models face +Z; catalogue pieces put their back on local +z, so they turn half a turn.
     const placed = id ? model(id, x, z, yaw + Math.PI) : null;
     hidden = Boolean(placed);
-    const firstSeat = seats.length;
+    lifting = lift > 0;
+    const [firstSeat, firstSpot, firstBox] = [seats.length, spots.length, boxes.length];
     build(x, z, yaw);
     hidden = false;
+    lifting = false;
     if (placed) {
       const missing = new Set(fitSeats(placed, seats.slice(firstSeat)));
       if (missing.size) seats.splice(firstSeat, seats.length - firstSeat, ...seats.slice(firstSeat).filter((seat) => !missing.has(seat)));
     }
     if (placement.itemId === "tv-console") spots.push({ id: "tv", point: [x - Math.sin(yaw) * 1.8, z - Math.cos(yaw) * 1.8], label: "Watch TV" });
+    if (!lift) return;
+    if (placed) raise(placed, lift);
+    for (const seat of seats.slice(firstSeat)) Object.assign(seat, { y: seat.y + lift, level: 1 });
+    for (const spot of spots.slice(firstSpot)) spot.level = 1;
+    upperBoxes.push(...boxes.splice(firstBox));
   };
   let animate: (seconds: number) => void = () => {};
   let clubView: ReturnType<typeof buildClub> | null = null;
@@ -292,9 +313,10 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
       get("fabric").polygon([[OX - 1.5, OZ - 1], [OX + 2, OZ - 1], [OX + 2, OZ + 1.6], [OX - 1.5, OZ + 1.6]], 0.03, 1, [0.55, 0.3, 0.25]);
     }
     // A soft carpet marks out the bedroom of the open plan, so it reads as where the bed and wardrobe go.
-    for (const room of layout.rooms.filter((entry) => entry.room === "bedroom")) {
+    for (const room of layout.rooms.filter((entry) => entry.room === "bedroom" || (entry.level && upperFloor))) {
       const [x0, x1, z0, z1] = [OX + room.x - room.hx + 0.3, OX + room.x + room.hx - 0.3, OZ + room.z - room.hz + 0.3, OZ + room.z + room.hz - 0.3];
-      get("bedding").polygon([[x0, z0], [x1, z0], [x1, z1], [x0, z1]], 0.025, 1, [0.78, 0.71, 0.62]);
+      const y = (room.level && upperFloor ? upperFloor.y : 0) + 0.025;
+      get("bedding").polygon([[x0, z0], [x1, z0], [x1, z1], [x0, z1]], y, 1, room.room === "bedroom" ? [0.72, 0.6, 0.52] : [0.36, 0.42, 0.5]);
     }
     spots.push({ id: "kitchen", point: [OX + layout.kitchen[0], OZ + layout.kitchen[1]], label: "Cook a meal" });
     if (kind === "home") {
@@ -309,10 +331,14 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   }
 
   const meshes: Mesh[] = [];
-  for (const [key, batch] of batches) {
+  for (const [name, batch] of batches) {
+    const lifted = name.endsWith(LIFTED);
+    const key = lifted ? name.slice(0, -LIFTED.length) : name;
     const material = local_.byKey[key] ?? (materials as unknown as Record<string, Material>)[key]!;
     const mesh = batch.build(scene, material);
-    if (mesh) meshes.push(mesh);
+    if (!mesh) continue;
+    if (lifted) raise(mesh, upperFloor!.y);
+    meshes.push(mesh);
   }
   const sign = signs.build(scene, atlas.material);
   if (sign) meshes.push(sign);
@@ -333,6 +359,7 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   });
 
   let level: Level = "ground";
+  let last: Vec2 | null = null;
   return {
     spots,
     seats: clubView?.seats ?? seats,
@@ -340,23 +367,21 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     bounds: { minX: X0, maxX: X1, minZ: Z0, maxZ: Z1, height: H },
     collide(x: number, z: number, radius: number): Vec2 {
       if (upstairs) {
-        const step = climb(level, upstairs, { minX: X0, maxX: X1, maxZ: Z1 }, x, z, radius);
+        const step = climb(level, upstairs, x, z, radius, last);
         level = step.level;
+        if (step.point && level === "upper") {
+          const [px, pz] = pushOut(step.point[0], step.point[1], radius, upperBoxes);
+          last = clampToWalks(upstairs.walks, px, pz, radius, step.point);
+          return last;
+        }
+        last = null;
         if (step.point) return step.point;
       }
-      let px = Math.max(X0 + radius, Math.min(X1 - radius, x));
-      let pz = Math.max(Z0 + radius, Math.min(Z1 - radius, z));
-      for (const box of boxes) {
-        const dx = px - box.x;
-        const dz = pz - box.z;
-        const ox = box.hx + radius - Math.abs(dx);
-        const oz = box.hz + radius - Math.abs(dz);
-        if (ox > 0 && oz > 0) {
-          if (ox < oz) px += Math.sign(dx || 1) * ox;
-          else pz += Math.sign(dz || 1) * oz;
-        }
-      }
-      return [px, pz];
+      return pushOut(Math.max(X0 + radius, Math.min(X1 - radius, x)), Math.max(Z0 + radius, Math.min(Z1 - radius, z)), radius, boxes);
+    },
+    /** 1 while up the stairs on the upper floor, else 0: spots and seats with a `level` are only for that floor. */
+    storey(): 0 | 1 {
+      return level === "upper" ? 1 : 0;
     },
     /** Height the resident stands at: the floor, partway up the stairs, or up on the gallery. */
     floor(_x: number, z: number) {
@@ -391,6 +416,35 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
 }
 
 export type InteriorView = ReturnType<typeof buildInterior>;
+
+const LIFTED = "@upstairs";
+
+/** Raises a built mesh or a placed model (its world matrices are frozen) by `y` metres. */
+function raise(node: TransformNode, y: number) {
+  node.position.y += y;
+  for (const mesh of [node, ...node.getChildMeshes()]) {
+    mesh.unfreezeWorldMatrix();
+    mesh.freezeWorldMatrix();
+  }
+}
+
+type Box = { x: number; z: number; hx: number; hz: number };
+
+/** Pushes a resident of `radius` out of any box they would overlap, along the shallower side. */
+function pushOut(x: number, z: number, radius: number, boxes: Box[]): Vec2 {
+  let [px, pz] = [x, z];
+  for (const box of boxes) {
+    const dx = px - box.x;
+    const dz = pz - box.z;
+    const ox = box.hx + radius - Math.abs(dx);
+    const oz = box.hz + radius - Math.abs(dz);
+    if (ox > 0 && oz > 0) {
+      if (ox < oz) px += Math.sign(dx || 1) * ox;
+      else pz += Math.sign(dz || 1) * oz;
+    }
+  }
+  return [px, pz];
+}
 
 type Batch = (key: string) => MeshBuilderBatch;
 type HomeMaterials = ReturnType<typeof homeMaterials>;
@@ -683,8 +737,36 @@ const HOME_SCHEMES: Record<HomeLayout["tier"], HomeScheme> = {
   mansion: { lower: [0.3, 0.17, 0.09], upper: [0.86, 0.76, 0.6], skirting: [0.22, 0.13, 0.08], rail: [0.82, 0.65, 0.33], paper: damask("#efe4cc", "#d6c19a") },
 };
 
-/** A walkable stair (world metres; z0 is the bottom tread) up to a landing that runs from `deck.z0` to the back wall. */
-export type Upstairs = { stair: { x0: number; x1: number; z0: number; z1: number }; deck: { z0: number; y: number } };
+type WorldRect = { x0: number; x1: number; z0: number; z1: number };
+/**
+ * A walkable stair (world metres; z0 is the bottom tread) up to a landing from `deck.z0` at height `deck.y`, and
+ * `walks`, everywhere a resident can walk up there: the landing, the rooms off it and the doorways between them.
+ */
+export type Upstairs = { stair: WorldRect; deck: { z0: number; y: number }; walks: WorldRect[] };
+
+/**
+ * The nearest point to `x, z` where a resident of `radius` stands inside one of `walks`. Coming `from` a point, only
+ * the areas they already stand in count, so they pass from one to the next through the overlap (the doorways) and
+ * never through a wall.
+ */
+export function clampToWalks(walks: WorldRect[], x: number, z: number, radius: number, from?: Vec2 | null): Vec2 {
+  const inset = walks.map((walk) => {
+    const [x0, x1] = walk.x1 - walk.x0 > radius * 2 ? [walk.x0 + radius, walk.x1 - radius] : [(walk.x0 + walk.x1) / 2, (walk.x0 + walk.x1) / 2];
+    const [z0, z1] = walk.z1 - walk.z0 > radius * 2 ? [walk.z0 + radius, walk.z1 - radius] : [(walk.z0 + walk.z1) / 2, (walk.z0 + walk.z1) / 2];
+    return { x0, x1, z0, z1 };
+  });
+  const holds = (area: WorldRect, px: number, pz: number) => px >= area.x0 - 1e-6 && px <= area.x1 + 1e-6 && pz >= area.z0 - 1e-6 && pz <= area.z1 + 1e-6;
+  const current = from ? inset.filter((area) => holds(area, from[0], from[1])) : [];
+  const candidates = current.length ? current : inset;
+  let best: { point: Vec2; distance: number } | null = null;
+  for (const area of candidates) {
+    const point: Vec2 = [Math.max(area.x0, Math.min(area.x1, x)), Math.max(area.z0, Math.min(area.z1, z))];
+    const distance = Math.hypot(point[0] - x, point[1] - z);
+    if (distance < 1e-9) return point;
+    if (!best || distance < best.distance) best = { point, distance };
+  }
+  return best?.point ?? [x, z];
+}
 
 export type Level = "ground" | "stairs" | "upper";
 
@@ -692,7 +774,7 @@ export type Level = "ground" | "stairs" | "upper";
  * Moves a resident between the ground floor, the stairs and the gallery. Returns the corrected point while on the
  * stairs or the gallery; on the ground floor the room's usual furniture collision applies (`point` is null).
  */
-export function climb(level: Level, { stair, deck }: Upstairs, room: { minX: number; maxX: number; maxZ: number }, x: number, z: number, radius: number): { level: Level; point: Vec2 | null } {
+export function climb(level: Level, { stair, deck, walks }: Upstairs, x: number, z: number, radius: number, from?: Vec2 | null): { level: Level; point: Vec2 | null } {
   const [sx0, sx1] = [stair.x0 + radius, stair.x1 - radius];
   const inStairWidth = x > sx0 && x < sx1;
   let next = level;
@@ -703,8 +785,8 @@ export function climb(level: Level, { stair, deck }: Upstairs, room: { minX: num
     else if (z > stair.z1 + radius) next = "upper";
     else return { level: next, point: [Math.max(sx0, Math.min(sx1, x)), z] };
   }
-  // Up on the gallery: the glass balustrade keeps residents on the landing, except at the top of the stairs.
-  if (next === "upper") return { level: next, point: [Math.max(room.minX + radius, Math.min(room.maxX - radius, x)), Math.max(deck.z0 + radius, Math.min(room.maxZ - radius, z))] };
+  // Upstairs: the balustrade and the walls keep residents on the landing and in the rooms, except at the top of the stairs.
+  if (next === "upper") return { level: next, point: clampToWalks(walks, x, z, radius, level === "upper" ? from : null) };
   return { level: next, point: null };
 }
 
@@ -719,6 +801,8 @@ type Dresser = {
   solid: Solid;
   model: (id: PropId, x: number, z: number, yaw: number, scale?: number, y?: number) => TransformNode | null;
   boxes: Array<{ x: number; z: number; hx: number; hz: number }>;
+  /** Wall paint, for walls built inside the room. */
+  paint?: Rgb;
 };
 
 /**
@@ -726,7 +810,7 @@ type Dresser = {
  * lighting, and in a mansion a double-height hall with a grand staircase, gallery, chandeliers and a grand piano.
  * Positions match the fixtures in HOME_LAYOUTS so bought furniture never lands on them.
  */
-function dressHome(layout: HomeLayout, { get, solid, model, boxes }: Dresser) {
+function dressHome(layout: HomeLayout, { get, solid, model, boxes, paint = [0.86, 0.76, 0.6] }: Dresser) {
   const [X0, X1, Z0, Z1, H] = [OX - layout.halfX, OX + layout.halfX, OZ + FRONT_WALL, OZ + layout.back, layout.height];
   const wx = (x: number) => OX + x;
   const wz = (z: number) => OZ + z;
@@ -851,11 +935,16 @@ function dressHome(layout: HomeLayout, { get, solid, model, boxes }: Dresser) {
       strip("homeGold", side, a0, a1, gallery.y + 0.05, 0.08, 0.06);
     }
     strip("homeGold", "south", -layout.halfX, layout.halfX, gallery.y + 0.05, 0.08, 0.06);
-    // Tall windows on the side walls, a glazed wall to the pool terrace under the gallery, clerestory above it.
-    for (const z of [1, 9]) glazing("east", z, 2.2, 0.6, 6.4, 2);
-    for (const z of [7.5]) glazing("west", z, 2.2, 0.6, 6.4, 2);
+    // Tall windows in the double-height hall, a glazed wall to the pool terrace under the suites, and the suites'
+    // own windows over the garden and the side lawns.
+    for (const z of [1, 5.6]) glazing("east", z, 2.2, 0.6, 6.4, 2);
+    for (const z of [6.2]) glazing("west", z, 2.2, 0.6, 6.4, 2);
     glazing("north", 0, 14, 0.05, gallery.y - 0.4, 8);
-    for (const x of [-8.5, 8.5]) glazing("north", x, 3, gallery.y + 1.4, H - 0.6, 2);
+    for (const x of [-8.5, 8.5]) glazing("north", x, 3.4, gallery.y + 0.7, H - 0.9, 2);
+    for (const side of ["east", "west"] as const) {
+      for (const z of [12.6, 16.8]) glazing(side, z, 2.0, gallery.y + 0.8, H - 1.0, 2);
+      glazing(side, 14.2, 2.4, 0.7, gallery.y - 0.6, 2);
+    }
     glazing("south", 0, 2.4, 2.9, 4.6, 2);
     // Grand staircase rising to the gallery: marble treads on a white carriage, glass balustrade, gold rail.
     const steps = 18;
@@ -869,7 +958,6 @@ function dressHome(layout: HomeLayout, { get, solid, model, boxes }: Dresser) {
     }
     // Solid from the side and underneath, but the first tread is left open so residents can walk up.
     block(OX, wz((stairZ0 + 0.6 + stairZ1) / 2), stairHalf + 0.1, (stairZ1 - stairZ0 - 0.6) / 2);
-    levels = { stair: { x0: OX - stairHalf, x1: OX + stairHalf, z0: wz(stairZ0), z1: wz(stairZ1) }, deck: { z0: wz(gallery.z), y: gallery.y } };
     for (const side of [-1, 1]) {
       const x = OX + side * (stairHalf + 0.08);
       const [z0, z1] = [wz(stairZ0), wz(stairZ1)];
@@ -879,13 +967,40 @@ function dressHome(layout: HomeLayout, { get, solid, model, boxes }: Dresser) {
       rail.quad([x - 0.04, 0.99, z0], [x + 0.04, 0.99, z0], [x + 0.04, gallery.y + 1.04, z1], [x - 0.04, gallery.y + 1.04, z1], [0, 1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
       get("homeGold").box(x, 0.5, z0 + 0.05, 0.12, 1.0, 0.12);
     }
-    // Gallery landing across the back, on columns, with doors to the upstairs suites.
-    const slabZ = wz((gallery.z + layout.back) / 2);
-    const slabDepth = layout.back - gallery.z;
-    get("homeTrim").box(OX, gallery.y - 0.18, slabZ, layout.halfX * 2, 0.36, slabDepth);
-    get("homeFloor").box(OX, gallery.y + 0.01, slabZ, layout.halfX * 2, 0.02, slabDepth);
-    for (let x = -layout.halfX + 1.5; x <= layout.halfX - 1.5; x += 3) get("lamp").box(wx(x), gallery.y - 0.37, slabZ, 0.22, 0.02, 0.22);
-    for (const [from, to] of [[-layout.halfX, -stairHalf], [stairHalf, layout.halfX]] as const) {
+    // Upstairs: a bedroom suite over the east side of the hall and a study over the west, either side of the landing
+    // at the head of the stairs, each through its own doorway. The slabs rest on the gallery columns.
+    const upper = layout.upper!;
+    const [wall, doorZ0, doorZ1, doorH] = [2.6, upper.fixtures[0]!.z - upper.fixtures[0]!.hz, upper.fixtures[0]!.z + upper.fixtures[0]!.hz, 2.35];
+    const slab = (x0: number, x1: number, z0: number, z1: number) => {
+      get("homeTrim").box(wx((x0 + x1) / 2), gallery.y - 0.18, wz((z0 + z1) / 2), x1 - x0, 0.36, z1 - z0);
+      get("homeFloor").box(wx((x0 + x1) / 2), gallery.y + 0.01, wz((z0 + z1) / 2), x1 - x0, 0.02, z1 - z0);
+      for (let x = x0 + 1.5; x <= x1 - 1.5; x += 3) for (let z = z0 + 1.5; z <= z1 - 1; z += 3) get("lamp").box(wx(x), gallery.y - 0.37, wz(z), 0.22, 0.02, 0.22);
+    };
+    slab(wall, layout.halfX, 9.2, layout.back);
+    slab(-layout.halfX, -wall, 9.2, layout.back);
+    slab(-wall, wall, gallery.z, layout.back);
+    const roomWall = (x0: number, x1: number, z0: number, z1: number, y0: number, y1: number) => {
+      const [w, d] = [Math.max(x1 - x0, 0.15), Math.max(z1 - z0, 0.15)];
+      get("homeWall").box(wx((x0 + x1) / 2), (y0 + y1) / 2, wz((z0 + z1) / 2), w, y1 - y0, d, 0, 1, paint);
+    };
+    for (const side of [-1, 1]) {
+      const inner = side * wall;
+      // Front wall of the suite over the hall, trimmed in gold at the floor line.
+      roomWall(Math.min(inner, side * layout.halfX), Math.max(inner, side * layout.halfX), 9.12, 9.28, gallery.y, H);
+      get("homeGold").box(wx(side * (wall + layout.halfX) / 2), gallery.y + 0.05, wz(9.06), layout.halfX - wall, 0.08, 0.06);
+      // Side wall on the landing and the stairwell, with the doorway near the back.
+      roomWall(inner - 0.08, inner + 0.08, 9.2, doorZ0, gallery.y, H);
+      roomWall(inner - 0.08, inner + 0.08, doorZ1, layout.back, gallery.y, H);
+      roomWall(inner - 0.08, inner + 0.08, doorZ0, doorZ1, gallery.y + doorH, H);
+      for (const z of [doorZ0, doorZ1]) get("homeWood").box(wx(inner), gallery.y + doorH / 2, wz(z), 0.24, doorH, 0.1);
+      get("homeWood").box(wx(inner), gallery.y + doorH + 0.05, wz((doorZ0 + doorZ1) / 2), 0.24, 0.1, doorZ1 - doorZ0 + 0.1);
+      // The door stands open against the suite wall.
+      get("homeWood").box(wx(inner + side * 0.12), gallery.y + doorH / 2 - 0.02, wz(doorZ1 + 0.42), 0.05, doorH - 0.08, 0.82);
+      get("homeGold").box(wx(inner + side * 0.16), gallery.y + 1.0, wz(doorZ1 + 0.72), 0.04, 0.04, 0.12);
+      // Skirting inside the suite.
+      get("homeSkirting").box(wx(side * (wall + layout.halfX) / 2), gallery.y + 0.07, wz(9.32), layout.halfX - wall, 0.14, 0.04);
+    }
+    for (const [from, to] of [[-wall, -stairHalf], [stairHalf, wall]] as const) {
       const glass = get("homeGlass");
       const z = wz(gallery.z) - 0.02;
       glass.quad([wx(from), gallery.y, z], [wx(to), gallery.y, z], [wx(to), gallery.y + 1.0, z], [wx(from), gallery.y + 1.0, z], [0, 0, -1], [[0, 0], [1, 0], [1, 1], [0, 1]]);
@@ -896,17 +1011,25 @@ function dressHome(layout: HomeLayout, { get, solid, model, boxes }: Dresser) {
       get("homeGold").box(wx(x), 0.08, wz(15.8), 0.62, 0.16, 0.62);
       get("homeGold").box(wx(x), gallery.y - 0.42, wz(15.8), 0.62, 0.1, 0.62);
     }
-    for (const x of [-10.5, -5.5, 5.5, 10.5]) {
-      const [dx, , dz] = onWall("north", x, gallery.y + 1.25, 0.03);
-      get("homeWood").box(dx, gallery.y + 1.25, dz, 1.7, 2.5, 0.06);
-      get("homeGold").box(dx, gallery.y + 1.25, dz - 0.04, 0.05, 2.4, 0.02);
-      for (const side of [-0.18, 0.18]) get("homeGold").box(dx + side, gallery.y + 1.2, dz - 0.06, 0.04, 0.3, 0.04);
+    for (const x of [-2.9, 2.9]) {
+      solid("homeTrim", wx(x), gallery.y / 2, wz(9.45), 0.4, gallery.y, 0.4);
+      get("homeGold").box(wx(x), 0.08, wz(9.45), 0.5, 0.16, 0.5);
     }
+    // Suite touches: a headboard wall of print behind where the bed goes, art in the study, palms by the windows.
+    get("homePaper").box(wx(8.2), (gallery.y + 0.1 + gallery.y + 2.9) / 2, Z1 - 0.03, 5.2, 2.8, 0.02);
+    get("homeGold").box(wx(8.2), gallery.y + 2.95, Z1 - 0.04, 5.3, 0.06, 0.04);
+    for (const x of [-7.8, 7.8]) if (!model("wall-art", wx(x), wz(9.32), 0, 1.0, gallery.y + 1.1)) get("homeGold").box(wx(x), gallery.y + 1.8, wz(9.31), 1.8, 1.3, 0.05);
+    downlights(9.8, layout.back - 0.8, H);
+    levels = {
+      stair: { x0: OX - stairHalf, x1: OX + stairHalf, z0: wz(stairZ0), z1: wz(stairZ1) },
+      deck: { z0: wz(gallery.z), y: gallery.y },
+      walks: upper.walks.map((area) => ({ x0: wx(area.x - area.hx), x1: wx(area.x + area.hx), z0: wz(area.z - area.hz), z1: wz(area.z + area.hz) })),
+    };
     kitchen(0, 1, -9.73);
     if (!model("grand-piano", wx(9.8), wz(0.5), -Math.PI / 2)) solid("darkFrame", wx(9.8), 0.5, wz(0.5), 2.6, 1.0, 1.6, 0, [0.03, 0.03, 0.04]);
     block(wx(9.8), wz(0.5), 1.35, 0.95);
     model("chandelier", OX, wz(1.5), 0, 1.5, H - 4.5);
-    for (const x of [-7, 7]) model("chandelier", wx(x), wz(8), 0, 0.85, H - 2.56);
+    for (const x of [-7, 7]) model("chandelier", wx(x), wz(5.6), 0, 0.85, H - 2.56);
     consoleTable(-3.4);
     consoleTable(3.4);
     art("west", 4.3, 1.5, 1.5);

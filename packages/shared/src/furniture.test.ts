@@ -40,10 +40,11 @@ describe("home furniture", () => {
         const spot = findFreeSpot(item.id, [], layout);
         expect(spot, `${layout.tier} ${item.id}`).not.toBeNull();
         const room = homeRoomFor(item.id, layout);
-        if (room) expect(roomAt(layout, spot!.x, spot!.z), `${layout.tier} ${item.id}`).toBe(room);
+        if (room) expect(roomAt(layout, spot!.x, spot!.z, spot!.level), `${layout.tier} ${item.id}`).toBe(room);
         if (item.wall) {
           const rect = furnitureRect(item, spot!.x, spot!.z, spot!.rotation);
-          const gaps = [layout.back - rect.z - rect.hz, rect.z - rect.hz - FRONT_WALL, layout.halfX - rect.x - rect.hx, rect.x - rect.hx + layout.halfX];
+          const walls = spot!.level ? layout.upper!.floors.find((floor) => Math.abs(rect.x - floor.x) <= floor.hx && Math.abs(rect.z - floor.z) <= floor.hz)! : { x: 0, z: (layout.back + FRONT_WALL) / 2, hx: layout.halfX, hz: (layout.back - FRONT_WALL) / 2 };
+          const gaps = [walls.z + walls.hz - rect.z - rect.hz, rect.z - rect.hz - (walls.z - walls.hz), walls.x + walls.hx - rect.x - rect.hx, rect.x - rect.hx - (walls.x - walls.hx)];
           expect(Math.min(...gaps), `${layout.tier} ${item.id}`).toBeLessThan(0.2);
         }
       }
@@ -57,6 +58,27 @@ describe("home furniture", () => {
     expect(misplacedRoom({ itemId: "lagoon-sofa", x: 0, z: 0, rotation: 0 }, layout)).toBeNull();
     const spot = findFreeSpot("wardrobe", [], layout, "dining")!;
     expect(roomAt(layout, spot.x, spot.z)).toBe("dining");
+  });
+
+  it("furnishes the mansion's upstairs bedroom separately from the lounge under it", () => {
+    const layout = HOME_LAYOUTS.mansion;
+    const bed = findFreeSpot("eko-king-bed", [], layout)!;
+    expect(bed.level).toBe(1);
+    expect(roomAt(layout, bed.x, bed.z, 1)).toBe("bedroom");
+    const upstairs: PlacedPiece = { id: "bed", itemId: "eko-king-bed", ...bed };
+    // The same spot downstairs is free: the lounge under the bedroom is another floor.
+    expect(placementProblem({ itemId: "ikoyi-sectional", x: bed.x, z: bed.z, rotation: 0, level: 0 }, [upstairs], layout)).toBeNull();
+    expect(placementProblem({ itemId: "velvet-armchair", x: bed.x, z: bed.z, rotation: 0, level: 1 }, [upstairs], layout)).toMatch(/on top of/);
+    // Upstairs, pieces stay inside the suites and the landing: not over the stairwell or in a doorway.
+    expect(placementProblem({ itemId: "velvet-armchair", x: 0, z: 12, rotation: 0, level: 1 }, [], layout)).toMatch(/upstairs room/);
+    expect(placementProblem({ itemId: "velvet-armchair", x: 3.3, z: 17.4, rotation: 0, level: 1 }, [], layout)).toMatch(/door/);
+    expect(placementProblem({ itemId: "velvet-armchair", x: 0, z: 0, rotation: 0, level: 1 }, [], HOME_LAYOUTS.house)).toMatch(/no upstairs/);
+    // A king bed left downstairs belongs up in the bedroom.
+    expect(misplacedRoom({ itemId: "eko-king-bed", x: 9.5, z: 12.5, rotation: 0 }, layout)).toBe("bedroom");
+    expect(misplacedRoom({ itemId: "eko-king-bed", x: 9.5, z: 12.5, rotation: 0, level: 1 }, layout)).toBeNull();
+    const wardrobe = findFreeSpot("wardrobe", [upstairs], layout)!;
+    expect(wardrobe.level).toBe(1);
+    expect(placementProblem({ itemId: "wardrobe", ...wardrobe }, [upstairs], layout)).toBeNull();
   });
 });
 

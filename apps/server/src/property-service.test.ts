@@ -296,6 +296,21 @@ describe("rental agreements", () => {
     await pool.query(`UPDATE wallet SET balance = 40000000 WHERE user_id = $1`, [buyer.id]);
     const bought = await acquireProperty(buyer.id, listingId, "owned", randomUUID(), true);
     expect(bought.balance).toBe(40_000_000 - price - agentFee(price));
+    // The king bed goes up into the bedroom suite; the lounge under it stays free for a sofa.
+    const home = bought.propertyId!;
+    await pool.query(
+      `INSERT INTO inventory_item (user_id, item_id, quantity) VALUES ($1, 'eko-king-bed', 1), ($1, 'ikoyi-sectional', 1)
+       ON CONFLICT (user_id, item_id) DO UPDATE SET quantity = 1`,
+      [buyer.id],
+    );
+    const bed = await placeFurniture(buyer.id, home, { itemId: "eko-king-bed", x: 9.5, z: 17.4, rotation: 0, level: 1, idempotencyKey: randomUUID() });
+    await placeFurniture(buyer.id, home, { itemId: "ikoyi-sectional", x: 9.5, z: 17.4, rotation: 0, idempotencyKey: randomUUID() });
+    await expect(moveFurniture(buyer.id, home, { placementId: bed.id, x: 0, z: 12, rotation: 0, level: 1 })).rejects.toThrow(/upstairs room/);
+    await moveFurniture(buyer.id, home, { placementId: bed.id, x: 9.5, z: 16.9, rotation: 0 });
+    const interior = await getInterior(buyer.id, home);
+    expect(interior.furniture.find((piece: { id: string }) => piece.id === bed.id)).toMatchObject({ level: 1, z: 16.9 });
+    await pool.query(`DELETE FROM furniture_placement WHERE property_id = $1`, [home]);
+    await pool.query(`DELETE FROM inventory_item WHERE user_id = $1 AND item_id IN ('eko-king-bed', 'ikoyi-sectional')`, [buyer.id]);
     await pool.query(`DELETE FROM property_tenure WHERE property_id = $1`, [bought.propertyId]);
     await pool.query(`DELETE FROM home_state WHERE property_id = $1`, [bought.propertyId]);
     await pool.query(`UPDATE player_profile SET home_property_id = NULL WHERE user_id = $1`, [buyer.id]);

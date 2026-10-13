@@ -1093,6 +1093,14 @@ table.departures td { padding: 6px 10px; border-bottom: 1px solid #23413d; }
 .designer-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
 .floor-plan { width: 100%; flex: 1; min-height: 160px; max-height: 46vh; touch-action: none; user-select: none; }
 .plan-floor { fill: #efe6d3; stroke: #3b3a36; stroke-width: 0.12; }
+.plan-void { fill: rgba(60, 70, 70, 0.08); stroke: #3b3a36; stroke-width: 0.06; stroke-dasharray: 0.3 0.2; }
+.plan-stairs { fill: #d9cdb4; stroke: #8a7a5c; stroke-width: 0.05; }
+.plan-stair-step { stroke: #8a7a5c; stroke-width: 0.03; }
+.designer-storeys { display: flex; gap: 6px; margin: 0 0 6px; }
+.designer-storeys button { flex: 1; padding: 6px 10px; border-radius: 10px; border: 1px solid rgba(23,49,46,.2); background: #fff; color: inherit; font-weight: 700; font-size: calc(12px * var(--text-scale)); display: flex; align-items: center; justify-content: center; gap: 6px; }
+.designer-storeys button.active { background: #c4532d; border-color: #c4532d; color: #fff; }
+.designer-storeys small { background: rgba(0,0,0,.12); border-radius: 999px; padding: 0 6px; font-size: 10px; }
+[data-theme="dark"] .designer-storeys button:not(.active) { background: #2c2c2e; border-color: #48484a; color: #f2f2f7; }
 .plan-window { fill: #9fd3ea; }
 .plan-door { fill: #6d4127; }
 .plan-room rect { fill: rgba(255, 255, 255, 0.35); stroke: rgba(59, 58, 54, 0.45); stroke-width: 0.05; stroke-dasharray: 0.25 0.12; }

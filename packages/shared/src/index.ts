@@ -320,6 +320,8 @@ export interface ReferralStatus {
 const furnitureRotation = z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]);
 /** Room-local metres from the interior origin; the largest plan (see HOME_LAYOUTS) fits inside. */
 const floorCoordinate = z.number().finite().min(-14).max(20);
+/** Storey: 0 the ground floor (the default, for older clients), 1 upstairs. */
+const furnitureLevel = z.union([z.literal(0), z.literal(1)]).optional();
 
 /** Free positions (`x`, `z`) are preferred; `gridX`/`gridZ` are the old 8 × 6 cells, still accepted. */
 export const placeFurnitureSchema = z
@@ -330,6 +332,7 @@ export const placeFurnitureSchema = z
     gridX: z.number().int().min(0).max(7).optional(),
     gridZ: z.number().int().min(0).max(5).optional(),
     rotation: furnitureRotation,
+    level: furnitureLevel,
     idempotencyKey: z.uuid(),
   })
   .refine((body) => (body.x !== undefined && body.z !== undefined) || (body.gridX !== undefined && body.gridZ !== undefined), "Give a floor position.");
@@ -339,6 +342,7 @@ export const moveFurnitureSchema = z.object({
   x: floorCoordinate,
   z: floorCoordinate,
   rotation: furnitureRotation,
+  level: furnitureLevel,
 });
 
 export const homeActionSchema = z.object({

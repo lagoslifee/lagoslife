@@ -1,4 +1,4 @@
-import { FRONT_WALL, HOME_LAYOUTS, roomAt, type HomeLayout, type RoomKind } from "./home-layouts.js";
+import { FRONT_WALL, HOME_LAYOUTS, roomAt, type HomeLayout, type HomeLevel, type RoomKind } from "./home-layouts.js";
 import { INTERIOR_HALF, type Vec2 } from "./world.js";
 
 export type FurnitureRotation = 0 | 90 | 180 | 270;
@@ -86,7 +86,12 @@ export function nearestCell(x: number, z: number): Vec2 {
   ];
 }
 
-export type PlacedPiece = { id?: string; itemId: string; x: number; z: number; rotation: number };
+/** `level` is the storey (see HomeLevel); pieces without one stand on the ground floor. */
+export type PlacedPiece = { id?: string; itemId: string; x: number; z: number; rotation: number; level?: number | null };
+
+const levelOf = (piece: Pick<PlacedPiece, "level">): HomeLevel => (piece.level === 1 ? 1 : 0);
+const within = (inner: FloorRect, outer: FloorRect, margin: number) =>
+  Math.abs(inner.x - outer.x) + inner.hx <= outer.hx - margin + 1e-6 && Math.abs(inner.z - outer.z) + inner.hz <= outer.hz - margin + 1e-6;
 
 /** Positions snap to 10 cm so a dragged piece lands where it looks like it does on the plan. */
 export function snapFloor(value: number) {
@@ -100,19 +105,27 @@ export function placementProblem(piece: PlacedPiece, others: PlacedPiece[], layo
   if (![0, 90, 180, 270].includes(piece.rotation)) return "Turn furniture in quarter turns.";
   const rect = furnitureRect(item, piece.x, piece.z, piece.rotation);
   const margin = 0.05;
-  for (const fixture of layout.fixtures) {
-    if (overlaps(rect, fixture)) return fixture.label === "Front door" ? "Keep the doorway clear — furniture cannot block the exit." : `Leave the ${fixture.label.toLowerCase()} clear.`;
-  }
-  if (
-    Math.abs(rect.x) + rect.hx > layout.halfX - margin + 1e-6 ||
-    rect.z - rect.hz < FRONT_WALL + margin - 1e-6 ||
-    rect.z + rect.hz > layout.back - margin + 1e-6
-  ) {
-    return "Keep it inside the walls.";
+  const level = levelOf(piece);
+  if (level === 1) {
+    if (!layout.upper) return "This home has no upstairs.";
+    for (const fixture of layout.upper.fixtures) if (overlaps(rect, fixture)) return `Leave the ${fixture.label.toLowerCase()} clear.`;
+    if (!layout.upper.floors.some((floor) => within(rect, floor, margin))) return "Keep it inside the walls of an upstairs room.";
+  } else {
+    for (const fixture of layout.fixtures) {
+      if (overlaps(rect, fixture)) return fixture.label === "Front door" ? "Keep the doorway clear — furniture cannot block the exit." : `Leave the ${fixture.label.toLowerCase()} clear.`;
+    }
+    if (
+      Math.abs(rect.x) + rect.hx > layout.halfX - margin + 1e-6 ||
+      rect.z - rect.hz < FRONT_WALL + margin - 1e-6 ||
+      rect.z + rect.hz > layout.back - margin + 1e-6
+    ) {
+      return "Keep it inside the walls.";
+    }
   }
   if (item.floor) return null;
   for (const other of others) {
     if (piece.id && other.id === piece.id) continue;
+    if (levelOf(other) !== level) continue;
     const otherItem = furnitureItem(other.itemId);
     if (!otherItem || otherItem.floor) continue;
     if (overlaps(rect, furnitureRect(otherItem, other.x, other.z, other.rotation))) return `It would sit on top of the ${otherItem.name.toLowerCase()}.`;
@@ -130,50 +143,55 @@ export function homeRoomFor(itemId: string, layout: HomeLayout = HOME_LAYOUTS.fl
 export function misplacedRoom(piece: PlacedPiece, layout: HomeLayout = HOME_LAYOUTS.flat): RoomKind | null {
   const item = furnitureItem(piece.itemId);
   if (!item) return null;
-  const here = roomAt(layout, piece.x, piece.z);
+  const here = roomAt(layout, piece.x, piece.z, levelOf(piece));
   if (here && item.rooms.includes(here)) return null;
   const home = homeRoomFor(piece.itemId, layout);
   return home && home !== here ? home : null;
 }
 
-/** How far the back of a piece stands off the wall it faces away from. */
-function wallGap(rect: FloorRect, rotation: number, layout: HomeLayout) {
-  if (rotation === 0) return layout.back - (rect.z + rect.hz);
-  if (rotation === 180) return rect.z - rect.hz - FRONT_WALL;
-  if (rotation === 90) return layout.halfX - (rect.x + rect.hx);
-  return rect.x - rect.hx + layout.halfX;
+/** How far the back of a piece stands off the wall of `walls` (the room it stands in) it faces away from. */
+function wallGap(rect: FloorRect, rotation: number, walls: FloorRect) {
+  if (rotation === 0) return walls.z + walls.hz - (rect.z + rect.hz);
+  if (rotation === 180) return rect.z - rect.hz - (walls.z - walls.hz);
+  if (rotation === 90) return walls.x + walls.hx - (rect.x + rect.hx);
+  return rect.x - rect.hx - (walls.x - walls.hx);
 }
 
 /**
  * The best free spot for a piece: inside its room (or `room` when given), backed onto a wall if it is a wardrobe,
  * bed, shelf or TV, with a little space around it. Falls back to the nearest free floor; null when the home is full.
  */
-export function findFreeSpot(itemId: string, others: PlacedPiece[], layout: HomeLayout = HOME_LAYOUTS.flat, room?: RoomKind | null): { x: number; z: number; rotation: FurnitureRotation } | null {
+export function findFreeSpot(itemId: string, others: PlacedPiece[], layout: HomeLayout = HOME_LAYOUTS.flat, room?: RoomKind | null): { x: number; z: number; rotation: FurnitureRotation; level: HomeLevel } | null {
   const item = furnitureItem(itemId);
   if (!item) return null;
   const target = room ?? homeRoomFor(itemId, layout);
-  const zone = layout.rooms.find((entry) => entry.room === target) ?? { x: 0, z: 0.6, hx: layout.halfX, hz: (layout.back - FRONT_WALL) / 2 };
+  const house: FloorRect = { x: 0, z: (layout.back + FRONT_WALL) / 2, hx: layout.halfX, hz: (layout.back - FRONT_WALL) / 2 };
+  const zone: FloorRect & { level?: HomeLevel } = layout.rooms.find((entry) => entry.room === target) ?? house;
+  const level: HomeLevel = zone.level === 1 && layout.upper ? 1 : 0;
+  // Upstairs the room's own walls are the ones to back onto; downstairs the outer walls of the house.
+  const walls = level ? zone : house;
   const rotations: FurnitureRotation[] = item.wall ? [0, 90, 180, 270] : [0, 90];
   const solids = others.flatMap((other) => {
     const otherItem = furnitureItem(other.itemId);
-    return otherItem && !otherItem.floor ? [furnitureRect(otherItem, other.x, other.z, other.rotation)] : [];
+    return otherItem && !otherItem.floor && levelOf(other) === level ? [furnitureRect(otherItem, other.x, other.z, other.rotation)] : [];
   });
+  const search = level ? walls : house;
   let best: { x: number; z: number; rotation: FurnitureRotation; score: number } | null = null;
   for (const rotation of rotations) {
-    for (let gx = -layout.halfX; gx <= layout.halfX + 1e-6; gx += 0.1) {
-      for (let gz = FRONT_WALL; gz <= layout.back + 1e-6; gz += 0.1) {
+    for (let gx = search.x - search.hx; gx <= search.x + search.hx + 1e-6; gx += 0.1) {
+      for (let gz = search.z - search.hz; gz <= search.z + search.hz + 1e-6; gz += 0.1) {
         const [x, z] = [snapFloor(gx), snapFloor(gz)];
         const rect = furnitureRect(item, x, z, rotation);
         const outside = Math.max(0, Math.abs(x - zone.x) - zone.hx) + Math.max(0, Math.abs(z - zone.z) - zone.hz);
         const spill = Math.max(0, Math.abs(x - zone.x) + rect.hx - zone.hx) + Math.max(0, Math.abs(z - zone.z) + rect.hz - zone.hz);
         let score = (outside > 0 ? 100 + outside * 10 : 0) + spill * 4 + Math.hypot(x - zone.x, z - zone.z) * (item.wall ? 0.05 : 0.15);
-        if (item.wall) score += Math.max(0, wallGap(rect, rotation, layout) - 0.05) * 8;
+        if (item.wall) score += Math.max(0, wallGap(rect, rotation, walls) - 0.05) * 8;
         if (!item.floor && solids.some((other) => overlaps(rect, other, 0.35))) score += 2;
         if (best && score >= best.score) continue;
-        if (placementProblem({ itemId, x, z, rotation }, others, layout)) continue;
+        if (placementProblem({ itemId, x, z, rotation, level }, others, layout)) continue;
         best = { x, z, rotation, score };
       }
     }
   }
-  return best && { x: best.x, z: best.z, rotation: best.rotation };
+  return best && { x: best.x, z: best.z, rotation: best.rotation, level };
 }

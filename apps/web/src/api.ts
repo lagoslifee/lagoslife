@@ -94,7 +94,7 @@ export type InteriorState = {
   tenureType: string | null;
   nextPaymentAt: string | null;
   /** `x`/`z`: room-local metres from the middle of the room. */
-  furniture: Array<{ id: string; itemId: string; name: string; gridX: number; gridZ: number; rotation: number; x: number; z: number }>;
+  furniture: Array<{ id: string; itemId: string; name: string; gridX: number; gridZ: number; rotation: number; x: number; z: number; level?: number | null }>;
   access: { owner: boolean; guest: boolean };
   guests: string[];
   availableFurniture: Array<{ itemId: string; name: string; available: number }>;
@@ -176,10 +176,11 @@ export const api = {
   setHome: (propertyId: string) => post<{ homePropertyId: string }>(`/api/properties/${propertyId}/home`),
   placeFurniture: (propertyId: string, itemId: string, gridX: number, gridZ: number, rotation: 0 | 90 | 180 | 270) =>
     post<{ id: string }>(`/api/properties/${propertyId}/furniture`, { itemId, gridX, gridZ, rotation, idempotencyKey: crypto.randomUUID() }),
-  placeFurnitureAt: (propertyId: string, itemId: string, x: number, z: number, rotation: 0 | 90 | 180 | 270) =>
-    post<{ id: string }>(`/api/properties/${propertyId}/furniture`, { itemId, x, z, rotation, idempotencyKey: crypto.randomUUID() }),
-  moveFurniture: (propertyId: string, placementId: string, x: number, z: number, rotation: 0 | 90 | 180 | 270) =>
-    post<{ id: string }>(`/api/properties/${propertyId}/furniture/move`, { placementId, x, z, rotation }),
+  placeFurnitureAt: (propertyId: string, itemId: string, x: number, z: number, rotation: 0 | 90 | 180 | 270, level: 0 | 1 = 0) =>
+    post<{ id: string }>(`/api/properties/${propertyId}/furniture`, { itemId, x, z, rotation, level, idempotencyKey: crypto.randomUUID() }),
+  /** `level` left out keeps the piece on the storey it is on. */
+  moveFurniture: (propertyId: string, placementId: string, x: number, z: number, rotation: 0 | 90 | 180 | 270, level?: 0 | 1) =>
+    post<{ id: string }>(`/api/properties/${propertyId}/furniture/move`, { placementId, x, z, rotation, level }),
   inviteGuest: (propertyId: string, username: string) => post<{ invited: boolean }>(`/api/properties/${propertyId}/guests`, { username }),
   removeGuest: (propertyId: string, username: string) => post<{ removed: boolean }>(`/api/properties/${propertyId}/guests/remove`, { username }),
   removeFurniture: (propertyId: string, placementId: string) => post(`/api/properties/${propertyId}/furniture/remove`, { placementId }),
