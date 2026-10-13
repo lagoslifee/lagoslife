@@ -1539,7 +1539,7 @@ button.wide { width: 100%; margin: 6px 0; }
 .football-side ul { margin: 0; padding: 0; list-style: none; font-size: 13px; display: grid; gap: 3px; min-height: 40px; }
 .kit-swatch { display: inline-block; width: 14px; height: 18px; border-radius: 3px; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
 .football-actions { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-top: 10px; }
-.football-board { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: grid; grid-template-columns: auto auto auto; align-items: center; gap: 4px 8px; padding: 6px 10px; border-radius: 12px; background: rgba(12,18,24,.82); color: #fff; text-align: center; pointer-events: none; z-index: 5; }
+.football-board { position: absolute; top: 140px; left: 50%; transform: translateX(-50%); display: grid; grid-template-columns: auto auto auto; align-items: center; gap: 4px 8px; padding: 6px 10px; border-radius: 12px; background: rgba(12,18,24,.82); color: #fff; text-align: center; pointer-events: none; z-index: 5; }
 .football-board .side { padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; color: #fff; }
 .football-board .side.gold { color: #17171a; }
 .football-board strong { font-size: 22px; font-variant-numeric: tabular-nums; min-width: 64px; }

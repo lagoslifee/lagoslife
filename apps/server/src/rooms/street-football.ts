@@ -19,7 +19,7 @@ import {
 } from "@lagos-living/shared";
 
 /** A connected resident as the cage sees them. `free` is on foot on the street: not in a car, bus or building. */
-export type Footballer = { sessionId: string; userId: string; name: string; x: number; z: number; yaw: number; free: boolean };
+export type Footballer = { sessionId: string; userId: string; name: string; x: number; z: number; yaw: number; free: boolean; connected?: boolean };
 
 export type FootballDeps = {
   people: () => Footballer[];
@@ -335,6 +335,8 @@ export class StreetFootball {
       }
       for (const entry of match.entries) {
         const person = people.get(entry.sessionId);
+        // A dropped connection keeps its place while the room waits for the reconnect.
+        if (person?.connected === false) continue;
         if (person && person.free && Math.hypot(person.x - match.pitch.centre[0], person.z - match.pitch.centre[1]) < FOOTBALL.leaveRange) continue;
         void this.leave(entry.sessionId, person ? "walked" : "left", now);
       }

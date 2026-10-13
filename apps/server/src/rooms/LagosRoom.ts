@@ -422,17 +422,16 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   });
   private football = new StreetFootball({
     people: () =>
-      [...this.players.values()]
-        .filter((player) => player.connected)
-        .map((player) => ({
-          sessionId: player.sessionId,
-          userId: player.userId,
-          name: player.name,
-          x: player.x,
-          z: player.z,
-          yaw: player.yaw,
-          free: player.location === "street" && !player.busId && !player.vehicleId,
-        })),
+      [...this.players.values()].map((player) => ({
+        connected: player.connected,
+        sessionId: player.sessionId,
+        userId: player.userId,
+        name: player.name,
+        x: player.x,
+        z: player.z,
+        yaw: player.yaw,
+        free: player.location === "street" && !player.busId && !player.vehicleId,
+      })),
     send: (sessionId, state) => this.clients.find((client) => client.sessionId === sessionId)?.send("football", state),
     notify: (sessionId, notice) => {
       const client = this.clients.find((entry) => entry.sessionId === sessionId);
