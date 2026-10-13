@@ -90,27 +90,28 @@ on its own host.
 
 ## Render game server
 
-`render.yaml` is a Render Blueprint for the server and a PostgreSQL 17
-database, both on Render's free plan in Frankfurt (the closest region to
-Lagos).
+`render.yaml` is a Render Blueprint for an always-on game server (Starter
+plan, Frankfurt, the closest region to Lagos) that uses the existing Neon
+database, so every account carries over.
 
 1. Render dashboard → **New** → **Blueprint**, connect this GitHub repository
-   and apply it. Render builds `apps/server/Dockerfile`, generates
-   `BETTER_AUTH_SECRET`, and wires `DATABASE_URL` to the database.
+   and apply it. Render asks for `DATABASE_URL` (the Neon connection string)
+   and `RESEND_API_KEY` (optional, for password-reset email), builds
+   `apps/server/Dockerfile` and generates `BETTER_AUTH_SECRET`. Players sign in
+   once more after the move, since sessions are signed with that secret.
 2. Each start runs `node dist/migrate.js` (already-applied migrations are
    skipped) and then the server. `BETTER_AUTH_URL` defaults to the service's
    `onrender.com` address.
-3. Copy the service URL (for example `https://lagos-living-server.onrender.com`)
-   into Netlify's `VITE_API_URL` and redeploy the Netlify site.
-4. `WEB_ORIGIN` is `https://silver-elf-acde6c.netlify.app`. Change it in the
-   service's environment if the web client moves.
+3. Optional: add `api.9jaworld.com` under the service's **Custom Domains** and
+   create the CNAME record it shows at the domain's DNS provider.
+4. Put the service URL (or `https://api.9jaworld.com`) in `VITE_API_URL` and
+   `VITE_API_FALLBACK_URL` in `vercel.json` and `netlify.toml`, push to `main`,
+   and stop the tunnel watchdog (`scripts/ops/tunnel-watchdog.sh`) so it no
+   longer rewrites them.
 
-Free-plan limits: the service sleeps after 15 minutes without traffic, and the
-first visit after that waits about a minute for it to wake. A free Render
-database expires 30 days after creation. For a lasting deployment, upgrade
-both, or point `DATABASE_URL` at another managed PostgreSQL (keep
-`DATABASE_SSL=require` for a database reached over the internet). Password-reset
-email needs `SMTP_*` variables; guest mode doesn't use them.
+The free plan sleeps after 15 minutes without traffic and the first visit
+afterwards waits about a minute, which players see as "Connecting to Naija
+World"; keep the Starter plan for a site that must stay up.
 
 ## Single-host stack (`docker-compose.prod.yml`)
 
