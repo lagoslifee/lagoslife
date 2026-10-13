@@ -53,10 +53,41 @@ export function pendingIncome(type: BusinessTypeId, level: number, admin: boolea
   return Math.floor(hourlyIncome(type, level, admin, premises) * hours);
 }
 
-export type BusinessState = { id: string; type: BusinessTypeId; name: string; level: number; perHour: number; pending: number; full: boolean; upgradeCost: number | null; openedAt: string; plotId: string | null };
+export type BusinessState = { id: string; type: BusinessTypeId; name: string; level: number; perHour: number; pending: number; full: boolean; upgradeCost: number | null; openedAt: string; plotId: string | null; salePrice: number | null; brokerOffer: number };
 export type CourseState = { course: CourseId; endsAt: string; done: boolean };
 export type BusinessStatus = { businesses: BusinessState[]; courses: CourseState[]; certificates: CourseId[] };
 
 export const startBusinessSchema = z.object({ type: z.enum(businessTypeIds), name: z.string().trim().min(2).max(40), plotId: z.string().max(60).optional(), idempotencyKey: z.string().uuid() });
 export const upgradeBusinessSchema = z.object({ idempotencyKey: z.string().uuid() });
 export const enrolSchema = z.object({ course: z.enum(courseIds), idempotencyKey: z.string().uuid() });
+
+/**
+ * Residents sell businesses to each other at an asking price, or straight to Eko Business Brokers for half of what
+ * went into them. A business trading from its owner's own plot stays with the land, so it can't be sold.
+ */
+export const BUSINESS_MARKET = {
+  /** Agent's cut of a sale between residents, taken from the seller's proceeds. */
+  agentFee: 0.05,
+  /** Share of the start-up and upgrade spend the brokers pay. */
+  brokerShare: 0.5,
+  minPrice: 10_000,
+  /** Asking prices are capped at this many times what went into the business. */
+  maxMultiple: 20,
+} as const;
+
+/** Start-up cost plus every upgrade to reach `level`. */
+export function investedIn(type: BusinessTypeId, level: number) {
+  let total = BUSINESS_TYPES[type].cost;
+  for (let at = 1; at < Math.min(level, BUSINESS.maxLevel); at++) total += upgradeCost(type, at) ?? 0;
+  return total;
+}
+
+export const brokerOffer = (type: BusinessTypeId, level: number) => Math.round((investedIn(type, level) * BUSINESS_MARKET.brokerShare) / 1000) * 1000;
+export const maxAskingPrice = (type: BusinessTypeId, level: number) => investedIn(type, level) * BUSINESS_MARKET.maxMultiple;
+export const saleProceeds = (price: number) => price - Math.round(price * BUSINESS_MARKET.agentFee);
+
+export type BusinessListing = { id: string; type: BusinessTypeId; name: string; level: number; perHour: number; price: number; seller: string; mine: boolean; listedAt: string };
+
+export const listBusinessSchema = z.object({ price: z.number().int().min(BUSINESS_MARKET.minPrice).max(10_000_000_000).nullable() });
+export const buyBusinessSchema = z.object({ price: z.number().int().positive(), idempotencyKey: z.string().uuid() });
+export const sellToBrokerSchema = z.object({ idempotencyKey: z.string().uuid() });

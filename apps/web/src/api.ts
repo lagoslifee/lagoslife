@@ -5,7 +5,7 @@ import type { FloorFinishId, FoodParcel, HomeFinish, HomeStaffRole, HomeStaffSta
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick, RepairAction } from "@lagos-living/shared";
 import type { AccountSummary, ClaimAccount, LifeGoals } from "@lagos-living/shared";
 import type { DirectMessage, FriendsStatus, RankingBoard, RankingState, ReferralStatus } from "@lagos-living/shared";
-import type { ClubSong } from "@lagos-living/shared";
+import type { BusinessListing, ClubSong } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -155,6 +155,10 @@ export const api = {
   startBusiness: (type: BusinessTypeId, name: string, plotId?: string) => post<{ balance: number }>("/api/business", { type, name, plotId, idempotencyKey: crypto.randomUUID() }),
   upgradeBusiness: (businessId: string) => post<{ balance: number }>(`/api/business/${businessId}/upgrade`, { idempotencyKey: crypto.randomUUID() }),
   collectBusiness: (businessId: string) => post<{ collected: number; balance: number }>(`/api/business/${businessId}/collect`),
+  businessMarket: () => request<BusinessListing[]>("/api/business/market"),
+  listBusiness: (businessId: string, price: number | null) => post<BusinessStatus>(`/api/business/${businessId}/list`, { price }),
+  buyBusiness: (businessId: string, price: number) => post<{ balance: number; status: BusinessStatus }>(`/api/business/${businessId}/buy`, { price, idempotencyKey: crypto.randomUUID() }),
+  sellToBroker: (businessId: string) => post<{ balance: number; status: BusinessStatus }>(`/api/business/${businessId}/broker`, { idempotencyKey: crypto.randomUUID() }),
   enrol: (course: CourseId) => post<{ balance: number }>("/api/school/enrol", { course, idempotencyKey: crypto.randomUUID() }),
   purchase: (itemId: string) => post<{ balance: number; replayed: boolean }>("/api/shop/purchase", { itemId, idempotencyKey: crypto.randomUUID() }),
   eat: (itemId: string) => post<{ name: string; needs: { hunger: number; energy: number } }>("/api/food/eat", { itemId }),

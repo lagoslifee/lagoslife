@@ -2,6 +2,9 @@ import { setFinish } from "./home-finish-service.js";
 import {
   claimAccountSchema,
   SONG_REQUEST,
+  buyBusinessSchema,
+  listBusinessSchema,
+  sellToBrokerSchema,
   songUploadSchema,
   directMessageSendSchema,
   friendRequestSchema,
@@ -77,7 +80,7 @@ import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import cors from "cors";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
-import { businessStatus, collectBusiness, enrol, startBusiness, upgradeBusiness } from "./business-service.js";
+import { businessMarket, businessStatus, buyBusiness, collectBusiness, enrol, listBusiness, sellToBroker, startBusiness, upgradeBusiness } from "./business-service.js";
 import { finishSet, gymStatus, hireTrainer, joinGym, startSet } from "./gym-service.js";
 import { buyViewingPass, viewingStatus } from "./viewing-service.js";
 import { finishRest, startRest } from "./home-living-service.js";
@@ -579,6 +582,15 @@ export function configureRoutes(app: Express) {
     upgradeBusiness(userId, z.uuid().parse(req.params.businessId), upgradeBusinessSchema.parse(req.body).idempotencyKey)));
   app.post("/api/business/:businessId/collect", requirePlayer, rateLimited, guarded("Collection failed", (req, userId) =>
     collectBusiness(userId, z.uuid().parse(req.params.businessId))));
+  app.get("/api/business/market", requirePlayer, guarded("Business market unavailable", (_req, userId) => businessMarket(userId)));
+  app.post("/api/business/:businessId/list", requirePlayer, rateLimited, guarded("Listing failed", (req, userId) =>
+    listBusiness(userId, z.uuid().parse(req.params.businessId), listBusinessSchema.parse(req.body).price)));
+  app.post("/api/business/:businessId/buy", requirePlayer, rateLimited, guarded("Purchase failed", (req, userId) => {
+    const body = buyBusinessSchema.parse(req.body);
+    return buyBusiness(userId, z.uuid().parse(req.params.businessId), body.price, body.idempotencyKey);
+  }));
+  app.post("/api/business/:businessId/broker", requirePlayer, rateLimited, guarded("Sale failed", (req, userId) =>
+    sellToBroker(userId, z.uuid().parse(req.params.businessId), sellToBrokerSchema.parse(req.body).idempotencyKey)));
   app.post("/api/school/enrol", requirePlayer, rateLimited, guarded("Enrolment failed", (req, userId) => {
     const body = enrolSchema.parse(req.body);
     return enrol(userId, body.course, body.idempotencyKey);

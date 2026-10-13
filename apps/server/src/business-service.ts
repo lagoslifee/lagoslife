@@ -3,6 +3,10 @@ import type { PoolClient } from "pg";
 import {
   BUSINESS,
   BUSINESS_TYPES,
+  brokerOffer,
+  maxAskingPrice,
+  saleProceeds,
+  type BusinessListing,
   COURSES,
   hourlyIncome,
   pendingIncome,
@@ -18,8 +22,8 @@ import { certificates, hasCertificate } from "./certificates.js";
 import { buildingEvents } from "./building-service.js";
 import { creditWallet, debitWallet, EconomyError, ensureWallet, withTransaction } from "./economy-service.js";
 
-type BusinessRow = { id: string; type: BusinessTypeId; name: string; level: number; collected_at: Date; created_at: Date; plot_id: string | null };
-const BUSINESS_COLUMNS = `id, type, name, level, collected_at, created_at, plot_id`;
+type BusinessRow = { id: string; type: BusinessTypeId; name: string; level: number; collected_at: Date; created_at: Date; plot_id: string | null; sale_price: string | null };
+const BUSINESS_COLUMNS = `id, type, name, level, collected_at, created_at, plot_id, sale_price`;
 
 export async function businessStatus(userId: string): Promise<BusinessStatus> {
   const [businesses, courses, earned] = await Promise.all([
@@ -43,6 +47,8 @@ export async function businessStatus(userId: string): Promise<BusinessStatus> {
         upgradeCost: upgradeCost(row.type, row.level),
         openedAt: row.created_at.toISOString(),
         plotId: row.plot_id,
+        salePrice: row.sale_price === null ? null : Number(row.sale_price),
+        brokerOffer: brokerOffer(row.type, row.level),
       };
     }),
     courses: courses.rows.map((row) => ({ course: row.course, endsAt: row.ends_at.toISOString(), done: row.ends_at.getTime() <= now })),
@@ -155,5 +161,89 @@ export async function enrol(userId: string, course: CourseId, idempotencyKey: st
       await client.query(`INSERT INTO player_course (user_id, course, ends_at) VALUES ($1, $2, NOW() + make_interval(mins => $3))`, [userId, course, spec.minutes]);
     }
     return { balance: await balanceOf(client, userId) };
+  });
+}
+
+/** Puts a business up for sale at `price`, or takes it off the market with `null`. */
+export async function listBusiness(userId: string, businessId: string, price: number | null) {
+  return withTransaction(async (client) => {
+    const { rows } = await client.query<BusinessRow>(`SELECT ${BUSINESS_COLUMNS} FROM player_business WHERE id = $1 AND user_id = $2 FOR UPDATE`, [businessId, userId]);
+    const row = rows[0];
+    if (!row) throw new EconomyError("Business not found.", 404);
+    if (price !== null) {
+      if (row.plot_id) throw new EconomyError(`${row.name} trades from your own plot, so it stays with the land and can't be sold.`, 409);
+      const cap = maxAskingPrice(row.type, row.level);
+      if (price > cap) throw new EconomyError(`Asking prices for this business go up to ₦${cap.toLocaleString("en-NG")}.`, 400);
+    }
+    await client.query(`UPDATE player_business SET sale_price = $2, listed_at = CASE WHEN $2::bigint IS NULL THEN NULL ELSE NOW() END WHERE id = $1`, [businessId, price]);
+    return businessStatus(userId);
+  });
+}
+
+export async function businessMarket(userId: string): Promise<BusinessListing[]> {
+  const { rows } = await pool.query<BusinessRow & { user_id: string; seller: string; listed_at: Date }>(
+    `SELECT business.${BUSINESS_COLUMNS.split(", ").join(", business.")}, business.user_id, business.listed_at, COALESCE(owner.name, 'A resident') AS seller
+     FROM player_business business LEFT JOIN "user" owner ON owner.id = business.user_id
+     WHERE business.sale_price IS NOT NULL ORDER BY business.listed_at DESC LIMIT 60`,
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    type: row.type,
+    name: row.name,
+    level: row.level,
+    perHour: hourlyIncome(row.type, row.level, false),
+    price: Number(row.sale_price),
+    seller: row.seller,
+    mine: row.user_id === userId,
+    listedAt: row.listed_at.toISOString(),
+  }));
+}
+
+/**
+ * Buys a listed business at the price the buyer saw. The seller gets their uncollected takings plus the price less
+ * the agent's fee; the buyer starts collecting from now. One of each type and the usual certificate rules apply.
+ */
+export async function buyBusiness(buyerId: string, businessId: string, price: number, idempotencyKey: string) {
+  const key = `business-buy:${idempotencyKey}`;
+  return withTransaction(async (client) => {
+    const { rows } = await client.query<BusinessRow & { user_id: string }>(`SELECT ${BUSINESS_COLUMNS}, user_id FROM player_business WHERE id = $1 FOR UPDATE`, [businessId]);
+    const row = rows[0];
+    const sellerId = row?.user_id;
+    const ids = [buyerId, sellerId].filter((id): id is string => Boolean(id)).sort();
+    for (const id of ids) await lockWallet(client, id);
+    if (await replayed(client, buyerId, key)) return { balance: await balanceOf(client, buyerId), status: await businessStatus(buyerId) };
+    if (!row || row.sale_price === null) throw new EconomyError("That business is no longer for sale.", 409);
+    if (row.user_id === buyerId) throw new EconomyError("That's your own business.", 409);
+    if (Number(row.sale_price) !== price) throw new EconomyError("The asking price changed. Check the new price and try again.", 409);
+    const owned = await client.query<{ type: string }>(`SELECT type FROM player_business WHERE user_id = $1`, [buyerId]);
+    const spec = BUSINESS_TYPES[row.type];
+    if (owned.rows.some((entry) => entry.type === row.type)) throw new EconomyError(`You already run a ${spec.name}. Sell it first to buy another.`, 409);
+    if ((owned.rowCount ?? 0) >= BUSINESS.maxBusinesses) throw new EconomyError(`You can run up to ${BUSINESS.maxBusinesses} businesses.`, 409);
+    if (spec.needs && !(await hasCertificate(client, buyerId, spec.needs))) {
+      throw new EconomyError(`Running a ${spec.name} needs the ${COURSES[spec.needs].name} certificate. Enrol at the Lagos Skills Academy first.`, 403);
+    }
+    await collectRow(client, row.user_id, row);
+    await debitWallet(client, buyerId, price, "business_purchase", `Bought ${row.name} · ${spec.name}`, key, { businessId, sellerId: row.user_id });
+    await creditWallet(client, row.user_id, saleProceeds(price), "business_sale", `Sold ${row.name} · ${spec.name} (after 5% agent fee)`, `business-sale:${businessId}:${key}`);
+    await client.query(`UPDATE player_business SET user_id = $2, sale_price = NULL, listed_at = NULL, collected_at = NOW() WHERE id = $1`, [businessId, buyerId]);
+    return { balance: await balanceOf(client, buyerId), status: await businessStatus(buyerId) };
+  });
+}
+
+/** Sells straight to Eko Business Brokers for half of what went into the business, after collecting its takings. */
+export async function sellToBroker(userId: string, businessId: string, idempotencyKey: string) {
+  const key = `business-broker:${idempotencyKey}`;
+  return withTransaction(async (client) => {
+    await lockWallet(client, userId);
+    if (await replayed(client, userId, key)) return { balance: await balanceOf(client, userId), status: await businessStatus(userId) };
+    const { rows } = await client.query<BusinessRow>(`SELECT ${BUSINESS_COLUMNS} FROM player_business WHERE id = $1 AND user_id = $2 FOR UPDATE`, [businessId, userId]);
+    const row = rows[0];
+    if (!row) throw new EconomyError("Business not found.", 404);
+    if (row.plot_id) throw new EconomyError(`${row.name} trades from your own plot, so it stays with the land and can't be sold.`, 409);
+    await collectRow(client, userId, row);
+    const offer = brokerOffer(row.type, row.level);
+    await creditWallet(client, userId, offer, "business_sale", `Sold ${row.name} to Eko Business Brokers`, key);
+    await client.query(`DELETE FROM player_business WHERE id = $1`, [businessId]);
+    return { balance: await balanceOf(client, userId), status: await businessStatus(userId) };
   });
 }
