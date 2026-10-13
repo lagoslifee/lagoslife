@@ -23,6 +23,7 @@ import { airportStep } from "./airport-guide";
 import { DubaiGuide } from "./DubaiGuide";
 import { ExcursionPanel, FlightPanel, LOCAL_PHOTOS_KEY, TRAVEL_SHEET_KINDS, TravelPlaceSheet, TravelSpotSheet, loadLocalPhotos, tripHint } from "./TravelSheets";
 import { PlotSheet } from "./PlotSheet";
+import { DroneView } from "./DroneView";
 import { HomeDesigner } from "./HomeDesigner";
 import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
 import { CheckpointPrompt, HoldUpPrompt, PoliceStationSheet, SecuritySheet } from "./PoliceSheets";
@@ -113,6 +114,8 @@ export function GameView({
   /** Property being arranged in the home designer. */
   const [designing, setDesigning] = useState<string | null>(null);
   const [designFocus, setDesignFocus] = useState<string | null>(null);
+  /** Home the camera drone is circling. */
+  const [drone, setDrone] = useState<{ name: string; cars: number } | null>(null);
   const [travelSpot, setTravelSpot] = useState<{ interior: TravelInterior; spot: string } | null>(null);
   const [trip, setTrip] = useState<TripState | null>(null);
   const [clubBar, setClubBar] = useState<Place | null>(null);
@@ -878,11 +881,23 @@ export function GameView({
   useEffect(() => {
     if (designing && hud && hud.propertyId !== designing) setDesigning(null);
   }, [designing, hud]);
+  const flyDrone = async (propertyId: string, name: string) => {
+    if (!engine) return;
+    setPhone(null);
+    setDesigning(null);
+    const vehicles = await api.vehicles().catch(() => []);
+    const shown = vehicles.filter((vehicle) => vehicle.status !== "driving" && vehicle.status !== "towing");
+    if (await engine.startDrone(propertyId, vehicles)) setDrone({ name, cars: shown.length });
+  };
+  const landDrone = useCallback(() => {
+    engine?.stopDrone();
+    setDrone(null);
+  }, [engine]);
   const previewListing = hud?.previewOnly && hud.propertyId ? properties.find((listing) => listing.id === hud.propertyId) : null;
   const markers = target ? [{ point: target.point, label: target.label, kind: manualTarget ? ("waypoint" as const) : ("objective" as const) }] : [];
 
   return (
-    <div className={`game-view ${touch ? "touch" : "pointer"}${HOST_BADGE ? " host-badge" : ""}`}>
+    <div className={`game-view ${touch ? "touch" : "pointer"}${HOST_BADGE ? " host-badge" : ""}${drone ? " drone-mode" : ""}`}>
       <div ref={canvasHostRef} className="game-canvas-host" />
       <div ref={overlayRef} className="world-tags" />
       {touch && engine && !blocking && !chatOpen && <TouchLook engine={engine} />}
@@ -1167,6 +1182,7 @@ export function GameView({
         />
       )}
 
+      {drone && engine && <DroneView engine={engine} name={drone.name} cars={drone.cars} onLand={landDrone} />}
       <div className="toasts" aria-live="polite">
         {toasts.map((entry) => (
           <div key={entry.id} className={`toast ${entry.tone}`}>{entry.text}</div>
@@ -1441,6 +1457,7 @@ export function GameView({
           door={properties.find((listing) => listing.id === designing)?.door ?? null}
           economy={economy}
           focus={designFocus}
+          onDrone={() => void flyDrone(designing, properties.find((listing) => listing.id === designing)?.name ?? "Your home")}
           onClose={() => {
             setDesigning(null);
             setDesignFocus(null);
@@ -1525,6 +1542,7 @@ export function GameView({
           }}
           onInteriorChanged={() => void engine.refreshInterior()}
           onDesign={(propertyId) => { setPhone(null); setDesigning(propertyId); }}
+          onDrone={(propertyId, name) => void flyDrone(propertyId, name)}
           plots={plots}
           onReport={(target) => { setPhone(null); setReportTarget(target); }}
           onCustomise={() => { setPhone(null); onCustomise(); }}

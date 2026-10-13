@@ -162,6 +162,7 @@ import { MeshBuilderBatch } from "./geometry";
 import { buildMealTray, buildTrolley } from "./flight-scenes";
 import { Couriers } from "./couriers";
 import { ListingBoards, type BoardLabel } from "./listing-boards";
+import { DroneCamera, droneMarker, droneSite } from "./drone";
 import { buildInterior, interiorModels, placementCentre, type ClubSeat, type HomeRest, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
 import { createMaterials, type Materials, type Quality } from "./materials";
 import { SignAtlas } from "./sign-atlas";
@@ -540,6 +541,7 @@ export class GameEngine {
   private compoundViews = new Map<string, VehicleView[]>();
   private lastCompoundCheck = 0;
   private showcaseAngle = 0;
+  private drone: { camera: DroneCamera; views: VehicleView[]; marker: Mesh } | null = null;
   /** The car being browsed at the dealership, shown on the forecourt with the camera circling it. */
   private showcase: { view: VehicleView | null; modelId: string; colour: string; point: Vec2; yaw: number; request: number } | null = null;
   private rideCar: { vehicleId: string; car: CarController; pilot: RoutePilot; stopping: boolean; sentAt: number } | null = null;
@@ -1472,7 +1474,16 @@ export class GameEngine {
     }
 
     this.updateFlight(dt);
-    if (this.showcase) this.updateShowcaseCamera(dt);
+    if (this.drone && this.interior) this.stopDrone();
+    if (this.drone) {
+      const { camera } = this.drone;
+      const shot = camera.shot(dt, this.world.groundHeight(camera.site.centre[0], camera.site.centre[1]));
+      this.camera.fov = 0.8;
+      // A drone films on a clear day: thin the haze so the high shot still shows the whole street.
+      this.scene.fogDensity = Math.min(this.scene.fogDensity, 0.0007);
+      this.camera.position.set(...shot.eye);
+      this.camera.setTarget(Vector3.FromArray(shot.look));
+    } else if (this.showcase) this.updateShowcaseCamera(dt);
     else if (this.flightShot ?? this.cinemaShot) {
       const shot = (this.flightShot ?? this.cinemaShot)!;
       this.camera.fov = this.flightShot ? 0.62 : 0.85;
@@ -4170,6 +4181,74 @@ export class GameEngine {
     });
   }
 
+  /**
+   * Sends a camera drone up over one of your homes with every car you own parked in its carports and at the kerb
+   * (cars already parked there are filmed where they stand). Steps out of the house first when you are inside it.
+   */
+  async startDrone(propertyId: string, cars: Array<{ id: string; modelId: string; colour: string; status: string }>) {
+    if (this.car || this.passenger || this.travelView || this.self?.busId) {
+      this.callbacks.notice({ tone: "info", text: "Park up and step out before you fly the drone." });
+      return false;
+    }
+    if (this.interior) {
+      this.exitProperty();
+      const until = performance.now() + 10_000;
+      while ((this.interior || this.self?.location !== "street") && performance.now() < until) await new Promise((resolve) => setTimeout(resolve, 200));
+      if (this.interior) return false;
+    }
+    const shown = cars.filter((car) => car.status !== "driving" && car.status !== "towing");
+    const site = droneSite(propertyId, shown.length);
+    if (!site) return false;
+    this.stopDrone();
+    const drone = { camera: new DroneCamera(site), views: [] as VehicleView[], marker: droneMarker(this.scene, site, this.world.groundHeight(site.centre[0], site.centre[1])) };
+    this.drone = drone;
+    this.streamProbe = { x: site.centre[0], z: site.centre[1], vx: 0, vz: 0, at: performance.now(), costs: [], bare: 0 };
+    const near = (x: number, z: number) => Math.hypot(x - site.centre[0], z - site.centre[1]) < site.radius + 18;
+    const here = new Set([...this.vehicles.values()].filter(({ state, view }) => state.mine && near(view.x, view.z)).map(({ state }) => state.id));
+    const factory = this.vehicleFactory;
+    if (!factory) return true;
+    const bays = [...site.bays];
+    for (const car of shown) {
+      if (here.has(car.id)) continue;
+      const bay = bays.shift();
+      if (!bay) break;
+      void factory.ensure(car.modelId).then(() => {
+        if (this.drone !== drone || this.disposed) return;
+        const view = factory.create(`drone ${car.id}`, car.modelId, car.colour);
+        view.setDetail(true);
+        view.setPose(bay.x, this.world.groundHeight(bay.x, bay.z), bay.z, bay.yaw);
+        drone.views.push(view);
+      });
+    }
+    return true;
+  }
+
+  stopDrone() {
+    if (!this.drone) return;
+    for (const view of this.drone.views) view.dispose();
+    this.drone.marker.dispose();
+    this.drone = null;
+    this.streamProbe = null;
+    this.applyQualityStep(this.adaptive.level);
+  }
+
+  droneLook(dx: number, dy: number) {
+    this.drone?.camera.look(dx, dy);
+  }
+
+  /** Zoom from 0 (a low pass over the roof) to 1 (the whole street); returns the new level. */
+  droneZoom(level: number | null, delta = 0) {
+    const camera = this.drone?.camera;
+    if (!camera) return 0;
+    if (level !== null) camera.zoom = Math.max(0, Math.min(1, level));
+    else camera.zoomBy(delta);
+    return camera.zoom;
+  }
+
+  droneOrbit(on: boolean) {
+    if (this.drone) this.drone.camera.orbiting = on;
+  }
+
   private updateShowcaseCamera(dt: number) {
     const showcase = this.showcase!;
     const model = getVehicleModel(showcase.modelId);
@@ -4437,6 +4516,8 @@ export class GameEngine {
       room: () => (this.interior && !this.travelView ? (this.interior as InteriorView).bounds : null),
       seats: () => (this.interior && !this.travelView ? (this.interior as InteriorView).seats : []),
       homeSeat: (kind: HomeRest) => this.homeSeat(kind),
+      drone: (propertyId: string, cars: Array<{ id: string; modelId: string; colour: string; status: string }>) => this.startDrone(propertyId, cars),
+      droneZoom: (level: number) => this.droneZoom(level),
       repair: () => ({ site: this.repairSite?.site.at ?? null, stand: this.repairSite?.site.stand ?? null, workingFor: this.repairing ? Math.max(0, this.repairing.until - performance.now()) : 0 }),
       repairWork: (seconds: number) => this.repairWork(seconds),
       remoteAppearances: () =>

@@ -80,6 +80,8 @@ type Props = {
   onInteriorChanged: () => void;
   /** Opens the top-down home designer for a home the player owns or rents. */
   onDesign: (propertyId: string) => void;
+  /** Fly the camera drone over a home you own or rent. */
+  onDrone: (propertyId: string, name: string) => void;
   plots: PlotState[];
   onReport: (target: ReportTarget) => void;
   onCustomise: () => void;
@@ -533,7 +535,7 @@ function OrderApp({ properties, onRefresh, onToast, onClose, onParcel }: Props) 
   );
 }
 
-function PropertyApp({ properties, economy, onRefresh, onToast, onNavigate, onClose, hud, onInteriorChanged, onDesign, plots }: Props) {
+function PropertyApp({ properties, economy, onRefresh, onToast, onNavigate, onClose, hud, onInteriorChanged, onDesign, onDrone, plots }: Props) {
   const mine = properties.filter((listing) => listing.isMine);
   const invited = properties.filter((listing) => listing.hasGuestAccess && !listing.isMine);
   const freePlot = plots.find((plot) => plot.status === "available");
@@ -591,6 +593,7 @@ function PropertyApp({ properties, economy, onRefresh, onToast, onNavigate, onCl
           )}
           <div className="row wrap">
             <button className="secondary" onClick={() => { onNavigate({ point: listing.door, label: listing.name }); onClose(); }}>Navigate</button>
+            <button className="secondary" onClick={() => onDrone(listing.id, listing.name)} data-testid={`drone-${listing.id}`}>🚁 Drone view</button>
             {!listing.isHome && <button className="secondary" disabled={busy} onClick={() => void run(`${listing.name} is now your home.`, () => api.setHome(listing.id))}>Set as home</button>}
             {listing.tenureType === "rented" && (
               <>
