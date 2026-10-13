@@ -29,6 +29,7 @@ import { MeshBuilderBatch } from "./geometry";
 import type { InteriorSpot } from "./interior";
 import type { Materials } from "./materials";
 import { buildAirliner } from "./airliner";
+import { fitAirlinerCabin } from "./cabin-fit";
 import { buildAirfield, LANDING_SHOT, TAKEOFF_SHOT, type Airfield, type FlightShot } from "./flight-scenes";
 import { SignAtlas } from "./sign-atlas";
 
@@ -175,11 +176,11 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
     for (const [x0, z0, x1, z1] of [[-HX, -HZ, HX, wz0], [-HX, wz1, HX, HZ], [-HX, wz0, wx0, wz1], [wx1, wz0, HX, wz1]] as const) {
       get("tiles").polygon([P(x0, z0), P(x1, z0), P(x1, z1), P(x0, z1)], 0.02, 1.4, floorColour);
     }
-  } else if (kind !== "dhow" && kind !== "safari") get(kind === "hotel" || kind === "cabin" ? "fabric" : "tiles").polygon(corners, 0.02, kind === "cabin" ? 2 : 1.4, floorColour);
+  } else if (kind !== "dhow" && kind !== "safari" && kind !== "cabin") get(kind === "hotel" ? "fabric" : "tiles").polygon(corners, 0.02, 1.4, floorColour);
   if (kind === "cabin") {
     // Round fuselage: an elliptical tube seen from inside, closed at both ends.
     const shell = new StandardMaterial("cabin shell", scene);
-    shell.diffuseColor = Color3.FromHexString("#eceae4");
+    shell.diffuseColor = Color3.FromHexString("#f1efe9");
     shell.specularColor = new Color3(0.12, 0.12, 0.12);
     shell.emissiveColor = Color3.FromHexString("#eceae4").scale(0.22);
     shell.backFaceCulling = false;
@@ -420,62 +421,32 @@ export function buildTravelInterior(scene: Scene, materials: Materials, atlas: S
     }
     for (const x of [-8, 8]) light(x, height - 0.4, 0, "#fff6e8", 22, 22).excludedMeshes.push(...jet.meshes);
   } else if (kind === "cabin") {
-    // Fuselage: side walls with windows, overhead bins, an aisle runner and both cabins of seats.
-    get("fabric").polygon([P(-0.38, -HZ), P(0.38, -HZ), P(0.38, HZ), P(-0.38, HZ)], 0.03, 1, [0.55, 0.12, 0.15]);
     const windowMaterial = glow(scene, "cabin windows", "#9fc8ef", disposables);
     const windows = new MeshBuilderBatch("cabin windows");
-    for (let z = -HZ + 1; z < HZ - 1; z += 0.82) {
-      for (const side of [-1, 1]) {
-        const x = OX + side * 1.7;
-        const normal: [number, number, number] = [-side, 0, 0];
-        const a: [number, number, number] = [x, 1.05, OZ + z - 0.17];
-        const b: [number, number, number] = [x, 1.05, OZ + z + 0.17];
-        const c: [number, number, number] = [x, 1.45, OZ + z + 0.17];
-        const d: [number, number, number] = [x, 1.45, OZ + z - 0.17];
-        if (side > 0) windows.quad(b, a, d, c, normal, [[0, 0], [1, 0], [1, 1], [0, 1]]);
-        else windows.quad(a, b, c, d, normal, [[0, 0], [1, 0], [1, 1], [0, 1]]);
-      }
-    }
+    fitAirlinerCabin(get, windows, HZ);
     const windowMesh = windows.build(scene, windowMaterial);
     if (windowMesh) disposables.push(windowMesh);
-    for (const side of [-1, 1]) {
-      deco("plaster", side * 1.15, 1.86, 0, 0.5, 0.36, HZ * 2 - 0.4, [0.9, 0.9, 0.88]);
-      deco("darkFrame", side * 0.9, 1.7, 0, 0.03, 0.04, HZ * 2 - 0.4, [0.3, 0.3, 0.32]);
-      deco("chrome", side * (HX - 0.6), 1.75, 0, 0.02, 0.04, HZ * 2 - 0.4, [0.6, 0.6, 0.62]);
-    }
+    // Cove lights along the top of the bins, washing the ceiling in the cabin mood colour.
     const cabinStrip = glow(scene, "cabin mood light", "#c8b8ff", disposables);
-    const strip = MeshBuilder.CreateBox("cabin strip", { width: 0.06, height: 0.03, depth: HZ * 2 - 0.4 }, scene);
-    strip.position.set(OX, height - 0.05, OZ);
-    strip.material = cabinStrip;
-    disposables.push(strip);
-    const seatColour: Record<"business" | "economy", Rgb> = { business: [0.16, 0.2, 0.3], economy: [0.18, 0.3, 0.48] };
-    for (const cabin of ["business", "economy"] as const) {
-      const big = cabin === "business";
-      for (const seat of cabinSeats(cabin)) {
-        const [sx, sz] = seatPoint(seat);
-        const w = big ? 0.62 : 0.42;
-        get("seat").box(sx, 0.25, sz, w, 0.4, big ? 0.7 : 0.45, 0, 1, seatColour[cabin]);
-        get("seat").box(sx, 0.85, sz - (big ? 0.38 : 0.24), w, big ? 0.95 : 0.8, 0.12, 0, 1, seatColour[cabin]);
-        get("bedding").box(sx, 1.24, sz - (big ? 0.38 : 0.24), w * 0.7, 0.14, 0.13, 0, 1, [0.92, 0.92, 0.9]);
-        if (big) get("wood").box(sx + (sx > OX ? -0.36 : 0.36), 0.55, sz, 0.12, 0.12, 0.6, 0, 1, [0.4, 0.3, 0.2]);
-      }
+    for (const side of [-1, 1]) {
+      const strip = MeshBuilder.CreateBox("cabin strip", { width: 0.03, height: 0.02, depth: HZ * 2 - 2 }, scene);
+      strip.position.set(OX + side * 0.84, 2.18, OZ - 0.12);
+      strip.material = cabinStrip;
+      strip.isPickable = false;
+      disposables.push(strip);
     }
-    // Bulkheads between the cabins and at the galley, with a curtain and the cabin signs.
-    deco("plaster", -1.2, 1.2, 4.0, 1.4, 2.3, 0.08, [0.85, 0.84, 0.8]);
-    deco("plaster", 1.2, 1.2, 4.0, 1.4, 2.3, 0.08, [0.85, 0.84, 0.8]);
-    sign("Business", CABINS.business.seat, 0, 1.95, 4.05, 1.0, "south");
-    deco("concrete", 0, 1.1, HZ - 0.6, HX * 2 - 0.2, 2.2, 0.9, [0.82, 0.83, 0.85]);
-    sign("Galley", "Naija World Air", 0, 1.6, HZ - 1.06, 1.2);
-    for (const z of [-HZ + 0.5]) deco("concrete", 0, 1.1, z, HX * 2 - 0.2, 2.2, 0.6, [0.82, 0.83, 0.85]);
-    const cabinLight = light(0, height - 0.2, 2, "#fff4e2", 10, 22);
-    const rear = light(0, height - 0.2, -7, "#fff4e2", 10, 22);
+    sign("Business", CABINS.business.seat, 0, 1.92, 4.05, 1.0, "south");
+    sign("Galley", "Naija World Air", 0, 1.95, HZ - 0.68, 1.0);
+    const cabinLight = light(0, 1.75, -0.5, "#fff4e2", 8, 22);
+    const rear = light(0, 1.75, -7.5, "#fff4e2", 8, 22);
+    const front = light(0, 1.75, 7, "#fff4e2", 8, 22);
     const skies: Record<FlightPhase, string> = { boarding: "#b8c9d6", takeoff: "#8fc0ec", cruise: "#3f7fd0", descent: "#f0b878", landed: "#c9d7e2" };
     setFlight = (phase, progress, destination) => {
       const colour = Color3.FromHexString(destination === "lagos" && phase === "descent" ? "#9ccf9a" : skies[phase]);
       const fade = phase === "takeoff" ? Math.min(1, progress * 3) : 1;
       windowMaterial.emissiveColor = colour.scale(0.55 + 0.45 * fade);
       const dim = phase === "takeoff" || phase === "descent";
-      cabinLight.intensity = rear.intensity = dim ? 4 : 10;
+      cabinLight.intensity = rear.intensity = front.intensity = dim ? 3 : 8;
       cabinStrip.emissiveColor = Color3.FromHexString(dim ? "#5b4cc8" : phase === "cruise" ? "#e8d9ff" : "#c8b8ff");
     };
     // Departure and arrival airfields are built only around their shots, far from everything else.
