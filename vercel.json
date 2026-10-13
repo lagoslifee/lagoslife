@@ -5,7 +5,7 @@
       "root": "apps/web/",
       "framework": "vite",
       "installCommand": "cd ../.. && npm ci",
-      "buildCommand": "cd ../.. && VITE_API_URL=https://flame-connect-middle-pierce.trycloudflare.com VITE_GUEST_MODE=false npm run build -w @lagos-living/web",
+      "buildCommand": "cd ../.. && VITE_API_URL=https://kits-past-brunette-bracelet.trycloudflare.com VITE_GUEST_MODE=false npm run build -w @lagos-living/web",
       "outputDirectory": "dist",
       "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
       "headers": [
