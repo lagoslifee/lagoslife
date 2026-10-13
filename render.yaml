@@ -38,6 +38,9 @@ services:
         generateValue: true
       - key: WEB_ORIGIN
         value: https://silver-elf-acde6c.netlify.app
+      # Sign-up and sign-in are refused ("Invalid origin") from any site not listed here or in WEB_ORIGIN.
+      - key: EXTRA_WEB_ORIGINS
+        value: https://*.vercel.app,https://9jaworld.com,https://*.9jaworld.com
       # Guest accounts are off: everyone plays with a signed-up account. Matches VITE_GUEST_MODE on Netlify.
       - key: GUEST_MODE
         value: "false"
