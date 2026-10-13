@@ -1,5 +1,5 @@
-# Render Blueprint for the game server (Express + Colyseus), always on and using the existing Neon database, so every
-# account, house and car carries over. Render dashboard > New > Blueprint > pick this repository.
+# Render Blueprint for the game server (Express + Colyseus), always on with its data in Neon (restore the latest backup there first, so every
+# account, house and car carries over). Render dashboard > New > Blueprint > pick this repository.
 # See docs/OPERATIONS.md#render-game-server.
 services:
   - type: web
