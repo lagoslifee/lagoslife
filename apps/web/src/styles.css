@@ -215,12 +215,13 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 
 .loading-screen { height: 100%; display: grid; place-items: center; background: #092421; color: #e6bd62; letter-spacing: .1em; }
 .modal-backdrop { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px; background: rgba(2,18,17,.76); }
-.modal-backdrop.creator-backdrop { position: fixed; z-index: 50; }
+.modal-backdrop.creator-backdrop { position: fixed; z-index: 50; background: #071a18; }
 .credit { color: #16715f; }.debit { color: #a24d3d; }
 .empty-copy { color: #71807b; font-size: 12px; }
 .creator-card {
-  width: min(850px, 100%);
-  min-height: 520px;
+  width: min(900px, 100%);
+  height: min(720px, calc(100vh - 40px));
+  height: min(720px, calc(100dvh - 40px));
   display: grid;
   grid-template-columns: 1fr 1.1fr;
   overflow: hidden;
@@ -234,7 +235,9 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .preview-status { position: absolute; inset: 0; display: grid; place-content: center; margin: 0; padding: 24px; text-align: center; font-weight: 600; }
 .preview-caption { margin: 8px 0 2px; font-weight: 700; }
 .character-preview small { opacity: .65; }
-.creator-options { padding: 32px 34px; max-height: min(86vh, 760px); overflow-y: auto; }
+/* The options scroll; the action bar stays pinned below them so "next" is always on screen. */
+.creator-options { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.creator-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 30px 34px 16px; }
 .studio-row { border: 0; margin: 12px 0 0; padding: 0; min-width: 0; }
 .studio-row legend { padding: 0; margin-bottom: 6px; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #4a5e59; }
 .studio-chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -260,7 +263,8 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .gender-choice button span { font-size: 22px; }
 .gender-choice button[aria-pressed="true"] { border-color: #0f5a4f; background: #e3f1ec; box-shadow: 0 0 0 2px rgba(15,90,79,.25); }
 .gender-choice .field-hint { grid-column: 1 / -1; }
-.creator-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 25px; }
+.creator-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 34px; border-top: 1px solid rgba(23,49,46,.12); background: #f3f0e6; }
+.creator-actions .primary { min-width: 220px; min-height: 48px; font-size: 16px; }
 
 /* ---------- In-game HUD ---------- */
 :root { --text-scale: 1; --hud-bg: rgba(14, 24, 22, .78); --hud-line: rgba(255,255,255,.12); --accent: #ffcf3a; --teal: #1ba7d6; }
@@ -716,10 +720,16 @@ button.net:hover { border-color: rgba(100, 217, 145, .6); }
   .city-reel figcaption span { font-size: 12px; }
   .hero-copy > p:not(.eyebrow), .districts { display: none; }
   .auth-panel { padding: 40px 24px; }
-  .creator-card { grid-template-columns: 1fr; max-height: 90vh; overflow-y: auto; }
-  .character-preview { min-height: 240px; }
-  .character-preview-3d canvas { min-height: 220px; }
-  .creator-options { max-height: none; overflow: visible; padding: 20px 18px 22px; }
+  /* Phones: a full-screen page with the avatar in a strip on top, the choices scrolling under it and the button pinned. */
+  .modal-backdrop.creator-backdrop { padding: 0; place-items: stretch; }
+  .creator-card { width: 100%; height: 100vh; height: 100dvh; border-radius: 0; grid-template-columns: 1fr; grid-template-rows: minmax(170px, 34dvh) minmax(0, 1fr); }
+  .character-preview { min-height: 0; padding-top: env(safe-area-inset-top, 0px); }
+  .character-preview-3d { padding-bottom: 8px; }
+  .character-preview-3d canvas { min-height: 0; }
+  .creator-card h2 { font-size: 26px; }
+  .creator-scroll { padding: 16px 18px 12px; }
+  .creator-actions { padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); box-shadow: 0 -6px 18px rgba(0,0,0,.08); }
+  .creator-actions .primary, .creator-actions .secondary { flex: 1; min-width: 0; }
   .hud-location { left: 10px; top: 10px; min-width: 0; max-width: 55vw; padding: 8px 10px; }
   .hud-location h2 { font-size: 15px; }
   .hud-status { right: 10px; top: 10px; }

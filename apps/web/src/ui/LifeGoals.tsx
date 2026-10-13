@@ -37,7 +37,7 @@ export function LifeGoalsDialog({ playerName, onClose }: Props) {
   return (
     <div className="modal-backdrop goals-backdrop">
       <section className="goals-card" role="dialog" aria-modal="true" aria-label="Your Lagos story" data-testid="life-goals">
-        <p className="step-label">WELCOME TO NAIJA WORLD</p>
+        <p className="step-label">{localStorage.getItem("lagos-new-account") === "1" ? "STEP 2 OF 2 · YOUR STORY" : "YOUR LAGOS STORY"}</p>
         <h2>What's your Lagos story, {playerName}?</h2>
         <p className="muted">Tell us what you want from this life. It's saved to your account, and you can change it any time in Phone → Settings.</p>
 

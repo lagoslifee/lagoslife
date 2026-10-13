@@ -421,6 +421,7 @@ function CharacterCreator({
           </Suspense>
         </div>
         <div className="creator-options">
+          <div className="creator-scroll">
           <p className="step-label">{welcome ? "STEP 1 OF 2 · YOUR LOOK" : "CHARACTER STUDIO"}</p>
           <h2>{welcome ? "Choose your look" : "Make Lagos yours"}</h2>
           {welcome && <p className="muted small">This is how other residents will see you. You can change it any time from Phone → Settings.</p>}
@@ -431,6 +432,7 @@ function CharacterCreator({
           <ChipRow label="Face" options={appearance.body === "female" ? accessories.filter((item) => item !== "beard") : accessories} value={appearance.accessory} names={ACCESSORY_LABELS} onPick={set("accessory")} />
           <ChipRow label="Outfit" options={wearable} value={appearance.outfit} names={outfitNames} onPick={set("outfit")} />
           {error && <p className="form-message" role="status">{error}</p>}
+          </div>
           <div className="creator-actions">
             {!welcome && <button className="secondary" onClick={() => onClose()}>Cancel</button>}
             <button className="primary" onClick={save} disabled={saving}>
