@@ -75,9 +75,8 @@ root and Vercel reads the service from this file. Vercel only serves the client:
 the game server keeps WebSockets and a PostgreSQL pool open, so it still runs
 on its own host.
 
-- While testing, the build command carries the quick-tunnel `VITE_API_URL`, and
-  `scripts/ops/tunnel-watchdog.sh` rewrites it in both `netlify.toml` and
-  `vercel.json` when the tunnel changes.
+- The build command carries `VITE_API_URL`, the Render game server
+  (`https://lagos-living-server.onrender.com`); keep `netlify.toml` in step.
 - Add the Vercel site to the server as `EXTRA_WEB_ORIGINS=https://<project>.vercel.app`
   (comma-separated for several) so CORS and sign-in accept it alongside
   `WEB_ORIGIN`. `https://*.vercel.app` covers every deployment and preview URL;
