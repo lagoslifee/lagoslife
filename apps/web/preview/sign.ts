@@ -1,0 +1,33 @@
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { Scene } from "@babylonjs/core/scene";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { HDRCubeTexture } from "@babylonjs/core/Materials/Textures/hdrCubeTexture";
+import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration";
+import { SignAtlas } from "../src/game/sign-atlas";
+import { MeshBuilderBatch } from "../src/game/geometry";
+const canvas = document.getElementById("c") as HTMLCanvasElement;
+const engine = new Engine(canvas, true);
+const scene = new Scene(engine);
+scene.clearColor = new Color4(0.75, 0.82, 0.9, 1);
+scene.imageProcessingConfiguration.toneMappingEnabled = true;
+scene.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
+scene.imageProcessingConfiguration.exposure = 1.05;
+const p = new URLSearchParams(location.search);
+if (p.get("hdr")) { scene.environmentTexture = new HDRCubeTexture("/assets/sky/daylight-1k.hdr", scene, 256, false, true, false, true); scene.environmentIntensity = 0.9; }
+const sun = new DirectionalLight("sun", new Vector3(-0.45, -1, 0.32).normalize(), scene);
+sun.intensity = 3.1;
+const cam = new FreeCamera("cam", new Vector3(0, 0, -6), scene);
+cam.setTarget(Vector3.Zero());
+const atlas = new SignAtlas(scene, Number(p.get("scale") ?? 1));
+const rows: Array<[string, any, string | undefined, string | undefined]> = [["Lekki Motors", "banner", "Car dealer · Admiralty Way", "#16324f"], ["Kayode Corner Mart", "shop", "Admiralty Way", "#f6efe2"], ["Admiralty Way", "street", undefined, undefined]];
+const draw = () => { const batch = new MeshBuilderBatch("s"); rows.forEach(([t, s, sub, c], i) => {
+  const uv = atlas.get(t, s, sub, c);
+  const y = 1.2 - i * 1.1, w = 4.8, h = w / SignAtlas.aspect;
+  batch.quad([-w / 2, y - h / 2, 0], [w / 2, y - h / 2, 0], [w / 2, y + h / 2, 0], [-w / 2, y + h / 2, 0], [0, 0, -1], [[uv.u0, uv.v0], [uv.u1, uv.v0], [uv.u1, uv.v1], [uv.u0, uv.v1]]);
+}); batch.build(scene, atlas.material); };
+if (p.get("late")) setTimeout(draw, 1000); else draw();
+engine.runRenderLoop(() => scene.render());
+setTimeout(() => ((window as unknown as { ready: boolean }).ready = true), 6000);

@@ -1,0 +1,36 @@
+import "@babylonjs/core/Meshes/instancedMesh";
+import "@babylonjs/loaders/glTF";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { Scene } from "@babylonjs/core/scene";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { Vector3, Quaternion, Axis } from "@babylonjs/core/Maths/math";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { AvatarFactory } from "../src/game/avatar";
+const canvas = document.getElementById("c") as HTMLCanvasElement;
+const engine = new Engine(canvas, true);
+const scene = new Scene(engine);
+scene.clearColor = new Color4(0.75, 0.82, 0.9, 1);
+const p = new URLSearchParams(location.search);
+const cam = new FreeCamera("cam", new Vector3(Number(p.get("x") ?? 2.5), 1.4, Number(p.get("z") ?? 4)), scene);
+cam.setTarget(new Vector3(0, 1.2, 0));
+new HemisphericLight("h", new Vector3(0.3, 1, 0.4), scene).intensity = 1.1;
+const avatars = await AvatarFactory.load(scene);
+const { MeshBuilder } = await import("@babylonjs/core/Meshes/meshBuilder");
+MeshBuilder.CreateBox("fwd", { size: 0.3 }, scene).position.set(0, 0.15, 3.5);
+const combos: Array<[string, number, string, number]> = JSON.parse(p.get("c")!);
+const q = new Quaternion();
+const axis = (n: string) => (n === "x" ? Axis.X : n === "y" ? Axis.Y : Axis.Z);
+combos.forEach(([aa, av, fa, fv], i) => {
+  const a = avatars.create(`p${i}`, { body: "female", skinTone: "deep", hairstyle: "long", outfit: "corporate-red", accessory: "none" });
+  const off = i * 1.1 - (combos.length - 1) * 0.55;
+  if (p.get("side")) a.root.position.set(0, 0, off); else a.root.position.set(off, 0, 0);
+  const limbs = (a as unknown as { instance: { limbs: Record<string, import("@babylonjs/core/Meshes/transformNode").TransformNode> } }).instance.limbs;
+  scene.onBeforeRenderObservable.add(() => {
+    a.update(0, "idle", 0.016);
+    Quaternion.RotationAxisToRef(axis(aa), av, q); limbs.rightArm!.rotationQuaternion!.multiplyInPlace(q);
+    Quaternion.RotationAxisToRef(axis(fa), fv, q); limbs.rightFore!.rotationQuaternion!.multiplyInPlace(q);
+  });
+});
+engine.runRenderLoop(() => scene.render());
+setTimeout(() => ((window as unknown as { ready: boolean }).ready = true), 4000);

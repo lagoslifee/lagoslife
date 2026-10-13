@@ -1,4 +1,4 @@
-import { BED_ITEM_IDS, furnitureItem, homeLayout, legacyCellPosition, nearestCell, placementProblem, propertyPlace, snapFloor, type PlacedPiece } from "@lagos-living/shared";
+import { agentFee, BED_ITEM_IDS, ESTATE_AGENT, furnitureItem, homeLayout, legacyCellPosition, nearestCell, placementProblem, propertyPlace, snapFloor, type PlacedPiece } from "@lagos-living/shared";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "./database.js";
@@ -157,6 +157,7 @@ export async function acquireProperty(
   propertyId: string,
   tenure: "owned" | "rented",
   idempotencyKey: string,
+  viaAgent = false,
 ) {
   await settleExpiredTenancies();
   return withTransaction(async (client) => {
@@ -189,8 +190,12 @@ export async function acquireProperty(
     if (tenure === "rented" && row.listing_type === "sale") {
       throw new EconomyError("This property is offered for sale only.");
     }
-    requireAtListing(userId, row);
+    if (!viaAgent) requireAtListing(userId, row);
     if (await heldCopy(client, userId, templateId)) throw new EconomyError("You already have a home here.", 409);
+    const firstPayment = tenure === "owned" ? Number(row.purchase_price) : Number(row.monthly_rent) + Number(row.deposit);
+    const fee = viaAgent ? agentFee(firstPayment) : 0;
+    if (Number(wallet.rows[0].balance) < firstPayment + fee) throw new EconomyError("Insufficient game naira", 402);
+    if (fee) await debitWallet(client, userId, fee, "property_purchase", `${ESTATE_AGENT.name} · agent's fee`, `${idempotencyKey}:agent`, { propertyId: templateId });
     const occupied = await client.query(`SELECT 1 FROM property_tenure WHERE property_id = $1`, [templateId]);
     const homeId = occupied.rowCount ? `${templateId}~${randomUUID().slice(0, 8)}` : templateId;
     if (homeId !== templateId) {

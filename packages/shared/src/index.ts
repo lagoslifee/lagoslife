@@ -251,6 +251,8 @@ export const acquirePropertySchema = z.object({
   propertyId: z.string().min(1).max(100),
   tenure: z.enum(["owned", "rented"]),
   idempotencyKey: z.uuid(),
+  /** Signed through the estate agent from anywhere, for the agent's fee, instead of at the sign. */
+  viaAgent: z.boolean().optional(),
 });
 
 export const tenancyActionSchema = z.object({

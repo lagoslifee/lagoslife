@@ -1,0 +1,45 @@
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { Scene } from "@babylonjs/core/scene";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { INTERIOR_ORIGIN, seatPoint } from "@lagos-living/shared";
+import { createMaterials } from "../src/game/materials";
+import { SignAtlas } from "../src/game/sign-atlas";
+import { buildTravelInterior } from "../src/game/travel-interiors";
+import { buildMealTray, buildTrolley } from "../src/game/flight-scenes";
+const canvas = document.getElementById("c") as HTMLCanvasElement;
+const engine = new Engine(canvas, true);
+const scene = new Scene(engine);
+scene.clearColor = new Color4(0.1, 0.1, 0.1, 1);
+const p = new URLSearchParams(location.search);
+const [ox, oz] = INTERIOR_ORIGIN;
+const cam = new FreeCamera("cam", new Vector3(ox + Number(p.get("x") ?? 0), Number(p.get("y") ?? 1.6), oz + Number(p.get("z") ?? -10)), scene);
+cam.setTarget(new Vector3(ox + Number(p.get("tx") ?? 0), Number(p.get("ty") ?? 1.2), oz + Number(p.get("tz") ?? 5)));
+cam.fov = 0.95;
+new HemisphericLight("h", new Vector3(0.3, 1, -0.4), scene).intensity = 0.3;
+const materials = createMaterials(scene, "high" as never);
+const atlas = new SignAtlas(scene, 1);
+const view = buildTravelInterior(scene, materials as never, atlas, "cabin", null);
+view.setFlight("cruise", 0.5, "dubai");
+const trolley = buildTrolley(scene);
+trolley.position.set(ox, 0, oz - 4);
+const seat = seatPoint("14A");
+const tray = buildMealTray(scene, false);
+tray.position.set(seat[0], 0.68, seat[1] + 0.3);
+const bseat = seatPoint("2A");
+const btray = buildMealTray(scene, true);
+btray.position.set(bseat[0], 0.68, bseat[1] + 0.42);
+console.error("seats", seat, bseat);
+const shotAt = p.get("t");
+if (shotAt !== null) {
+  cam.fov = 0.62;
+  let shot = null;
+  for (let t = -7; t <= Number(shotAt); t += 0.5) shot = view.flightShot(t, (p.get("d") ?? "dubai") as "dubai");
+  shot = view.flightShot(Number(shotAt), (p.get("d") ?? "dubai") as "dubai");
+  console.error("shot", Number(shotAt), shot ? "outside" : "cabin", scene.meshes.length);
+  if (shot) { cam.position.copyFrom(shot.eye); cam.setTarget(shot.look); }
+}
+engine.runRenderLoop(() => scene.render());
+setTimeout(() => ((window as unknown as { ready: boolean }).ready = true), 2500);

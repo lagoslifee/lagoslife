@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { pool } from "./database.js";
-import { getPlace, HOME_UNITS, propertyPlace } from "@lagos-living/shared";
+import { agentFee, getPlace, HOME_UNITS, propertyPlace } from "@lagos-living/shared";
 import { purchaseItem } from "./economy-service.js";
 import { setPlayerPosition } from "./player-presence.js";
 import {
@@ -284,6 +284,22 @@ describe("rental agreements", () => {
     }
     expect(HOME_UNITS.filter(({ placeId }) => placeId === "lekki-adebayo-flat-2")).toHaveLength(12);
     expect(HOME_UNITS.filter(({ placeId }) => placeId === "lekki-chief-okoro-house")).toHaveLength(6);
+  });
+
+  it("buys the most expensive mansion through the estate agent from anywhere, for the agent's fee", async () => {
+    const buyer = users[2]!;
+    const listingId = "ikoyi-milverton-mansion";
+    const price = 28_000_000;
+    setPlayerPosition(buyer.id, 300, 300);
+    await pool.query(`INSERT INTO wallet (user_id, balance) VALUES ($1, 10000000) ON CONFLICT (user_id) DO UPDATE SET balance = 10000000`, [buyer.id]);
+    await expect(acquireProperty(buyer.id, listingId, "owned", randomUUID(), true)).rejects.toMatchObject({ status: 402 });
+    await pool.query(`UPDATE wallet SET balance = 40000000 WHERE user_id = $1`, [buyer.id]);
+    const bought = await acquireProperty(buyer.id, listingId, "owned", randomUUID(), true);
+    expect(bought.balance).toBe(40_000_000 - price - agentFee(price));
+    await pool.query(`DELETE FROM property_tenure WHERE property_id = $1`, [bought.propertyId]);
+    await pool.query(`DELETE FROM home_state WHERE property_id = $1`, [bought.propertyId]);
+    await pool.query(`UPDATE player_profile SET home_property_id = NULL WHERE user_id = $1`, [buyer.id]);
+    await pool.query(`DELETE FROM property_listing WHERE id = $1 AND template_id IS NOT NULL`, [bought.propertyId]);
   });
 
   it("prices mapped homes by district: Lekki Phase 1, then Victoria Island, then Ikoyi", async () => {

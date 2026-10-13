@@ -34,10 +34,10 @@ export const agentFee = (price: number) => Math.max(1_000, Math.round((price * E
 
 /** Ground rent and freehold prices for every plot, in fictional game naira. */
 export const PLOT_TERMS = {
-  leaseRent: 15_000,
+  leaseRent: 25_000,
   leaseIntervalDays: 7,
   leaseGraceDays: 3,
-  purchasePrice: 120_000,
+  purchasePrice: 1_500_000,
   /** Metres from the gate within which a player can sign or pay the builders. */
   range: 7,
 } as const;

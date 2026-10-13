@@ -169,7 +169,8 @@ export const api = {
   buyReadyBuilt: (plotId: string, designId: HouseDesign["id"], viaAgent = false) =>
     post<{ balance: number; homeId: string }>(`/api/plots/${plotId}/buy-built`, { designId, viaAgent, idempotencyKey: crypto.randomUUID() }),
   payNextStage: (plotId: string) => post<{ balance: number }>(`/api/plots/${plotId}/next-stage`, { idempotencyKey: crypto.randomUUID() }),
-  acquire: (propertyId: string, tenure: "owned" | "rented") => post<{ balance: number }>("/api/properties/acquire", { propertyId, tenure, idempotencyKey: crypto.randomUUID() }),
+  acquire: (propertyId: string, tenure: "owned" | "rented", viaAgent = false) =>
+    post<{ balance: number }>("/api/properties/acquire", { propertyId, tenure, viaAgent, idempotencyKey: crypto.randomUUID() }),
   renew: (propertyId: string) => post<{ balance: number }>(`/api/properties/${propertyId}/renew`, { idempotencyKey: crypto.randomUUID() }),
   cancelTenancy: (propertyId: string) => post<{ cancelled: boolean; refunded: number }>(`/api/properties/${propertyId}/cancel`, { idempotencyKey: crypto.randomUUID() }),
   setHome: (propertyId: string) => post<{ homePropertyId: string }>(`/api/properties/${propertyId}/home`),

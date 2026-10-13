@@ -167,10 +167,10 @@ export function EstateApp({ properties, plots, here, onRefresh, onToast, onNavig
               </div>
               <div className="business-actions">
                 {listing.listingType !== "rental" && listing.purchasePrice > 0 && (
-                  <button className="primary" disabled={busy} onClick={() => run(async () => (await api.acquire(listing.id, "owned"), `${listing.name} is yours. It stays yours: there's nothing to list or renew.`))}>Buy</button>
+                  <button className="primary" disabled={busy} onClick={() => run(async () => (await api.acquire(listing.id, "owned", true), `${listing.name} is yours. It stays yours: there's nothing to list or renew.`))}>Buy · {naira(listing.purchasePrice + agentFee(listing.purchasePrice))}</button>
                 )}
                 {listing.listingType !== "sale" && listing.rent > 0 && (
-                  <button disabled={busy} onClick={() => run(async () => (await api.acquire(listing.id, "rented"), `You're renting ${listing.name}.`))}>Rent</button>
+                  <button disabled={busy} onClick={() => run(async () => (await api.acquire(listing.id, "rented", true), `You're renting ${listing.name}.`))}>Rent</button>
                 )}
                 {onView ? (
                   <button data-testid={`estate-view-${listing.id}`} onClick={() => { onView(listing.id, listing.name); onClose(); }}>View inside · agent drives you ({ESTATE_AGENT.viewingSeconds} s, free)</button>

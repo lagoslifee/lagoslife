@@ -1,0 +1,28 @@
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { Scene } from "@babylonjs/core/scene";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { ListingBoards } from "../src/game/listing-boards";
+const canvas = document.getElementById("c") as HTMLCanvasElement;
+const engine = new Engine(canvas, true);
+const scene = new Scene(engine);
+scene.clearColor = new Color4(0.75, 0.82, 0.9, 1);
+const p = new URLSearchParams(location.search);
+const cam = new FreeCamera("cam", new Vector3(Number(p.get("x") ?? 0), 1.8, Number(p.get("z") ?? -4)), scene);
+cam.setTarget(new Vector3(0, 1.6, 0));
+new HemisphericLight("h", new Vector3(0.3, 1, -0.4), scene).intensity = 1;
+const yaw = Number(p.get("yaw") ?? 0);
+const normal: [number, number] = [-Math.sin(yaw), -Math.cos(yaw)];
+const signs = [-2.2, 0, 2.2].map((x, i) => {
+  const board = MeshBuilder.CreateBox(`b${i}`, { width: 1.7, height: 0.4, depth: 0.04 }, scene);
+  board.position.set(x, 1.75, 0);
+  board.rotation.y = yaw;
+  return { placeId: `p${i}`, board: { at: [x, 0] as [number, number], yaw, normal } };
+});
+const boards = new ListingBoards(scene);
+boards.update(signs, new Map([["p0", "mine"], ["p1", "sold"], ["p2", "let"]] as const));
+engine.runRenderLoop(() => scene.render());
+setTimeout(() => ((window as unknown as { ready: boolean }).ready = true), 1500);

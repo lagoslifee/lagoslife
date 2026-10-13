@@ -122,6 +122,7 @@ describe("land and building", () => {
   it("refuses builders' fees the resident cannot afford", async () => {
     const [, buyer] = users;
     atGate(buyer!.id, plotB);
+    await pool.query(`INSERT INTO wallet (user_id, balance) VALUES ($1, 3000000) ON CONFLICT (user_id) DO UPDATE SET balance = 3000000`, [buyer!.id]);
     await acquirePlot(buyer!.id, plotB, "owned", key());
     const plot = (await listPlots(buyer!.id)).find((entry) => entry.id === plotB)!;
     expect(plot).toMatchObject({ status: "mine", tenureType: "owned", nextPaymentAt: null, accessEndsAt: null });

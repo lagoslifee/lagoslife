@@ -29,20 +29,28 @@ export function compoundCars(place: Place, index: number) {
   });
 }
 
-/** The front wall runs parallel to the street just inside the kerb, leaving a gate gap on the path to the door. */
+/**
+ * The front wall runs parallel to the street just inside the kerb, leaving a gate gap on the path to the door, and the
+ * side walls run back from its ends past the house, so the whole front of the plot is a private compound.
+ */
 export function compoundWall(place: Place) {
   const { span, at } = frame(place);
   const along = Math.max(span - 2.6, 6);
-  const halfLength = 15;
+  const halfLength = 20;
   const gate = 2.4;
   return {
     along,
     gate,
+    halfLength,
     segments: [
       [at(along, -halfLength), at(along, -gate)],
       [at(along, gate), at(along, halfLength)],
+      [at(along, -halfLength), at(-14, -halfLength)],
+      [at(along, halfLength), at(-14, halfLength)],
     ] as Array<[Vec2, Vec2]>,
     gatePosts: [at(along, -gate), at(along, gate)],
+    /** The security post just inside the gate, on the left as you drive in. */
+    gatehouse: at(along - 2.2, -gate - 2.4),
   };
 }
 

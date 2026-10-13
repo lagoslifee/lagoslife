@@ -1,0 +1,44 @@
+import "@babylonjs/core/Meshes/instancedMesh";
+import "@babylonjs/loaders/glTF";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { Scene } from "@babylonjs/core/scene";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { createMaterials } from "../src/game/materials";
+import { VehicleFactory } from "../src/game/vehicles";
+import { AvatarFactory } from "../src/game/avatar";
+import { CarSpotters } from "../src/game/car-spotters";
+const canvas = document.getElementById("c") as HTMLCanvasElement;
+const engine = new Engine(canvas, true);
+const scene = new Scene(engine);
+scene.clearColor = new Color4(0.75, 0.82, 0.9, 1);
+const p = new URLSearchParams(location.search);
+const cam = new FreeCamera("cam", new Vector3(7, 3.2, -7), scene);
+cam.setTarget(new Vector3(0, 1, 0));
+new HemisphericLight("h", new Vector3(0.3, 1, -0.4), scene).intensity = 0.7;
+new DirectionalLight("d", new Vector3(-0.5, -1, 0.3), scene).intensity = 2;
+const materials = createMaterials(scene, "high" as never);
+MeshBuilder.CreateGround("g", { width: 80, height: 80 }, scene);
+const factory = await VehicleFactory.load(scene, materials as never, ["lamborghini-urus"]);
+factory.create("car", "lamborghini-urus", "#f2c200").setPose(0, 0, 0, 0);
+const avatars = await AvatarFactory.load(scene);
+const overlay = document.createElement("div");
+document.body.appendChild(overlay);
+const spotters = new CarSpotters(avatars, overlay, () => 0, () => true, () => ({ x: 0, y: 0, visible: false }), () => undefined, async () => true);
+const car = { id: "c", x: 0, z: 0, speed: 0, modelId: "lamborghini-urus", colour: "#f2c200", condition: 100 };
+const s = spotters as unknown as { addSpotter: (...a: unknown[]) => unknown; shower: (c: typeof car, n: number) => void };
+for (let i = 0; i < 3; i++) s.addSpotter(car, performance.now() + 99999, "hi", 5, 8);
+const at = Number(p.get("t") ?? 1);
+let started = false;
+let elapsed = 0;
+scene.onBeforeRenderObservable.add(() => {
+  const dt = 1 / 30;
+  if (!started) { s.shower(car, 20000); started = true; }
+  if (elapsed < at) { elapsed += dt; spotters.update(dt, performance.now(), car, [0, 0], true); }
+});
+engine.runRenderLoop(() => scene.render());
+setTimeout(() => ((window as unknown as { ready: boolean }).ready = true), 5000);

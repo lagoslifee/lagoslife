@@ -534,7 +534,7 @@ export function configureRoutes(app: Express) {
 
   app.post("/api/properties/acquire", requirePlayer, rateLimited, guarded("Property could not be acquired", (req, userId) => {
     const body = acquirePropertySchema.parse(req.body);
-    return acquireProperty(userId, body.propertyId, body.tenure, body.idempotencyKey);
+    return acquireProperty(userId, body.propertyId, body.tenure, body.idempotencyKey, body.viaAgent ?? false);
   }));
 
   app.post("/api/properties/:propertyId/renew", requirePlayer, rateLimited, guarded("Rent could not be renewed", (req, userId) =>

@@ -1926,9 +1926,16 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       get("chrome").box(px, 3.0, pz, 0.32, 0.22, 0.32, yaw);
       addObstacle([px, pz], [px, pz], 0.32);
     }
+    const [hx, hz] = wall.gatehouse;
+    if (clear(hx, hz, 1.4)) {
+      get("plaster").box(hx, 1.25, hz, 2.2, 2.5, 2.0, yaw, 1, [0.93, 0.88, 0.78]);
+      get("roof").box(hx, 2.6, hz, 2.7, 0.18, 2.5, yaw, 1, [0.35, 0.22, 0.16]);
+      get("glass").box(hx + Math.sin(yaw) * 1.01, 1.6, hz + Math.cos(yaw) * 1.01, 1.4, 0.7, 0.04, yaw);
+      addObstacle([hx, hz], [hx, hz], 1.2);
+    }
     const [gfx, gfz] = [Math.sin(yaw), Math.cos(yaw)];
     for (const side of [-1, 1]) {
-      const corners: Vec2[] = [[1.2, 5.6], [1.2, 14.5], [wall.along - 0.6, 14.5], [wall.along - 0.6, 5.6]];
+      const corners: Vec2[] = [[1.2, 5.6], [1.2, 19], [wall.along - 0.6, 19], [wall.along - 0.6, 5.6]];
       // Mirroring the patch to the other side of the drive reverses its winding; keep it facing up.
       const lawn: Vec2[] = (side < 0 ? corners.reverse() : corners).map(([along, across]) => [
         place.door[0] + gfx * along + gfz * across * side,

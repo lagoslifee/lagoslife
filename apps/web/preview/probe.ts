@@ -1,0 +1,32 @@
+import "@babylonjs/core/Meshes/instancedMesh";
+import "@babylonjs/loaders/glTF";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { Scene } from "@babylonjs/core/scene";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { Axis, Quaternion, Vector3 } from "@babylonjs/core/Maths/math";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { AvatarFactory } from "../src/game/avatar";
+const p = new URLSearchParams(location.search);
+const engine = new Engine(document.getElementById("c") as HTMLCanvasElement, true);
+const scene = new Scene(engine);
+scene.clearColor = new Color4(0.75, 0.82, 0.9, 1);
+const cam = new FreeCamera("cam", new Vector3(Number(p.get("x") ?? 3.5), 1.3, Number(p.get("z") ?? 4)), scene);
+cam.setTarget(new Vector3(0, 0.8, 0));
+new HemisphericLight("h", new Vector3(0.3, 1, 0.4), scene).intensity = 1.1;
+MeshBuilder.CreateGround("g", { width: 20, height: 20 }, scene);
+const avatars = await AvatarFactory.load(scene);
+const limb = p.get("limb") ?? "rightUp";
+const angle = Number(p.get("a") ?? 0.9);
+["none", "X", "Y", "Z"].forEach((axis, i) => {
+  const a = avatars.create(`p${i}`, { body: "male", skinTone: "rich", hairstyle: "low-fade", outfit: "athleisure", accessory: "none" });
+  a.root.position.set(i * 1.1 - 1.65, 0, 0);
+  scene.onBeforeRenderObservable.add(() => {
+    a.update(0, "idle", 0.016);
+    const joint = (a as unknown as { instance: { limbs: Record<string, { rotationQuaternion: Quaternion }> } }).instance.limbs[limb];
+    if (axis !== "none" && joint?.rotationQuaternion) joint.rotationQuaternion.multiplyInPlace(Quaternion.RotationAxis((Axis as Record<string, Vector3>)[axis]!, angle));
+  });
+});
+engine.runRenderLoop(() => scene.render());
+setTimeout(() => ((window as unknown as { ready: boolean }).ready = true), 4000);
