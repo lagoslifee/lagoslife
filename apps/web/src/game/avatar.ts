@@ -15,6 +15,7 @@ import {
   skinTones,
   type CharacterAppearance,
   type MotionState,
+  type Vec2,
   GYM,
 } from "@lagos-living/shared";
 import { GarmentPlugin, hairHex, OUTFITS, skinTint, type Accessory, type Body, type Hairstyle } from "./appearance";
@@ -135,12 +136,21 @@ export class AvatarFactory {
       chest: node("spine_03"),
       neck: node("neck_01"),
     };
+    // The bind pose: standing straight with the arms out, to lay limbs flat from rather than from a clip's stance.
+    const rest = new Map<TransformNode, Quaternion>();
+    for (const limb of Object.values(limbs)) {
+      const bone = skeleton?.bones.find((entry) => entry.getTransformNode() === limb);
+      if (!limb || !bone) continue;
+      const rotation = new Quaternion();
+      bone.getRestMatrix().decompose(undefined, rotation);
+      rest.set(limb, rotation);
+    }
     const bones = new Map<string, TransformNode>();
     for (const [bone] of SLIM) {
       const found = node(bone);
       if (found) bones.set(bone, found);
     }
-    return { holder, meshes, body, brows, skirt, garments, hair, anchor, groups, all: entries.animationGroups, limbs, bones };
+    return { holder, meshes, body, brows, skirt, garments, hair, anchor, groups, all: entries.animationGroups, limbs, bones, rest };
   }
 }
 
@@ -214,8 +224,10 @@ const FEMALE_BUILD_MAX = 0.4;
 type Instance = ReturnType<AvatarFactory["instantiate"]>;
 
 /** Joint angles (radians) for the sleeping and lounging poses. */
-const P = { sleepArm: 0.35, sleepIn: 0.3, sleepFore: 1.5, sleepHead: 0.5, loungeBack: -0.35, loungeArm: -1.2, loungeArmBack: -0.3, loungeFore: 0.9, loungeLegs: 0.4 };
+const P = { sleepArm: 0.5, sleepIn: 1.35, sleepFore: 1.7, sleepHead: 0.5, sleepLegs: 0, sleepKnee: 0.08, loungeBack: -0.35, loungeArm: -1.2, loungeArmBack: -0.3, loungeFore: 0.9, loungeLegs: 0.4 };
 export const POSE_TUNING = P;
+/** The hip joints sit this far above the surface you sit on (the sit bones and flesh below them). */
+const HIP_ABOVE_CUSHION = 0.1;
 const flex = new Quaternion();
 /** Rotates a joint about one of its local axes, on top of the pose the clips set this frame. */
 function bend(joint: TransformNode | null, angle: number, axis = Axis.X) {
@@ -452,6 +464,27 @@ export class Avatar {
     return { left: palm(leftHand, leftFore), right: palm(rightHand, rightFore) };
   }
 
+  /**
+   * Moves the seated body so the hips rest on the seat: just above a cushion at `cushionY` and, given `hip`, centred
+   * over that point, whatever the sit clip (made for a chair, with the feet on the floor ahead of the hips) did with
+   * them. Call after update() and any pose on top.
+   */
+  seatHips(cushionY: number, hip?: Vec2) {
+    const { leftUp, rightUp } = this.instance.limbs;
+    if (!leftUp || !rightUp) return;
+    this.root.computeWorldMatrix(true);
+    leftUp.computeWorldMatrix(true);
+    rightUp.computeWorldMatrix(true);
+    const left = leftUp.getAbsolutePosition();
+    const right = rightUp.getAbsolutePosition();
+    this.root.position.y += cushionY + HIP_ABOVE_CUSHION - (left.y + right.y) / 2;
+    if (hip) {
+      this.root.position.x += hip[0] - (left.x + right.x) / 2;
+      this.root.position.z += hip[1] - (left.z + right.z) / 2;
+    }
+    this.root.computeWorldMatrix(true);
+  }
+
   /** The shoulder joints and neck this frame, for a bar resting across the upper back in the squat. */
   shoulders() {
     const { leftArm, rightArm, neck } = this.instance.limbs;
@@ -467,6 +500,12 @@ export class Avatar {
   sleep(time: number) {
     const limbs = this.instance.limbs;
     const breath = Math.sin(time * 1.3);
+    // Legs straight and together and arms from the bind pose, not the idle clip's stance.
+    for (const limb of [limbs.leftUp, limbs.rightUp, limbs.leftLow, limbs.rightLow, limbs.leftArm, limbs.rightArm, limbs.leftFore, limbs.rightFore]) this.relax(limb);
+    bend(limbs.leftUp, P.sleepLegs, Axis.Z);
+    bend(limbs.rightUp, -P.sleepLegs, Axis.Z);
+    bend(limbs.leftLow, P.sleepKnee);
+    bend(limbs.rightLow, P.sleepKnee);
     bend(limbs.rightArm, P.sleepArm);
     bend(limbs.leftArm, P.sleepArm);
     bend(limbs.rightArm, P.sleepIn, Axis.Z);
@@ -475,6 +514,12 @@ export class Avatar {
     bend(limbs.leftFore, P.sleepFore);
     bend(limbs.neck, P.sleepHead, Axis.Y);
     bend(limbs.chest, breath * 0.025);
+  }
+
+  /** Puts a joint back in its bind pose, dropping whatever the clips did to it this frame. */
+  private relax(joint: TransformNode | null) {
+    const rest = joint && this.instance.rest.get(joint);
+    if (rest && joint.rotationQuaternion) joint.rotationQuaternion.copyFrom(rest);
   }
 
   /** Chilling on a sofa, over the sit clip: leaning back, one arm along the backrest, legs stretched out a little. */

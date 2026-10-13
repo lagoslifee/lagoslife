@@ -32,6 +32,7 @@ import type { Materials } from "./materials";
 import type { PropId, PropLibrary } from "./props";
 import { buildBottle } from "./drinks";
 import { GYM_RECEPTION, gymMachines, gymStations, pressBenchBoxes, pressBenchFootprints } from "./gym-stations";
+import { fitSeats } from "./seat-fit";
 import { SignAtlas } from "./sign-atlas";
 import { buildViewingScreens, VIEWING_BENCH_LENGTH, VIEWING_BENCH_X, VIEWING_KIOSK, VIEWING_ROWS, VIEWING_SCREEN, VIEWING_SEAT_Y, viewingSeats } from "./viewing-hall";
 
@@ -46,9 +47,10 @@ const DUBAI_CLUB = "pearl-club-dubai";
 export type HomeRest = "sofa" | "dining" | "bed";
 /**
  * A place to sit: bar stools face the counter, VIP sofas face the room. `y` is the cushion height. Home seats carry
- * `rest`; bed places are lain on, with `at` at the foot end and `yaw` facing away from the headboard.
+ * `rest`; bed places are lain on, with `at` at the foot end and `yaw` facing away from the headboard, and `width` the
+ * mattress width when known. Sitting, `at` is where the hips go.
  */
-export type ClubSeat = { at: Vec2; yaw: number; y: number; stool: boolean; table?: number; rest?: HomeRest };
+export type ClubSeat = { at: Vec2; yaw: number; y: number; stool: boolean; table?: number; rest?: HomeRest; width?: number };
 const [OX, OZ] = INTERIOR_ORIGIN;
 const [HX, HZ] = INTERIOR_HALF;
 
@@ -250,9 +252,15 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     const yaw = (placement.rotation * Math.PI) / 180;
     const id = FURNITURE_MODELS[placement.itemId];
     // Models face +Z; catalogue pieces put their back on local +z, so they turn half a turn.
-    hidden = Boolean(id && model(id, x, z, yaw + Math.PI));
+    const placed = id ? model(id, x, z, yaw + Math.PI) : null;
+    hidden = Boolean(placed);
+    const firstSeat = seats.length;
     build(x, z, yaw);
     hidden = false;
+    if (placed) {
+      const missing = new Set(fitSeats(placed, seats.slice(firstSeat)));
+      if (missing.size) seats.splice(firstSeat, seats.length - firstSeat, ...seats.slice(firstSeat).filter((seat) => !missing.has(seat)));
+    }
     if (placement.itemId === "tv-console") spots.push({ id: "tv", point: [x - Math.sin(yaw) * 1.8, z - Math.cos(yaw) * 1.8], label: "Watch TV" });
   };
   let animate: (seconds: number) => void = () => {};

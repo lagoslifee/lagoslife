@@ -136,6 +136,8 @@ import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, MAX_AUTO_SCALING
 import { CityAudio } from "./audio";
 import { appearanceFor, Avatar, AvatarFactory, dubaiDriverLook, liftDepth, taxiDriverLook } from "./avatar";
 import { GymGear } from "./gym-gear";
+import { Blanket } from "./bedding";
+import { LIE_ABOVE_MATTRESS } from "./seat-fit";
 import { CLUB_BARTENDER, clubWaitress, deskStaffFor, seatsFor, serviceOrigin, ServiceStaff, staffLook, type StaffProp } from "./service-staff";
 import { buildBottle, buildMenuItem, buildServingTray } from "./drinks";
 import { addTaxiLivery } from "./taxi-livery";
@@ -483,7 +485,7 @@ export class GameEngine {
   private tableBottles = new Map<number, string[]>();
   /** Members training on the iFitness floor while the player is inside. */
   private regulars: Array<{ avatar: Avatar; plan: GymRegular; time: number; gear: GymGear | null }> = [];
-  private fans: Array<{ avatar: Avatar; side: "home" | "away"; time: number }> = [];
+  private fans: Array<{ avatar: Avatar; seat: Vec2; side: "home" | "away"; time: number }> = [];
   private goalCheer = false;
   private waiters: Array<{ avatar: Avatar; path: Vec2[]; t: number; table: number; bottles: Array<{ id: string; itemId: string }>; prop: TransformNode; sparkler: boolean }> = [];
   private settings: PlayerSettings;
@@ -501,7 +503,8 @@ export class GameEngine {
   private lastUpdateAt = 0;
   private baseScaling = 1;
   /** Seated (or, on a club stool, standing up and dancing) on a fixed seat; `y` is the cushion height. */
-  private sitting: { seat: Vec2; yaw: number; y: number; pose: "sit" | "dance"; stool?: boolean; rest?: HomeRest } | null = null;
+  private sitting: { seat: Vec2; yaw: number; y: number; pose: "sit" | "dance"; stool?: boolean; rest?: HomeRest; width?: number | undefined } | null = null;
+  private blanket: Blanket | null = null;
   private restingAs: HomeRest | null = null;
   private heldItem: { node: TransformNode; name: string; left: number; food: boolean } | null = null;
   private autopilot: { path: Vec2[]; index: number; sprint: boolean; resolve: (ok: boolean) => void; lastProgress: number; lastPoint: Vec2; deadline: number } | null = null;
@@ -1398,7 +1401,6 @@ export class GameEngine {
       if (this.sitting && (speed > 0.1 || this.emote !== this.sitting.pose || !this.interior)) this.sitting = null;
       const chair = this.sitting;
       const lying = chair?.rest === "bed";
-      const lean = chair?.pose === "sit" && !lying ? 0.08 : 0;
       if ((chair?.rest ?? null) !== this.restingAs) {
         this.restingAs = chair?.rest ?? null;
         this.callbacks.resting?.(this.restingAs);
@@ -1425,14 +1427,20 @@ export class GameEngine {
         this.player.update(0, "idle", dt);
         this.player.exercise("repair", this.repairing.time);
       } else {
-        if (chair) this.player.root.position.set(chair.seat[0] + Math.sin(chair.yaw) * lean, chair.y, chair.seat[1] + Math.cos(chair.yaw) * lean);
+        if (chair) this.player.root.position.set(chair.seat[0], chair.y, chair.seat[1]);
         else this.player.root.position.set(x, seatedTravel ? TRAVEL_SEAT_Y : this.groundY + this.controller.hop, z);
         this.player.root.rotation.y = chair ? chair.yaw : seatedTravel ? this.seatYaw : this.controller.yaw;
         this.player.root.setEnabled(!bus && !inCar);
         if (!inCar) this.player.update(speed, lying ? "idle" : motion, dt);
-        if (lying) this.player.sleep(now * 0.001);
-        else if (chair?.rest === "sofa" && chair.pose === "sit") this.player.lounge(now * 0.001);
+        if (lying && chair) {
+          this.player.sleep(now * 0.001);
+          this.blanket ??= new Blanket(this.scene);
+          this.blanket.show(chair.seat[0], chair.y - LIE_ABOVE_MATTRESS, chair.seat[1], chair.yaw, chair.width ?? 1.3);
+        } else if (chair?.rest === "sofa" && chair.pose === "sit") this.player.lounge(now * 0.001);
+        if (!lying) this.blanket?.hide();
         if (this.goalCheer && !lying && !inCar) this.player.cheer(now * 0.001);
+        if (chair && !lying && chair.pose === "sit") this.player.seatHips(chair.y, chair.seat);
+        else if (seatedTravel) this.player.seatHips(TRAVEL_SEAT_Y, [x, z]);
       }
     } else if (this.playerFallback) {
       this.playerFallback.position.set(x, this.groundY + 0.88, z);
@@ -2239,8 +2247,7 @@ export class GameEngine {
           : null;
         if (seat) {
           claimed.add(seat);
-          const lean = b.motion === "sit" && seat.rest !== "bed" ? 0.08 : 0;
-          remote.avatar.root.position.set(seat.at[0] + Math.sin(seat.yaw) * lean, seat.y, seat.at[1] + Math.cos(seat.yaw) * lean);
+          remote.avatar.root.position.set(seat.at[0], seat.y, seat.at[1]);
           remote.avatar.root.rotation.y = seat.yaw;
         } else {
           remote.avatar.root.position.set(x, this.interior ? (this.travelView && b.motion === "sit" ? TRAVEL_SEAT_Y : (this.travelView?.floor(x, z) ?? 0.02)) : this.world.groundHeight(x, z), z);
@@ -2250,6 +2257,8 @@ export class GameEngine {
         remote.avatar.update(remote.speed, b.motion, dt);
         if (seat?.rest === "sofa" && b.motion === "sit") remote.avatar.lounge(performance.now() * 0.001);
         if (this.goalCheer && b.motion === "sit") remote.avatar.cheer(performance.now() * 0.001 + remote.speed);
+        if (b.motion === "sit" && seat && seat.rest !== "bed") remote.avatar.seatHips(seat.y, seat.at);
+        else if (b.motion === "sit" && this.travelView) remote.avatar.seatHips(TRAVEL_SEAT_Y, [x, z]);
       }
     }
   }
@@ -2973,7 +2982,7 @@ export class GameEngine {
         this.controller.yaw = seat.yaw;
         this.emote = "sit";
         this.net.send("emote", { emote: "sit" });
-        this.sitting = { seat: seat.at, yaw: seat.yaw, y: seat.y, pose: "sit", rest: kind };
+        this.sitting = { seat: seat.at, yaw: seat.yaw, y: seat.y, pose: "sit", rest: kind, width: seat.width };
         if (this.self?.location.startsWith("viewing:")) this.cameraYaw = seat.yaw;
         onSeated?.();
       },
@@ -3168,6 +3177,7 @@ export class GameEngine {
       if (plan.workout === "bike") avatar.pedal(regular.time * 5.5);
       else if (plan.workout === "stretch") avatar.exercise("bench", regular.time * 0.45);
       else avatar.exercise(plan.workout, regular.time, 0.3);
+      if (plan.motion === "sit") avatar.seatHips(0.02 + plan.lift);
       regular.gear?.follow(avatar, plan.yaw);
     }
     this.updateTrainer(dt);
@@ -3273,9 +3283,9 @@ export class GameEngine {
       if (seat.fan === null) continue;
       const seed = 700 + seat.fan;
       const avatar = this.avatars.create(`viewing fan ${seed}`, { ...appearanceFor(seed), accessory: "none" });
-      avatar.root.position.set(seat.at[0] + Math.sin(seat.yaw) * 0.08, VIEWING_SEAT_Y, seat.at[1] + Math.cos(seat.yaw) * 0.08);
+      avatar.root.position.set(seat.at[0], VIEWING_SEAT_Y, seat.at[1]);
       avatar.root.rotation.y = seat.yaw;
-      this.fans.push({ avatar, side: hash01(`viewing-fan-side:${seed}`) < 0.5 ? "home" : "away", time: seed * 0.41 });
+      this.fans.push({ avatar, seat: seat.at, side: hash01(`viewing-fan-side:${seed}`) < 0.5 ? "home" : "away", time: seed * 0.41 });
     }
   }
 
@@ -3292,6 +3302,7 @@ export class GameEngine {
       fan.time += dt;
       fan.avatar.update(0, "sit", dt);
       if (goal?.side === fan.side) fan.avatar.cheer(fan.time);
+      fan.avatar.seatHips(VIEWING_SEAT_Y, fan.seat);
     }
   }
 
