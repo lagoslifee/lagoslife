@@ -180,7 +180,7 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   // The ceiling is its own mesh so the home designer can lift it off for a view from above.
   const ceiling = new MeshBuilderBatch("interior ceiling");
   ceiling.polygon(corners, H, 3, marina ? [0.14, 0.12, 0.1] : kind === "club" ? [0.08, 0.07, 0.1] : gym ? [0.2, 0.2, 0.22] : viewing ? [0.16, 0.17, 0.18] : local_.ceiling, true);
-  const wallColor: [number, number, number] = marina ? [0.3, 0.25, 0.19] : kind === "club" ? [0.13, 0.11, 0.17] : gym ? [0.34, 0.34, 0.37] : viewing ? [0.1, 0.3, 0.17] : kind === "starter" ? [0.86, 0.9, 0.84] : local_.wall;
+  const wallColor: [number, number, number] = marina ? [0.3, 0.25, 0.19] : kind === "club" ? [0.13, 0.11, 0.17] : gym ? [0.34, 0.34, 0.37] : viewing ? [0.1, 0.3, 0.17] : kind === "starter" ? [0.78, 0.68, 0.52] : local_.wall;
   const RAIL = 1.05;
   // Inward normals of the front, east, back and west walls.
   const inward: Vec2[] = [[0, 1], [-1, 0], [0, -1], [1, 0]];
