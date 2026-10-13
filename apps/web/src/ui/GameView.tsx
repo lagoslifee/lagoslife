@@ -125,7 +125,7 @@ export function GameView({
   const [holdUp, setHoldUp] = useState<HoldUp | null>(null);
   const [robTarget, setRobTarget] = useState<{ sessionId: string; name: string } | null>(null);
   const [plots, setPlots] = useState<PlotState[]>([]);
-  const [workout, setWorkout] = useState<{ exercise: ExerciseId; endsAt: number } | null>(null);
+  const [workout, setWorkout] = useState<{ exercise: ExerciseId; endsAt: number; kg: number | null } | null>(null);
   const [parcels, setParcels] = useState<FoodParcel[]>([]);
   const [, setClock] = useState(0);
   const [phone, setPhone] = useState<PhoneApp | null>(null);
@@ -930,7 +930,15 @@ export function GameView({
             ))}
             {workout && (
               <div className="airport-step workout-card" data-testid="workout-card">
-                <small>{EXERCISES[workout.exercise].emoji} {EXERCISES[workout.exercise].name} · move to stop</small>
+                <small>
+                  {EXERCISES[workout.exercise].emoji} {EXERCISES[workout.exercise].name}
+                  {workout.kg ? ` · ${workout.kg} kg` : ""}
+                  {workout.exercise !== "treadmill"
+                    ? ` · rep ${Math.min(Math.round(GYM.setSeconds / GYM.repSeconds), Math.floor((GYM.setSeconds - Math.max(0, (workout.endsAt - now) / 1000)) / GYM.repSeconds) + 1)}/${Math.round(GYM.setSeconds / GYM.repSeconds)}`
+                    : ""}{" "}
+                  · move to stop
+                </small>
+                {engine?.trainerSays() && <small className="workout-coach">🧑🏾‍🏫 {GYM.trainer.name}: “{engine.trainerSays()}”</small>}
                 <strong>{Math.max(0, Math.ceil((workout.endsAt - now) / 1000))}s</strong>
               </div>
             )}
@@ -1192,11 +1200,12 @@ export function GameView({
           onClose={() => setSheet(null)}
           onRefresh={refresh}
           onToast={toast}
-          onTrain={(exercise, endsAt) => {
-            if (!engine?.startWorkout(exercise)) return false;
-            setWorkout({ exercise, endsAt: Date.parse(endsAt) });
+          onTrain={(exercise, endsAt, kg, strain) => {
+            if (!engine?.startWorkout(exercise, kg, strain)) return false;
+            setWorkout({ exercise, endsAt: Date.parse(endsAt), kg });
             return true;
           }}
+          onTrainer={(until) => engine?.setTrainer(until ? Date.parse(until) : null)}
         />
       )}
       {sheet?.kind === "estate" && (

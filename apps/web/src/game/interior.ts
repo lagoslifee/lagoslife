@@ -31,7 +31,7 @@ import { MeshBuilderBatch } from "./geometry";
 import type { Materials } from "./materials";
 import type { PropId, PropLibrary } from "./props";
 import { buildBottle } from "./drinks";
-import { GYM_RECEPTION, gymMachines, gymStations } from "./gym-stations";
+import { GYM_RECEPTION, gymMachines, gymStations, pressBenchBoxes, pressBenchFootprints } from "./gym-stations";
 import { SignAtlas } from "./sign-atlas";
 import { buildViewingScreens, VIEWING_BENCH_LENGTH, VIEWING_BENCH_X, VIEWING_KIOSK, VIEWING_ROWS, VIEWING_SCREEN, VIEWING_SEAT_Y, viewingSeats } from "./viewing-hall";
 
@@ -907,7 +907,7 @@ function dressHome(layout: HomeLayout, { get, solid, model, boxes }: Dresser) {
   return levels;
 }
 
-const GYM_SPOT_LABELS: Record<ExerciseId, string> = { treadmill: "Treadmill · cardio", bench: "Bench press", dumbbells: "Dumbbells" };
+const GYM_SPOT_LABELS: Record<ExerciseId, string> = { treadmill: "Treadmill · cardio", bench: "Bench press", squat: "Squat rack", dumbbells: "Dumbbells" };
 
 /**
  * iFitness inside: a cardio row of treadmills and bikes facing a mirror wall with TVs, free weights (squat rack,
@@ -1030,6 +1030,10 @@ function dressGym(atlas: SignAtlas, signs: MeshBuilderBatch, { get, solid, model
     const swap = Math.abs(Math.sin(machine.yaw)) > 0.7;
     boxes.push({ x, z, hx: (swap ? d : w) / 2 - 0.1, hz: (swap ? w : d) / 2 - 0.1 });
   }
+  for (const part of pressBenchBoxes()) {
+    get(part.steel ? "chrome" : "vertexPaint").box(part.world[0], part.at[1], part.world[1], ...part.size, part.yaw, 1, part.colour);
+  }
+  boxes.push(...pressBenchFootprints());
   // Weight plates on a tree by the rack, kettlebells along the wall.
   solid("vertexPaint", wx(8.4), 0.6, wz(9.6), 0.12, 1.2, 0.12, 0, [0.2, 0.2, 0.22]);
   for (const [y, size] of [[0.35, 0.45], [0.7, 0.4], [1.0, 0.32]] as const) get("rubber").box(wx(8.4), y, wz(9.6), size, size, 0.06, Math.PI / 2);

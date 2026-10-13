@@ -15,6 +15,7 @@ import {
   skinTones,
   type CharacterAppearance,
   type MotionState,
+  GYM,
 } from "@lagos-living/shared";
 import { GarmentPlugin, hairHex, OUTFITS, skinTint, type Accessory, type Body, type Hairstyle } from "./appearance";
 import { dressHead, HEAD_UNIT, headAnchor, type HeadStyle } from "./avatar-style";
@@ -129,6 +130,7 @@ export class AvatarFactory {
       rightFore: node("lowerarm_r"),
       leftFore: node("lowerarm_l"),
       rightHand: node("hand_r"),
+      leftHand: node("hand_l"),
       spine: node("spine_02"),
       chest: node("spine_03"),
       neck: node("neck_01"),
@@ -142,8 +144,35 @@ export class AvatarFactory {
   }
 }
 
-type Limbs = Record<"leftUp" | "leftLow" | "rightUp" | "rightLow" | "leftArm" | "rightArm" | "rightFore" | "leftFore" | "rightHand" | "spine" | "chest" | "neck", TransformNode | null>;
-export type Workout = "treadmill" | "bench" | "dumbbells" | "repair";
+type Limbs = Record<"leftUp" | "leftLow" | "rightUp" | "rightLow" | "leftArm" | "rightArm" | "rightFore" | "leftFore" | "rightHand" | "leftHand" | "spine" | "chest" | "neck", TransformNode | null>;
+export type Workout = "treadmill" | "bench" | "squat" | "dumbbells" | "repair";
+
+/** Joint angles (radians) for the lifts. */
+const L = {
+  benchReach: 1.55, benchDrop: 0.55, benchWide: -0.25, benchFlare: -0.75, benchElbow: 1.7, benchHip: 0.25, benchKnee: 1.45,
+  squatHip: -1.35, squatKnee: 1.9, squatLean: 0.5, squatArm: -1.0, squatArmBack: -0.7, squatFore: -1.3,
+};
+export const LIFT_TUNING = L;
+
+const easeInOut = (t: number) => t * t * (3 - 2 * t);
+const REP = GYM.repSeconds;
+
+/**
+ * How far into the rep the lift is, 0..1: the bar's depth on the bench and squat (0 at lockout, 1 on the chest or
+ * at the bottom), the curl's height for dumbbells. Two seconds down, one and a half up, half a second's pause.
+ */
+export function liftDepth(kind: Workout, time: number) {
+  const u = (((time % REP) + REP) % REP) / REP;
+  if (kind === "dumbbells") return u < 0.375 ? easeInOut(u / 0.375) : u < 0.875 ? 1 - easeInOut((u - 0.375) / 0.5) : 0;
+  if (kind === "bench" || kind === "squat") return u < 0.5 ? easeInOut(u / 0.5) : u < 0.875 ? 1 - easeInOut((u - 0.5) / 0.375) : 0;
+  return 0;
+}
+
+/** True while the lifter is pushing against the weight (where a heavy rep shakes). */
+function liftDriving(kind: Workout, time: number) {
+  const u = (((time % REP) + REP) % REP) / REP;
+  return kind === "dumbbells" ? u < 0.375 : kind === "bench" || kind === "squat" ? u >= 0.5 && u < 0.875 : false;
+}
 
 /**
  * The resident models are sculpted athletic. At build 0 each bone's thickness (its local X and Z; Y runs along the
@@ -360,16 +389,22 @@ export class Avatar {
   }
 
   /**
-   * Gym movements over the clip update() just set (call after it): curls bend both forearms; the seated press pushes
-   * both arms overhead and back. Repair reaches into the machine and works a spanner. The treadmill needs nothing extra
-   * beyond a jog at a standstill.
+   * Gym movements over the clip update() just set (call after it), one rep every `GYM.repSeconds`: the bench press
+   * (over idle, the caller lays the root on its back) lowers the bar to the chest and presses it up; the squat (over
+   * idle, the caller drops the root by `liftDepth`) sits back with the bar on the upper back; curls bring both
+   * dumbbells up to the shoulders. `strain` (0..1, how close the weight is to your limit) slows the press and makes it
+   * shake. Repair reaches into the machine and works a spanner; the treadmill needs nothing beyond the jog clip.
    */
-  exercise(kind: Workout, time: number) {
+  exercise(kind: Workout, time: number, strain = 0) {
     const limbs = this.instance.limbs;
-    const phase = 0.5 - 0.5 * Math.cos(time * 3.2);
+    const depth = liftDepth(kind, time);
+    const shake = liftDriving(kind, time) ? Math.sin(time * 47) * 0.035 * strain : 0;
     if (kind === "dumbbells") {
-      bend(limbs.rightFore, 0.2 + 1.7 * phase, Axis.X);
-      bend(limbs.leftFore, 0.2 + 1.7 * phase, Axis.X);
+      for (const [arm, fore] of [[limbs.rightArm, limbs.rightFore], [limbs.leftArm, limbs.leftFore]] as const) {
+        bend(arm, 0.12 + 0.15 * depth);
+        bend(fore, 0.25 + 1.95 * depth + shake, Axis.X);
+      }
+      bend(limbs.spine, -0.04 * depth);
     } else if (kind === "repair") {
       const turn = Math.sin(time * 5);
       bend(limbs.rightArm, 0.85 + 0.12 * turn);
@@ -377,11 +412,52 @@ export class Avatar {
       bend(limbs.rightFore, 0.5 + 0.45 * turn, Axis.X);
       bend(limbs.leftFore, 0.6, Axis.X);
     } else if (kind === "bench") {
+      // Arms straight up over the chest at the top; elbows out and bent with the bar on the chest at the bottom.
       for (const [arm, fore, side] of [[limbs.rightArm, limbs.rightFore, 1], [limbs.leftArm, limbs.leftFore, -1]] as const) {
-        bend(arm, side * (-1.2 - 1.1 * phase), Axis.Z);
-        bend(fore, side * (-1.6 + 1.3 * phase), Axis.Z);
+        bend(arm, L.benchReach - L.benchDrop * depth + shake);
+        bend(arm, side * (L.benchWide + L.benchFlare * depth), Axis.Z);
+        bend(fore, L.benchElbow * depth, Axis.X);
+      }
+      bend(limbs.leftUp, L.benchHip);
+      bend(limbs.rightUp, L.benchHip);
+      bend(limbs.leftLow, L.benchKnee);
+      bend(limbs.rightLow, L.benchKnee);
+    } else if (kind === "squat") {
+      bend(limbs.leftUp, L.squatHip * depth);
+      bend(limbs.rightUp, L.squatHip * depth);
+      bend(limbs.leftLow, L.squatKnee * depth);
+      bend(limbs.rightLow, L.squatKnee * depth);
+      bend(limbs.spine, L.squatLean * depth + shake);
+      bend(limbs.neck, -L.squatLean * 0.7 * depth);
+      // Hands wide on the bar across the upper back.
+      for (const [arm, fore, side] of [[limbs.rightArm, limbs.rightFore, 1], [limbs.leftArm, limbs.leftFore, -1]] as const) {
+        bend(arm, side * L.squatArm, Axis.Z);
+        bend(arm, L.squatArmBack);
+        bend(fore, side * L.squatFore, Axis.Z);
       }
     }
+  }
+
+  /** Where each palm closes this frame (a little past the wrist, along the forearm), for the bar or dumbbells they hold. */
+  grips() {
+    const { leftHand, rightHand, leftFore, rightFore } = this.instance.limbs;
+    if (!leftHand || !rightHand || !leftFore || !rightFore) return null;
+    const palm = (wrist: TransformNode, elbow: TransformNode) => {
+      wrist.computeWorldMatrix(true);
+      elbow.computeWorldMatrix(true);
+      const at = wrist.getAbsolutePosition().clone();
+      const along = at.subtract(elbow.getAbsolutePosition());
+      return at.addInPlace(along.normalize().scaleInPlace(0.075));
+    };
+    return { left: palm(leftHand, leftFore), right: palm(rightHand, rightFore) };
+  }
+
+  /** The shoulder joints and neck this frame, for a bar resting across the upper back in the squat. */
+  shoulders() {
+    const { leftArm, rightArm, neck } = this.instance.limbs;
+    if (!leftArm || !rightArm || !neck) return null;
+    for (const bone of [leftArm, rightArm, neck]) bone.computeWorldMatrix(true);
+    return { left: leftArm.getAbsolutePosition().clone(), right: rightArm.getAbsolutePosition().clone(), neck: neck.getAbsolutePosition().clone() };
   }
 
   /**

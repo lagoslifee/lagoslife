@@ -112,6 +112,7 @@ import {
   regionOf,
   broadcastAt,
   hash01,
+  GYM,
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
 import { COMPOUND_PLACES, compoundCars } from "./compounds";
@@ -133,7 +134,8 @@ import { PlotsView } from "./plots";
 import { MultiplayerConnection, type MultiplayerStatus, type PoliceEvent, type RideAsk } from "../multiplayer";
 import { AdaptiveQuality, FULL_FOG_DENSITY, FULL_VIEW_DISTANCE, MAX_AUTO_SCALING, qualityStep } from "./adaptive-quality";
 import { CityAudio } from "./audio";
-import { appearanceFor, Avatar, AvatarFactory, dubaiDriverLook, taxiDriverLook } from "./avatar";
+import { appearanceFor, Avatar, AvatarFactory, dubaiDriverLook, liftDepth, taxiDriverLook } from "./avatar";
+import { GymGear } from "./gym-gear";
 import { CLUB_BARTENDER, clubWaitress, deskStaffFor, seatsFor, serviceOrigin, ServiceStaff, staffLook, type StaffProp } from "./service-staff";
 import { buildBottle, buildMenuItem, buildServingTray } from "./drinks";
 import { addTaxiLivery } from "./taxi-livery";
@@ -156,6 +158,9 @@ import { SignAtlas } from "./sign-atlas";
 import { RoadNavigator, StreetTracker, type WorldData, type WorldTile } from "./street-index";
 import { AmbientLife, trafficModels, type StaticCar } from "./traffic";
 import { buildWorld, type BuiltWorld } from "./world-builder";
+
+/** How far the hips drop at the bottom of a squat (the legs fold under the body over the idle stance). */
+const SQUAT_DROP = 0.42;
 
 export type Prompt = { key: string; label: string; detail?: string | undefined; disabled?: boolean };
 
@@ -399,7 +404,10 @@ export class GameEngine {
   private indoorGuide: { spot: string; label: string } | null = null;
   private tour: TourGuide | null = null;
   /** A gym set in progress: the player is held at the station doing the exercise until it ends or they move off. */
-  private workout: { station: GymStation; time: number } | null = null;
+  private workout: { station: GymStation; time: number; strain: number; gear: GymGear | null } | null = null;
+  /** The bar waiting on the hooks of your bench between sets. */
+  private rackedBar: GymGear | null = null;
+  private trainer: { avatar: Avatar; until: number; time: number; line: number; says: string } | null = null;
   private repairSite: { placeId: string; site: RepairSite } | null = null;
   private repairing: { until: number; time: number } | null = null;
   private guideLine: Mesh | null = null;
@@ -474,7 +482,7 @@ export class GameEngine {
   private club: Club | null = null;
   private tableBottles = new Map<number, string[]>();
   /** Members training on the iFitness floor while the player is inside. */
-  private regulars: Array<{ avatar: Avatar; plan: GymRegular; time: number }> = [];
+  private regulars: Array<{ avatar: Avatar; plan: GymRegular; time: number; gear: GymGear | null }> = [];
   private fans: Array<{ avatar: Avatar; side: "home" | "away"; time: number }> = [];
   private goalCheer = false;
   private waiters: Array<{ avatar: Avatar; path: Vec2[]; t: number; table: number; bottles: Array<{ id: string; itemId: string }>; prop: TransformNode; sparkler: boolean }> = [];
@@ -1348,7 +1356,7 @@ export class GameEngine {
       }
       if (move[0] || move[1]) this.emote = null;
       if (this.workout && (move[0] || move[1])) {
-        this.workout = null;
+        this.endWorkout();
         this.callbacks.notice({ tone: "info", text: "You stepped off. That set won't count unless you finish it at the machine." });
       }
       if (this.workout) {
@@ -1400,11 +1408,14 @@ export class GameEngine {
       if (workout) {
         const { station } = workout;
         workout.time += dt;
-        this.player.root.position.set(station.at[0], this.groundY + station.lift, station.at[1]);
+        const squat = station.exercise === "squat" ? SQUAT_DROP * liftDepth("squat", workout.time) : 0;
+        this.player.root.position.set(station.at[0], this.groundY + station.lift - squat, station.at[1]);
         this.player.root.rotation.y = station.yaw;
+        if (station.lying) this.player.root.rotation.x = -Math.PI / 2;
         this.player.root.setEnabled(true);
         this.player.update(station.speed, station.motion, dt);
-        this.player.exercise(station.exercise, workout.time);
+        this.player.exercise(station.exercise, workout.time, workout.strain);
+        workout.gear?.follow(this.player, station.yaw, station.exercise === "squat");
       } else if (this.repairing && this.repairSite) {
         this.repairing.time += dt;
         const [sx, sz] = this.repairSite.site.stand;
@@ -3130,11 +3141,25 @@ export class GameEngine {
       avatar.setBuild(0.55 + (plan.seed % 4) * 0.15);
       avatar.root.position.set(plan.at[0], 0.02 + plan.lift, plan.at[1]);
       avatar.root.rotation.y = plan.yaw;
-      this.regulars.push({ avatar, plan, time: plan.seed * 0.37 });
+      if (plan.lying) avatar.root.rotation.x = -Math.PI / 2;
+      const gear = plan.gear ? new GymGear(this.scene, plan.gear.kind, plan.gear.kg) : null;
+      this.regulars.push({ avatar, plan, time: plan.seed * 0.37, gear });
     }
+    this.rackBar();
   }
 
-  /** Runners jog on the belts, riders pedal, the bench and rack press, the stretcher reaches slowly overhead. */
+  /** Your bench's bar back on the hooks, loaded the way you left it (60 kg to start). */
+  private rackBar(kg = 60) {
+    const racked = gymStations().find((station) => station.racked)?.racked;
+    if (!racked) return;
+    if (this.rackedBar?.kg !== kg) {
+      this.rackedBar?.dispose();
+      this.rackedBar = new GymGear(this.scene, "barbell", kg);
+    }
+    this.rackedBar.rest(racked.x, racked.y, racked.z, racked.yaw);
+  }
+
+  /** Runners jog on the belts, riders pedal, the bench presses, the curls curl, the stretcher reaches slowly overhead. */
   private updateRegulars(dt: number) {
     for (const regular of this.regulars) {
       const { avatar, plan } = regular;
@@ -3142,13 +3167,100 @@ export class GameEngine {
       avatar.update(plan.speed, plan.motion, dt);
       if (plan.workout === "bike") avatar.pedal(regular.time * 5.5);
       else if (plan.workout === "stretch") avatar.exercise("bench", regular.time * 0.45);
-      else avatar.exercise(plan.workout, regular.time);
+      else avatar.exercise(plan.workout, regular.time, 0.3);
+      regular.gear?.follow(avatar, plan.yaw);
     }
+    this.updateTrainer(dt);
+  }
+
+  /** Your personal trainer stands by the machine you are on (or walks with you), counts the reps and spurs you on. */
+  private updateTrainer(dt: number) {
+    const trainer = this.trainer;
+    if (!trainer) return;
+    if (Date.now() > trainer.until || !this.self?.location.startsWith("gym:")) {
+      trainer.avatar.dispose();
+      this.trainer = null;
+      if (this.self?.location.startsWith("gym:")) this.callbacks.notice({ tone: "info", text: `${GYM.trainer.name}'s hour is up. Hire him again at the front desk any time.` });
+      return;
+    }
+    trainer.time += dt;
+    const station = this.workout?.station;
+    const { x, z, yaw } = this.controller;
+    const target: [number, number] = station ? station.spot : [x - Math.sin(yaw) * 1.3 + Math.cos(yaw) * 0.9, z - Math.cos(yaw) * 1.3 - Math.sin(yaw) * 0.9];
+    const root = trainer.avatar.root;
+    const dx = target[0] - root.position.x;
+    const dz = target[1] - root.position.z;
+    const far = Math.hypot(dx, dz);
+    const speed = far > 0.25 ? Math.min(2.2, far * 2) : 0;
+    if (speed) {
+      root.position.x += (dx / far) * Math.min(far, speed * dt);
+      root.position.z += (dz / far) * Math.min(far, speed * dt);
+      root.rotation.y = Math.atan2(dx, dz);
+    } else {
+      const look: Vec2 = station ? station.at : [x, z];
+      root.rotation.y = Math.atan2(look[0] - root.position.x, look[1] - root.position.z);
+    }
+    trainer.avatar.update(speed, speed ? "walk" : "idle", dt);
+    const workout = this.workout;
+    if (!workout) {
+      trainer.line = -1;
+      return;
+    }
+    const rep = Math.floor(workout.time / GYM.repSeconds);
+    if (rep === trainer.line) return;
+    trainer.line = rep;
+    const total = Math.round(GYM.setSeconds / GYM.repSeconds);
+    if (rep >= total) return;
+    const coaching = [
+      "Brace your core. Breathe in, let's go.",
+      "Good, control it down.",
+      "Nice and steady. Full range.",
+      "Drive! Push it up.",
+      "That's it, you're halfway.",
+      "Keep your back tight.",
+      "Stay with me, three more.",
+      "Don't rush it. Slow on the way down.",
+      "Last one! Everything you've got!",
+      "Yes! Strong set.",
+    ];
+    trainer.says = coaching[rep % coaching.length]!;
+  }
+
+  /** What your trainer is telling you this rep, or null without a trainer or a set. */
+  trainerSays() {
+    return this.trainer && this.workout ? this.trainer.says : null;
+  }
+
+  /** Puts the personal trainer by your side until `until` (ms), or sends him home with null. */
+  setTrainer(until: number | null) {
+    if (!until || until <= Date.now()) {
+      this.trainer?.avatar.dispose();
+      this.trainer = null;
+      return;
+    }
+    if (this.trainer) {
+      this.trainer.until = until;
+      return;
+    }
+    if (!this.avatars || !this.self?.location.startsWith("gym:")) return;
+    const avatar = this.avatars.create("personal trainer", { ...appearanceFor(733), body: "male", outfit: "athleisure", accessory: "none" });
+    avatar.setBuild(1);
+    const [x, z] = GYM_RECEPTION.spot;
+    avatar.root.position.set(x, 0.02, z);
+    this.trainer = { avatar, until, time: 0, line: -1, says: "" };
   }
 
   private clearRegulars() {
-    for (const regular of this.regulars) regular.avatar.dispose();
+    for (const regular of this.regulars) {
+      regular.avatar.dispose();
+      regular.gear?.dispose();
+    }
     this.regulars = [];
+    this.endWorkout();
+    this.rackedBar?.dispose();
+    this.rackedBar = null;
+    this.trainer?.avatar.dispose();
+    this.trainer = null;
     for (const fan of this.fans) fan.avatar.dispose();
     this.fans = [];
     this.goalCheer = false;
@@ -3348,19 +3460,36 @@ export class GameEngine {
     }
   }
 
-  /** Puts the player on the machine for a gym set; false unless they are inside the gym. */
-  startWorkout(exercise: ExerciseId) {
+  /**
+   * Puts the player on the machine for a gym set, with `kg` on the bar or in each hand and `strain` (0..1, how close
+   * that is to their limit) in the effort; false unless they are inside the gym. Starting another set switches machines.
+   */
+  startWorkout(exercise: ExerciseId, kg?: number | null, strain = 0) {
     const station = gymStations().find((entry) => entry.exercise === exercise);
     if (!station || !this.self?.location.startsWith("gym:") || !this.interior || this.driving || this.passenger) return false;
+    this.endWorkout();
     this.emote = null;
     this.sitting = null;
     this.controller.teleport(station.at[0], station.at[1]);
-    this.workout = { station, time: 0 };
+    const gear = station.gear ? new GymGear(this.scene, station.gear, kg ?? (station.gear === "barbell" ? 20 : 10)) : null;
+    if (station.racked) {
+      this.rackedBar?.dispose();
+      this.rackedBar = null;
+    }
+    this.workout = { station, time: 0, strain: Math.max(0, Math.min(1, strain)), gear };
     return true;
   }
 
-  stopWorkout() {
+  private endWorkout() {
+    const workout = this.workout;
+    if (!workout) return;
     this.workout = null;
+    workout.gear?.dispose();
+    if (workout.station.racked && this.self?.location.startsWith("gym:")) this.rackBar(workout.gear?.kg);
+  }
+
+  stopWorkout() {
+    this.endWorkout();
   }
 
   isWorkingOut() {

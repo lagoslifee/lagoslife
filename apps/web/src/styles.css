@@ -242,6 +242,14 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .gym-weights { display: grid; gap: 6px; margin-top: 8px; }
 .gym-weights .studio-chips button { text-transform: none; }
 .gym-weights .studio-chips button:disabled { opacity: .45; }
+.gym-weights input[type="range"] { width: 100%; accent-color: #1f6f43; }
+.gym-stepper { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; text-align: center; }
+.gym-stepper > div { display: grid; gap: 1px; }
+.gym-stepper strong { font-size: 1.35rem; }
+.gym-stepper button { height: 44px; border-radius: 12px; font-size: 1.4rem; font-weight: 800; padding: 0; }
+.gym-stepper button:disabled { opacity: .4; }
+.gym-trainer { margin: 8px 0; }
+.workout-card .workout-coach { color: #fff3c4; font-weight: 600; font-size: 12px; letter-spacing: 0; }
 .studio-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
 .studio-swatches button { width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 2px solid rgba(0,0,0,.15); box-shadow: inset 0 0 0 2px rgba(255,255,255,.35); }
 .studio-swatches button[aria-pressed="true"] { border-color: #17312e; box-shadow: 0 0 0 3px #e6bd62; }
