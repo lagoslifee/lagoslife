@@ -24,6 +24,7 @@ import { DubaiGuide } from "./DubaiGuide";
 import { ExcursionPanel, FlightPanel, LOCAL_PHOTOS_KEY, TRAVEL_SHEET_KINDS, TravelPlaceSheet, TravelSpotSheet, loadLocalPhotos, tripHint } from "./TravelSheets";
 import { PlotSheet } from "./PlotSheet";
 import { DroneView } from "./DroneView";
+import { CrashGuard } from "./CrashGuard";
 import { HomeDesigner } from "./HomeDesigner";
 import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
 import { CheckpointPrompt, HoldUpPrompt, PoliceStationSheet, SecuritySheet } from "./PoliceSheets";
@@ -151,11 +152,17 @@ export function GameView({
   const [graphicsPaused, setGraphicsPaused] = useState(false);
   const lostTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lowered = useRef<{ from: Quality; to: Quality } | null>(null);
-  /** Rebuilds the 3D view in place (same session, same server connection afterwards) one quality step lower. */
+  const lastRestart = useRef(0);
+  /**
+   * Rebuilds the 3D view in place (same session, same server connection afterwards). The first rebuild keeps the
+   * graphics as they were; only a second one soon after steps quality down. Ten calm minutes reset the count.
+   */
   const restartGraphics = useCallback((why: string) => {
     clearTimeout(lostTimer.current);
     setGraphicsPaused(false);
-    if (restartsRef.current >= 3) {
+    if (Date.now() - lastRestart.current > 10 * 60_000) restartsRef.current = 0;
+    lastRestart.current = Date.now();
+    if (restartsRef.current >= 4) {
       setFatal(
         `${why} Close any other tab with Naija World open, then press Try again. If it still fails, fully quit and reopen the browser: browsers switch 3D graphics off for a site after the graphics driver crashes, until they restart.`,
       );
@@ -164,6 +171,10 @@ export function GameView({
     restartsRef.current += 1;
     setFatal(null);
     setEngine(null);
+    if (restartsRef.current === 1) {
+      setRestarts(restartsRef.current);
+      return;
+    }
     setQuality((current) => {
       const next: Quality = current === "high" ? "medium" : "low";
       if (next !== current) lowered.current = { from: current, to: next };
@@ -629,6 +640,10 @@ export function GameView({
   useEffect(() => {
     engine?.setIndoorGuide(airportGuide ? { spot: airportGuide.spot, label: airportGuide.label } : null);
   }, [engine, airportGuide?.spot, airportGuide?.label]);
+
+  useEffect(() => {
+    engine?.setCovered(Boolean(phone || mapOpen));
+  }, [engine, phone, mapOpen]);
 
   const warnings = safety?.warnings ?? [];
   const blocking = Boolean(welcomeOpen || designing || sheet || plotSheet || travelSpot || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length || holdUp || robTarget);
@@ -1462,6 +1477,7 @@ export function GameView({
       )}
 
       {designing && engine && (
+        <CrashGuard area="designer" onCrash={() => { setDesigning(null); toast({ tone: "error", text: "The home designer hit a problem and closed. Your furniture is saved — open it again." }); }}>
         <HomeDesigner
           engine={engine}
           propertyId={designing}
@@ -1477,6 +1493,7 @@ export function GameView({
           onToast={toast}
           onRefresh={refresh}
         />
+        </CrashGuard>
       )}
 
       {plotSheet && (
@@ -1498,6 +1515,7 @@ export function GameView({
       {engine && hud && !designing && !phone && !overlayOpen && <DailyBonusPopup onRefresh={refresh} onToast={toast} />}
 
       {phone && engine && (
+        <CrashGuard area="phone" onCrash={() => { setPhone(null); toast({ tone: "error", text: "That phone app hit a problem and closed. Everything is saved — try it again." }); }}>
         <Phone
           app={phone}
           setApp={setPhone}
@@ -1564,6 +1582,7 @@ export function GameView({
           ride={ride}
           tows={tows}
         />
+        </CrashGuard>
       )}
 
       {mapOpen && engine?.data && (

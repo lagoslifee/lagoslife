@@ -9,7 +9,8 @@ export type DiagnosticKind =
   | "reconnect"
   | "low-fps"
   | "unclean-exit"
-  | "memory";
+  | "memory"
+  | "ui-crash";
 
 const MAX_PER_PAGE = 25;
 const RUNNING_KEY = "lagos-running";

@@ -896,9 +896,15 @@ export class GameEngine {
     // Phones and tablets heat up and throttle (then stutter) at 60-120 fps; 30 fps on low/medium keeps them cool.
     const frameGap = (this.frameGap = matchMedia("(pointer: coarse)").matches && this.quality !== "high" ? 1000 / 30 - 3 : 0);
     let lastFrame = 0;
+    const touch = matchMedia("(pointer: coarse)").matches;
+    const markInput = () => (this.lastInputAt = performance.now());
+    for (const type of ["pointerdown", "keydown", "touchstart"] as const) window.addEventListener(type, markInput, { passive: true });
     engine.runRenderLoop(() => {
       if (this.disposed) return;
-      if (frameGap && performance.now() - lastFrame < frameGap) return;
+      // On phones, a panel covering the city or a player who has put the phone down needs far fewer frames: it keeps the device cool.
+      const resting = touch && (this.covered ? 1000 / 12 : performance.now() - this.lastInputAt > 20_000 && !this.drivingVehicleId() ? 1000 / 24 : 0);
+      const gap = Math.max(frameGap, resting || 0);
+      if (gap && performance.now() - lastFrame < gap) return;
       lastFrame = performance.now();
       const counter = (engine as unknown as { _drawCalls?: { current: number } })._drawCalls;
       const before = counter?.current ?? 0;
@@ -916,6 +922,13 @@ export class GameEngine {
   }
 
   private resize = () => this.engine?.resize();
+  private covered = false;
+  private lastInputAt = performance.now();
+
+  /** A panel (the phone, the full map) covers the city: render it slowly underneath to save battery and heat. */
+  setCovered(covered: boolean) {
+    this.covered = covered;
+  }
 
   private frameErrors = { count: 0, loggedAt: 0, firstAt: 0, told: false };
 

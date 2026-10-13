@@ -18,6 +18,7 @@ import {
 import { FormEvent, lazy, Suspense, useEffect, useRef, useState } from "react";
 import { LifeGoalsDialog } from "./ui/LifeGoals";
 import { CityReel } from "./ui/CityReel";
+import { CrashGuard } from "./ui/CrashGuard";
 import { ACCESSORY_LABELS, HAIR_COLOURS, HAIR_LABELS, OUTFITS, SKIN_TONE_COLOURS } from "./game/wardrobe";
 import { apiConfigured, apiUrl, authClient, authHeaders, guestMode, sessionToken, signOut, startGuestSession } from "./auth-client";
 
@@ -446,6 +447,7 @@ function GameShell({
 
   return (
     <main className="game-shell">
+      <CrashGuard area="game" fallback={<div className="loading-screen">Restoring the city…</div>}>
       <Suspense fallback={<div className="loading-screen">Preparing Lagos…</div>}>
         <GameView
           playerName={playerName}
@@ -459,6 +461,7 @@ function GameShell({
           }}
         />
       </Suspense>
+      </CrashGuard>
       {goalsOpen && !creatorOpen && <LifeGoalsDialog playerName={playerName} onClose={() => setGoalsOpen(false)} />}
       {creatorOpen && (appearanceLoaded || !welcomeLook) && (
         <CharacterCreator
