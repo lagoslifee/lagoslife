@@ -1537,7 +1537,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     player.ride = {
       id,
       status: "approaching",
-      pickup,
+      pickup: express ? pickup : this.clearKerb(pickup, parsed.data.pickupYaw),
       pickupYaw: parsed.data.pickupYaw,
       dropoff,
       label,
@@ -1807,11 +1807,26 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     return Math.round((ride.fare - RIDE.baseFare) * share / 50) * 50;
   }
 
+  /**
+   * The nearest spot along the kerb from `point` with no car on it, so a cab never pulls up inside a parked car;
+   * tries a car length ahead, then behind, and so on.
+   */
+  private clearKerb(point: [number, number], yaw: number): [number, number] {
+    const [fx, fz] = [Math.sin(yaw), Math.cos(yaw)];
+    for (const along of [0, 6, -6, 12, -12, 18, -18, 24]) {
+      const candidate: [number, number] = [point[0] + fx * along, point[1] + fz * along];
+      if (!walkable(candidate[0], candidate[1], 0.5)) continue;
+      if ([...this.vehicles.values()].every((vehicle) => Math.hypot(vehicle.x - candidate[0], vehicle.z - candidate[1]) > 5.5)) return candidate;
+    }
+    return point;
+  }
+
   private checkRides(now: number) {
     for (const player of this.players.values()) {
       const ride = player.ride;
       if (!ride) continue;
       if (ride.status === "approaching" && now >= ride.arrivesAt) {
+        ride.pickup = this.clearKerb(ride.pickup, ride.pickupYaw);
         const vehicle: RoomVehicle = {
           id: `ride-${ride.id}`,
           ownerUserId: player.userId,

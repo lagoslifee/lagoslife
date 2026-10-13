@@ -4667,7 +4667,7 @@ export class GameEngine {
       couriers: () => this.couriers?.debug() ?? [],
       ride: () => this.ride,
       bikes: () => this.bikeStatus(),
-      bookRide: (x: number, z: number, label: string) => this.bookRide([x, z], label),
+      bookRide: (x: number, z: number, label: string, express = false) => this.bookRide([x, z], label, express),
       roadDistance: (x: number, z: number) => this.navigator.snap([x, z]).distance,
       ridePath: () => this.rideCar?.pilot.path ?? null,
       rideCar: () => (this.rideCar ? { x: this.rideCar.car.x, z: this.rideCar.car.z, speed: this.rideCar.car.speed, remaining: this.rideCar.pilot.remaining(this.rideCar.car) } : null),

@@ -1,3 +1,4 @@
+import type { RoomVehicle } from "../vehicle-service.js";
 import { MAP_SCALE, AGBERO, AGBERO_SPOTS, blockedByWater, cabinSeats, seatPoint, travelSpot, TRAVEL, getPlace, placeById, getRoute, ROUTES, sampleRoute, type RideState, type TransitRoute } from "@lagos-living/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -987,6 +988,21 @@ describe("LagosRoom Naija World Ride", () => {
     await room.handleRideCancel(ada, { reason: "rider" });
     expect(rides.refundRide).toHaveBeenCalledWith("u-ada", ride().id, ride().fare - 300, expect.stringContaining("fee kept"));
     expect(room.vehicles.has(carId)).toBe(false);
+  });
+
+  it("pulls up on a clear stretch of kerb rather than inside a car parked at the pickup", async () => {
+    const { book, room: internals, ride } = booked();
+    const room = internals as unknown as { vehicles: Map<string, RoomVehicle>; checkRides(now: number): void };
+    room.vehicles.set("parked-1", {
+      id: "parked-1", ownerUserId: "u-cy", ownerName: "cy", modelId: "eko-hatch", colour: "#2b4c7e",
+      plate: "LND 456 CD", condition: 100, x: here.x, z: here.z, yaw: here.yaw, driverSessionId: null, lights: false, locked: true,
+    });
+    await book();
+    room.checkRides(ride().arrivesAt + 1);
+    const cab = room.vehicles.get(ride().vehicleId!)!;
+    expect(Math.hypot(cab.x - here.x, cab.z - here.z)).toBeGreaterThan(5.5);
+    expect(Math.hypot(cab.x - here.x, cab.z - here.z)).toBeLessThan(25);
+    expect(ride().pickup).toEqual([cab.x, cab.z]);
   });
 
   it("boards the rider into a passenger seat when the car has arrived", async () => {
