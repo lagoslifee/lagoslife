@@ -8,6 +8,7 @@ import { Axis } from "@babylonjs/core/Maths/math.axis";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Quaternion } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
+import type { Observer } from "@babylonjs/core/Misc/observable";
 import {
   defaultAppearance,
   MOVEMENT,
@@ -209,6 +210,7 @@ export class Avatar {
   private meshListener: ((meshes: AbstractMesh[]) => void) | null = null;
 
   private build = 0;
+  private follow: Observer<Scene> | null = null;
 
   constructor(
     private readonly factory: AvatarFactory,
@@ -220,6 +222,18 @@ export class Avatar {
     this.instance = factory.instantiate(name, root, appearance);
     this.dress();
     this.applyBuild();
+    this.follow = root.getScene().onBeforeRenderObservable.add(() => this.syncDetached());
+  }
+
+  /**
+   * The head anchor hangs off a bone and a held item has no parent, so neither inherits the body's enabled state;
+   * without this a hidden avatar leaves its cap, glasses or drink floating where it last stood.
+   */
+  private syncDetached() {
+    const shown = this.instance.holder.isEnabled(true);
+    const anchor = this.instance.anchor;
+    if (anchor && anchor.isEnabled(false) !== shown) anchor.setEnabled(shown);
+    if (this.held && this.held.isEnabled(false) !== shown) this.held.setEnabled(shown);
   }
 
   /** 0 is an ordinary build, 1 the fully trained physique the models are sculpted with. */
@@ -448,7 +462,6 @@ export class Avatar {
     }
     const hand = limbs.rightHand;
     const node = this.held!;
-    node.setEnabled(this.visible);
     if (!hand) {
       const yaw = this.root.rotation.y;
       node.position.set(this.root.position.x + Math.sin(yaw) * 0.3 + Math.cos(yaw) * 0.2, this.root.position.y + 1.05 + this.heldLift * 0.4, this.root.position.z + Math.cos(yaw) * 0.3 - Math.sin(yaw) * 0.2);
@@ -482,6 +495,8 @@ export class Avatar {
   }
 
   dispose() {
+    this.follow?.remove();
+    this.follow = null;
     this.disposeInstance();
     this.root.dispose(false, true);
   }

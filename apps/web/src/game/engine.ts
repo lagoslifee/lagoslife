@@ -4006,6 +4006,12 @@ export class GameEngine {
 
   private installTestHooks() {
     const hooks = {
+      headwear: () => {
+        const anchors = this.scene.transformNodes.filter((node) => node.name.endsWith(" head style"));
+        const body = (node: TransformNode) => (node as unknown as { _transformToBoneReferal: TransformNode | null })._transformToBoneReferal;
+        const hidden = anchors.filter((node) => body(node) && !body(node)!.isEnabled());
+        return { anchors: anchors.length, hiddenAvatars: hidden.length, floating: hidden.filter((node) => node.isEnabled() && node.getChildMeshes().length > 0).length };
+      },
       state: () => ({
         x: this.controller.x,
         z: this.controller.z,
