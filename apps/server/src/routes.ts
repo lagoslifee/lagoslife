@@ -1,3 +1,4 @@
+import { setFinish } from "./home-finish-service.js";
 import {
   claimAccountSchema,
   directMessageSendSchema,
@@ -35,6 +36,7 @@ import {
   homeActionSchema,
   inviteGuestSchema,
   moveFurnitureSchema,
+  homeFinishSchema,
   placeFurnitureSchema,
   purchaseRequestSchema,
   saveCharacterSchema,
@@ -610,6 +612,9 @@ export function configureRoutes(app: Express) {
 
   app.post("/api/properties/:propertyId/furniture/move", requirePlayer, rateLimited, guarded("Furniture could not be moved", (req, userId) =>
     moveFurniture(userId, String(req.params.propertyId), moveFurnitureSchema.parse(req.body))));
+
+  app.post("/api/properties/:propertyId/finish", requirePlayer, rateLimited, guarded("Your home could not be redecorated", (req, userId) =>
+    setFinish(userId, String(req.params.propertyId), homeFinishSchema.parse(req.body))));
 
   app.post("/api/properties/:propertyId/furniture/remove", requirePlayer, rateLimited, guarded("Furniture could not be moved", (req, userId) =>
     removeFurniture(userId, String(req.params.propertyId), z.object({ placementId: z.uuid() }).parse(req.body).placementId)));

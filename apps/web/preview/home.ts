@@ -36,7 +36,7 @@ const placements = [
 const layout = HOME_LAYOUTS[(p.get("tier") ?? "flat") as keyof typeof HOME_LAYOUTS];
 const props = await PropLibrary.load(scene, []);
 await props.ensure(interiorModels("home", layout, placements as never));
-const view = buildInterior(scene, materials as never, atlas, (p.get("kind") ?? "home") as never, "Test home", placements as never, undefined, { props, layout } as never);
+const view = buildInterior(scene, materials as never, atlas, (p.get("kind") ?? "home") as never, "Test home", placements as never, undefined, { props, layout, finish: { style: p.get("style"), floor: p.get("floor"), exterior: null } } as never);
 const avatars = await AvatarFactory.load(scene);
 const looks = ["male", "female"] as const;
 const actors = view.seats.map((seat, index) => {

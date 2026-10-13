@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { pool } from "./database.js";
-import { agentFee, getPlace, HOME_UNITS, propertyPlace } from "@lagos-living/shared";
+import { agentFee, finishPrice, getPlace, HOME_UNITS, propertyPlace } from "@lagos-living/shared";
+import { setFinish } from "./home-finish-service.js";
 import { purchaseItem } from "./economy-service.js";
 import { setPlayerPosition } from "./player-presence.js";
 import {
@@ -309,6 +310,17 @@ describe("rental agreements", () => {
     await moveFurniture(buyer.id, home, { placementId: bed.id, x: 9.5, z: 16.9, rotation: 0 });
     const interior = await getInterior(buyer.id, home);
     expect(interior.furniture.find((piece: { id: string }) => piece.id === bed.id)).toMatchObject({ level: 1, z: 16.9 });
+    // Redecorating: a new style and floor are charged at mansion rates; the outside of an estate mansion is not theirs to paint.
+    const before = (await pool.query(`SELECT balance FROM wallet WHERE user_id = $1`, [buyer.id])).rows[0].balance as string;
+    const styled = await setFinish(buyer.id, home, { style: "adire-indigo", idempotencyKey: randomUUID() });
+    expect(styled).toMatchObject({ finish: { style: "adire-indigo", floor: null }, cost: finishPrice("style", "mansion") });
+    const floored = await setFinish(buyer.id, home, { floor: "walnut", idempotencyKey: randomUUID() });
+    expect(floored.balance).toBe(Number(before) - finishPrice("style", "mansion") - finishPrice("floor", "mansion"));
+    await expect(setFinish(buyer.id, home, { floor: "walnut", idempotencyKey: randomUUID() })).rejects.toThrow(/already/);
+    await expect(setFinish(buyer.id, home, { exterior: "terracotta", idempotencyKey: randomUUID() })).rejects.toThrow(/belongs to the estate/);
+    await expect(setFinish(users[0]!.id, home, { style: "midnight-vi", idempotencyKey: randomUUID() })).rejects.toThrow(/access|owner/);
+    expect((await getInterior(buyer.id, home)).finish).toEqual({ style: "adire-indigo", floor: "walnut", exterior: null });
+    await pool.query(`DELETE FROM home_finish WHERE property_id = $1`, [home]);
     await pool.query(`DELETE FROM furniture_placement WHERE property_id = $1`, [home]);
     await pool.query(`DELETE FROM inventory_item WHERE user_id = $1 AND item_id IN ('eko-king-bed', 'ikoyi-sectional')`, [buyer.id]);
     await pool.query(`DELETE FROM property_tenure WHERE property_id = $1`, [bought.propertyId]);

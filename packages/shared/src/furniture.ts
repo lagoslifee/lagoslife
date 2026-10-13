@@ -6,7 +6,7 @@ export type FurnitureRotation = 0 | 90 | 180 | 270;
 /**
  * Furniture a resident can buy and arrange at home. `size` is the footprint in metres at rotation 0: width along the
  * room's x axis, depth along z (the back of a sofa or the headboard of a bed faces +z).
- * Keep in step with shop_catalog rows in apps/server/migrations (0004 and 0026).
+ * Keep in step with shop_catalog rows in apps/server/migrations (0004, 0026 and 0047).
  */
 export type FurnitureItem = {
   id: string;
@@ -38,6 +38,8 @@ export const FURNITURE: FurnitureItem[] = [
   { id: "marble-coffee-table", name: "Marble Coffee Table", description: "A low white marble table for the sitting room.", price: 18_000, size: [1.2, 0.65], rooms: ["living"], plan: "#e8e4dc", short: "Coffee" },
   { id: "dining-set", name: "Six-seat Dining Set", description: "A walnut dining table with six chairs for Sunday rice.", price: 65_000, size: [2.2, 1.7], rooms: ["dining"], plan: "#7a5232", short: "Dining" },
   { id: "tv-console", name: "TV and Media Console", description: "A 65-inch TV on a long low console.", price: 55_000, size: [1.9, 0.5], rooms: ["living"], wall: true, plan: "#2b2f36", short: "TV" },
+  { id: "wall-tv", name: "85-inch Wall TV and Soundbar", description: "A huge wall-mounted TV over a floating walnut shelf and soundbar.", price: 120_000, size: [2.2, 0.4], rooms: ["living", "bedroom"], wall: true, plan: "#1b1f26", short: "Wall TV" },
+  { id: "dressing-table", name: "Dressing Table and Mirror", description: "A cream dressing table with a lit round mirror and a velvet stool.", price: 38_000, size: [1.2, 0.8], rooms: ["bedroom"], wall: true, plan: "#e6c9c0", short: "Dresser" },
   { id: "wardrobe", name: "Sliding Wardrobe", description: "A tall wardrobe with mirrored sliding doors.", price: 48_000, size: [1.7, 0.65], rooms: ["bedroom"], wall: true, plan: "#cfc6b6", short: "Wardrobe" },
   { id: "bookshelf", name: "Open Bookshelf", description: "Five open shelves of books and keepsakes.", price: 21_000, size: [1.0, 0.4], rooms: ["study", "living"], wall: true, plan: "#9c6b3f", short: "Books" },
   { id: "work-desk", name: "Work Desk and Chair", description: "A desk with a laptop and an office chair.", price: 32_000, size: [1.4, 1.2], rooms: ["study", "bedroom"], wall: true, plan: "#5c6b7a", short: "Desk" },
@@ -53,6 +55,8 @@ export function furnitureItem(id: string) {
 }
 
 export const BED_ITEM_IDS = FURNITURE.filter((item) => item.bed).map((item) => item.id);
+/** Pieces you can sit and watch TV in front of. */
+export const TV_ITEM_IDS = ["tv-console", "wall-tv"];
 
 /** Room-local rectangle: centre and half extents, in metres from the middle of the room. */
 export type FloorRect = { x: number; z: number; hx: number; hz: number };

@@ -1,7 +1,7 @@
 import type { CabinClass, CharacterAppearance, OutfitId, HotelBookingState, RoomType, TicketState, TravelStatus, VisaPlan, VisaState } from "@lagos-living/shared";
 import type { BottleItem, Citation, PoliceCase, StreetIncident, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
 import type { BusinessStatus, BusinessTypeId, CourseId, ExerciseId, GymStatus, RestResult, ViewingStatus } from "@lagos-living/shared";
-import type { FoodParcel, HomeStaffRole, HomeStaffState, HomeTier } from "@lagos-living/shared";
+import type { FloorFinishId, FoodParcel, HomeFinish, HomeStaffRole, HomeStaffState, HomeTier } from "@lagos-living/shared";
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick, RepairAction } from "@lagos-living/shared";
 import type { AccountSummary, ClaimAccount, LifeGoals } from "@lagos-living/shared";
 import type { DirectMessage, FriendsStatus, RankingBoard, RankingState, ReferralStatus } from "@lagos-living/shared";
@@ -82,6 +82,8 @@ export type PlotState = {
     stageReadyAt: string;
     completed: boolean;
     homeId: string | null;
+    /** Outside paint the owner chose (see EXTERIOR_PAINTS). */
+    exterior?: string | null;
   };
   /** A business trading from a shopfront on this plot. */
   business?: null | { type: BusinessTypeId; name: string };
@@ -91,6 +93,7 @@ export type InteriorState = {
   name: string;
   storageSlots: number;
   tier?: HomeTier;
+  finish?: HomeFinish;
   tenureType: string | null;
   nextPaymentAt: string | null;
   /** `x`/`z`: room-local metres from the middle of the room. */
@@ -183,6 +186,8 @@ export const api = {
     post<{ id: string }>(`/api/properties/${propertyId}/furniture/move`, { placementId, x, z, rotation, level }),
   inviteGuest: (propertyId: string, username: string) => post<{ invited: boolean }>(`/api/properties/${propertyId}/guests`, { username }),
   removeGuest: (propertyId: string, username: string) => post<{ removed: boolean }>(`/api/properties/${propertyId}/guests/remove`, { username }),
+  setFinish: (propertyId: string, parts: { style?: string; floor?: FloorFinishId; exterior?: string }) =>
+    post<{ balance: number; cost: number; finish: HomeFinish }>(`/api/properties/${propertyId}/finish`, { ...parts, idempotencyKey: crypto.randomUUID() }),
   removeFurniture: (propertyId: string, placementId: string) => post(`/api/properties/${propertyId}/furniture/remove`, { placementId }),
   storage: (propertyId: string, itemId: string, direction: "store" | "retrieve") => post(`/api/properties/${propertyId}/storage`, { itemId, direction }),
   homeAction: (propertyId: string, action: "sleep" | "cook" | "clean" | "tv") => post(`/api/properties/${propertyId}/action`, { action }),

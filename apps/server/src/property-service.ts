@@ -1,4 +1,4 @@
-import { agentFee, BED_ITEM_IDS, ESTATE_AGENT, furnitureItem, homeLayout, legacyCellPosition, nearestCell, placementProblem, propertyPlace, snapFloor, type PlacedPiece } from "@lagos-living/shared";
+import { agentFee, BED_ITEM_IDS, DEFAULT_FINISH, TV_ITEM_IDS, ESTATE_AGENT, furnitureItem, homeLayout, legacyCellPosition, nearestCell, placementProblem, propertyPlace, snapFloor, type PlacedPiece } from "@lagos-living/shared";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "./database.js";
@@ -367,7 +367,7 @@ export async function previewTarget(userId: string, propertyId: string): Promise
 export async function getInterior(userId: string, propertyId: string) {
   await settleExpiredTenancies();
   const access = await requirePropertyAccess(userId, propertyId);
-  const [property, furniture, home, guests, inventory, storage] = await Promise.all([
+  const [property, furniture, home, guests, inventory, storage, finish] = await Promise.all([
     pool.query(
       `SELECT listing.id, listing.name, listing.district, listing.address_label AS "addressLabel",
               listing.street_name AS street, listing.storage_slots AS "storageSlots",
@@ -414,10 +414,12 @@ export async function getInterior(userId: string, propertyId: string) {
        WHERE storage.property_id = $1 AND storage.user_id = $2`,
       [propertyId, userId],
     ),
+    pool.query(`SELECT style, floor, exterior FROM home_finish WHERE property_id = $1`, [propertyId]),
   ]);
   return {
     ...property.rows[0],
     tier: homeLayout(propertyId).tier,
+    finish: finish.rows[0] ?? DEFAULT_FINISH,
     access,
     furniture: furniture.rows,
     home: home.rows[0] ?? { hunger: 70, energy: 70, cleanliness: 80 },
@@ -616,7 +618,7 @@ export async function performHomeAction(
 ) {
   await requirePropertyAccess(userId, propertyId);
   if (action === "tv") {
-    const tv = await pool.query(`SELECT 1 FROM furniture_placement WHERE property_id = $1 AND item_id = 'tv-console'`, [propertyId]);
+    const tv = await pool.query(`SELECT 1 FROM furniture_placement WHERE property_id = $1 AND item_id = ANY($2)`, [propertyId, TV_ITEM_IDS]);
     if (!tv.rowCount) throw new EconomyError("Place a TV first (Phone → My Home → Design).");
   }
   if (action === "sleep") {

@@ -8,7 +8,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
-import { BUSINESS_TYPES, houseDesign, houseFootprint, PLOT_SHOP, PLOTS, type HouseDesign, type Plot } from "@lagos-living/shared";
+import { BUSINESS_TYPES, exteriorPaint, houseDesign, houseFootprint, PLOT_SHOP, PLOTS, type HouseDesign, type Plot } from "@lagos-living/shared";
 import type { PlotState } from "../api";
 import { buildProgress } from "./build-progress";
 import type { Materials } from "./materials";
@@ -36,6 +36,7 @@ export class PlotsView {
   private readonly trench: PBRMaterial;
   private props: PropLibrary | null = null;
   private last: { states: PlotState[]; now: number } | null = null;
+  private readonly paints = new Map<string, PBRMaterial>();
 
   constructor(
     private readonly scene: Scene,
@@ -135,7 +136,7 @@ export class PlotsView {
       else this.drawSign(view, plot, construction?.completed ? "PRIVATE HOUSE" : "BUILDING SITE", "Held by a resident", "#59636b");
       const progress = construction ? buildProgress(construction, now) : null;
       const heli = design?.helipad && this.props?.has("helicopter") ? ":heli" : "";
-      const key = shop ? `shop:${shop.type}:${shop.name}` : construction && design ? `${design.id}:${progress!.stage}:${Math.floor(progress!.fraction * 10)}${heli}` : "";
+      const key = shop ? `shop:${shop.type}:${shop.name}` : construction && design ? `${design.id}:${progress!.stage}:${Math.floor(progress!.fraction * 10)}${heli}:${construction.exterior ?? ""}` : "";
       if (key === view.key) continue;
       view.key = key;
       for (const child of view.house.getChildren()) child.dispose(false, false);
@@ -145,7 +146,7 @@ export class PlotsView {
       view.gate = null;
       if (shop) this.buildShop(view, plot, shop);
       else if (construction && design && progress) {
-        this.buildHouse(view, plot, design, progress.stage, progress.fraction);
+        this.buildHouse(view, plot, design, progress.stage, progress.fraction, construction.exterior ?? null);
         if (construction.completed) view.gate = this.buildCompound(view.house, plot, target);
       }
     }
@@ -236,7 +237,20 @@ export class PlotsView {
   }
 
   /** Local frame: x along the street, z into the plot, front wall facing the gate at -z. */
-  private buildHouse(view: PlotView, plot: Plot, design: HouseDesign, stage: number, fraction: number) {
+  /** Plaster in the owner's outside paint, shared by every house painted that colour. */
+  private paint(id: string | null | undefined): Material {
+    const paint = exteriorPaint(id);
+    if (!paint) return this.materials.plaster;
+    let material = this.paints.get(paint.id);
+    if (!material) {
+      material = this.materials.plaster.clone(`exterior ${paint.id}`) as PBRMaterial;
+      material.albedoColor = Color3.FromHexString(paint.colour);
+      this.paints.set(paint.id, material);
+    }
+    return material;
+  }
+
+  private buildHouse(view: PlotView, plot: Plot, design: HouseDesign, stage: number, fraction: number, exterior: string | null = null) {
     const parent = view.house;
     const corners = houseFootprint(plot, design);
     const cx = (corners[0]![0] + corners[2]![0]) / 2 - plot.center[0];
@@ -265,7 +279,8 @@ export class PlotsView {
     const finishing = done(3);
     const fullHeight = floors * STOREY;
     const wallHeight = fullHeight * blockwork;
-    const wallMaterial = finishing > 0.5 ? m.plaster : this.blocks;
+    const plaster = this.paint(exterior);
+    const wallMaterial = finishing > 0.5 ? plaster : this.blocks;
     if (wallHeight > 0.05) {
       const t = 0.22;
       const y = 0.3 + wallHeight / 2;
@@ -289,12 +304,12 @@ export class PlotsView {
     if (roofing > 0.05) {
       const top = 0.3 + fullHeight;
       const slab = 0.32 * roofing;
-      this.box(house, "roof slab", [w + 1.4, slab, d + 1.0], [0, top + slab / 2, -0.2], finishing > 0.5 ? m.plaster : m.concrete, true);
+      this.box(house, "roof slab", [w + 1.4, slab, d + 1.0], [0, top + slab / 2, -0.2], finishing > 0.5 ? plaster : m.concrete, true);
       if (design.helipad && roofing > 0.6 && finishing > 0.9) this.buildHelipad(view, house, top + slab, Math.min(w, d) - 1.6);
       if (roofing > 0.6) {
         this.box(house, "fascia", [w + 1.44, 0.12, 0.06], [0, top + slab - 0.06, -d / 2 - 0.72], m.gate);
         for (const [sx, sz, lx, lz] of [[0, -d / 2 - 0.65, w + 1.4, 0.12], [0, d / 2 + 0.25, w + 1.4, 0.12], [-w / 2 - 0.65, -0.2, 0.12, d + 1.0], [w / 2 + 0.65, -0.2, 0.12, d + 1.0]] as const) {
-          this.box(house, "parapet", [lx, 0.45, lz], [sx, top + slab + 0.22, sz], finishing > 0.5 ? m.plaster : this.blocks);
+          this.box(house, "parapet", [lx, 0.45, lz], [sx, top + slab + 0.22, sz], finishing > 0.5 ? plaster : this.blocks);
         }
       }
     }
@@ -330,13 +345,13 @@ export class PlotsView {
           const y0 = 0.3 + floor * STOREY;
           this.box(house, "curtain glass", [w - 0.5, STOREY - 0.35, 0.04], [0, y0 + (STOREY - 0.35) / 2 + 0.1, front - 0.07], m.glass);
           for (let index = 0; index <= 7; index += 1) this.box(house, "curtain mullion", [0.07, STOREY - 0.35, 0.09], [-(w - 0.5) / 2 + (index * (w - 0.5)) / 7, y0 + (STOREY - 0.35) / 2 + 0.1, front - 0.1], m.darkFrame);
-          this.box(house, "terrace slab", [w + 0.6, 0.22, 1.7], [0, y0, front - 0.85], m.plaster, true);
+          this.box(house, "terrace slab", [w + 0.6, 0.22, 1.7], [0, y0, front - 0.85], plaster, true);
           this.box(house, "terrace glass", [w + 0.6, 1.0, 0.04], [0, y0 + 0.6, front - 1.68], m.glass);
           this.box(house, "terrace rail", [w + 0.6, 0.05, 0.07], [0, y0 + 1.12, front - 1.68], m.chrome);
           this.box(house, "terrace downlight", [w - 1, 0.03, 0.12], [0, y0 - 0.12, front - 1.4], m.lamp);
         }
       } else if (floors > 1 && finishing > 0.7) {
-        this.box(house, "balcony", [w * 0.6, 0.2, 1.6], [w * 0.15, 0.3 + STOREY, front - 0.8], m.plaster);
+        this.box(house, "balcony", [w * 0.6, 0.2, 1.6], [w * 0.15, 0.3 + STOREY, front - 0.8], plaster);
         this.box(house, "balcony glass", [w * 0.6, 1.0, 0.04], [w * 0.15, 0.3 + STOREY + 0.6, front - 1.58], m.glass);
         this.box(house, "balcony handrail", [w * 0.6, 0.05, 0.08], [w * 0.15, 0.3 + STOREY + 1.12, front - 1.58], m.chrome);
       }

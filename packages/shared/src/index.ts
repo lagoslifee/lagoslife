@@ -137,6 +137,7 @@ export * from "./home-living.js";
 export * from "./account.js";
 export * from "./social.js";
 export * from "./rankings.js";
+export * from "./home-finish.js";
 import { worldVehicleSchema } from "./vehicles.js";
 
 export const motionStates = ["idle", "walk", "jog", "sprint", "sit", "wave", "dance", "drive"] as const;
@@ -344,6 +345,16 @@ export const moveFurnitureSchema = z.object({
   rotation: furnitureRotation,
   level: furnitureLevel,
 });
+
+/** Repaint, refloor or restyle a home; give only the parts to change. */
+export const homeFinishSchema = z
+  .object({
+    style: z.string().min(1).max(40).optional(),
+    floor: z.enum(["oak", "walnut", "terrazzo", "travertine", "black-marble", "cream-marble", "terracotta", "flat-tiles"]).optional(),
+    exterior: z.string().min(1).max(40).optional(),
+    idempotencyKey: z.uuid(),
+  })
+  .refine((body) => body.style !== undefined || body.floor !== undefined || body.exterior !== undefined, "Choose what to change.");
 
 export const homeActionSchema = z.object({
   action: z.enum(["sleep", "cook", "clean", "tv"]),

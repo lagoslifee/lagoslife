@@ -19,6 +19,7 @@ import {
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { api, naira, type EconomyState, type InteriorState } from "../api";
 import type { GameEngine } from "../game/engine";
+import { HomeDecorator } from "./HomeDecorator";
 import { HomeParking } from "./HomeParking";
 
 type Props = {
@@ -36,7 +37,10 @@ type Props = {
   onRefresh: () => Promise<void>;
 };
 
-type Tab = "arrange" | "parking" | "shop" | "guests";
+/** Shop aisles, by the room a piece is for; TVs and sofas first. */
+const SHOP_SECTIONS: Array<[string, RoomKind]> = [["📺 Living room · TVs, sofas, rugs", "living"], ["🛏 Bedroom · beds, wardrobes, dressers", "bedroom"], ["🍽 Dining", "dining"], ["📚 Study", "study"]];
+
+type Tab = "arrange" | "decorate" | "parking" | "shop" | "guests";
 type Drag = { id: string; dx: number; dz: number; x: number; z: number; moved: boolean };
 
 /** Share of the screen, from the top, left for the 3D view looking down into the room. */
@@ -227,9 +231,9 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, focu
         </div>
       </header>
       <nav className="designer-tabs">
-        {(["arrange", "parking", "shop", "guests"] as const).map((entry) => (
-          <button key={entry} className={tab === entry ? "active" : ""} onClick={() => setTab(entry)}>
-            {entry === "arrange" ? "🛋 Arrange" : entry === "parking" ? "🚗 Cars & garage" : entry === "shop" ? "🛒 Furniture shop" : "👥 Invite friends"}
+        {(["arrange", "decorate", "shop", "parking", "guests"] as const).map((entry) => (
+          <button key={entry} className={tab === entry ? "active" : ""} onClick={() => setTab(entry)} data-testid={`designer-tab-${entry}`}>
+            {entry === "arrange" ? "🛋 Arrange" : entry === "decorate" ? "🎨 Paint & style" : entry === "parking" ? "🚗 Cars & garage" : entry === "shop" ? "🛒 Furniture shop" : "👥 Invite friends"}
           </button>
         ))}
       </nav>
@@ -352,11 +356,24 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, focu
         </div>
       )}
 
+      {tab === "decorate" && (
+        <HomeDecorator
+          propertyId={propertyId}
+          tier={layout.tier}
+          finish={interior?.finish ?? null}
+          balance={balance}
+          busy={busy || !owner}
+          onChoose={(parts, label) => void run(label, () => api.setFinish(propertyId, parts))}
+        />
+      )}
+
       {tab === "parking" && <HomeParking propertyId={propertyId} homeName={homeName} door={door} owner={owner} onToast={onToast} onRefresh={onRefresh} />}
 
       {tab === "shop" && (
         <ul className="designer-shop">
-          {FURNITURE.map((item) => {
+          {SHOP_SECTIONS.flatMap(([title, room]) => [
+            <li key={`section ${room}`} className="designer-shop-section">{title}</li>,
+            ...FURNITURE.filter((item) => item.rooms[0] === room).map((item) => {
             const inBag = interior?.availableFurniture.find((entry) => entry.itemId === item.id)?.available ?? 0;
             return (
               <li key={item.id}>
@@ -371,7 +388,8 @@ export function HomeDesigner({ engine, propertyId, homeName, door, economy, focu
                 </button>
               </li>
             );
-          })}
+            }),
+          ])}
           <li className="muted small">Delivered straight to your home by Home &amp; Style Furnishings. Fictional game naira only.</li>
         </ul>
       )}

@@ -44,6 +44,7 @@ import {
   insideBuilding,
   HOME_LAYOUTS,
   homeLayout,
+  type HomeFinish,
   type HomeTier,
   INTERIOR_ORIGIN,
   MOVEMENT,
@@ -3126,12 +3127,14 @@ export class GameEngine {
     const title = self.propertyId ? propertyTitle(self.propertyId) : "Home";
     let placements: Placement[] = [];
     let layout = homeLayout(self.propertyId);
+    let finish: HomeFinish | null = null;
     this.homePieces = null;
     if (kind === "home" && self.propertyId) {
       const response = await fetch(`${apiUrl}/api/properties/${self.propertyId}/interior`, { credentials: "include", headers: authHeaders() }).catch(() => null);
       if (response?.ok) {
-        const body = (await response.json()) as { furniture: Placement[]; tier?: HomeTier; access?: { owner?: boolean } };
+        const body = (await response.json()) as { furniture: Placement[]; tier?: HomeTier; access?: { owner?: boolean }; finish?: HomeFinish };
         placements = body.furniture;
+        finish = body.finish ?? null;
         if (body.tier) layout = HOME_LAYOUTS[body.tier];
         this.homePieces = body.access?.owner ? { propertyId: self.propertyId, placements, layout } : null;
       } else this.callbacks.notice({ tone: "error", text: "Could not load your furniture — showing an empty room." });
@@ -3139,7 +3142,7 @@ export class GameEngine {
     if (this.props) await this.props.ensure(interiorModels(kind, layout, placements));
     if (token !== this.interiorToken || this.self?.location !== self.location) return;
     this.interior?.dispose();
-    this.interior = buildInterior(this.scene, this.materials, this.atlas, kind, title, placements, club, { layout, props: this.props });
+    this.interior = buildInterior(this.scene, this.materials, this.atlas, kind, title, placements, club, { layout, props: this.props, finish });
     this.interior.setCutaway(this.planShare !== null);
     this.staff.setDesks(
       club

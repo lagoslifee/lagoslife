@@ -1,3 +1,4 @@
+import { exteriorPaints } from "./home-finish-service.js";
 import {
   agentFee,
   ESTATE_AGENT,
@@ -191,6 +192,8 @@ export type PlotStatus = {
     stageReadyAt: string;
     completed: boolean;
     homeId: string | null;
+    /** Outside paint the owner chose (see EXTERIOR_PAINTS), or null for the builder's white. */
+    exterior?: string | null;
   };
   /** A business trading from a shopfront on this plot. */
   business: null | { type: string; name: string };
@@ -208,6 +211,7 @@ export async function listPlots(userId: string): Promise<PlotStatus[]> {
   const byPlot = new Map(tenures.rows.map((row) => [row.plot_id as string, row]));
   const shops = await pool.query<{ plot_id: string; type: string; name: string }>(`SELECT plot_id, type, name FROM player_business WHERE plot_id IS NOT NULL`);
   const shopByPlot = new Map(shops.rows.map((row) => [row.plot_id, { type: row.type, name: row.name }]));
+  const paints = await exteriorPaints(PLOTS.filter((plot) => byPlot.get(plot.id)?.completed_at).map((plot) => builtHomeId(plot.id)));
   return PLOTS.map((plot) => {
     const row = byPlot.get(plot.id);
     if (!row) return { id: plot.id, status: "available", tenureType: null, nextPaymentAt: null, accessEndsAt: null, overdue: false, construction: null, business: null };
@@ -229,6 +233,7 @@ export async function listPlots(userId: string): Promise<PlotStatus[]> {
             stageReadyAt: iso(row.stage_ready_at)!,
             completed: Boolean(row.completed_at),
             homeId: row.completed_at ? builtHomeId(plot.id) : null,
+            exterior: row.completed_at ? (paints.get(builtHomeId(plot.id)) ?? null) : null,
           }
         : null,
       business: shopByPlot.get(plot.id) ?? null,

@@ -15,9 +15,15 @@ import {
   INTERIOR_HALF,
   INTERIOR_ORIGIN,
   legacyCellPosition,
+  TV_ITEM_IDS,
   type Club,
   type ExerciseId,
+  floorFinish,
+  interiorStyle,
+  type FloorFinishId,
+  type HomeFinish,
   type HomeLayout,
+  type InteriorStyle,
   type Vec2,
 } from "@lagos-living/shared";
 import type { Material } from "@babylonjs/core/Materials/material";
@@ -126,7 +132,8 @@ function previewPieces(layout: HomeLayout): Placement[] {
   ];
 }
 
-export type InteriorOptions = { layout?: HomeLayout; props?: PropLibrary | null };
+/** `finish` is the owner's chosen style and floor (see HOME_FINISH); without it a home shows its signature look. */
+export type InteriorOptions = { layout?: HomeLayout; props?: PropLibrary | null; finish?: HomeFinish | null };
 
 /** Builds one room at the interior origin; obstacles are returned as axis-aligned boxes. */
 export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtlas, kind: InteriorKind, title: string, placements: Placement[], club?: Club, options: InteriorOptions = {}) {
@@ -134,7 +141,7 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   const props = options.props ?? null;
   const [X0, X1, Z0, Z1, H] = [OX - layout.halfX, OX + layout.halfX, OZ + FRONT_WALL, OZ + layout.back, layout.height];
   const disposables: Array<{ dispose(): void }> = [];
-  const local_ = homeMaterials(scene, layout, disposables);
+  const local_ = homeMaterials(scene, layout, disposables, options.finish ?? null);
   const batches = new Map<string, MeshBuilderBatch>();
   // While a Meshy model stands in for a piece, its box geometry goes here and is never built.
   const unused = new MeshBuilderBatch("interior unused");
@@ -167,12 +174,12 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   const viewing = kind === "viewing";
   const plain = kind === "club" || kind === "starter" || gym || viewing;
   const grand = !plain && layout.tier !== "flat";
-  if (grand) get(local_.floorKey).polygon(corners, 0.02, local_.floorTile);
+  if (!plain) get(local_.floorKey).polygon(corners, 0.02, local_.floorTile);
   else if (gym) get("vertexPaint").polygon(corners, 0.02, 1, [0.15, 0.15, 0.17]);
   else get("tiles").polygon(corners, 0.02, 1.2, marina ? [0.78, 0.76, 0.74] : kind === "club" ? [0.16, 0.14, 0.2] : viewing ? [0.5, 0.48, 0.44] : undefined);
   // The ceiling is its own mesh so the home designer can lift it off for a view from above.
   const ceiling = new MeshBuilderBatch("interior ceiling");
-  ceiling.polygon(corners, H, 3, marina ? [0.14, 0.12, 0.1] : kind === "club" ? [0.08, 0.07, 0.1] : gym ? [0.2, 0.2, 0.22] : viewing ? [0.16, 0.17, 0.18] : [0.97, 0.97, 0.95], true);
+  ceiling.polygon(corners, H, 3, marina ? [0.14, 0.12, 0.1] : kind === "club" ? [0.08, 0.07, 0.1] : gym ? [0.2, 0.2, 0.22] : viewing ? [0.16, 0.17, 0.18] : local_.ceiling, true);
   const wallColor: [number, number, number] = marina ? [0.3, 0.25, 0.19] : kind === "club" ? [0.13, 0.11, 0.17] : gym ? [0.34, 0.34, 0.37] : viewing ? [0.1, 0.3, 0.17] : kind === "starter" ? [0.86, 0.9, 0.84] : local_.wall;
   const RAIL = 1.05;
   // Inward normals of the front, east, back and west walls.
@@ -277,7 +284,7 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
       const missing = new Set(fitSeats(placed, seats.slice(firstSeat)));
       if (missing.size) seats.splice(firstSeat, seats.length - firstSeat, ...seats.slice(firstSeat).filter((seat) => !missing.has(seat)));
     }
-    if (placement.itemId === "tv-console") spots.push({ id: "tv", point: [x - Math.sin(yaw) * 1.8, z - Math.cos(yaw) * 1.8], label: "Watch TV" });
+    if (TV_ITEM_IDS.includes(placement.itemId)) spots.push({ id: "tv", point: [x - Math.sin(yaw) * 1.8, z - Math.cos(yaw) * 1.8], label: "Watch TV" });
     if (!lift) return;
     if (placed) raise(placed, lift);
     for (const seat of seats.slice(firstSeat)) Object.assign(seat, { y: seat.y + lift, level: 1 });
@@ -314,7 +321,9 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     }
     // A soft carpet marks out the bedroom of the open plan, so it reads as where the bed and wardrobe go.
     for (const room of layout.rooms.filter((entry) => entry.room === "bedroom" || (entry.level && upperFloor))) {
-      const [x0, x1, z0, z1] = [OX + room.x - room.hx + 0.3, OX + room.x + room.hx - 0.3, OZ + room.z - room.hz + 0.3, OZ + room.z + room.hz - 0.3];
+      // Upstairs suites get a large rug with the floor showing around it.
+      const inset = room.level ? 1.4 : 0.3;
+      const [x0, x1, z0, z1] = [OX + room.x - room.hx + inset, OX + room.x + room.hx - inset, OZ + room.z - room.hz + inset, OZ + room.z + room.hz - inset];
       const y = (room.level && upperFloor ? upperFloor.y : 0) + 0.025;
       get("bedding").polygon([[x0, z0], [x1, z0], [x1, z1], [x0, z1]], y, 1, room.room === "bedroom" ? [0.72, 0.6, 0.52] : [0.36, 0.42, 0.5]);
     }
@@ -347,9 +356,11 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   // Bigger homes get a light per zone; tall rooms hang them lower so the floor still reads bright.
   const lightPoints: Vec2[] = gym
     ? [[-5, 0.5], [5, 0.5], [-4, 7.5], [5, 7.5]]
-    : layout.tier === "mansion" ? [[0, 1.5], [-7, 8], [7, 8]] : layout.tier === "flat" || !grand ? [[0, 0]] : [[0, 0.5], [0, layout.back - 4]];
+    : layout.tier === "mansion" ? [[0, 1.5], [-7.8, 4.6], [7.8, 4.6]] : layout.tier === "flat" || !grand ? [[0, 0]] : [[0, 0.5], [0, layout.back - 4]];
+  // The mansion's side lights hang higher, between the floors, so they light the hall and the suites above it.
+  const lightY = (index: number) => (upperFloor && index > 0 ? upperFloor.y + 1.6 : Math.min(H - 0.6, 4.2));
   const lights = lightPoints.map(([lx, lz], index) => {
-    const light = new PointLight(`interior light ${index}`, new Vector3(OX + lx, Math.min(H - 0.6, 4.2), OZ + lz), scene);
+    const light = new PointLight(`interior light ${index}`, new Vector3(OX + lx, lightY(index), OZ + lz), scene);
     light.intensity = kind === "club" ? 5 : viewing ? 7 : grand ? 26 : gym ? 16 : 18;
     light.range = grand || gym ? 20 : 14;
     light.diffuse = Color3.FromHexString(kind === "club" ? "#b8a8ff" : gym ? "#f1f4ff" : viewing ? "#dfe8ff" : "#fff1dc");
@@ -469,8 +480,8 @@ function painted(scene: Scene, name: string, size: [number, number], draw: (cont
   return texture;
 }
 
-/** Floors, trim and views for the bigger homes, drawn once per visit on small canvases. */
-function homeMaterials(scene: Scene, layout: HomeLayout, disposables: Array<{ dispose(): void }>) {
+/** Floors, trim and views for homes, drawn once per visit on small canvases, in the owner's chosen style and floor. */
+function homeMaterials(scene: Scene, layout: HomeLayout, disposables: Array<{ dispose(): void }>, finish: HomeFinish | null) {
   const byKey: Record<string, Material> = {};
   const pbr = (name: string, setup: (material: PBRMaterial) => void) => {
     const material = new PBRMaterial(name, scene);
@@ -480,7 +491,9 @@ function homeMaterials(scene: Scene, layout: HomeLayout, disposables: Array<{ di
     disposables.push(material);
     return material;
   };
-  const scheme = HOME_SCHEMES[layout.tier];
+  const style = interiorStyle(finish?.style, layout.tier);
+  const scheme = homeScheme(style);
+  const floorId = floorFinish(finish, layout.tier);
   // Painted plaster with a little self-light, so far walls and high ceilings stay bright on phones with few lights.
   // Emissive adds the same grey to every colour, so it stays low enough not to wash the paint out.
   byKey.homeWall = pbr("home wall", (material) => {
@@ -489,12 +502,12 @@ function homeMaterials(scene: Scene, layout: HomeLayout, disposables: Array<{ di
   });
   byKey.homeCeiling = pbr("home ceiling", (material) => {
     material.roughness = 0.9;
-    material.emissiveColor = new Color3(0.58, 0.56, 0.52);
+    material.emissiveColor = Color3.FromArray(style.ceiling).scale(0.5);
   });
   byKey.homePaper = pbr("home wallpaper", (material) => {
     material.roughness = 0.75;
     material.emissiveColor = new Color3(0.1, 0.1, 0.09);
-    material.albedoTexture = painted(scene, `${layout.tier} wallpaper`, [256, 256], scheme.paper, disposables);
+    material.albedoTexture = painted(scene, `${style.id} wallpaper`, [256, 256], scheme.paper, disposables);
   });
   byKey.homeSkirting = pbr("home skirting", (material) => {
     material.albedoColor = Color3.FromArray(scheme.skirting);
@@ -505,66 +518,16 @@ function homeMaterials(scene: Scene, layout: HomeLayout, disposables: Array<{ di
     material.roughness = 0.35;
     material.metallic = layout.tier === "mansion" || layout.tier === "apartment" ? 0.6 : 0;
   });
-  if (layout.tier === "flat") return { byKey, floorKey: "tiles", floorTile: 1.2, wall: scheme.upper, scheme };
-  const random = seeded(layout.tier.length * 977);
-  const floor = pbr(`${layout.tier} floor`, (material) => {
-    if (layout.tier === "house") {
-      material.albedoTexture = painted(scene, "oak planks", [512, 512], (context, w, h) => {
-        const rows = 8;
-        for (let row = 0; row < rows; row += 1) {
-          let x = -random() * w * 0.5;
-          while (x < w) {
-            const length = w * (0.35 + random() * 0.4);
-            const tone = 128 + random() * 42;
-            context.fillStyle = `rgb(${tone}, ${tone * 0.76}, ${tone * 0.56})`;
-            context.fillRect(x, (row * h) / rows, length, h / rows);
-            context.strokeStyle = "rgba(60, 35, 18, 0.18)";
-            for (let line = 0; line < 5; line += 1) {
-              const y = (row * h) / rows + random() * (h / rows);
-              context.beginPath();
-              context.moveTo(x, y);
-              context.bezierCurveTo(x + length * 0.3, y + 2, x + length * 0.6, y - 2, x + length, y + 1);
-              context.stroke();
-            }
-            context.fillStyle = "rgba(40, 24, 12, 0.6)";
-            context.fillRect(x, (row * h) / rows, 2, h / rows);
-            x += length;
-          }
-          context.fillStyle = "rgba(40, 24, 12, 0.55)";
-          context.fillRect(0, (row * h) / rows, w, 2);
-        }
-      }, disposables);
-      material.roughness = 0.42;
-    } else {
-      const mansion = layout.tier === "mansion";
-      material.albedoTexture = painted(scene, `${layout.tier} marble`, [512, 512], (context, w, h) => {
-        context.fillStyle = mansion ? "#f3efe8" : "#e7e5e1";
-        context.fillRect(0, 0, w, h);
-        for (let vein = 0; vein < (mansion ? 18 : 8); vein += 1) {
-          context.strokeStyle = mansion ? `rgba(${120 + random() * 40}, ${110 + random() * 30}, ${100 + random() * 20}, ${0.12 + random() * 0.25})` : `rgba(150, 150, 150, ${0.06 + random() * 0.1})`;
-          context.lineWidth = 0.6 + random() * (mansion ? 2.4 : 1.2);
-          let [x, y] = [random() * w, random() * h];
-          context.beginPath();
-          context.moveTo(x, y);
-          for (let step = 0; step < 12; step += 1) {
-            x += (random() - 0.3) * 70;
-            y += (random() - 0.5) * 50;
-            context.lineTo(x, y);
-          }
-          context.stroke();
-        }
-        context.fillStyle = "rgba(170, 160, 150, 0.55)";
-        for (const at of [0, w / 2]) {
-          context.fillRect(at, 0, 1.5, h);
-          context.fillRect(0, at, w, 1.5);
-        }
-      }, disposables);
-      material.roughness = mansion ? 0.16 : 0.24;
-    }
+  const floor = pbr(`${layout.tier} ${floorId} floor`, (material) => {
+    const look = FLOOR_LOOKS[floorId];
+    material.albedoTexture = painted(scene, `${floorId} floor`, [512, 512], look.paint, disposables);
+    material.roughness = look.roughness;
   });
   byKey.homeFloor = floor;
+  // Trim, stair carriages and slab edges take a warm cream from the walls rather than a hard white.
+  const cream = Color3.FromArray(style.upper).scale(0.45).add(new Color3(0.5, 0.48, 0.44));
   byKey.homeTrim = pbr("home trim", (material) => {
-    material.albedoColor = new Color3(0.96, 0.95, 0.92);
+    material.albedoColor = cream;
     material.roughness = 0.3;
   });
   byKey.homeGold = pbr("home gold", (material) => {
@@ -582,6 +545,8 @@ function homeMaterials(scene: Scene, layout: HomeLayout, disposables: Array<{ di
     material.alpha = 0.22;
     material.backFaceCulling = false;
   });
+  const floorTile = FLOOR_LOOKS[floorId].tile * (layout.tier === "flat" ? 0.8 : 1);
+  if (layout.tier === "flat") return { byKey, floorKey: "homeFloor", floorTile, wall: scheme.upper, scheme, ceiling: style.ceiling };
   const view = new StandardMaterial("home view", scene);
   view.disableLighting = true;
   view.emissiveTexture = painted(scene, "home view", [1024, 256], (context, w, h) => {
@@ -616,7 +581,7 @@ function homeMaterials(scene: Scene, layout: HomeLayout, disposables: Array<{ di
   }, disposables);
   disposables.push(view);
   byKey.homeView = view;
-  return { byKey, floorKey: "homeFloor", floorTile: layout.tier === "house" ? 2.4 : layout.tier === "mansion" ? 1.6 : 2.4, wall: scheme.upper, scheme };
+  return { byKey, floorKey: "homeFloor", floorTile, wall: scheme.upper, scheme, ceiling: style.ceiling };
 }
 
 type Paint = (context: CanvasRenderingContext2D, w: number, h: number) => void;
@@ -729,13 +694,183 @@ const damask = (ground: string, ink: string): Paint => (context, w, h) => {
   }
 };
 
-/** Lower panel, upper paint, trim and a printed feature wall for each kind of home, so no room is plain white. */
-const HOME_SCHEMES: Record<HomeLayout["tier"], HomeScheme> = {
-  flat: { lower: [0.5, 0.23, 0.14], upper: [0.86, 0.69, 0.5], skirting: [0.3, 0.18, 0.11], rail: [0.95, 0.9, 0.8], paper: ankara("#e9c98f", "#1f6f6b", "#c4532d") },
-  house: { lower: [0.07, 0.26, 0.26], upper: [0.7, 0.76, 0.6], skirting: [0.25, 0.16, 0.1], rail: [0.94, 0.92, 0.86], paper: fronds("#dfe5d2", "#4f7d55") },
-  apartment: { lower: [0.09, 0.12, 0.24], upper: [0.72, 0.67, 0.6], skirting: [0.12, 0.12, 0.14], rail: [0.78, 0.62, 0.34], paper: deco("#25303f", "#c9a45c") },
-  mansion: { lower: [0.3, 0.17, 0.09], upper: [0.86, 0.76, 0.6], skirting: [0.22, 0.13, 0.08], rail: [0.82, 0.65, 0.33], paper: damask("#efe4cc", "#d6c19a") },
+/** Indigo adire: tie-dye circles and resist-dyed lines, the cloth of Abeokuta. */
+const adire = (ground: string, ink: string): Paint => (context, w, h) => {
+  context.fillStyle = ground;
+  context.fillRect(0, 0, w, h);
+  context.strokeStyle = ink;
+  context.fillStyle = ink;
+  const cell = w / 4;
+  for (let row = 0; row < 4; row += 1) {
+    for (let col = 0; col < 4; col += 1) {
+      const [cx, cy] = [col * cell + cell / 2, row * cell + cell / 2];
+      if ((row + col) % 2) {
+        for (let ring = 1; ring <= 3; ring += 1) {
+          context.lineWidth = 2.2 - ring * 0.4;
+          context.beginPath();
+          context.arc(cx, cy, cell * 0.13 * ring, 0, Math.PI * 2);
+          context.stroke();
+        }
+        context.beginPath();
+        context.arc(cx, cy, cell * 0.06, 0, Math.PI * 2);
+        context.fill();
+      } else {
+        context.lineWidth = 1.6;
+        for (let line = -2; line <= 2; line += 1) {
+          context.beginPath();
+          context.moveTo(cx - cell * 0.4, cy + line * cell * 0.12);
+          context.bezierCurveTo(cx - cell * 0.1, cy + line * cell * 0.12 - 6, cx + cell * 0.1, cy + line * cell * 0.12 + 6, cx + cell * 0.4, cy + line * cell * 0.12);
+          context.stroke();
+        }
+      }
+    }
+  }
 };
+
+const plainPaper = (ground: string, ink: string): Paint => (context, w, h) => {
+  context.fillStyle = ground;
+  context.fillRect(0, 0, w, h);
+  context.fillStyle = ink;
+  for (let x = 0; x < w; x += w / 8) context.fillRect(x, 0, 1.5, h);
+};
+
+/** Wall paint, trim and feature-wall print for a style, so no room is plain white. */
+function homeScheme(style: InteriorStyle): HomeScheme {
+  const { kind, ground, ink, accent } = style.print;
+  const paper = kind === "ankara" ? ankara(ground, ink, accent ?? ink) : kind === "fronds" ? fronds(ground, ink) : kind === "deco" ? deco(ground, ink) : kind === "damask" ? damask(ground, ink) : kind === "adire" ? adire(ground, ink) : plainPaper(ground, ink);
+  return { lower: style.lower, upper: style.upper, skirting: style.skirting, rail: style.rail, paper };
+}
+
+/** How each floor finish is drawn: its texture, how glossy it is and how many metres one texture covers. */
+const FLOOR_LOOKS: Record<FloorFinishId, { paint: Paint; roughness: number; tile: number }> = {
+  oak: { paint: planks([168, 122, 74], 8, false), roughness: 0.42, tile: 2.4 },
+  walnut: { paint: planks([92, 58, 36], 10, true), roughness: 0.3, tile: 2.0 },
+  terrazzo: { paint: terrazzo("#d9c9ac", ["#9b4a2c", "#3f6b4f", "#f1ead9", "#6b5a45", "#c99b52"]), roughness: 0.2, tile: 1.6 },
+  travertine: { paint: stone("#cdb48c", "rgba(120, 90, 55, 0.22)", "rgba(110, 82, 50, 0.45)", 10), roughness: 0.28, tile: 1.6 },
+  "black-marble": { paint: stone("#1c1b1d", "rgba(214, 178, 104, 0.5)", "rgba(80, 70, 60, 0.6)", 16), roughness: 0.12, tile: 1.6 },
+  "cream-marble": { paint: stone("#e9dfcd", "rgba(140, 125, 105, 0.28)", "rgba(170, 155, 135, 0.55)", 14), roughness: 0.16, tile: 1.6 },
+  terracotta: { paint: clayTiles(), roughness: 0.6, tile: 1.4 },
+  "flat-tiles": { paint: stone("#d8cdb8", "rgba(150, 140, 125, 0.12)", "rgba(150, 140, 125, 0.6)", 4), roughness: 0.3, tile: 1.2 },
+};
+
+/** Wooden planks in a base tone; `herringbone` lays short boards in a zigzag. */
+function planks([r, g, b]: Rgb, rows: number, herringbone: boolean): Paint {
+  return (context, w, h) => {
+    const random = seeded(r * 31 + rows);
+    const tone = () => 0.82 + random() * 0.3;
+    if (herringbone) {
+      const [len, wid] = [w / 4, w / 16];
+      for (let y = -len; y < h + len; y += wid * 2) {
+        for (let x = -len; x < w + len; x += len) {
+          for (const flip of [0, 1]) {
+            const t = tone();
+            context.save();
+            context.translate(x + flip * wid, y);
+            context.rotate(flip ? -Math.PI / 4 : Math.PI / 4);
+            context.fillStyle = `rgb(${r * t}, ${g * t}, ${b * t})`;
+            context.fillRect(0, 0, len, wid);
+            context.strokeStyle = "rgba(30, 18, 10, 0.55)";
+            context.lineWidth = 1.2;
+            context.strokeRect(0, 0, len, wid);
+            context.restore();
+          }
+        }
+      }
+      return;
+    }
+    for (let row = 0; row < rows; row += 1) {
+      let x = -random() * w * 0.5;
+      while (x < w) {
+        const length = w * (0.35 + random() * 0.4);
+        const t = tone();
+        context.fillStyle = `rgb(${r * t}, ${g * t}, ${b * t})`;
+        context.fillRect(x, (row * h) / rows, length, h / rows);
+        context.strokeStyle = "rgba(60, 35, 18, 0.18)";
+        for (let line = 0; line < 5; line += 1) {
+          const y = (row * h) / rows + random() * (h / rows);
+          context.beginPath();
+          context.moveTo(x, y);
+          context.bezierCurveTo(x + length * 0.3, y + 2, x + length * 0.6, y - 2, x + length, y + 1);
+          context.stroke();
+        }
+        context.fillStyle = "rgba(40, 24, 12, 0.6)";
+        context.fillRect(x, (row * h) / rows, 2, h / rows);
+        x += length;
+      }
+      context.fillStyle = "rgba(40, 24, 12, 0.55)";
+      context.fillRect(0, (row * h) / rows, w, 2);
+    }
+  };
+}
+
+/** Stone slabs: a ground colour, veins and the grout between four slabs. */
+function stone(ground: string, vein: string, grout: string, veins: number): Paint {
+  return (context, w, h) => {
+    const random = seeded(veins * 97 + ground.length);
+    context.fillStyle = ground;
+    context.fillRect(0, 0, w, h);
+    for (let index = 0; index < 400; index += 1) {
+      context.fillStyle = `rgba(${random() > 0.5 ? "255, 255, 255" : "0, 0, 0"}, 0.03)`;
+      context.fillRect(random() * w, random() * h, 6 + random() * 30, 6 + random() * 30);
+    }
+    context.strokeStyle = vein;
+    for (let index = 0; index < veins; index += 1) {
+      context.lineWidth = 0.6 + random() * 2;
+      let [x, y] = [random() * w, random() * h];
+      context.beginPath();
+      context.moveTo(x, y);
+      for (let step = 0; step < 12; step += 1) {
+        x += (random() - 0.3) * 70;
+        y += (random() - 0.5) * 50;
+        context.lineTo(x, y);
+      }
+      context.stroke();
+    }
+    context.fillStyle = grout;
+    for (const at of [0, w / 2]) {
+      context.fillRect(at, 0, 2, h);
+      context.fillRect(0, at, w, 2);
+    }
+  };
+}
+
+function terrazzo(ground: string, chips: string[]): Paint {
+  return (context, w, h) => {
+    const random = seeded(23);
+    context.fillStyle = ground;
+    context.fillRect(0, 0, w, h);
+    for (let index = 0; index < 1400; index += 1) {
+      context.fillStyle = chips[index % chips.length]!;
+      const [x, y, size] = [random() * w, random() * h, 1.5 + random() * (index % 9 === 0 ? 9 : 4)];
+      context.beginPath();
+      context.ellipse(x, y, size, size * (0.5 + random() * 0.5), random() * Math.PI, 0, Math.PI * 2);
+      context.fill();
+    }
+  };
+}
+
+function clayTiles(): Paint {
+  return (context, w, h) => {
+    const random = seeded(61);
+    const cell = w / 4;
+    for (let row = 0; row < 4; row += 1) {
+      for (let col = 0; col < 4; col += 1) {
+        const t = 0.85 + random() * 0.25;
+        context.fillStyle = `rgb(${176 * t}, ${92 * t}, ${58 * t})`;
+        context.fillRect(col * cell, row * cell, cell, cell);
+        for (let spot = 0; spot < 30; spot += 1) {
+          context.fillStyle = `rgba(${random() > 0.5 ? "90, 40, 20" : "230, 170, 110"}, 0.12)`;
+          context.fillRect(col * cell + random() * cell, row * cell + random() * cell, 4 + random() * 10, 4 + random() * 10);
+        }
+      }
+    }
+    context.fillStyle = "rgba(225, 205, 180, 0.9)";
+    for (let at = 0; at <= w; at += cell) {
+      context.fillRect(at - 2, 0, 4, h);
+      context.fillRect(0, at - 2, w, 4);
+    }
+  };
+}
 
 type WorldRect = { x0: number; x1: number; z0: number; z1: number };
 /**
@@ -1281,6 +1416,24 @@ function moreFurniture(
       part("darkFrame", at, yaw, 0, 1.15, 0.12, 1.46, 0.84, 0.05, [0.03, 0.03, 0.04]);
       part("neon", at, yaw, 0, 1.15, 0.09, 1.38, 0.76, 0.01, [0.08, 0.16, 0.3]);
       part("darkFrame", at, yaw, 0, 0.62, 0.12, 0.3, 0.22, 0.06, [0.05, 0.05, 0.06]);
+    },
+    "wall-tv": (x, z, yaw) => {
+      const at = frame(x, z, yaw);
+      part("wood", at, yaw, 0, 0.42, 0.06, 2.2, 0.08, 0.32, walnut, true);
+      part("darkFrame", at, yaw, 0, 0.36, 0.06, 1.1, 0.07, 0.12, [0.06, 0.06, 0.07]);
+      part("darkFrame", at, yaw, 0, 1.45, 0.17, 1.9, 1.08, 0.04, [0.02, 0.02, 0.03]);
+      part("neon", at, yaw, 0, 1.45, 0.145, 1.84, 1.02, 0.01, [0.1, 0.22, 0.4]);
+      for (const side of [-0.95, 0.95]) part("darkFrame", at, yaw, side, 0.9, 0.12, 0.16, 0.9, 0.16, [0.08, 0.08, 0.09]);
+    },
+    "dressing-table": (x, z, yaw) => {
+      const at = frame(x, z, yaw);
+      const cream: Rgb = [0.93, 0.88, 0.8];
+      part("vertexPaint", at, yaw, 0, 0.74, 0.1, 1.2, 0.05, 0.5, cream, true);
+      for (const side of [-0.42, 0.42]) part("vertexPaint", at, yaw, side, 0.37, 0.1, 0.34, 0.72, 0.46, cream);
+      part("homeGold", at, yaw, 0, 1.3, 0.3, 0.74, 0.74, 0.03);
+      part("chrome", at, yaw, 0, 1.3, 0.28, 0.66, 0.66, 0.02, [0.85, 0.9, 0.95]);
+      part("lamp", at, yaw, 0, 1.7, 0.27, 0.5, 0.04, 0.03);
+      part("bedding", at, yaw, 0, 0.22, -0.32, 0.42, 0.44, 0.36, [0.8, 0.5, 0.55]);
     },
     wardrobe: (x, z, yaw) => {
       const at = frame(x, z, yaw);
