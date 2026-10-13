@@ -1,4 +1,4 @@
-import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type ClubMusicState, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL, EXERCISES, GYM, type ExerciseId, type FoodParcel, SEATED_MEAL_ENERGY, placeById, venueOf, venueRoom } from "@lagos-living/shared";
+import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type ClubMusicState, type FootballState, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL, EXERCISES, GYM, type ExerciseId, type FoodParcel, SEATED_MEAL_ENERGY, placeById, venueOf, venueRoom } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { noteFps, report, setReportedQuality } from "../diagnostics";
@@ -28,6 +28,7 @@ import { CrashGuard } from "./CrashGuard";
 import { HomeDesigner } from "./HomeDesigner";
 import { HomePower } from "./HomePower";
 import { FuelSheet } from "./FuelSheet";
+import { FootballHud, StreetFootballSheet } from "./StreetFootball";
 import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
 import { CheckpointPrompt, HoldUpPrompt, PoliceStationSheet, SecuritySheet } from "./PoliceSheets";
 import { GymSheet } from "./GymSheet";
@@ -133,6 +134,9 @@ export function GameView({
   const [holdUp, setHoldUp] = useState<HoldUp | null>(null);
   const [robTarget, setRobTarget] = useState<{ sessionId: string; name: string } | null>(null);
   const [fuelStop, setFuelStop] = useState<{ id: string; name: string } | null>(null);
+  const [football, setFootball] = useState<FootballState | null>(null);
+  const [footballOpen, setFootballOpen] = useState(false);
+  const footballRef = useRef<FootballState | null>(null);
   const [plots, setPlots] = useState<PlotState[]>([]);
   const [workout, setWorkout] = useState<{ exercise: ExerciseId; endsAt: number; kg: number | null } | null>(null);
   const [parcels, setParcels] = useState<FoodParcel[]>([]);
@@ -410,6 +414,15 @@ export function GameView({
           setClubMusic(state);
           void refresh();
         },
+        football: (state) => {
+          const self = instance.sessionId;
+          const playing = (entry: FootballState | null) => Boolean(entry?.players.some((player) => player.sessionId === self));
+          const previous = footballRef.current;
+          if (previous && previous.pitchId !== state.pitchId && playing(previous) && !playing(state)) return;
+          if (previous?.pitchId === state.pitchId && (playing(previous) !== playing(state) || (state.phase === "finished" && previous.phase !== "finished"))) void refresh();
+          footballRef.current = state;
+          setFootball(state);
+        },
         arrived: (label) => setArrival({ label, at: Date.now() }),
         spray: async (amount) => {
           try {
@@ -658,7 +671,7 @@ export function GameView({
   }, [engine, settings.theme]);
 
   const warnings = safety?.warnings ?? [];
-  const blocking = Boolean(welcomeOpen || designing || sheet || plotSheet || travelSpot || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length || holdUp || robTarget || fuelStop);
+  const blocking = Boolean(welcomeOpen || designing || sheet || plotSheet || travelSpot || phone || mapOpen || overlayOpen || loading || fatal || reportTarget || warnings.length || holdUp || robTarget || fuelStop || footballOpen);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -1135,6 +1148,16 @@ export function GameView({
             </button>
           )}
 
+          {hud.pitch && !blocking && !(football?.phase === "playing" && football.players.some((player) => player.sessionId === engine.sessionId)) && (
+            <button className="football-prompt primary" onClick={() => setFootballOpen(true)} data-testid="football-prompt">
+              ⚽ Street football · {hud.pitch.name}
+            </button>
+          )}
+
+          {football && football.phase !== "lobby" && (hud.pitch?.id === football.pitchId || football.players.some((player) => player.sessionId === engine.sessionId)) && (
+            <FootballHud engine={engine} state={football} selfId={engine.sessionId} blocked={blocking} />
+          )}
+
           {hud.vehicleCamera && (
             <button className="camera-switch" data-testid="camera-switch" onClick={() => engine.cycleCamera()} aria-label={`Camera: ${VEHICLE_VIEW_LABEL[hud.vehicleCamera]}. Switch view`}>
               🎥 <span>{hud.vehicleCamera === "far" ? "Far" : "Chase"}</span>
@@ -1410,6 +1433,9 @@ export function GameView({
         />
       )}
       {engine && homeId && partyOn && <ClubRadio clubId={homeId} volume={settings.muted ? 0 : settings.masterVolume} onPlaying={() => undefined} />}
+      {engine && footballOpen && football && hud?.pitch?.id === football.pitchId && (
+        <StreetFootballSheet engine={engine} state={football} selfId={engine.sessionId} pitchName={hud.pitch.name} balance={economy?.balance ?? 0} onClose={() => setFootballOpen(false)} />
+      )}
       {engine && fuelStop && hud?.vehicle?.fuel && (
         <FuelSheet
           engine={engine}

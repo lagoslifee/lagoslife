@@ -1525,3 +1525,31 @@ button.wide { width: 100%; margin: 6px 0; }
 [data-theme="dark"] .attendant-line { background: #2c2c2e; }
 [data-theme="dark"] .fuel-owner input { background: #1c1c1e; color: #f2f2f7; border-color: #48484a; }
 @media (prefers-reduced-motion: reduce) { .pos-tap .contactless { animation: none; } }
+
+/* Street football */
+.football-prompt { position: absolute; left: 50%; bottom: 200px; transform: translateX(-50%); padding: 11px 18px; border-radius: 999px; font-weight: 700; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
+.football-sheet { max-width: 460px; }
+.football-pot { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0; font-size: 13px; }
+.football-pot span { padding: 5px 10px; border-radius: 999px; background: rgba(30,90,60,.08); }
+.football-stakes { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.football-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.football-side { display: grid; gap: 6px; align-content: start; padding: 10px; border: 2px solid; border-radius: 12px; }
+.football-side h3 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 14px; }
+.football-side h3 small { margin-left: auto; opacity: .7; font-weight: 600; }
+.football-side ul { margin: 0; padding: 0; list-style: none; font-size: 13px; display: grid; gap: 3px; min-height: 40px; }
+.kit-swatch { display: inline-block; width: 14px; height: 18px; border-radius: 3px; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
+.football-actions { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-top: 10px; }
+.football-board { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: grid; grid-template-columns: auto auto auto; align-items: center; gap: 4px 8px; padding: 6px 10px; border-radius: 12px; background: rgba(12,18,24,.82); color: #fff; text-align: center; pointer-events: none; z-index: 5; }
+.football-board .side { padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; color: #fff; }
+.football-board .side.gold { color: #17171a; }
+.football-board strong { font-size: 22px; font-variant-numeric: tabular-nums; min-width: 64px; }
+.football-board small { grid-column: 1 / -1; font-size: 11px; opacity: .8; }
+.football-board.goal { animation: football-goal 0.6s ease-in-out 3; }
+.football-event { grid-column: 1 / -1; margin: 2px 0 0; font-size: 13px; font-weight: 600; max-width: 320px; }
+@keyframes football-goal { 50% { transform: translateX(-50%) scale(1.12); } }
+.football-controls { position: absolute; right: 16px; bottom: 150px; display: grid; gap: 8px; z-index: 5; }
+.football-controls button { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 112px; padding: 12px 14px; border-radius: 14px; border: 0; font-weight: 800; background: rgba(12,18,24,.78); color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+.football-controls button.ready { background: #0f8a4a; }
+.football-controls button.shoot.ready { background: #d0461c; }
+.football-controls button:disabled { opacity: .45; }
+.football-controls kbd { font-size: 11px; padding: 1px 5px; border-radius: 4px; background: rgba(255,255,255,.18); }

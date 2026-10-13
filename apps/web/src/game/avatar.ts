@@ -18,7 +18,7 @@ import {
   type Vec2,
   GYM,
 } from "@lagos-living/shared";
-import { GarmentPlugin, hairHex, OUTFITS, skinTint, type Accessory, type Body, type Hairstyle } from "./appearance";
+import { GarmentPlugin, hairHex, OUTFITS, skinTint, type Accessory, type Body, type Hairstyle, type Kit } from "./appearance";
 import { dressHead, HEAD_UNIT, headAnchor, type HeadStyle } from "./avatar-style";
 
 /**
@@ -268,6 +268,7 @@ export class Avatar {
   private started = false;
   private instance: Instance;
   private current: CharacterAppearance;
+  private kit: Kit | null = null;
   private visible = true;
   private props: TransformNode[] = [];
   private held: TransformNode | null = null;
@@ -337,6 +338,13 @@ export class Avatar {
     listener?.(this.instance.meshes);
   }
 
+  /** Puts on (or takes off, with null) a team kit over the outfit for a match. */
+  setKit(kit: Kit | null) {
+    if (kit?.shirt === this.kit?.shirt && kit?.shorts === this.kit?.shorts) return;
+    this.kit = kit;
+    this.dress();
+  }
+
   setAppearance(appearance: CharacterAppearance) {
     const rebuild = appearance.body !== this.current.body;
     this.current = appearance;
@@ -358,8 +366,8 @@ export class Avatar {
     const appearance = this.current;
     const { body, brows, skirt, garments, hair, anchor } = this.instance;
     if (body?.material instanceof PBRMaterial) body.material.albedoColor = skinTint(appearance);
-    for (const plugin of garments) plugin.set(appearance);
-    skirt?.setEnabled(OUTFITS[appearance.outfit].skirt !== null);
+    for (const plugin of garments) plugin.set(appearance, this.kit);
+    skirt?.setEnabled(!this.kit && OUTFITS[appearance.outfit].skirt !== null);
     const bulky = appearance.hairstyle === "afro" || appearance.hairstyle === "twists" || appearance.hairstyle === "buns";
     const showHair = appearance.accessory === "headwrap" ? false : !(appearance.accessory === "cap" && bulky);
     const hairColour = Color3.FromHexString(hairHex(appearance)).toLinearSpace().scale(1 / 0.27);

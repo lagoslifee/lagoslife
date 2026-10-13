@@ -44,7 +44,20 @@ function slot(fabric: Fabric | null): Slot {
   return { base: [base.r, base.g, base.b, fabric.print ? 2 : 1], print: [print.r, print.g, print.b, 9], accent: fabric.print ? linear(fabric.print.accent) : base };
 }
 
-export function garmentSlots(appearance: CharacterAppearance): Record<Garment, Slot> {
+/** A team kit worn over the outfit for a match: shirt, shorts (drawn on the trouser panels) and boots. */
+export type Kit = { shirt: string; shorts: string; socks: string };
+
+export function garmentSlots(appearance: CharacterAppearance, kit: Kit | null = null): Record<Garment, Slot> {
+  if (kit) {
+    const boots = linear("#141414");
+    return {
+      top: slot({ colour: kit.shirt }),
+      sleeve: HIDDEN,
+      trousers: slot({ colour: kit.shorts }),
+      shoes: { base: [boots.r, boots.g, boots.b, 1], print: [0, 0, 0, 0], accent: boots },
+      skirt: HIDDEN,
+    };
+  }
   const outfit = OUTFITS[appearance.outfit];
   const shoes = linear(outfit.shoes);
   return {
@@ -66,8 +79,8 @@ export class GarmentPlugin extends MaterialPluginBase {
     this.slots = garmentSlots(appearance);
   }
 
-  set(appearance: CharacterAppearance) {
-    this.slots = garmentSlots(appearance);
+  set(appearance: CharacterAppearance, kit: Kit | null = null) {
+    this.slots = garmentSlots(appearance, kit);
   }
 
   override getClassName() {

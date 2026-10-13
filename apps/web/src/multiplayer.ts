@@ -25,6 +25,7 @@ import {
   type AgberoEncounter,
   type AgberoOutcome,
   type ClubMusicState,
+  type FootballState,
   ROBBERY,
 } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
@@ -72,6 +73,7 @@ export type MultiplayerHandlers = {
   agbero: (encounter: AgberoEncounter | null) => void;
   agberoOutcome: (outcome: AgberoOutcome) => void;
   clubMusic: (state: ClubMusicState) => void;
+  football: (state: FootballState) => void;
   /** The owner rearranged the home this player is standing in. */
   interior: () => void;
 };
@@ -171,6 +173,7 @@ export class MultiplayerConnection {
       );
       room.onMessage("agbero", (encounter: AgberoEncounter | null) => this.handlers.agbero(encounter && typeof encounter.id === "string" ? encounter : null));
       room.onMessage("clubMusic", (state: ClubMusicState) => typeof state?.club === "string" && Array.isArray(state.queue) && this.handlers.clubMusic(state));
+      room.onMessage("football", (state: FootballState) => typeof state?.pitchId === "string" && Array.isArray(state.players) && this.handlers.football(state));
       room.onMessage("fuel", (fuel: { vehicleId: string; litres: number; tank: number }) => typeof fuel?.vehicleId === "string" && Number.isFinite(fuel.litres) && this.handlers.fuel(fuel));
       room.onMessage("agberoOutcome", (outcome: AgberoOutcome) => Array.isArray(outcome?.point) && this.handlers.agberoOutcome(outcome));
       room.onMessage("goState", (state: FastTravelState) => Array.isArray(state?.discovered) && this.handlers.goState(state));
@@ -263,7 +266,13 @@ export class MultiplayerConnection {
       | "carRent"
       | "carReturn"
       | "photo"
-      | "requestTrip",
+      | "requestTrip"
+      | "footballSync"
+      | "footballJoin"
+      | "footballLeave"
+      | "footballKickoff"
+      | "footballKick"
+      | "footballTackle",
     payload?: unknown,
   ) {
     this.room?.send(type, payload);

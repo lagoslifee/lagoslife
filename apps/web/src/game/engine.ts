@@ -126,6 +126,10 @@ import {
   type HomeLayout,
   type PlacedPiece,
   twoWheeled,
+  FOOTBALL,
+  FOOTBALL_KITS,
+  nearestPitch,
+  type FootballState,
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
 import { COMPOUND_PLACES, compoundCars } from "./compounds";
@@ -163,6 +167,7 @@ import { TowRig } from "./tow-rig";
 import { BAY_SIZE, buildServiceBay, serviceBay } from "./service-bay";
 import { BikeStationsView } from "./bike-stations";
 import { FuelStationsView } from "./fuel-stations";
+import { StreetCagesView } from "./street-cage";
 import { defaultBindings, InputState, LocomotionController, MAX_FRAME_DT, SUBSTEP_DT, type Bindings, type MoveMode } from "./controller";
 import { DanfoFactory, type DanfoView } from "./danfo";
 import { MeshBuilderBatch } from "./geometry";
@@ -218,6 +223,8 @@ export type HudState = {
   yaw: number;
   cameraYaw: number;
   waypoint: { label: string; distance: number } | null;
+  /** A street football cage the player is standing at, on foot. */
+  pitch: { id: string; name: string } | null;
 };
 
 export type Interaction =
@@ -261,6 +268,7 @@ export type EngineCallbacks = {
   /** A roadside tout asks this driver for change; null when it is over. */
   agbero: (encounter: AgberoEncounter | null) => void;
   clubMusic?: (state: ClubMusicState) => void;
+  football?: (state: FootballState) => void;
   /** The player reached the waypoint; the route has already been cleared. */
   arrived: (label: string) => void;
   /** What the player has in hand (a drink or a plate from the club bar) and how many sips or bites are left; null when empty. */
@@ -570,6 +578,11 @@ export class GameEngine {
   /** Petrol in the tank of the car being driven, as the server last reported it. */
   private fuel: { vehicleId: string; litres: number; tank: number } | null = null;
   private fuelStations: FuelStationsView | null = null;
+  private cages: StreetCagesView | null = null;
+  /** Team kits worn by residents in a match, by session id. */
+  private kits = new Map<string, { pitchId: string; team: keyof typeof FOOTBALL_KITS }>();
+  private kitsAt = 0;
+  private syncedPitch: string | null = null;
   private lights = false;
   private passenger: { vehicleId: string; seat: number } | null = null;
   private pendingDrive: string | null = null;
@@ -692,6 +705,13 @@ export class GameEngine {
       agberoOutcome: (outcome) => this.agberoOutcome(outcome),
       fuel: (fuel) => {
         this.fuel = fuel;
+      },
+      football: (state) => {
+        this.cages?.setState(state);
+        for (const [sessionId, kit] of this.kits) if (kit.pitchId === state.pitchId) this.kits.delete(sessionId);
+        if (state.phase !== "finished") for (const player of state.players) this.kits.set(player.sessionId, { pitchId: state.pitchId, team: player.team });
+        this.applyKits();
+        this.callbacks.football?.(state);
       },
       clubMusic: (state) => this.callbacks.clubMusic?.(state),
       react: ({ sessionId, emoji }) => {
@@ -879,6 +899,7 @@ export class GameEngine {
     this.couriers = new Couriers(scene, () => this.avatars, () => this.vehicleFactory, () => this.navigator ?? null, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) this.homeStaff = new HomeStaffView(this.avatars, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) this.fuelStations = new FuelStationsView(scene, this.avatars, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
+    this.cages = new StreetCagesView(scene, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes), (sessionId) => this.footballerPose(sessionId));
     if (this.avatars) {
       this.crews = new StreetCrews(scene, this.avatars, this.vehicleFactory, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes), (x, z) => {
         const road = this.world.roads.nearest(x, z)?.road;
@@ -1601,6 +1622,11 @@ export class GameEngine {
     });
     this.crews?.update(dt, x, z, !this.interior);
     this.fuelStations?.update(x, z, Boolean(this.interior), dt);
+    this.cages?.update(x, z, Boolean(this.interior), dt);
+    if (now - this.kitsAt > 1_000) {
+      this.kitsAt = now;
+      this.applyKits();
+    }
     if (this.homeStaff) {
       if (now - this.staffPostsAt > 1000) {
         this.staffPostsAt = now;
@@ -2132,7 +2158,60 @@ export class GameEngine {
       yaw: this.controller.yaw,
       cameraYaw: this.cameraYaw,
       waypoint: this.waypoint ? { label: this.waypoint.label, distance: Math.hypot(this.waypoint.point[0] - x, this.waypoint.point[1] - z) } : null,
+      pitch: this.pitchHere(x, z, Boolean(bus)),
     });
+  }
+
+  private pitchHere(x: number, z: number, onBus: boolean) {
+    const near = nearestPitch(x, z);
+    const here = near && near.distance < FOOTBALL.joinRange && !this.interior && !onBus && !this.driving && !this.passenger ? near.pitch : null;
+    if (here && here.id !== this.syncedPitch) this.net.send("footballSync", here.id);
+    this.syncedPitch = here?.id ?? null;
+    return here ? { id: here.id, name: here.name } : null;
+  }
+
+  private footballerPose(sessionId: string) {
+    if (sessionId === this.net.sessionId) {
+      const root = this.player?.root;
+      return { x: this.controller.x, y: root?.position.y ?? 0, z: this.controller.z, yaw: this.controller.yaw };
+    }
+    const root = this.remotes.get(sessionId)?.avatar?.root;
+    return root ? { x: root.position.x, y: root.position.y, z: root.position.z, yaw: root.rotation.y } : null;
+  }
+
+  private applyKits() {
+    const kitFor = (sessionId: string) => {
+      const entry = this.kits.get(sessionId);
+      return entry ? FOOTBALL_KITS[entry.team] : null;
+    };
+    const self = this.net.sessionId;
+    if (self) this.player?.setKit(kitFor(self));
+    for (const [sessionId, remote] of this.remotes) remote.avatar?.setKit(kitFor(sessionId));
+  }
+
+  get sessionId() {
+    return this.net.sessionId;
+  }
+
+  footballJoin(pitchId: string, team: keyof typeof FOOTBALL_KITS, stake: number) {
+    this.net.send("footballJoin", { pitchId, team, stake });
+  }
+
+  footballLeave() {
+    this.net.send("footballLeave");
+  }
+
+  footballKickoff() {
+    this.net.send("footballKickoff");
+  }
+
+  /** Passes to the teammate the player is facing, or shoots at goal; the room settles where the ball goes. */
+  footballKick(kind: "pass" | "shoot") {
+    this.net.send("footballKick", { kind, yaw: Math.atan2(Math.sin(this.controller.yaw), Math.cos(this.controller.yaw)) });
+  }
+
+  footballTackle() {
+    this.net.send("footballTackle");
   }
 
   private travelTitle() {
