@@ -16,6 +16,16 @@ services:
     preDeployCommand: node dist/migrate.js
     healthCheckPath: /api/health
     autoDeploy: true
+    # Every deploy restarts the game and drops players into a reconnect, so only changes that reach the image deploy.
+    buildFilter:
+      paths:
+        - apps/server/**
+        - packages/shared/**
+        - apps/web/public/assets/world/tiles/**
+        - apps/web/package.json
+        - package.json
+        - package-lock.json
+        - tsconfig.base.json
     envVars:
       - key: NODE_ENV
         value: production
