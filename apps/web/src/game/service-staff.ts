@@ -23,7 +23,20 @@ type Runner = {
   serveUntil: number;
   caption: string;
   onArrive?: (() => void) | undefined;
+  /** Waypoints walked before reaching the player, and in reverse on the way back. */
+  route: Vec2[];
+  leg: number;
+  /** The tray rides on the palm instead of floating in front of the chest. */
+  inHand: boolean;
+  /** The counter this runner left; its attendant reappears there once they are back. */
+  desk?: Desk;
 };
+
+/** Turns `from` toward `to` by at most `step` radians, the short way round. */
+function turnToward(from: number, to: number, step: number) {
+  const delta = Math.atan2(Math.sin(to - from), Math.cos(to - from));
+  return Math.abs(delta) <= step ? to : from + Math.sign(delta) * step;
+}
 
 const [OX, OZ] = INTERIOR_ORIGIN;
 const P = (x: number, z: number): Vec2 => [OX + x, OZ + z];
@@ -221,8 +234,11 @@ export class ServiceStaff {
     this.flights.push({ node, from, to: toDesk ? hand : null, t: -0.5, caption, onDone });
   }
 
-  /** A runner walks from `from` to the player carrying `prop`, serves it, and goes back. */
-  deliver(from: Vec2, look: CharacterAppearance, prop: StaffProp | TransformNode, caption: string, onArrive?: () => void) {
+  /**
+   * A runner walks from `from` to the player carrying `prop`, serves it, and goes back. A built tray is carried flat
+   * on the palm and reached out at the end; `route` threads the walk between furniture.
+   */
+  deliver(from: Vec2, look: CharacterAppearance, prop: StaffProp | TransformNode, caption: string, onArrive?: () => void, route: Vec2[] = []) {
     const factory = this.avatars();
     if (!factory) {
       if (typeof prop !== "string") prop.dispose();
@@ -232,10 +248,37 @@ export class ServiceStaff {
     }
     const avatar = factory.create(`runner ${this.runners.length} ${Date.now()}`, look);
     avatar.root.position.set(from[0], this.ground(from[0], from[1]), from[1]);
+    const inHand = typeof prop !== "string";
     const node = typeof prop === "string" ? this.buildProp(prop) : prop;
-    node.parent = avatar.root;
-    node.position.set(0.05, 1.08, 0.36);
-    this.runners.push({ avatar, prop: node, home: from, phase: "out", serveUntil: 0, caption, onArrive });
+    if (inHand) avatar.hold(node, "tray");
+    else {
+      node.parent = avatar.root;
+      node.position.set(0.05, 1.08, 0.36);
+    }
+    const first = route[0] ?? from;
+    avatar.root.rotation.y = Math.atan2(first[0] - from[0], first[1] - from[1]);
+    this.runners.push({ avatar, prop: node, home: from, phase: "out", serveUntil: 0, caption, onArrive, route, leg: 0, inHand });
+  }
+
+  /** The attendant at `deskId` leaves the counter and carries `tray` to the player along `route`, then goes back. */
+  serveFromDesk(deskId: string, tray: TransformNode, caption: string, onArrive: () => void, route: Vec2[]) {
+    const desk = this.desks.find((entry) => entry.id === deskId);
+    if (!desk) {
+      tray.dispose();
+      this.notice(caption);
+      onArrive();
+      return;
+    }
+    this.deliver(desk.at, desk.look, tray, caption, onArrive, route);
+    const runner = this.runners[this.runners.length - 1];
+    if (runner?.prop !== tray) return;
+    runner.desk = desk;
+    desk.avatar.setVisible(false);
+  }
+
+  /** Where each runner is and what it is doing, for tests. */
+  runnerStates() {
+    return this.runners.map((runner) => ({ x: runner.avatar.root.position.x, z: runner.avatar.root.position.z, phase: runner.phase, leg: runner.leg, route: runner.route.length }));
   }
 
   get idle() {
@@ -271,37 +314,50 @@ export class ServiceStaff {
       const spark = runner.prop.getChildren().find((child) => child.name.endsWith("spark")) as Mesh | undefined;
       if (spark) spark.scaling.setAll(0.6 + Math.abs(Math.sin(seconds * 37)) * 0.9);
       if (runner.phase === "serve") {
-        runner.avatar.update(0, "wave", dt);
+        root.rotation.y = turnToward(root.rotation.y, Math.atan2(player[0] - root.position.x, player[1] - root.position.z), dt * 6);
+        runner.avatar.update(0, runner.inHand ? "idle" : "wave", dt);
         if (now > runner.serveUntil) {
+          if (runner.inHand) runner.avatar.hold(null);
           runner.prop.dispose();
           runner.phase = "back";
+          runner.leg = runner.route.length - 1;
           this.notice(runner.caption);
           runner.onArrive?.();
         }
         continue;
       }
-      const target = runner.phase === "out" ? player : runner.home;
+      const out = runner.phase === "out";
+      const near = out && Math.hypot(player[0] - root.position.x, player[1] - root.position.z) <= 0.9;
+      const waypoint = near ? undefined : runner.route[runner.leg];
+      const target = waypoint ?? (out ? player : runner.home);
       const dx = target[0] - root.position.x;
       const dz = target[1] - root.position.z;
       const distance = Math.hypot(dx, dz);
-      const stop = runner.phase === "out" ? 0.9 : 0.15;
-      if (distance <= stop) {
-        if (runner.phase === "out") {
+      const stop = waypoint ? 0.12 : out ? 0.9 : 0.15;
+      if (distance <= stop + 0.01) {
+        if (waypoint) {
+          runner.leg += out ? 1 : -1;
+        } else if (out) {
           runner.phase = "serve";
-          runner.serveUntil = now + 1_600;
-          root.rotation.y = Math.atan2(dx, dz);
+          runner.serveUntil = now + 1_900;
+          if (runner.inHand) runner.avatar.offer(1.5);
         } else {
           runner.avatar.dispose();
           this.runners = this.runners.filter((entry) => entry !== runner);
+          const desk = runner.desk;
+          if (desk && this.desks.includes(desk) && !this.runners.some((entry) => entry.desk === desk)) desk.avatar.setVisible(true);
         }
         continue;
       }
-      const speed = 1.35;
+      const heading = Math.atan2(dx, dz);
+      root.rotation.y = turnToward(root.rotation.y, heading, dt * 7);
+      // Slow down for sharp corners and the last steps, so the walk never skates.
+      const facing = Math.cos(heading - root.rotation.y);
+      const speed = 1.35 * Math.max(0.25, facing) * (waypoint ? 1 : Math.min(1, 0.45 + (distance - stop) * 0.8));
       const step = Math.min(distance - stop, speed * dt);
       root.position.x += (dx / distance) * step;
       root.position.z += (dz / distance) * step;
       root.position.y = this.ground(root.position.x, root.position.z);
-      root.rotation.y = Math.atan2(dx, dz);
       runner.avatar.update(speed, "walk", dt);
     }
   }

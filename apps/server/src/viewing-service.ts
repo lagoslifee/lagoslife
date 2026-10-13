@@ -1,6 +1,8 @@
-import { VIEWING, placeById, type ViewingStatus } from "@lagos-living/shared";
+import { VIEWING, placeById, viewingLocation, viewingMenuById, type ViewingStatus } from "@lagos-living/shared";
+import { randomUUID } from "node:crypto";
 import { pool } from "./database.js";
-import { debitWallet, EconomyError, ensureWallet, withTransaction } from "./economy-service.js";
+import { debitWallet, EconomyError, ensureProfile, ensureWallet, withTransaction } from "./economy-service.js";
+import { getPlayerPosition } from "./player-presence.js";
 
 const passKey = (placeId: string) => `viewing:${placeId}:`;
 
@@ -36,4 +38,37 @@ export async function buyViewingPass(userId: string, placeId: string) {
     const balance = Number((await client.query<{ balance: string }>(`SELECT balance FROM wallet WHERE user_id = $1`, [userId])).rows[0]!.balance);
     return { charged, balance };
   }).then(async (result) => ({ ...result, status: await viewingStatus(userId, placeId) }));
+}
+
+/** A drink or snack from the kiosk, for someone inside the hall; the client sends the waiter over with it. */
+export async function orderAtViewing(userId: string, placeId: string, itemId: string, idempotencyKey: string) {
+  const place = placeById.get(placeId);
+  if (!place || place.kind !== "viewing") throw new EconomyError("That isn't a viewing centre.", 404);
+  const item = viewingMenuById.get(itemId);
+  if (!item) throw new EconomyError("The kiosk doesn't sell that.", 404);
+  if (getPlayerPosition(userId)?.location !== viewingLocation(placeId)) throw new EconomyError("Go inside the viewing centre to order.", 409);
+  return withTransaction(async (client) => {
+    await ensureWallet(client, userId);
+    await ensureProfile(client, userId);
+    await client.query(`SELECT balance FROM wallet WHERE user_id = $1 FOR UPDATE`, [userId]);
+    const replay = await client.query(`SELECT 1 FROM club_order WHERE user_id = $1 AND idempotency_key = $2`, [userId, idempotencyKey]);
+    if (replay.rowCount) {
+      const [wallet, profile] = await Promise.all([
+        client.query(`SELECT balance FROM wallet WHERE user_id = $1`, [userId]),
+        client.query(`SELECT hunger, energy FROM player_profile WHERE user_id = $1`, [userId]),
+      ]);
+      return { replayed: true, item, balance: Number(wallet.rows[0].balance), needs: { hunger: Number(profile.rows[0].hunger), energy: Number(profile.rows[0].energy) } };
+    }
+    const balance = await debitWallet(client, userId, item.price, "club_order", `${item.name} · ${place.name}`, idempotencyKey, { placeId, itemId });
+    await client.query(
+      `INSERT INTO club_order (id, user_id, place_id, item_id, price, idempotency_key) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [randomUUID(), userId, placeId, item.id, item.price, idempotencyKey],
+    );
+    const updated = await client.query(
+      `UPDATE player_profile SET hunger = LEAST(100, hunger + $2), energy = LEAST(100, energy + $3), updated_at = NOW()
+       WHERE user_id = $1 RETURNING hunger, energy`,
+      [userId, item.hunger, item.energy],
+    );
+    return { replayed: false, item, balance, needs: { hunger: Number(updated.rows[0].hunger), energy: Number(updated.rows[0].energy) } };
+  });
 }

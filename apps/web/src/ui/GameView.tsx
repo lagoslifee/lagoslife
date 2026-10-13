@@ -16,7 +16,7 @@ import { RideAskCard, TravelPromptCard } from "./GoApp";
 import type { RideAsk } from "../multiplayer";
 import { AgberoPrompt } from "./AgberoPrompt";
 import { ClubRadio } from "./ClubRadio";
-import { ClubBarSheet, ClubDoorSheet, ClubTableSheet, ViewingDoorSheet } from "./ClubSheets";
+import { ClubBarSheet, ClubDoorSheet, ClubTableSheet, ViewingDoorSheet, ViewingKioskSheet } from "./ClubSheets";
 import { COMMUNITY_KINDS, CommunitySheet } from "./CommunitySheets";
 import { PlaceSheet } from "./Sheets";
 import { airportStep } from "./airport-guide";
@@ -124,6 +124,7 @@ export function GameView({
   const [travelSpot, setTravelSpot] = useState<{ interior: TravelInterior; spot: string } | null>(null);
   const [trip, setTrip] = useState<TripState | null>(null);
   const [clubBar, setClubBar] = useState<Place | null>(null);
+  const [kiosk, setKiosk] = useState(false);
   const [clubTable, setClubTable] = useState<number | null>(null);
   const [clubTables, setClubTables] = useState<ClubTable[]>([]);
   const [checkpoint, setCheckpoint] = useState<CheckpointStop | null>(null);
@@ -831,6 +832,8 @@ export function GameView({
     } else if (interaction.spot === "bar" && propertyId) {
       const place = propertyPlace(propertyId);
       if (place?.kind === "club") setClubBar(place);
+    } else if (interaction.spot === "kiosk") {
+      setKiosk(true);
     } else if (interaction.spot === "gym") {
       setSheet(getPlace(GYM.placeId));
     } else if (interaction.spot === "dance") {
@@ -882,6 +885,7 @@ export function GameView({
   const inClub = Boolean(hud?.location === "interior" && hud.propertyId && CLUBS[hud.propertyId]);
   const here = hud?.location === "interior" ? (engine?.currentLocation() ?? "street") : "street";
   const chatRoom = here === "street" ? null : { name: roomName(here), room: venueRoom(here), people: engine?.peopleHere() ?? 1 };
+  const viewingPlace = here.startsWith("viewing:") ? (placeById.get(here.slice("viewing:".length)) ?? null) : null;
   useEffect(() => {
     setChat([]);
   }, [here]);
@@ -1529,7 +1533,23 @@ export function GameView({
       {tripTo && engine && (
         <TripChooser engine={engine} target={tripTo} onRoute={(next) => setManualTarget(next)} onCab={() => setPhone("ride")} onClose={() => setTripTo(null)} />
       )}
-      {holding && engine && inClub && (
+      {viewingPlace && engine && !holding && !kiosk && !phone && (
+        <button className="held-chip kiosk-chip" data-testid="kiosk-open" onClick={() => setKiosk(true)}>🥤 Order a drink</button>
+      )}
+      {kiosk && viewingPlace && (
+        <ViewingKioskSheet
+          place={viewingPlace}
+          economy={economy}
+          onClose={() => setKiosk(false)}
+          onRefresh={refresh}
+          onToast={toast}
+          onServed={(item) => {
+            engine?.deliverOrder(item.name, item.drink, item.id);
+            setKiosk(false);
+          }}
+        />
+      )}
+      {holding && engine && (inClub || viewingPlace) && (
         <div className="held-chip" data-testid="held-item">
           <span>{holding.food ? "🍢" : "🥤"} {holding.name}{holding.left ? ` · ${holding.left} left` : " · finished"}</span>
           <button className="primary small-button" disabled={!holding.left} onClick={() => engine.sipHeld()}>{holding.food ? "Eat" : "Sip"}</button>

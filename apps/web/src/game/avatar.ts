@@ -228,6 +228,8 @@ type Instance = ReturnType<AvatarFactory["instantiate"]>;
 
 /** Joint angles (radians) for the sleeping and lounging poses. */
 const P = { sleepArm: 0.5, sleepIn: 1.35, sleepFore: 1.7, sleepHead: 0.5, sleepLegs: 0, sleepKnee: 0.08, readIn: 1.2, readUp: 0.62, readFore: 1.4, readHead: 0.35, readLieIn: 1.0, readLieUp: 1.35, readLieFore: 1.2, readLieHead: 0.45, loungeBack: -0.35, loungeArm: -1.2, loungeArmBack: -0.3, loungeFore: 0.9, loungeLegs: 0.4 };
+/** Carrying and handing over a held item (radians, metres). */
+const HOLD = { offerArm: 0.75, offerFore: 0.7, trayAbove: 0.04 };
 /** Swimming pose numbers (radians, metres, cycles); exported so the pose preview can tune them live. */
 export const SWIM_TUNING = {
   strokeRate: 3.2,
@@ -277,6 +279,9 @@ export class Avatar {
   private held: TransformNode | null = null;
   private heldLift = 0;
   private sipUntil = 0;
+  private heldGrip: "hand" | "tray" = "hand";
+  private offerUntil = 0;
+  private offerLift = 0;
   private waveTime = 0;
   /** Receives the meshes of each body instance, e.g. to register shadow casters again after a body change. */
   private meshListener: ((meshes: AbstractMesh[]) => void) | null = null;
@@ -714,9 +719,11 @@ export class Avatar {
   }
 
   /** Puts a drink or other small item in the right hand; null empties it (the caller disposes the node). */
-  hold(node: TransformNode | null) {
+  hold(node: TransformNode | null, grip: "hand" | "tray" = "hand") {
     this.held = node;
     this.heldLift = 0;
+    this.heldGrip = grip;
+    this.offerLift = 0;
     if (node) node.parent = null;
   }
 
@@ -725,14 +732,20 @@ export class Avatar {
     this.sipUntil = performance.now() + seconds * 1_000;
   }
 
+  /** Reaches the held item out in front, as a waiter does handing an order over. */
+  offer(seconds = 1.4) {
+    this.offerUntil = performance.now() + seconds * 1_000;
+  }
+
   /** Forearm up holding the item, raised to the mouth while sipping; the item follows the hand. */
   private holdPose(dt: number, motion: MotionState) {
-    const target = performance.now() < this.sipUntil ? 1 : 0;
-    this.heldLift += (target - this.heldLift) * Math.min(1, dt * 7);
+    const now = performance.now();
+    this.heldLift += ((now < this.sipUntil ? 1 : 0) - this.heldLift) * Math.min(1, dt * 7);
+    this.offerLift += ((now < this.offerUntil ? 1 : 0) - this.offerLift) * Math.min(1, dt * 5);
     const limbs = this.instance.limbs;
     if (motion !== "dance") {
-      bend(limbs.rightArm, 0.9 * this.heldLift);
-      bend(limbs.rightFore, 1.4 + 0.4 * this.heldLift);
+      bend(limbs.rightArm, 0.9 * this.heldLift + HOLD.offerArm * this.offerLift);
+      bend(limbs.rightFore, 1.4 + 0.4 * this.heldLift - HOLD.offerFore * this.offerLift);
     }
     const hand = limbs.rightHand;
     const node = this.held!;
@@ -744,6 +757,12 @@ export class Avatar {
     hand.computeWorldMatrix(true);
     const at = hand.getAbsolutePosition();
     const yaw = this.root.rotation.y;
+    if (this.heldGrip === "tray") {
+      // Flat on the palm: the tray sits just above the hand and never tilts, however the arm swings.
+      node.position.set(at.x, at.y + HOLD.trayAbove, at.z);
+      node.rotation.set(0, yaw, 0);
+      return;
+    }
     const head = this.current.body === "female" ? 1.42 : 1.5;
     const mouth = [this.root.position.x + Math.sin(yaw) * 0.14, this.root.position.y + head - 0.07, this.root.position.z + Math.cos(yaw) * 0.14];
     const f = this.heldLift * 0.5;

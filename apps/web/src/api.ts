@@ -253,6 +253,8 @@ export const api = {
   clubStatus: (placeId: string) => request<ClubStatus>(`/api/clubs/${placeId}`),
   viewingStatus: (placeId: string) => request<ViewingStatus>(`/api/viewing?placeId=${encodeURIComponent(placeId)}`),
   buyViewingPass: (placeId: string) => post<{ charged: number; balance: number; status: ViewingStatus }>("/api/viewing/entry", { placeId }),
+  viewingOrder: (placeId: string, itemId: string) =>
+    post<{ replayed: boolean; balance: number; needs: { hunger: number; energy: number } }>(`/api/viewing/${placeId}/order`, { itemId, idempotencyKey: crypto.randomUUID() }),
   buyWristband: (placeId: string) => post<{ charged: number; balance: number; status: ClubStatus }>(`/api/clubs/${placeId}/wristband`),
   clubOrder: (placeId: string, itemId: string) =>
     post<{ replayed: boolean; item: ClubMenuItem; balance: number; needs: { hunger: number; energy: number } }>(`/api/clubs/${placeId}/order`, { itemId, idempotencyKey: crypto.randomUUID() }),

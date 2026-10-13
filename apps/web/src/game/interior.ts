@@ -46,7 +46,7 @@ export type InteriorKind = "starter" | "preview" | "home" | "club" | "gym" | "vi
 /** `x`/`z` are room-local metres; pieces saved before free placement only have their grid cell. */
 export type Placement = { id?: string; itemId: string; gridX: number; gridZ: number; rotation: number; x?: number | null; z?: number | null; level?: number | null };
 /** `level` 1 marks spots and seats upstairs, offered only to residents up there. */
-export type InteriorSpot = { id: "exit" | "bed" | "storage" | "kitchen" | "bar" | "stool" | "dance" | "tv" | "sofa" | "dining" | "gym" | `table-${number}`; point: Vec2; label: string; level?: 1 };
+export type InteriorSpot = { id: "exit" | "bed" | "storage" | "kitchen" | "bar" | "stool" | "dance" | "tv" | "sofa" | "dining" | "gym" | "kiosk" | `table-${number}`; point: Vec2; label: string; level?: 1 };
 
 const HEIGHT = 3.0;
 const DUBAI_CLUB = "pearl-club-dubai";
@@ -304,6 +304,7 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     dressViewing(atlas, signs, { get, solid, model, boxes });
     for (const seat of viewingSeats()) if (seat.fan === null) addSeat(seat.at, seat.yaw, VIEWING_SEAT_Y, "dining");
     for (const row of VIEWING_ROWS) for (const bx of VIEWING_BENCH_X) addSpot("dining", [OX + bx, OZ + row + 0.65], "Sit and watch the match");
+    addSpot("kiosk", [VIEWING_KIOSK.counter[0] + 0.75, VIEWING_KIOSK.counter[1]], "Order a cold drink");
     const screens = buildViewingScreens(scene, disposables);
     animate = (seconds) => screens.update(seconds);
   } else if (kind === "starter") {

@@ -20,6 +20,31 @@ export const VIEWING_KIOSK = { counter: [OX - 4.7, OZ - 3.0] as Vec2, staff: [OX
 
 export type BenchSeat = { at: Vec2; yaw: number; fan: number | null };
 
+const BENCH_INNER = VIEWING_BENCH_X[1] - VIEWING_BENCH_LENGTH / 2;
+const BENCH_OUTER = VIEWING_BENCH_X[1] + VIEWING_BENCH_LENGTH / 2;
+
+/**
+ * The kiosk waiter's walk to a fan, in world points: round the counter, across the front of the hall, up the middle
+ * (or side) aisle and along the legroom in front of their bench, so the tray never passes through a bench.
+ */
+export function viewingWaiterRoute(player: Vec2): Vec2[] {
+  const [px, pz] = [player[0] - OX, player[1] - OZ];
+  const route: Vec2[] = [[-5.25, -4.15], [-4.0, -4.15]];
+  const frontRow = VIEWING_ROWS[0] - 0.3;
+  if (pz > frontRow) {
+    const row = VIEWING_ROWS.reduce((best, entry) => (Math.abs(entry - pz) < Math.abs(best - pz) ? entry : best));
+    // Sitting on (or standing at) a bench: serve from the legroom just in front of it.
+    const seated = Math.abs(pz - row) < 0.3;
+    const lane = seated ? row + 0.8 : pz;
+    const side = Math.abs(px) > BENCH_OUTER - 0.2;
+    const aisle = side ? Math.sign(px) * 4.9 : 0;
+    route.push([aisle, frontRow - 0.6]);
+    if (!side && Math.abs(px) > BENCH_INNER - 0.3) route.push([aisle, lane], [seated ? px : px - Math.sign(px) * 0.7, lane]);
+    else if (seated || side) route.push([aisle, lane]);
+  }
+  return route.map(([x, z]) => [OX + x, OZ + z] as Vec2);
+}
+
 /** Every seat in the hall; about a third are taken by regulars who are always there for the football. */
 export function viewingSeats(): BenchSeat[] {
   const seats: BenchSeat[] = [];

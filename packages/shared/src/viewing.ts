@@ -15,6 +15,19 @@ export const VIEWING = {
 export const viewingLocation = (placeId: string = VIEWING.placeId) => `viewing:${placeId}`;
 export const viewingEntrySchema = z.object({ placeId: z.string().min(3).max(60) });
 
+/** Match-day drinks and chops from the kiosk; a waiter brings them to your bench. Ids match the club bar models. */
+export const VIEWING_MENU = [
+  { id: "malt", name: "Cold malt", price: 700, hunger: 4, energy: 3, drink: true },
+  { id: "chapman", name: "Chapman", price: 1_000, hunger: 3, energy: 4, drink: true },
+  { id: "zobo", name: "Chilled zobo", price: 500, hunger: 2, energy: 2, drink: true },
+  { id: "energy-drink", name: "Energy drink", price: 1_200, hunger: 0, energy: 10, drink: true },
+  { id: "water", name: "Bottled water", price: 250, hunger: 1, energy: 1, drink: true },
+  { id: "suya", name: "Suya wrap", price: 1_800, hunger: 16, energy: 1, drink: false },
+] as const;
+export type ViewingMenuItem = (typeof VIEWING_MENU)[number];
+export const viewingMenuById = new Map<string, ViewingMenuItem>(VIEWING_MENU.map((item) => [item.id, item]));
+export const viewingOrderSchema = z.object({ itemId: z.string().min(1).max(40), idempotencyKey: z.uuid() });
+
 /** Real milliseconds inside one match slot: walk-out, two halves, the break and the full-time card. */
 export const BROADCAST = { intro: 5_000, half: 50_000, interval: 6_000, outro: 9_000 } as const;
 

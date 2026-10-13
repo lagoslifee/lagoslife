@@ -15,6 +15,7 @@ import {
   lifeGoalsSchema,
   enrolSchema,
   viewingEntrySchema,
+  viewingOrderSchema,
   gymSetSchema,
   startBusinessSchema,
   upgradeBusinessSchema,
@@ -88,7 +89,7 @@ import cors from "cors";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import { businessMarket, businessStatus, buyBusiness, collectBusiness, enrol, listBusiness, sellToBroker, startBusiness, upgradeBusiness } from "./business-service.js";
 import { finishSet, gymStatus, hireTrainer, joinGym, startSet } from "./gym-service.js";
-import { buyViewingPass, viewingStatus } from "./viewing-service.js";
+import { buyViewingPass, orderAtViewing, viewingStatus } from "./viewing-service.js";
 import { finishRest, startRest } from "./home-living-service.js";
 import { buyFuel, buyStation, fuelStations, setStationPrice } from "./fuel-service.js";
 import { currentOwambe, hostOwambe } from "./owambe-service.js";
@@ -632,6 +633,10 @@ export function configureRoutes(app: Express) {
     viewingStatus(userId, typeof req.query.placeId === "string" ? req.query.placeId : undefined)));
   app.post("/api/viewing/entry", requirePlayer, rateLimited, guarded("Could not pay at the door", (req, userId) =>
     buyViewingPass(userId, viewingEntrySchema.parse(req.body).placeId)));
+  app.post("/api/viewing/:placeId/order", requirePlayer, rateLimited, guarded("Order could not be placed", (req, userId) => {
+    const { itemId, idempotencyKey } = viewingOrderSchema.parse(req.body);
+    return orderAtViewing(userId, String(req.params.placeId), itemId, idempotencyKey);
+  }));
 
   app.post("/api/delivery/order", requirePlayer, rateLimited, guarded("Order failed", (req, userId) => {
     const body = orderDeliverySchema.parse(req.body);

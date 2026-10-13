@@ -1,4 +1,4 @@
-import { BOTTLE_MENU, broadcastAt, CLUB_MENU, CLUBS, TABLE_GUESTS_MAX, VIEWING, type ViewingStatus, type ClubStatus, type ClubTable, type Notice, type Place } from "@lagos-living/shared";
+import { BOTTLE_MENU, broadcastAt, CLUB_MENU, CLUBS, TABLE_GUESTS_MAX, VIEWING, VIEWING_MENU, type ViewingMenuItem, type ViewingStatus, type ClubStatus, type ClubTable, type Notice, type Place } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import { api, naira, type EconomyState } from "../api";
 
@@ -129,6 +129,54 @@ export function ClubBarSheet({ place, economy, onClose, onRefresh, onToast, onSe
                     const result = await api.clubOrder(place.id, item.id);
                     onServed?.(item);
                     return `${item.name}, ${naira(item.price)}. A waitress is bringing it over. Hunger ${result.needs.hunger}/100 · energy ${result.needs.energy}/100.`;
+                  })}
+                >
+                  {naira(item.price)}
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+/** The viewing-centre kiosk: order from your bench and the attendant walks it over. */
+export function ViewingKioskSheet({ place, economy, onClose, onRefresh, onToast, onServed }: Common & { place: Place; onServed: (item: ViewingMenuItem) => void }) {
+  const [busy, run] = useRun({ onRefresh, onToast });
+  const balance = economy?.balance ?? 0;
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <section className="sheet" role="dialog" aria-label={`${place.name} kiosk`} data-testid="viewing-kiosk" onClick={(event) => event.stopPropagation()}>
+        <header>
+          <div>
+            <p className="eyebrow">THE KIOSK · MATCH DAY</p>
+            <h2>Cold drinks & chops</h2>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close">✕</button>
+        </header>
+        <p className="muted">Order from your seat and the attendant brings it over. Balance {naira(balance)}.</p>
+        <ul className="menu">
+          {VIEWING_MENU.map((item) => (
+            <li key={item.id}>
+              <div>
+                <strong>{item.drink ? "🥤" : "🌯"} {item.name}</strong>
+                <span>
+                  {item.hunger ? `Hunger +${item.hunger}` : ""}
+                  {item.hunger && item.energy ? " · " : ""}
+                  {item.energy ? `Energy +${item.energy}` : ""}
+                </span>
+              </div>
+              <div className="menu-actions">
+                <button
+                  className="primary"
+                  data-testid={`kiosk-${item.id}`}
+                  disabled={busy || balance < item.price}
+                  onClick={() => void run(async () => {
+                    await api.viewingOrder(place.id, item.id);
+                    onServed(item);
+                    return `${item.name}, ${naira(item.price)}. The attendant is bringing it to you.`;
                   })}
                 >
                   {naira(item.price)}

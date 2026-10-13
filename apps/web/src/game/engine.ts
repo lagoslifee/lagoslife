@@ -140,7 +140,7 @@ import { COMPOUND_PLACES, compoundCars } from "./compounds";
 import { EntranceMarkers, type EntranceCandidate } from "./entrance-markers";
 import { TourGuide, tourStops } from "./tour-guide";
 import { GYM_RECEPTION, gymRegulars, gymStations, type GymRegular, type GymStation } from "./gym-stations";
-import { VIEWING_KIOSK, VIEWING_SEAT_Y, viewingSeats } from "./viewing-hall";
+import { VIEWING_KIOSK, VIEWING_SEAT_Y, viewingSeats, viewingWaiterRoute } from "./viewing-hall";
 import { RepairSite } from "./repair-site";
 import { PropLibrary } from "./props";
 import { HomeStaffView, type StaffPost } from "./home-staff-view";
@@ -1678,7 +1678,7 @@ export class GameEngine {
     this.updateWaiters(dt);
     this.updateRegulars(dt);
     this.updateFans(dt);
-    if (!this.staff.idle) this.staff.update(dt, [this.controller.x, this.controller.z], now * 0.001);
+    if (!this.staff.idle) this.staff.update(dt, this.sitting?.seat ?? [this.controller.x, this.controller.z], now * 0.001);
     if (now - this.boardsAt > 1_000) {
       this.boardsAt = now;
       this.listingBoards?.update(this.world.placeSigns, this.listingLabels);
@@ -3347,6 +3347,14 @@ export class GameEngine {
   }
 
   deliverOrder(itemName: string, drink: boolean, itemId?: string) {
+    const location = this.self?.location;
+    if (location?.startsWith("viewing:") && itemId) {
+      const food = !drink;
+      this.staff.serveFromDesk("viewing-kiosk", buildServingTray(this.scene, itemId), `Your ${itemName} is here. ${food ? "Tap Eat for a bite." : "Tap Sip to drink it."}`, () => {
+        if (this.self?.location === location) this.holdItem(itemId, itemName, food);
+      }, viewingWaiterRoute(this.sitting?.seat ?? [this.controller.x, this.controller.z]));
+      return;
+    }
     const kind = this.travelView?.kind;
     const from = kind ? serviceOrigin(kind) : this.club ? CLUB_BARTENDER : null;
     const dubai = regionOf(this.controller.x, this.controller.z) === "dubai" || kind === "hotel" || kind === "rooftop" || kind === "airport-dxb";
@@ -4936,6 +4944,7 @@ export class GameEngine {
       setMaxFrameDt: (seconds: number) => {
         this.maxFrameDt = seconds;
       },
+      runners: () => this.staff.runnerStates(),
       vehicles: () => [...this.vehicles.values()].map(({ state, view }) => ({ ...state, cx: view.x, cz: view.z })),
       driving: () => {
         if (!this.car || !this.driving) return null;
