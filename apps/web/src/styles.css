@@ -1564,3 +1564,51 @@ button.wide { width: 100%; margin: 6px 0; }
 .owambe-menu small { opacity: .75; }
 .owambe-host { display: grid; gap: 10px; }
 .owambe-host label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
+
+/* Landing backdrop */
+.landing-scene { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
+.landing-sun { position: absolute; top: 9%; right: 12%; width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(circle, rgba(242,183,5,.55), rgba(242,183,5,.12) 55%, transparent 70%); animation: landing-glow 6s ease-in-out infinite; }
+.landing-jet { position: absolute; top: 14%; left: -140px; width: 92px; animation: landing-fly 19s linear infinite; filter: drop-shadow(0 2px 3px rgba(0,0,0,.25)); }
+.landing-jet.far { top: 6%; width: 46px; opacity: .55; animation-duration: 31s; animation-delay: -12s; }
+.landing-scene::before { content: ""; position: absolute; top: calc(14% + 17px); left: 0; height: 2px; width: 46%; background: linear-gradient(90deg, transparent, rgba(244,239,226,.55)); transform-origin: left; animation: landing-trail 19s linear infinite; }
+.landing-city { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 34%; min-height: 170px; opacity: .72; }
+.landing-window { fill: #e7bd62; opacity: .15; animation: landing-twinkle 7s ease-in-out infinite; }
+.landing-window.w1 { animation-delay: -2s; }
+.landing-window.w2 { animation-delay: -4.5s; }
+.landing-window.w3 { animation-duration: 11s; }
+.landing-danfo { animation: landing-drive 14s linear infinite; }
+.landing-okada { animation: landing-drive-back 9s linear infinite; }
+.landing-boat { animation: landing-sail 26s linear infinite; }
+.landing-wave { fill: none; stroke: rgba(207,230,224,.22); stroke-width: 1.2; animation: landing-wave 6s linear infinite; }
+.landing-wave.v1 { animation-duration: 9s; stroke: rgba(207,230,224,.14); }
+.landing-wave.v2 { animation-duration: 12s; stroke: rgba(207,230,224,.09); }
+.landing-chill { position: absolute; right: 2%; bottom: 3%; width: min(240px, 30%); }
+.landing-palm { transform-origin: 168px 150px; animation: landing-sway 5s ease-in-out infinite; }
+.landing-umbrella { transform-origin: 58px 86px; animation: landing-flap 3.2s ease-in-out infinite; }
+.landing-lounger { animation: landing-bob 4s ease-in-out infinite; }
+.landing-lounger.two { animation-delay: -1.7s; }
+.landing-drink { transform-origin: 100px 128px; animation: landing-sip 4.6s ease-in-out infinite; }
+.landing-note { opacity: 0; animation: landing-note 3s ease-out infinite; }
+.landing-note.n1 { animation-delay: -1s; }
+.landing-note.n2 { animation-delay: -2s; }
+@keyframes landing-fly { from { transform: translate(0, 40px) rotate(-6deg); } to { transform: translate(calc(60vw + 300px), -40px) rotate(-6deg); } }
+@keyframes landing-trail { 0% { transform: translateY(40px) rotate(-6deg) scaleX(0); opacity: 0; } 10% { opacity: 1; } 80% { opacity: .6; } 100% { transform: translateY(-40px) rotate(-6deg) scaleX(1.4); opacity: 0; } }
+@keyframes landing-glow { 50% { transform: scale(1.08); opacity: .8; } }
+@keyframes landing-twinkle { 0%, 100% { opacity: .12; } 50% { opacity: .75; } }
+@keyframes landing-drive { from { transform: translate(120px, 150px); } to { transform: translate(540px, 150px); } }
+@keyframes landing-drive-back { from { transform: translate(520px, 150px) scaleX(-1); } to { transform: translate(130px, 150px) scaleX(-1); } }
+@keyframes landing-sail { from { transform: translate(-60px, 188px); } to { transform: translate(760px, 188px); } }
+@keyframes landing-wave { from { transform: translateX(0); } to { transform: translateX(-120px); } }
+@keyframes landing-sway { 0%, 100% { transform: rotate(-2.5deg); } 50% { transform: rotate(2.5deg); } }
+@keyframes landing-flap { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(.94); } }
+@keyframes landing-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.5px); } }
+@keyframes landing-sip { 0%, 60%, 100% { transform: rotate(0); } 75% { transform: translate(-6px, -6px) rotate(-35deg); } }
+@keyframes landing-note { 0% { transform: translate(0, 0); opacity: 0; } 20% { opacity: 1; } 100% { transform: translate(14px, -34px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .landing-scene *, .landing-scene::before { animation: none !important; }
+  .landing-jet { left: 55%; }
+}
+@media (max-width: 820px) {
+  .landing-chill { display: none; }
+  .landing-city { height: 22%; opacity: .5; }
+}

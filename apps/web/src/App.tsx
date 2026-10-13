@@ -18,6 +18,7 @@ import {
 import { FormEvent, lazy, Suspense, useEffect, useRef, useState } from "react";
 import { LifeGoalsDialog } from "./ui/LifeGoals";
 import { CityReel } from "./ui/CityReel";
+import { LandingScene } from "./ui/LandingScene";
 import { CrashGuard } from "./ui/CrashGuard";
 import { ACCESSORY_LABELS, HAIR_COLOURS, HAIR_LABELS, OUTFITS, SKIN_TONE_COLOURS } from "./game/wardrobe";
 import { apiConfigured, apiUrl, authClient, authHeaders, guestMode, sessionToken, signOut, startGuestSession } from "./auth-client";
@@ -194,6 +195,7 @@ function AuthScreen() {
   return (
     <main className="landing-shell">
       <section className="brand-panel">
+        <LandingScene />
         <BrandLogo />
         <div className="hero-copy">
           <p className="eyebrow">A LIVING LAGOS · ONLINE WITH FRIENDS</p>
