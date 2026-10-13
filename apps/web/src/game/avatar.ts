@@ -512,11 +512,12 @@ export class Avatar {
     rightUp.computeWorldMatrix(true);
     const left = leftUp.getAbsolutePosition();
     const right = rightUp.getAbsolutePosition();
-    this.root.position.y += cushionY + HIP_ABOVE_CUSHION - (left.y + right.y) / 2;
-    if (hip) {
-      this.root.position.x += hip[0] - (left.x + right.x) / 2;
-      this.root.position.z += hip[1] - (left.z + right.z) / 2;
-    }
+    const dy = cushionY + HIP_ABOVE_CUSHION - (left.y + right.y) / 2;
+    const dx = hip ? hip[0] - (left.x + right.x) / 2 : 0;
+    const dz = hip ? hip[1] - (left.z + right.z) / 2 : 0;
+    this.root.position.addInPlaceFromFloats(dx, dy, dz);
+    // The held item was placed at the hand before the body moved onto the seat.
+    this.held?.position.addInPlaceFromFloats(dx, dy, dz);
     this.root.computeWorldMatrix(true);
   }
 

@@ -106,7 +106,8 @@ export class OwambeView {
     const H = 3.6;
     // Marquee: poles all round, a white pitched roof, and swags of the aso-ebi along every edge.
     for (let x = -W / 2; x <= W / 2 + 0.01; x += W / 4) {
-      for (const z of [-D / 2, D / 2]) part(MeshBuilder.CreateCylinder("owambe pole", { diameter: 0.12, height: H }, this.scene), steel, x, H / 2, z);
+      // The middle of the front stays open over the carpet.
+      for (const z of x === 0 ? [D / 2] : [-D / 2, D / 2]) part(MeshBuilder.CreateCylinder("owambe pole", { diameter: 0.12, height: H }, this.scene), steel, x, H / 2, z);
     }
     for (const z of [-D / 4, 0, D / 4]) for (const x of [-W / 2, W / 2]) part(MeshBuilder.CreateCylinder("owambe pole", { diameter: 0.12, height: H }, this.scene), steel, x, H / 2, z);
     const pitch = Math.atan2(1.4, W / 2);
