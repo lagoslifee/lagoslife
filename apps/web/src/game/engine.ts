@@ -821,7 +821,7 @@ export class GameEngine {
     this.fill = fill;
     if (this.evening) this.setEvening(true);
     if (this.quality !== "low") {
-      this.shadows = new ShadowGenerator(this.quality === "high" ? 2048 : 1024, this.sun);
+      this.shadows = new ShadowGenerator(this.quality === "high" && !matchMedia("(pointer: coarse)").matches ? 2048 : 1024, this.sun);
       this.shadows.usePercentageCloserFiltering = true;
       this.shadows.filteringQuality = ShadowGenerator.QUALITY_MEDIUM;
       this.shadows.bias = 0.0008;
@@ -976,8 +976,8 @@ export class GameEngine {
     engine.onContextLostObservable.add(() => this.callbacks.graphics(MeshBuilderBatch.keepCpuCopies ? "lost" : "failed"));
     engine.onContextRestoredObservable.add(() => this.callbacks.graphics("restored"));
     // Babylon only queues the next frame after this callback returns, so one thrown error would freeze the game for good.
-    // Phones and tablets heat up and throttle (then stutter) at 60-120 fps; 30 fps on low/medium keeps them cool.
-    const frameGap = (this.frameGap = matchMedia("(pointer: coarse)").matches && this.quality !== "high" ? 1000 / 30 - 3 : 0);
+    // Phones and tablets heat up and throttle (then stutter) at 60-120 fps; a steady 30 fps keeps them cool on every preset.
+    const frameGap = (this.frameGap = matchMedia("(pointer: coarse)").matches ? 1000 / 30 - 3 : 0);
     let lastFrame = 0;
     const touch = matchMedia("(pointer: coarse)").matches;
     const markInput = () => (this.lastInputAt = performance.now());
