@@ -1,4 +1,4 @@
-import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL, EXERCISES, GYM, type ExerciseId, type FoodParcel, SEATED_MEAL_ENERGY } from "@lagos-living/shared";
+import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL, EXERCISES, GYM, type ExerciseId, type FoodParcel, SEATED_MEAL_ENERGY, placeById, venueOf, venueRoom } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { noteFps, report, setReportedQuality } from "../diagnostics";
@@ -61,6 +61,18 @@ const HOST_BADGE = location.hostname.endsWith(".netlify.app");
 function loadHousing(): HousingPath | "later" | null {
   const stored = localStorage.getItem("lagos-housing");
   return stored === "rent" || stored === "buy" || stored === "build" || stored === "later" ? stored : null;
+}
+
+function roomName(location: string) {
+  const venue = venueOf(location);
+  const [kind, id = ""] = venue.split(":");
+  if (kind === "club" || kind === "gym") return placeById.get(id)?.name ?? "This venue";
+  if (kind === "flight") return "This flight";
+  if (kind === "airport") return "The terminal";
+  if (kind === "hotel") return "The hotel";
+  if (kind === "excursion") return "This trip";
+  if (kind === "home" || kind === "starter" || kind === "preview") return "This house";
+  return "This room";
 }
 
 function ago(at: number | null, now: number) {
@@ -795,6 +807,11 @@ export function GameView({
       .catch((error: Error) => toast({ tone: "error", text: error.message }));
 
   const inClub = Boolean(hud?.location === "interior" && hud.propertyId && CLUBS[hud.propertyId]);
+  const here = hud?.location === "interior" ? (engine?.currentLocation() ?? "street") : "street";
+  const chatRoom = here === "street" ? null : { name: roomName(here), room: venueRoom(here), people: engine?.peopleHere() ?? 1 };
+  useEffect(() => {
+    setChat([]);
+  }, [here]);
   const homeId = hud?.location === "interior" && hud.propertyId && !CLUBS[hud.propertyId] && !hud.previewOnly ? hud.propertyId : null;
   const [partyOn, setPartyOn] = useState(false);
   useEffect(() => {
@@ -1092,6 +1109,7 @@ export function GameView({
       {hud && engine && !designing && (
         <ChatPanel
           messages={chat}
+          room={chatRoom}
           open={chatOpen}
           onOpen={() => setChatOpen(true)}
           onClose={() => setChatOpen(false)}

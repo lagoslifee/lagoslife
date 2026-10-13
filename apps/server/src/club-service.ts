@@ -13,6 +13,7 @@ import {
   placeById,
   TABLE_BOTTLES_SHOWN,
   TABLE_GUESTS_MAX,
+  venueOf,
 } from "@lagos-living/shared";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
@@ -260,7 +261,7 @@ export async function releaseAbandonedTables(now = Date.now()) {
   let released = 0;
   for (const booking of bookings.rows) {
     live.add(booking.id);
-    if (getPlayerPosition(booking.owner_user_id)?.location === clubLocation(booking.place_id)) {
+    if (venueOf(getPlayerPosition(booking.owner_user_id)?.location ?? "") === clubLocation(booking.place_id)) {
       absentSince.delete(booking.id);
       continue;
     }

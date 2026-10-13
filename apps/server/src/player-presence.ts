@@ -1,3 +1,4 @@
+import { venueOf } from "@lagos-living/shared";
 import { onRemote, processTag, publish } from "./cluster.js";
 
 type Presence = { x: number; z: number; location: string; updatedAt: number; origin?: string };
@@ -32,7 +33,7 @@ export function isNear(userId: string, point: readonly [number, number], radius:
   const position = getPlayerPosition(userId);
   return Boolean(
     position &&
-      position.location === location &&
+      venueOf(position.location) === venueOf(location) &&
       Math.hypot(position.x - point[0], position.z - point[1]) <= radius,
   );
 }

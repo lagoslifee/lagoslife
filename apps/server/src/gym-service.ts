@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg";
-import { EXERCISES, fitnessNow, GYM, gymLocation, liftProblem, LIFTS, maxLiftKg, setEnergyCost, setGain, type ExerciseId, type GymStatus } from "@lagos-living/shared";
+import { EXERCISES, fitnessNow, GYM, gymLocation, liftProblem, LIFTS, maxLiftKg, setEnergyCost, setGain, venueOf, type ExerciseId, type GymStatus } from "@lagos-living/shared";
 import { pool } from "./database.js";
 import { debitWallet, EconomyError, ensureWallet, withTransaction } from "./economy-service.js";
 import { getPlayerPosition, usersIn } from "./player-presence.js";
@@ -8,7 +8,7 @@ import { profileEvents } from "./profile-service.js";
 type GymRow = { fitness: number; trained_at: Date | null; gym_member_until: Date | null; gym_exercise: ExerciseId | null; gym_set_started_at: Date | null; gym_set_kg: number | null; energy: number };
 
 /** Sets are only done inside on the machines, never out on the street. */
-const atGym = (userId: string) => getPlayerPosition(userId)?.location === gymLocation();
+const atGym = (userId: string) => venueOf(getPlayerPosition(userId)?.location ?? "") === gymLocation();
 
 async function gymRow(userId: string, lock = false, client: Pool | PoolClient = pool) {
   await client.query(`INSERT INTO player_profile (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`, [userId]);
@@ -27,7 +27,8 @@ export async function loadFitness(userId: string) {
 
 export async function gymStatus(userId: string): Promise<GymStatus> {
   const row = await gymRow(userId);
-  const others = usersIn(gymLocation()).filter((id) => id !== userId);
+  const here = getPlayerPosition(userId)?.location;
+  const others = usersIn(here && venueOf(here) === gymLocation() ? here : gymLocation()).filter((id) => id !== userId);
   const names = others.length
     ? (await pool.query<{ name: string }>(`SELECT COALESCE("displayUsername", username, name) AS name FROM "user" WHERE id = ANY($1) ORDER BY 1 LIMIT 20`, [others])).rows.map((r) => r.name)
     : [];

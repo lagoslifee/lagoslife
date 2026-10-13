@@ -1160,6 +1160,32 @@ describe("LagosRoom Go now", () => {
   });
 });
 
+describe("LagosRoom venue rooms", () => {
+  type Internals = RoomInternals & { venueRoomFor(player: Record<string, unknown>, venue: string): Promise<string>; chatRecipients(sender: Record<string, unknown>): Array<Record<string, unknown>> };
+
+  it("fills a club room to 20, then opens Room 2 of the same venue", async () => {
+    const { room, join, player } = setup();
+    const internals = room as Internals;
+    const guests = Array.from({ length: 21 }, (_, index) => join(`guest${index}`));
+    for (const guest of guests.slice(0, 20)) Object.assign(player(guest), { location: "club:eko-nights", propertyId: "eko-nights" });
+    expect(await internals.venueRoomFor(player(guests[20]!), "club:eko-nights")).toBe("club:eko-nights#2");
+    Object.assign(player(guests[3]!), { location: "street" });
+    expect(await internals.venueRoomFor(player(guests[20]!), "club:eko-nights")).toBe("club:eko-nights");
+    expect(await internals.venueRoomFor(player(guests[20]!), "gym:lekki-fitness")).toBe("gym:lekki-fitness");
+  });
+
+  it("shares one chat across a whole room indoors but keeps street chat local", () => {
+    const { room, join, player } = setup();
+    const internals = room as Internals;
+    const [ada, bayo, chi] = [join("ada"), join("bayo"), join("chi")];
+    for (const [client, x] of [[ada, 0], [bayo, 60], [chi, 1]] as const) Object.assign(player(client), { location: "flight:lag-dxb-1", x, z: 0 });
+    Object.assign(player(chi), { location: "flight:lag-dxb-1#2" });
+    expect(internals.chatRecipients(player(ada)).map((p) => p.name).sort()).toEqual(["ada", "bayo"]);
+    for (const client of [ada, bayo]) Object.assign(player(client), { location: "street" });
+    expect(internals.chatRecipients(player(ada)).map((p) => p.name)).toEqual(["ada"]);
+  });
+});
+
 describe("LagosRoom agbero encounters", () => {
   type Internals = RoomInternals & { checkEncounters(now: number): void; handleAgberoAnswer(client: FakeClient, payload: unknown): Promise<void> };
   const spot = AGBERO_SPOTS[0]!;

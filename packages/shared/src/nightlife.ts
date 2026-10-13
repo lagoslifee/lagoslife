@@ -89,6 +89,13 @@ export type ClubTable = {
 
 export const clubLocation = (placeId: string) => `club:${placeId}`;
 
+/** People per room of a club or gym; once one is full, newcomers get the next room of the same venue. */
+export const VENUE_CAPACITY = 20;
+/** `club:eko-nights#2` → `club:eko-nights`: overflow rooms share the venue's rules and spots, not its people. */
+export const venueOf = (location: string) => location.split("#")[0]!;
+export const venueRoom = (location: string) => Math.max(1, Number(location.split("#")[1] ?? 1) || 1);
+export const venueRoomLocation = (venue: string, room: number) => (room <= 1 ? venue : `${venue}#${room}`);
+
 /** Lagos night (YYYY-MM-DD of the evening it started) for a timestamp. */
 export function lagosNight(at: number) {
   return new Date(at + (COMMUNITY.lagosUtcOffsetHours - NIGHTLIFE.nightStartsAtHour) * 3_600_000).toISOString().slice(0, 10);

@@ -59,6 +59,9 @@ import {
   getPlace,
   CLUBS,
   clubLocation,
+  VENUE_CAPACITY,
+  venueOf,
+  venueRoomLocation,
   INTERIOR_HALF,
   INTERIOR_ORIGIN,
   INTERIOR_SPAWN,
@@ -170,6 +173,7 @@ import { previewTarget, requirePropertyAccess } from "../property-service.js";
 import { vehicleEvents } from "../vehicle-events.js";
 import { issueCitation } from "../justice-service.js";
 import { activeMute, activeSuspension, hiddenPlayers, recordChat, safetyEvents } from "../safety-service.js";
+import { friendIds } from "../social-service.js";
 import {
   claimVehicle,
   damageVehicle,
@@ -829,7 +833,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const home = !travelKind && (player.location.startsWith("home:") || player.location.startsWith("preview:"));
     const valid = !inInterior
       ? walkable(parsed.data.x, parsed.data.z)
-      : player.location === gymLocation()
+      : venueOf(player.location) === gymLocation()
         ? insideGym(parsed.data.x - INTERIOR_ORIGIN[0], parsed.data.z - INTERIOR_ORIGIN[1])
         : home
         ? insideHome(homeLayout(player.propertyId), parsed.data.x - INTERIOR_ORIGIN[0], parsed.data.z - INTERIOR_ORIGIN[1])
@@ -1064,9 +1068,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         if (!(await hasWristband(player.userId, propertyId))) {
           return this.notify(client, { tone: "error", text: `Pay the cover at the door of ${club.name} first.` });
         }
-        location = clubLocation(propertyId);
+        location = await this.venueRoomFor(player, clubLocation(propertyId));
       } else if (gym) {
-        location = gymLocation();
+        location = await this.venueRoomFor(player, gymLocation());
       } else if (propertyId === "starter-home") {
         location = `starter:${player.userId}`;
       } else if (mode === "preview") {
@@ -1100,6 +1104,21 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     void this.persist(player).catch(() => undefined);
     if (!previewOnly && !club && !gym && propertyId !== "starter-home") void markProgress(pool, player.userId, "visited_home").catch(() => undefined);
     this.sendSelf(client, player, previewOnly ? "preview" : "entered");
+  }
+
+  /** A room of the venue with space, preferring one a friend is already in; a busy club opens Room 2, 3 and so on. */
+  private async venueRoomFor(player: Player, venue: string) {
+    const counts = new Map<string, number>();
+    for (const other of this.players.values()) {
+      if (other !== player && other.connected && venueOf(other.location) === venue) counts.set(other.location, (counts.get(other.location) ?? 0) + 1);
+    }
+    const open = (location: string) => (counts.get(location) ?? 0) < VENUE_CAPACITY;
+    const friends = await friendIds(player.userId).catch(() => new Set<string>());
+    const withFriend = [...this.players.values()].find((other) => friends.has(other.userId) && venueOf(other.location) === venue && open(other.location));
+    if (withFriend) return withFriend.location;
+    let room = 1;
+    while (!open(venueRoomLocation(venue, room))) room += 1;
+    return venueRoomLocation(venue, room);
   }
 
   private handleExitProperty(client: Client) {
@@ -2123,7 +2142,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       if (other === sender) return true;
       if ((other.busId ? "street" : other.location) !== place) return false;
       if (sender.hidden.has(other.userId) || other.hidden.has(sender.userId)) return false;
-      return Math.hypot(other.x - sender.x, other.z - sender.z) <= CHAT.radius;
+      // Indoors (a club room, the gym, a cabin, a house) everyone in the room shares one chat.
+      return place !== "street" || Math.hypot(other.x - sender.x, other.z - sender.z) <= CHAT.radius;
     });
   }
 
@@ -2839,7 +2859,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
 
   private whereIs(player: Player) {
     if (player.location.startsWith("flight:")) return "on a flight";
-    if (player.location.startsWith("club:")) return `at ${getPlace(player.location.slice(5))?.name ?? "a club"}`;
+    if (player.location.startsWith("club:")) return `at ${getPlace(venueOf(player.location).slice(5))?.name ?? "a club"}`;
     if (/^(home|starter|preview):/.test(player.location)) return "at home";
     if (player.location !== "street") return "travelling";
     if (player.busId) return "on a danfo";
@@ -2851,7 +2871,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private happenings(now: number): Happening[] {
     const list: Happening[] = [];
     for (const clubId of Object.keys(CLUBS)) {
-      const inside = [...this.players.values()].filter((player) => player.location === clubLocation(clubId)).length;
+      const inside = [...this.players.values()].filter((player) => venueOf(player.location) === clubLocation(clubId)).length;
       const place = getPlace(clubId);
       if (inside > 0 && place) list.push({ id: `club:${clubId}`, kind: "club", title: `${place.name} is open`, detail: `${inside} inside · cover at the door`, people: inside, placeId: clubId });
     }

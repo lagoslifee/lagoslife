@@ -607,6 +607,8 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .chat-panel { position: absolute; left: 20px; bottom: 60px; width: min(400px, 60vw); display: grid; gap: 6px; z-index: 5; font-size: calc(13px * var(--text-scale)); }
 .game-view:has(.speedometer) .chat-panel { bottom: 190px; }
 .chat-lines { list-style: none; margin: 0; padding: 8px 10px; max-height: 200px; overflow-y: auto; display: grid; gap: 4px; border-radius: 12px; background: rgba(10,20,18,.55); color: #f5f2e8; }
+.chat-room { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 6px 12px; border-radius: 10px; background: rgba(255, 207, 58, .16); border: 1px solid rgba(255, 207, 58, .35); color: #ffe7a0; }
+.chat-room span { font-size: calc(11px * var(--text-scale)); opacity: .85; }
 .chat-panel.open .chat-lines { max-height: 260px; background: var(--hud-bg); border: 1px solid var(--hud-line); backdrop-filter: blur(8px); }
 .chat-lines li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; line-height: 1.35; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
 .chat-lines li b, .chat-name { font-weight: 800; color: var(--accent); }

@@ -25,8 +25,11 @@ export function ChatPanel({
   onReport,
   onBlock,
   onFriend,
+  room = null,
 }: {
   messages: Array<ChatMessage & { own: boolean }>;
+  /** Indoors the chat belongs to the room: everyone in it sees it, and it clears when you leave. */
+  room?: { name: string; room: number; people: number } | null;
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
@@ -63,10 +66,22 @@ export function ChatPanel({
   };
 
   return (
-    <section className={`chat-panel ${open ? "open" : ""}`} data-testid="chat-panel" aria-label="Nearby chat">
+    <section className={`chat-panel ${open ? "open" : ""}`} data-testid="chat-panel" aria-label={room ? `${room.name} chat` : "Nearby chat"}>
+      {open && room && (
+        <header className="chat-room" data-testid="chat-room">
+          <b>{room.name}{room.room > 1 ? ` · Room ${room.room}` : ""}</b>
+          <span>{room.people === 1 ? "Just you here" : `${room.people} here`}</span>
+        </header>
+      )}
       {(open || visible.length > 0) && (
         <ol ref={list} className="chat-lines" aria-live="polite">
-          {open && messages.length === 0 && <li className="muted small">Nearby chat reaches residents within {CHAT.radius} m. Be kind — chat is logged for moderation.</li>}
+          {open && messages.length === 0 && (
+            <li className="muted small">
+              {room
+                ? `Everyone in ${room.name.startsWith("This ") || room.name.startsWith("The ") ? room.name.toLowerCase() : room.name} sees this chat. It clears when you leave. Be kind — chat is logged for moderation.`
+                : `Nearby chat reaches residents within ${CHAT.radius} m. Be kind — chat is logged for moderation.`}
+            </li>
+          )}
           {visible.map((message) => (
             <li key={message.id} className={message.own ? "own" : ""} data-testid="chat-line">
               {message.own ? (
@@ -95,7 +110,7 @@ export function ChatPanel({
             ref={input}
             value={draft}
             maxLength={CHAT.maxLength}
-            placeholder="Say something nearby…"
+            placeholder={room ? `Message everyone in ${room.name.startsWith("This ") || room.name.startsWith("The ") ? "here" : room.name}…` : "Say something nearby…"}
             aria-label="Chat message"
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {

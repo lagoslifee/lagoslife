@@ -40,6 +40,15 @@ function whereNow(userId: string) {
   return { online: true, where: district?.name ?? (regionAt(position.x, position.z) === "dubai" ? "Dubai" : "Lagos"), at: [position.x, position.z] as const };
 }
 
+export async function friendIds(userId: string) {
+  const { rows } = await pool.query<{ id: string }>(
+    `SELECT CASE WHEN requester_id = $1 THEN addressee_id ELSE requester_id END AS id FROM friendship
+     WHERE status = 'accepted' AND (requester_id = $1 OR addressee_id = $1)`,
+    [userId],
+  );
+  return new Set(rows.map((row) => row.id));
+}
+
 export async function friendsStatus(userId: string): Promise<FriendsStatus> {
   const [friends, incoming, outgoing, unread] = await Promise.all([
     pool.query<{ id: string; name: string; since: Date }>(

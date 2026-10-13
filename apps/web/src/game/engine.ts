@@ -3351,6 +3351,16 @@ export class GameEngine {
     return this.self && this.interior ? travelInteriorOf(this.self.location) : null;
   }
 
+  /** The server's location key, e.g. `club:eko-nights#2`; "street" outdoors. */
+  currentLocation() {
+    return this.self && this.interior ? this.self.location : "street";
+  }
+
+  /** Residents in this room including you (indoors the server only sends people in the same room). */
+  peopleHere() {
+    return this.remotes.size + 1;
+  }
+
   setIndoorGuide(guide: { spot: string; label: string } | null) {
     this.indoorGuide = guide;
   }
