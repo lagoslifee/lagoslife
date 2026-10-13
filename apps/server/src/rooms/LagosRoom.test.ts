@@ -927,6 +927,8 @@ describe("LagosRoom Naija World Ride", () => {
     handleRideBoard(client: FakeClient): void;
     handleEnterVehicle(client: FakeClient, payload: unknown): Promise<void>;
     checkRides(now: number): void;
+    onJoin(client: FakeClient): Promise<void>;
+    players: Map<string, unknown>;
     vehicles: Map<string, { npc?: boolean }>;
   };
   const here = sampleRoute(lekki, stop.s + 40);
@@ -963,6 +965,33 @@ describe("LagosRoom Naija World Ride", () => {
     expect(rides.chargeRide).toHaveBeenCalledWith("u-ada", ride().fare, "Ade Auto Works", expect.any(String), ride().id);
     await book();
     expect(rides.chargeRide).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a booked cab when the phone drops and rejoins as a new session", async () => {
+    const context = booked();
+    await context.book();
+    const id = context.ride().id;
+    const rejoined: FakeClient = { sessionId: "s-ada-again", send: vi.fn(), leave: vi.fn(), auth: { userId: "u-ada", name: "ada" } };
+    (context.room as unknown as { clients: FakeClient[] }).clients.push(rejoined);
+    await context.room.onJoin(rejoined);
+    const player = context.room.players.get("s-ada-again") as unknown as { ride: RideState };
+    expect([...context.room.players.keys()]).toEqual(["s-ada-again"]);
+    expect(player.ride).toMatchObject({ id, status: "approaching" });
+    expect(rejoined.send).toHaveBeenCalledWith("ride", expect.objectContaining({ id }));
+    expect(rides.refundRide).not.toHaveBeenCalled();
+  });
+
+  it("finishes a trip that was under way at the drop-off after a rejoin", async () => {
+    const context = booked();
+    await context.book();
+    context.ride().status = "riding";
+    const rejoined: FakeClient = { sessionId: "s-ada-again", send: vi.fn(), leave: vi.fn(), auth: { userId: "u-ada", name: "ada" } };
+    (context.room as unknown as { clients: FakeClient[] }).clients.push(rejoined);
+    await context.room.onJoin(rejoined);
+    const player = context.room.players.get("s-ada-again") as unknown as { ride: RideState; x: number; z: number };
+    expect(player.ride.status).toBe("completed");
+    expect(Math.hypot(player.x - there.x, player.z - there.z)).toBeLessThan(0.01);
+    expect(rides.refundRide).not.toHaveBeenCalled();
   });
 
   it("refunds everything when cancelled inside the free minute", async () => {

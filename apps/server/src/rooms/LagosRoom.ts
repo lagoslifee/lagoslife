@@ -760,8 +760,31 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       steppedOut: null,
       encounterCheck: null,
     };
+    let carriedRide: RideState | null = null;
     for (const [sessionId, existing] of this.players) {
       if (existing.userId === player.userId) {
+        // A phone that lost its connection rejoins as a new session: the cab it booked keeps waiting, and a trip that was
+        // under way finishes at the drop-off instead of being cancelled.
+        const ride = existing.ride;
+        if (ride && (ride.status === "approaching" || ride.status === "waiting" || ride.status === "riding")) {
+          carriedRide = ride;
+          existing.ride = null;
+          const cab = ride.vehicleId ? this.vehicles.get(ride.vehicleId) : undefined;
+          if (ride.status === "riding") {
+            if (cab) {
+              if (existing.vehicleId === cab.id) {
+                existing.vehicleId = null;
+                existing.vehicleSeat = null;
+              }
+              this.ejectPassengers(cab.id);
+              this.vehicles.delete(cab.id);
+            }
+            ride.vehicleId = null;
+            [player.x, player.z] = ride.dropoff;
+            player.location = "street";
+            player.propertyId = null;
+          }
+        }
         existing.kicked = true;
         const previous = this.clientFor(existing);
         if (previous) {
@@ -774,13 +797,17 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       }
     }
     this.players.set(client.sessionId, player);
+    if (carriedRide) player.ride = carriedRide;
     setPlayerPosition(player.userId, player.x, player.z, player.location);
     const resumed = await this.resumeTravel(player).catch(() => undefined);
     if (this.players.get(client.sessionId) !== player) return;
     this.sendLook(player, client.sessionId);
     this.sendTrip(player);
     this.sendSelf(client, player, resumed ?? (saved ? "Welcome back — progress restored." : "Welcome to Lekki Phase 1."));
-    const orphaned = await refundOrphanedRides(player.userId, player.ride?.id ?? null).catch(() => 0);
+    if (carriedRide?.status === "riding") {
+      await this.endRide(player, "completed", `Arrived at ${carriedRide.label} while you were reconnecting. Thanks for riding with Naija World Ride!`, "arrived").catch(() => undefined);
+    } else if (carriedRide) this.sendRide(player);
+    const orphaned = await refundOrphanedRides(player.userId, carriedRide?.id ?? player.ride?.id ?? null).catch(() => 0);
     if (orphaned > 0) this.notify(client, { tone: "info", text: `A ride you paid for was cut off when the server restarted. ₦${orphaned.toLocaleString("en-NG")} has been refunded.` });
     client.send("bikeStock", Object.fromEntries(this.bikeStock));
     if (this.owambe) client.send("owambe", this.owambe);
@@ -830,7 +857,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     player.connected = false;
     try {
       if (player.kicked) throw new Error("removed by a moderator");
-      await this.allowReconnection(client, 25);
+      await this.allowReconnection(client, 60);
       player.connected = true;
       player.lastAcceptedAt = Date.now();
       this.sendTrip(player);
