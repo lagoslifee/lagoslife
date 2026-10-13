@@ -5,12 +5,13 @@ type Color = [number, number, number];
 type Get = (material: string) => MeshBuilderBatch;
 
 /** Mapped places drawn with their own architecture instead of the generic Lagos block. */
-export type LandmarkKind = "church" | "mosque" | "club" | "modern" | "terminal" | "showroom" | "gym";
+export type LandmarkKind = "church" | "mosque" | "club" | "modern" | "mansion" | "terminal" | "showroom" | "gym";
 
 export function landmarkFor(place: Place | undefined): LandmarkKind | null {
   if (!place) return null;
   if (place.kind === "worship") return /mosque/i.test(place.name) ? "mosque" : "church";
   if (place.kind === "club") return "club";
+  if (place.kind === "sale" && place.district === "ikoyi") return "mansion";
   if (place.kind === "sale" || place.kind === "rental") return "modern";
   if (place.kind === "airport") return "terminal";
   if (place.kind === "dealership") return "showroom";
@@ -23,6 +24,7 @@ export const LANDMARK_PAINT: Record<LandmarkKind, Color> = {
   mosque: [0.97, 0.95, 0.88],
   club: [0.07, 0.07, 0.09],
   modern: [0.97, 0.97, 0.96],
+  mansion: [1.18, 1.14, 1.06],
   terminal: [0.9, 0.91, 0.92],
   showroom: [0.13, 0.14, 0.16],
   gym: [0.12, 0.12, 0.14],
@@ -33,6 +35,7 @@ export const LANDMARK_TRIM: Record<LandmarkKind, Color> = {
   mosque: [0.82, 0.78, 0.66],
   club: [0.12, 0.12, 0.14],
   modern: [0.22, 0.22, 0.24],
+  mansion: [0.96, 0.95, 0.92],
   terminal: [0.75, 0.77, 0.8],
   showroom: [0.78, 0.8, 0.82],
   gym: [0.86, 0.14, 0.16],
@@ -316,6 +319,182 @@ export function modernFront(get: Get, f: Facade, edgeLength: number, doorOffset:
     get("bush").box(px, 0.8, pz, 0.85, 0.5, 0.45, f.yaw);
   }
   get("pavers").box(f.x + f.nx * 1.8, 0.05, f.z + f.nz * 1.8, 1.6, 0.1, 3.6, f.yaw);
+}
+
+const TRAVERTINE: Color = [1.1, 0.98, 0.8];
+const TRAVERTINE_JOINT: Color = [0.72, 0.64, 0.52];
+const SLAB_WHITE: Color = [1.22, 1.21, 1.18];
+const BRONZE: Color = [0.78, 0.58, 0.36];
+
+/**
+ * One wall of an Ikoyi mansion: a travertine-clad ground floor, warm white render above, floor-to-ceiling glazing
+ * in slim dark frames on every storey, deep cantilevered floor slabs and a frameless glass balustrade on the upper
+ * storeys of street-facing sides. `door` is the distance along the edge of the entrance, if this is the door edge.
+ */
+export function mansionEdge(get: Get, a: Vec2, b: Vec2, floors: number, storey: number, door: number | null, terraces: boolean) {
+  const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  if (length < 0.05) return 0;
+  const ex = (b[0] - a[0]) / length;
+  const ez = (b[1] - a[1]) / length;
+  const nx = ez;
+  const nz = -ex;
+  const yaw = Math.atan2(nx, nz);
+  const at = (t: number, out: number): Vec2 => [a[0] + ex * t + nx * out, a[1] + ez * t + nz * out];
+  const stone = get("plaster");
+  stone.wall(a[0] + nx * 0.05, a[1] + nz * 0.05, b[0] + nx * 0.05, b[1] + nz * 0.05, 0, storey + 0.1, 1.2, TRAVERTINE);
+  const [mx, mz] = at(length / 2, 0.056);
+  for (let y = 0.62; y < storey; y += 0.62) get("concrete").box(mx, y, mz, length, 0.015, 0.01, yaw, 1, TRAVERTINE_JOINT);
+
+  for (let floor = 1; floor <= floors; floor += 1) {
+    const roof = floor === floors;
+    const out = roof ? 1.0 : 0.7;
+    const thick = roof ? 0.42 : 0.3;
+    const [sx, sz] = at(length / 2, out / 2);
+    stone.box(sx, floor * storey + (roof ? 0.12 : 0.06), sz, length + out * 2, thick, out, yaw, 1, SLAB_WHITE);
+  }
+
+  if (length < 2.4) return 0;
+  const glass = get("glass");
+  const frames = get("darkFrame");
+  const timber = get("wood");
+  const count = Math.max(1, Math.floor((length - 0.6) / 3));
+  const step = length / count;
+  const panel = Math.min(2.7, step - 0.4);
+  const half = panel / 2;
+  let windows = 0;
+  for (let floor = 0; floor < floors; floor += 1) {
+    const y0 = floor * storey + (floor === 0 ? 0.3 : 0.24);
+    const y1 = (floor + 1) * storey - 0.12;
+    for (let column = 0; column < count; column += 1) {
+      const t = (column + 0.5) * step;
+      if (floor === 0 && door !== null && Math.abs(t - door) < 2.9) continue;
+      if (floor === 0 && count >= 3 && column % 3 === 2) continue;
+      const [wx, wz] = at(t, 0.08);
+      if (floor === floors - 1 && count >= 3 && column % 3 === 1) {
+        const [px, pz] = at(t, 0.1);
+        timber.box(px, (y0 + y1) / 2, pz, panel + 0.2, y1 - y0, 0.06, yaw);
+        for (let slat = 1; slat < 9; slat += 1) {
+          const [lx, lz] = at(t - (panel + 0.2) / 2 + ((panel + 0.2) * slat) / 9, 0.14);
+          frames.box(lx, (y0 + y1) / 2, lz, 0.03, y1 - y0, 0.03, yaw);
+        }
+        continue;
+      }
+      windows += 1;
+      glass.quad(
+        [wx - ex * half, y0, wz - ez * half],
+        [wx + ex * half, y0, wz + ez * half],
+        [wx + ex * half, y1, wz + ez * half],
+        [wx - ex * half, y1, wz - ez * half],
+        [nx, 0, nz],
+        [[0, 0], [1, 0], [1, 1], [0, 1]],
+      );
+      const [fx, fz] = at(t, 0.11);
+      frames.box(fx, y1, fz, panel + 0.1, 0.07, 0.08, yaw);
+      frames.box(fx, y0, fz, panel + 0.1, 0.07, 0.08, yaw);
+      for (const side of [-1, 0, 1]) frames.box(fx + ex * side * half, (y0 + y1) / 2, fz + ez * side * half, side ? 0.07 : 0.045, y1 - y0, 0.08, yaw);
+    }
+  }
+  if (terraces) {
+    const rail = get("showroomGlass");
+    const cap = get("chrome");
+    for (let floor = 1; floor < floors; floor += 1) {
+      const [gx, gz] = at(length / 2, 0.66);
+      const y = floor * storey + 0.21;
+      rail.box(gx, y + 0.52, gz, length + 1.3, 1.0, 0.025, yaw);
+      cap.box(gx, y + 1.04, gz, length + 1.3, 0.04, 0.06, yaw, 1, BRONZE);
+    }
+  }
+  return windows;
+}
+
+/** A glass rooftop pavilion set back from the edges under its own floating slab, on rectangular mansions. */
+export function mansionRoof(get: Get, fp: Footprint) {
+  const width = Math.max(3, fp.hu * 1.1);
+  const depth = Math.max(3, fp.hv * 1.0);
+  const yaw = Math.atan2(-fp.uz, fp.ux);
+  const [x, z] = [fp.cx, fp.cz];
+  const y = fp.height + 0.33;
+  get("glass").box(x, y + 1.4, z, width, 2.8, depth, yaw);
+  get("plaster").box(x, y + 2.95, z, width + 1.6, 0.3, depth + 1.6, yaw, 1, SLAB_WHITE);
+  get("wood").box(x, y + 1.4, z, Math.min(1.6, width * 0.25), 2.8, depth + 0.06, yaw);
+}
+
+/**
+ * The mansion entrance: a two-storey portico (floating slab on travertine columns with a lit soffit), a tall timber
+ * pivot door with a bronze pull between glass sidelights, wide stone steps, uplit planters and a timber-clad feature
+ * panel over the upper floors. Returns the column and planter footprints so the caller can make them solid.
+ */
+export function mansionFront(get: Get, f: Facade, edgeLength: number, doorOffset: number, storey: number): Array<[number, number, number]> {
+  const P = (along: number, out: number): Vec2 => [f.x + f.ex * along + f.nx * out, f.z + f.ez * along + f.nz * out];
+  const solids: Array<[number, number, number]> = [];
+  const width = Math.min(5.4, edgeLength - 0.6);
+  const depth = 3.0;
+  const canopyY = storey * 2 + 0.06;
+  const stone = get("plaster");
+  const lamp = get("lamp");
+  const [cx, cz] = P(0, depth / 2);
+  stone.box(cx, canopyY, cz, width + 0.6, 0.46, depth + 0.3, f.yaw, 1, SLAB_WHITE);
+  lamp.box(cx, canopyY - 0.24, cz, width - 0.6, 0.02, depth - 0.8, f.yaw);
+  for (const side of [-1, 1]) {
+    const [px, pz] = P(side * (width / 2 - 0.3), depth - 0.3);
+    stone.box(px, (canopyY - 0.23) / 2, pz, 0.44, canopyY - 0.23, 0.44, f.yaw, 1, TRAVERTINE);
+    const [ux, uz] = P(side * (width / 2 - 0.3), depth + 0.02);
+    lamp.box(ux, 0.04, uz, 0.3, 0.06, 0.12, f.yaw);
+    solids.push([px, pz, 0.32]);
+  }
+
+  const doorWidth = 1.6;
+  const tall = 3.0;
+  const base = 0.36;
+  const [dx, dz] = P(0, 0.07);
+  get("wood").box(dx, base + tall / 2, dz, doorWidth, tall, 0.1, f.yaw);
+  const frames = get("darkFrame");
+  const [rx, rz] = P(0, 0.12);
+  frames.box(rx, base + tall + 0.06, rz, doorWidth + 2.9, 0.12, 0.12, f.yaw);
+  for (const side of [-1, 1]) {
+    for (const along of [doorWidth / 2 + 0.05, doorWidth / 2 + 1.4]) {
+      const [sx, sz] = P(side * along, 0.12);
+      frames.box(sx, base + tall / 2, sz, 0.1, tall, 0.12, f.yaw);
+    }
+    const [gx, gz] = P(side * (doorWidth / 2 + 0.72), 0.08);
+    get("glass").box(gx, base + tall / 2, gz, 1.25, tall, 0.04, f.yaw);
+  }
+  const [hx, hz] = P(doorWidth / 2 - 0.28, 0.16);
+  get("chrome").box(hx, base + 1.35, hz, 0.05, 1.5, 0.05, f.yaw, 1, BRONZE);
+
+  for (let index = 0; index < 3; index += 1) {
+    const rise = 0.12 * (3 - index);
+    const run = 0.9 + index * 0.55;
+    const [sx, sz] = P(0, run / 2);
+    stone.box(sx, rise / 2, sz, width + 0.4 + index * 0.4, rise, run, f.yaw, 1, TRAVERTINE);
+  }
+
+  for (const side of [-1, 1]) {
+    const [px, pz] = P(side * (width / 2 + 1.4), 1.0);
+    stone.box(px, 0.35, pz, 1.4, 0.7, 1.0, f.yaw, 1, TRAVERTINE);
+    get("bush").box(px, 0.92, pz, 1.2, 0.5, 0.8, f.yaw);
+    const [lx, lz] = P(side * (width / 2 + 1.4), 1.53);
+    lamp.box(lx, 0.04, lz, 0.6, 0.05, 0.06, f.yaw);
+    solids.push([px, pz, 0.75]);
+    const [wx, wz] = P(side * (doorWidth / 2 + 1.75), 0.14);
+    lamp.box(wx, 2.6, wz, 0.1, 0.5, 0.08, f.yaw);
+  }
+
+  const cladSide = doorOffset > 0 ? -1 : 1;
+  const cladAt = Math.min(edgeLength / 2 - 1.2, width / 2 + 2.2);
+  if (cladAt > width / 2 + 0.6) {
+    const [wx, wz] = P(cladSide * cladAt, 0.13);
+    const top = storey * 3;
+    get("wood").box(wx, (storey + top) / 2 + 0.2, wz, 1.8, top - storey - 0.2, 0.08, f.yaw);
+    for (let slat = -3; slat <= 3; slat += 1) {
+      const [sx, sz] = P(cladSide * cladAt + slat * 0.24, 0.18);
+      frames.box(sx, (storey + top) / 2 + 0.2, sz, 0.02, top - storey - 0.2, 0.02, f.yaw);
+    }
+  }
+
+  const [px, pz] = P(0, depth + 2.2);
+  get("pavers").box(px, 0.05, pz, 3.4, 0.1, 4.4, f.yaw);
+  return solids;
 }
 
 /** Square-section beam between two 3D points (wheel rims, spokes, legs, camel necks). */

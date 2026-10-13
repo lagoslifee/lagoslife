@@ -32,6 +32,9 @@ import {
   LANDMARK_PAINT,
   LANDMARK_TRIM,
   landmarkFor,
+  mansionEdge,
+  mansionFront,
+  mansionRoof,
   modernFront,
   mosqueDomeAndMinaret,
   observationWheel,
@@ -1013,13 +1016,14 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     if (landmark === "mosque") floors = 2;
     if (landmark === "terminal") floors = 2;
     if (landmark === "showroom" || landmark === "gym") floors = 2;
+    if (landmark === "mansion") floors = 3;
     const height = floors * FLOOR_HEIGHT + 0.3;
     const paint = landmark ? LANDMARK_PAINT[landmark] : PAINTS[Math.floor(hash(building.id * 7) * PAINTS.length)]!;
     const trim: Color = landmark ? LANDMARK_TRIM[landmark] : hash(building.id * 11) > 0.5 ? [0.98, 0.98, 0.97] : [0.62, 0.6, 0.57];
     const obb = orientedBox(ring);
     const rectangular = area / Math.max(1, obb.area) > 0.86 && ring.length <= 8;
     const hipRoof = !landmark && building.kind !== "office" && building.kind !== "apartments" && floors <= 2 && rectangular && area < 520 && seed > 0.2;
-    const parapet = hipRoof || landmark === "church" ? 0 : 0.9;
+    const parapet = hipRoof || landmark === "church" || landmark === "mansion" ? 0 : 0.9;
     const frameKey = landmark === "modern" || landmark === "club" ? "darkFrame" : hash(building.id * 3) > 0.45 ? "frame" : "darkFrame";
 
     if (building.kind === "roof") {
@@ -1114,6 +1118,12 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
         return;
       }
       walls.wall(a[0], a[1], b[0], b[1], 0.45, height + parapet, 2.5, paint);
+      if (landmark === "mansion") {
+        const towardRoad = roads.nearest((a[0] + b[0]) / 2 + nx * 3, (a[1] + b[1]) / 2 + nz * 3);
+        const terraces = index === doorEdge || Boolean(towardRoad && towardRoad.distance < 30);
+        windows += mansionEdge((key) => base.get(cx, cz, key), a, b, floors, FLOOR_HEIGHT, index === doorEdge ? doorT * length : null, terraces);
+        return;
+      }
       // Plinth band and floor bands give each storey a readable line.
       const plinth = (y0: number, y1: number, out: number, color: Color, batch: MeshBuilderBatch) => {
         batch.wall(a[0] + nx * out, a[1] + nz * out, b[0] + nx * out, b[1] + nz * out, y0, y1, 1.5, color);
@@ -1283,6 +1293,14 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       gableRoof((key) => base.get(cx, cz, key), { cx: obb.cx, cz: obb.cz, ux, uz, hu, hv, height }, paint);
     } else {
       base.get(cx, cz, "concrete").polygon(ring, height, 4, [0.72, 0.7, 0.66]);
+      if (landmark === "mansion" && rectangular) {
+        let { ux, uz, hu, hv } = obb;
+        if (hv > hu) {
+          [hu, hv] = [hv, hu];
+          [ux, uz] = [-uz, ux];
+        }
+        mansionRoof((key) => base.get(cx, cz, key), { cx: obb.cx, cz: obb.cz, ux, uz, hu: hu * 0.5, hv: hv * 0.5, height });
+      }
       if (area > 60 && !landmark) {
         const tanks = 1 + Math.floor(hash(building.id * 23) * (area > 400 ? 3 : 1.6));
         for (let tank = 0; tank < tanks; tank += 1) {
@@ -1340,6 +1358,8 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       frames.box(doorX + doorNx * 0.09, 2.85, doorZ + doorNz * 0.09, 2.6, 0.14, 0.16, doorYaw);
       for (const side of [-1, 0, 1]) frames.box(doorX + ex * side * 1.25 + doorNx * 0.09, 1.45, doorZ + ez * side * 1.25 + doorNz * 0.09, side ? 0.12 : 0.06, 2.8, 0.16, doorYaw);
       base.get(cx, cz, "concrete").box(doorX + doorNx * 0.9, 0.06, doorZ + doorNz * 0.9, 4, 0.12, 1.6, doorYaw, 1, [0.82, 0.82, 0.8], true);
+    } else if (landmark === "mansion") {
+      for (const [x, z, r] of mansionFront(landmarkGet, facade, doorLength, doorT * doorLength - doorLength / 2, FLOOR_HEIGHT)) addObstacle([x, z], [x, z], r);
     } else if (shopfront) {
       const width = Math.min(doorLength - 0.8, 9);
       const centreT = Math.max(width / 2 + 0.4, Math.min(doorLength - width / 2 - 0.4, doorT * doorLength));
@@ -1412,8 +1432,9 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
 
     if (place) {
       const listing = place.kind === "rental" || place.kind === "sale";
-      const px = place.door[0] + doorNx * 0.6 + ex * 1.8;
-      const pz = place.door[1] + doorNz * 0.6 + ez * 1.8;
+      const boardOut = landmark === "mansion" ? 3.7 : 0.6;
+      const px = place.door[0] + doorNx * boardOut + ex * 1.8;
+      const pz = place.door[1] + doorNz * boardOut + ez * 1.8;
       placeSigns.push({ placeId: place.id, point: place.door, ...(listing ? { board: { at: [px, pz] as Vec2, yaw: doorYaw, normal: [doorNx, doorNz] as Vec2 } } : {}) });
       if (listing) {
         // The board itself is drawn by ListingBoards so it can come down once the home is sold to you.
