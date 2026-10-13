@@ -78,13 +78,13 @@ function PasswordField({ label, value, onChange, autoComplete }: { label: string
       <span className="password-field">
         <input
           required
-          minLength={PASSWORD_MIN}
+          minLength={autoComplete === "new-password" ? PASSWORD_MIN : undefined}
           maxLength={128}
           type={shown ? "text" : "password"}
           autoComplete={autoComplete}
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          placeholder={`At least ${PASSWORD_MIN} characters`}
+          placeholder={autoComplete === "new-password" ? `At least ${PASSWORD_MIN} characters` : "Your password"}
         />
         <button type="button" className="password-toggle" aria-pressed={shown} onClick={() => setShown(!shown)}>{shown ? "Hide" : "Show"}</button>
       </span>
