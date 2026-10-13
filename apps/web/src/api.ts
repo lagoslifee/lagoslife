@@ -5,6 +5,7 @@ import type { FloorFinishId, FoodParcel, HomeFinish, HomeStaffRole, HomeStaffSta
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick, RepairAction } from "@lagos-living/shared";
 import type { AccountSummary, ClaimAccount, LifeGoals } from "@lagos-living/shared";
 import type { DirectMessage, FriendsStatus, RankingBoard, RankingState, ReferralStatus } from "@lagos-living/shared";
+import type { ClubSong } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -273,6 +274,26 @@ export const api = {
   hireSecurity: (plan: SecurityPlanId) =>
     post<{ replayed: boolean; balance: number; status: SecurityStatus }>("/api/security/hire", { plan, idempotencyKey: crypto.randomUUID() }),
   dismissSecurity: () => post<SecurityStatus>("/api/security/dismiss"),
+  songs: () => request<ClubSong[]>("/api/songs"),
+  songUrl: (songId: string) => `${apiUrl}/api/songs/${encodeURIComponent(songId)}/audio`,
+  uploadSong: async (file: File, meta: { title: string; artist: string; seconds: number }) => {
+    const query = new URLSearchParams({ title: meta.title, artist: meta.artist, seconds: String(Math.round(meta.seconds)) });
+    let response: Response;
+    try {
+      response = await fetch(`${apiUrl}/api/admin/songs?${query}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": file.type || "application/octet-stream", ...authHeaders() },
+        body: file,
+      });
+    } catch {
+      throw new ApiError("The server could not be reached. Check your connection and try again.", 0);
+    }
+    const body = (await response.json().catch(() => ({}))) as ClubSong & { error?: string };
+    if (!response.ok) throw new ApiError(body.error ?? `Upload failed (${response.status})`, response.status);
+    return body as ClubSong;
+  },
+  removeSong: (songId: string) => post<ClubSong[]>(`/api/admin/songs/${encodeURIComponent(songId)}/remove`),
   policeRecords: () => request<{ robberies: RobberyRecord[]; cases: PoliceCase[]; incidents: StreetIncident[] }>("/api/police/records"),
   policeReport: (userName: string, details: string) =>
     post<{ status: "charged" | "no_record"; accused: string; restitution: number; station: string }>("/api/police/report", { userName, details }),

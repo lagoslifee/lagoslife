@@ -106,6 +106,7 @@ import {
   type AgberoChoice,
   type AgberoEncounter,
   type AgberoOutcome,
+  type ClubMusicState,
   type Favourite,
   type TravelPrompt,
   type FoodParcel,
@@ -256,6 +257,7 @@ export type EngineCallbacks = {
   rideAsk: (ask: RideAsk) => void;
   /** A roadside tout asks this driver for change; null when it is over. */
   agbero: (encounter: AgberoEncounter | null) => void;
+  clubMusic?: (state: ClubMusicState) => void;
   /** The player reached the waypoint; the route has already been cleared. */
   arrived: (label: string) => void;
   /** What the player has in hand (a drink or a plate from the club bar) and how many sips or bites are left; null when empty. */
@@ -680,6 +682,7 @@ export class GameEngine {
         this.callbacks.agbero(encounter);
       },
       agberoOutcome: (outcome) => this.agberoOutcome(outcome),
+      clubMusic: (state) => this.callbacks.clubMusic?.(state),
       react: ({ sessionId, emoji }) => {
         if (sessionId === this.net.sessionId) return;
         const remote = this.remotes.get(sessionId);
@@ -2813,6 +2816,18 @@ export class GameEngine {
     this.transitionAt = now;
     this.showVeil("📍", `Going to ${label}…`, "Go now", 700);
     this.net.send("fastTravel", { target, with: companions });
+  }
+
+  syncSongs() {
+    this.net.send("songSync", {});
+  }
+
+  requestSong(songId: string) {
+    this.net.send("songRequest", { songId });
+  }
+
+  decideSong(requestId: string, approve: boolean) {
+    this.net.send("songDecide", { requestId, approve });
   }
 
   answerAgbero(encounterId: string, choice: AgberoChoice) {

@@ -1,4 +1,4 @@
-import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL, EXERCISES, GYM, type ExerciseId, type FoodParcel, SEATED_MEAL_ENERGY, placeById, venueOf, venueRoom } from "@lagos-living/shared";
+import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type ClubMusicState, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL, EXERCISES, GYM, type ExerciseId, type FoodParcel, SEATED_MEAL_ENERGY, placeById, venueOf, venueRoom } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
 import { noteFps, report, setReportedQuality } from "../diagnostics";
@@ -127,6 +127,7 @@ export function GameView({
   const [rideAsks, setRideAsks] = useState<RideAsk[]>([]);
   const [holding, setHolding] = useState<{ name: string; left: number; food: boolean } | null>(null);
   const [agbero, setAgbero] = useState<AgberoEncounter | null>(null);
+  const [clubMusic, setClubMusic] = useState<ClubMusicState | null>(null);
   const [holdUp, setHoldUp] = useState<HoldUp | null>(null);
   const [robTarget, setRobTarget] = useState<{ sessionId: string; name: string } | null>(null);
   const [plots, setPlots] = useState<PlotState[]>([]);
@@ -401,6 +402,10 @@ export function GameView({
         agbero: (encounter) => {
           setAgbero(encounter);
           if (!encounter) void refresh();
+        },
+        clubMusic: (state) => {
+          setClubMusic(state);
+          void refresh();
         },
         arrived: (label) => setArrival({ label, at: Date.now() }),
         spray: async (amount) => {
@@ -1376,7 +1381,18 @@ export function GameView({
         <ClubDoorSheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} onEnter={() => engine?.enterProperty(sheet.id, "enter")} />
       )}
       {engine && hud?.location === "interior" && hud.propertyId && CLUBS[hud.propertyId] && (
-        <ClubRadio clubId={hud.propertyId} volume={settings.muted ? 0 : settings.masterVolume} onPlaying={(playing) => engine.setClubBeat(!playing)} />
+        <ClubRadio
+          clubId={hud.propertyId}
+          volume={settings.muted ? 0 : settings.masterVolume}
+          onPlaying={(playing) => engine.setClubBeat(!playing)}
+          requests={{
+            state: clubMusic && clubMusic.club.startsWith(`club:${hud.propertyId}`) ? clubMusic : null,
+            balance: economy?.balance ?? 0,
+            sync: () => engine.syncSongs(),
+            request: (songId) => engine.requestSong(songId),
+            decide: (requestId, approve) => engine.decideSong(requestId, approve),
+          }}
+        />
       )}
       {engine && homeId && partyOn && <ClubRadio clubId={homeId} volume={settings.muted ? 0 : settings.masterVolume} onPlaying={() => undefined} />}
       {clubTable !== null && inClub && hud?.propertyId && (

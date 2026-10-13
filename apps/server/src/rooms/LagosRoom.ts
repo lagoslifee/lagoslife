@@ -121,6 +121,8 @@ import {
   agberoAnswerSchema,
   type AgberoEncounter,
   type AgberoOutcome,
+  songDecisionSchema,
+  songRequestSchema,
   FAST_TRAVEL,
   FAVOURITES,
   FAVOURITE_LABEL,
@@ -198,6 +200,8 @@ import { requestTow } from "../tow-service.js";
 import { hasWristband } from "../club-service.js";
 import { getSecurityStatus, policeWitness, resolveCheckpoint, resolveRobbery, securityEvents, startRobbery } from "../police-service.js";
 import { config } from "../config.js";
+import { ClubJukebox } from "./club-jukebox.js";
+import { chargeSongRequest, findSong, guestDjs, refundSongRequest } from "../song-service.js";
 import { TowDispatcher } from "./tow-dispatch.js";
 import "../world-footprints.js";
 
@@ -393,6 +397,22 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
   private travelRequests = new Map<string, TravelRequest>();
   private spotUsedAt = new Map<string, number>();
   private excursions = new Map<string, Excursion>();
+  private jukebox = new ClubJukebox({
+    listeners: (club) =>
+      [...this.players.values()]
+        .filter((player) => player.connected && player.location === club)
+        .map((player) => ({ userId: player.userId, name: player.name, send: (state) => this.clientFor(player)?.send("clubMusic", state) })),
+    findSong,
+    charge: chargeSongRequest,
+    refund: refundSongRequest,
+    guestDjs,
+    notify: (userId, notice) => {
+      for (const player of this.players.values()) {
+        const client = player.userId === userId ? this.clientFor(player) : undefined;
+        if (client) this.notify(client, notice);
+      }
+    },
+  });
   private tows = new TowDispatcher({
     vehicles: this.vehicles,
     owner: (userId) => {
@@ -537,6 +557,22 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("travelAnswer", (client, payload) => this.handleTravelAnswer(client, payload));
     this.onMessage("joinRequest", (client, payload) => this.handleJoinRequest(client, payload));
     this.onMessage("agberoAnswer", (client, payload) => void this.handleAgberoAnswer(client, payload));
+    this.onMessage("songSync", (client) => {
+      const player = this.players.get(client.sessionId);
+      if (player?.location.startsWith("club:") && !this.limited(player.actionRate, 6)) this.jukebox.sync(player.location, player.userId);
+    });
+    this.onMessage("songRequest", (client, payload) => {
+      const player = this.players.get(client.sessionId);
+      const parsed = songRequestSchema.safeParse(payload);
+      if (!player || !parsed.success || this.limited(player.actionRate, 3)) return;
+      void this.jukebox.request(player.location, { userId: player.userId, name: player.name }, parsed.data.songId).catch((error) => console.error("Song request failed", error));
+    });
+    this.onMessage("songDecide", (client, payload) => {
+      const player = this.players.get(client.sessionId);
+      const parsed = songDecisionSchema.safeParse(payload);
+      if (!player || !parsed.success || this.limited(player.actionRate, 6)) return;
+      void this.jukebox.decide(player.location, player.userId, parsed.data.requestId, parsed.data.approve).catch((error) => console.error("Song decision failed", error));
+    });
     this.onMessage("goState", (client) => {
       const player = this.players.get(client.sessionId);
       if (player && !this.limited(player.actionRate, 6)) client.send("goState", this.goState(player));
@@ -2266,6 +2302,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       this.checkExcursions(now);
       this.checkHires(now);
       this.checkEncounters(now);
+      void this.jukebox.tick(now).catch((error) => console.error("Jukebox tick failed", error));
     }
     for (const bus of this.buses) {
       const { route } = bus;

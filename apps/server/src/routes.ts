@@ -1,6 +1,8 @@
 import { setFinish } from "./home-finish-service.js";
 import {
   claimAccountSchema,
+  SONG_REQUEST,
+  songUploadSchema,
   directMessageSendSchema,
   friendRequestSchema,
   friendRespondSchema,
@@ -74,12 +76,13 @@ import {
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import cors from "cors";
-import type { Express, NextFunction, Request, Response } from "express";
+import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import { businessStatus, collectBusiness, enrol, startBusiness, upgradeBusiness } from "./business-service.js";
 import { finishSet, gymStatus, hireTrainer, joinGym, startSet } from "./gym-service.js";
 import { buyViewingPass, viewingStatus } from "./viewing-service.js";
 import { finishRest, startRest } from "./home-living-service.js";
 import { applyCleaner, collectParcel, dismissStaff, eatParcel, hireStaff, homeStaff, openParcels, orderDelivery, partyUntil, staffByHome, startParty, stopParty } from "./home-services-service.js";
+import { addSong, listSongs, removeSong, songAudio } from "./song-service.js";
 import { cancelGig, completeGig, gigStatus, repairGig, startGigWork, takeGig } from "./gig-service.js";
 import { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, marketStatus, sprayMoney, trade, transferMoney } from "./finance-service.js";
 import { auth } from "./auth.js";
@@ -831,6 +834,48 @@ export function configureRoutes(app: Express) {
     const body = roleChangeSchema.parse(req.body);
     return setStaffRole(actorOf(req), body.userName, body.role, body.reason);
   }));
+
+  app.get("/api/songs", requirePlayer, guarded("Songs unavailable", () => listSongs()));
+
+  /** Public by unguessable id, so a plain <audio> element can stream it from another origin. */
+  app.get("/api/songs/:songId/audio", async (req, res) => {
+    try {
+      const song = await songAudio(String(req.params.songId));
+      if (!song) return void res.status(404).json({ error: "Not found" });
+      res.setHeader("Content-Type", song.mime);
+      res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+      res.setHeader("Accept-Ranges", "bytes");
+      const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ""));
+      if (range) {
+        const size = song.audio.length;
+        const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+        const end = range[1] && range[2] ? Math.min(size - 1, Number(range[2])) : size - 1;
+        if (start >= size || start > end) return void res.status(416).setHeader("Content-Range", `bytes */${size}`).end();
+        res.status(206).setHeader("Content-Range", `bytes ${start}-${end}/${size}`);
+        return void res.end(song.audio.subarray(start, end + 1));
+      }
+      res.end(song.audio);
+    } catch (error) {
+      console.error("Song audio failed", error);
+      res.status(500).json({ error: "Song unavailable" });
+    }
+  });
+
+  app.post(
+    "/api/admin/songs",
+    requirePlayer,
+    staffOnly("admin"),
+    rateLimited,
+    express.raw({ type: ["audio/*", "application/octet-stream"], limit: SONG_REQUEST.maxBytes }),
+    guarded("Song could not be uploaded", (req) => {
+      const meta = songUploadSchema.parse(req.query);
+      const audio = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      return addSong({ ...meta, mime: String(req.headers["content-type"] ?? ""), audio }, actorOf(req).name);
+    }),
+  );
+
+  app.post("/api/admin/songs/:songId/remove", requirePlayer, staffOnly("admin"), rateLimited, guarded("Song could not be removed", (req) =>
+    removeSong(String(req.params.songId))));
 
   /** Local test harness: makes the signed-in account staff, recorded in the audit log as a console action. */
   app.post("/api/dev/staff", devOnly, requireSession, guarded("Role change failed", async (req) => {

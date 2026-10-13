@@ -1,8 +1,8 @@
-import { MODERATION_ACTIONS, type ModerationActionKind, type StaffRole } from "@lagos-living/shared";
+import { MODERATION_ACTIONS, SONG_REQUEST, type ClubSong, type ModerationActionKind, type StaffRole } from "@lagos-living/shared";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, ApiError, modApi, naira, type Appeal, type AuditEntry, type ModReport, type ResidentRecord, type StaffOverview } from "../api";
 
-type Tab = "reports" | "appeals" | "residents" | "audit" | "staff";
+type Tab = "reports" | "appeals" | "residents" | "audit" | "staff" | "music";
 
 const ACTION_LABEL: Record<ModerationActionKind, string> = {
   warn: "Warn",
@@ -75,7 +75,7 @@ export function ModerationConsole({ staffName }: { staffName: string }) {
         <a className="link" href="/">Back to the game</a>
       </header>
       <nav className="mod-tabs" role="tablist">
-        {(["reports", "appeals", "residents", "audit", ...(role === "admin" ? ["staff" as const] : [])] as Tab[]).map((id) => (
+        {(["reports", "appeals", "residents", "audit", ...(role === "admin" ? ["staff" as const, "music" as const] : [])] as Tab[]).map((id) => (
           <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
             {id[0]!.toUpperCase() + id.slice(1)}
           </button>
@@ -106,6 +106,7 @@ export function ModerationConsole({ staffName }: { staffName: string }) {
         />
       )}
       {tab === "audit" && <AuditTab onError={fail} />}
+      {tab === "music" && <MusicTab onDone={(text) => say("success", text)} onError={fail} />}
       {tab === "staff" && overview && <StaffTab overview={overview} onDone={(text) => { say("success", text); void loadOverview(); }} onError={fail} />}
     </main>
   );
@@ -374,6 +375,107 @@ function StaffTab({ overview, onDone, onError }: { overview: StaffOverview; onDo
         <textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Reason (audited)" aria-label="Reason" minLength={3} required rows={2} />
         <button className="primary">Save role</button>
       </form>
+    </section>
+  );
+}
+
+/** Reads an audio file's length in the browser, so the server never has to decode uploads. */
+function audioSeconds(file: File) {
+  return new Promise<number>((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const probe = new Audio();
+    probe.preload = "metadata";
+    probe.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      Number.isFinite(probe.duration) ? resolve(probe.duration) : reject(new Error("Could not read the song's length."));
+    };
+    probe.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("That file doesn't play as audio."));
+    };
+    probe.src = url;
+  });
+}
+
+/** Admins upload and name the songs residents can request from club DJs. */
+function MusicTab({ onDone, onError }: { onDone: (text: string) => void; onError: (error: unknown) => void }) {
+  const [songs, setSongs] = useState<ClubSong[] | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [artist, setArtist] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.songs().then(setSongs).catch(onError);
+  }, [onError]);
+  return (
+    <section className="mod-panel" data-testid="music-tab">
+      <h3>Club request songs</h3>
+      <p className="muted small">
+        Residents tip {naira(SONG_REQUEST.tip)} to request one of these in a club; the DJ approves it and it plays for everyone there. Only upload music
+        you have the rights to share. MP3, M4A, OGG or WAV, up to 12 MB and {Math.floor(SONG_REQUEST.maxSeconds / 60)} minutes.
+      </p>
+      <form
+        className="mod-action"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (!file) return;
+          setBusy(true);
+          try {
+            const seconds = Math.round(await audioSeconds(file));
+            if (seconds < SONG_REQUEST.minSeconds || seconds > SONG_REQUEST.maxSeconds) throw new Error(`Songs must be ${SONG_REQUEST.minSeconds} s to ${SONG_REQUEST.maxSeconds / 60} minutes long.`);
+            const song = await api.uploadSong(file, { title: title.trim(), artist: artist.trim(), seconds });
+            setSongs((list) => [song, ...(list ?? [])]);
+            onDone(`"${song.title}" is in the DJ crates.`);
+            setFile(null);
+            setTitle("");
+            setArtist("");
+            (event.target as HTMLFormElement).reset();
+          } catch (error) {
+            onError(error);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <h3>Upload a song</h3>
+        <input
+          type="file"
+          accept="audio/*"
+          aria-label="Song file"
+          data-testid="song-file"
+          required
+          onChange={(event) => {
+            const chosen = event.target.files?.[0] ?? null;
+            setFile(chosen);
+            if (chosen && !title) setTitle(chosen.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim().slice(0, 80));
+          }}
+        />
+        <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Song title" aria-label="Song title" maxLength={80} required />
+        <input value={artist} onChange={(event) => setArtist(event.target.value)} placeholder="Artist" aria-label="Artist" maxLength={80} required />
+        <button className="primary" disabled={busy || !file}>{busy ? "Uploading…" : "Upload song"}</button>
+      </form>
+      <ul className="mod-list compact" data-testid="song-list">
+        {songs?.length === 0 && <li className="muted">No songs yet.</li>}
+        {songs?.map((song) => (
+          <li key={song.id}>
+            <strong>{song.title}</strong> · {song.artist} · {Math.floor(song.seconds / 60)}:{String(song.seconds % 60).padStart(2, "0")}{" "}
+            <audio controls preload="none" src={api.songUrl(song.id)} />
+            <button
+              className="link"
+              onClick={async () => {
+                try {
+                  setSongs(await api.removeSong(song.id));
+                  onDone(`"${song.title}" was removed.`);
+                } catch (error) {
+                  onError(error);
+                }
+              }}
+            >
+              Remove
+            </button>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

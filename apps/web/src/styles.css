@@ -1438,3 +1438,25 @@ button.wide { width: 100%; margin: 6px 0; }
 .guards-duty { margin-bottom: 14px; padding: 12px; border-radius: 12px; background: rgba(20,40,60,.06); border: 1px solid rgba(20,40,60,.12); }
 .guards-duty h3 { margin: 0 0 4px; }
 [data-theme="dark"] .guards-duty { background: #2c2c2e; border-color: #48484a; }
+.song-desk { margin-top: 8px; display: grid; gap: 6px; }
+.song-desk p { margin: 0; }
+.song-desk > button { width: 100%; font-size: 12px; padding: 7px 10px; }
+.song-desk .song-queue { margin: 0; padding-left: 18px; font-size: 12px; display: grid; gap: 2px; }
+.song-desk .song-queue small, .song-desk .song-pending small { color: #c9c3d6; font-weight: 500; letter-spacing: 0; font-size: 11px; }
+.song-desk .song-queue li.mine { color: #ffd36e; }
+.song-desk .song-pending { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.song-desk .song-pending li { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; font-size: 12px; padding: 6px; border-radius: 8px; background: rgba(255,111,177,.14); }
+.song-desk .song-pending button { padding: 5px 8px; font-size: 11px; }
+.song-picker { display: grid; gap: 4px; max-height: 180px; overflow-y: auto; }
+.song-picker button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; padding: 7px 9px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06); color: #fff; }
+.song-picker button span { font-size: 11px; color: #c9c3d6; }
+.song-picker button:disabled { opacity: .5; }
+.club-radio-player[hidden] { display: none; }
+.club-radio-request { display: flex; align-items: center; justify-content: center; gap: 18px; height: 96px; border-radius: 10px; background: radial-gradient(circle at 30% 50%, rgba(255,111,177,.35), rgba(12,8,20,.2) 70%); }
+.club-radio-request .vinyl { width: 64px; height: 64px; border-radius: 50%; background: repeating-radial-gradient(circle, #111 0 3px, #222 3px 5px); box-shadow: inset 0 0 0 22px #111, inset 0 0 0 26px #ff6fb1; animation: vinyl-spin 1.6s linear infinite; }
+.club-radio-request .bars { display: flex; gap: 4px; align-items: flex-end; height: 44px; }
+.club-radio-request .bars i { width: 6px; background: #ff6fb1; border-radius: 3px; animation: eq-bounce .9s ease-in-out infinite; }
+.club-radio-request .bars i:nth-child(2) { animation-delay: -.3s; } .club-radio-request .bars i:nth-child(3) { animation-delay: -.6s; } .club-radio-request .bars i:nth-child(4) { animation-delay: -.15s; } .club-radio-request .bars i:nth-child(5) { animation-delay: -.45s; }
+@keyframes vinyl-spin { to { transform: rotate(360deg); } }
+@keyframes eq-bounce { 0%, 100% { height: 10px; } 50% { height: 44px; } }
+@media (prefers-reduced-motion: reduce) { .club-radio-request .vinyl, .club-radio-request .bars i { animation: none; height: 24px; } }

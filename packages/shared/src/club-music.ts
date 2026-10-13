@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 /**
  * The DJ's set: official music videos from the artists' own YouTube channels, played through YouTube's embedded
  * player (the game never hosts or streams the audio itself). Every resident in a club hears the same track at the
@@ -36,3 +38,44 @@ export function clubNowPlaying(clubId: string, at: number) {
   const index = (slot + offset) % CLUB_TRACKS.length;
   return { index, track: CLUB_TRACKS[index]!, seconds: Math.floor((at / 1000) % CLUB_TRACK_SLOT_SECONDS), slotEndsAt: (slot + 1) * CLUB_TRACK_SLOT_SECONDS * 1000 };
 }
+
+/**
+ * Songs the admin uploads for the clubs. Residents in a club pay a small tip to request one; the guest DJ on a set
+ * approves or declines, and with no guest DJ the house DJ approves it after a short look. Approved songs play for
+ * everyone in that club, in order, before the DJ's set carries on.
+ */
+export const SONG_REQUEST = {
+  tip: 2_000,
+  /** Requests waiting or approved per club. */
+  maxQueue: 6,
+  /** One request per resident at a time. */
+  perResident: 1,
+  houseDjMs: 7_000,
+  /** A guest DJ who doesn't answer in this long gets the house DJ to decide. */
+  guestDjMs: 45_000,
+  /** Gap between songs, so the next one starts in step everywhere. */
+  leadInMs: 1_500,
+  minSeconds: 20,
+  maxSeconds: 480,
+  maxBytes: 12 * 1024 * 1024,
+} as const;
+
+export type ClubSong = { id: string; title: string; artist: string; seconds: number };
+
+export type SongRequestView = { id: string; songId: string; title: string; artist: string; seconds: number; byName: string; mine: boolean; status: "pending" | "approved" };
+
+/** What a club's crowd sees: the requested song playing now (if any), the queue, and who is on the decks. */
+export type ClubMusicState = {
+  club: string;
+  playing: (Omit<SongRequestView, "status"> & { startedAt: number }) | null;
+  queue: SongRequestView[];
+  dj: { name: string; you: boolean; guest: boolean };
+};
+
+export const songRequestSchema = z.object({ songId: z.string().min(1).max(64) });
+export const songDecisionSchema = z.object({ requestId: z.string().min(1).max(64), approve: z.boolean() });
+export const songUploadSchema = z.object({
+  title: z.string().trim().min(1).max(80),
+  artist: z.string().trim().min(1).max(80),
+  seconds: z.coerce.number().int().min(SONG_REQUEST.minSeconds).max(SONG_REQUEST.maxSeconds),
+});

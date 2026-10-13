@@ -24,6 +24,7 @@ import {
   type TravelPrompt,
   type AgberoEncounter,
   type AgberoOutcome,
+  type ClubMusicState,
   ROBBERY,
 } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
@@ -69,6 +70,7 @@ export type MultiplayerHandlers = {
   rideAsk: (ask: RideAsk) => void;
   agbero: (encounter: AgberoEncounter | null) => void;
   agberoOutcome: (outcome: AgberoOutcome) => void;
+  clubMusic: (state: ClubMusicState) => void;
   /** The owner rearranged the home this player is standing in. */
   interior: () => void;
 };
@@ -167,6 +169,7 @@ export class MultiplayerConnection {
         this.handlers.react({ sessionId: String(reaction?.sessionId ?? ""), emoji: String(reaction?.emoji ?? "") }),
       );
       room.onMessage("agbero", (encounter: AgberoEncounter | null) => this.handlers.agbero(encounter && typeof encounter.id === "string" ? encounter : null));
+      room.onMessage("clubMusic", (state: ClubMusicState) => typeof state?.club === "string" && Array.isArray(state.queue) && this.handlers.clubMusic(state));
       room.onMessage("agberoOutcome", (outcome: AgberoOutcome) => Array.isArray(outcome?.point) && this.handlers.agberoOutcome(outcome));
       room.onMessage("goState", (state: FastTravelState) => Array.isArray(state?.discovered) && this.handlers.goState(state));
       room.onMessage("rideAsk", (ask: RideAsk) => typeof ask?.sessionId === "string" && typeof ask.name === "string" && this.handlers.rideAsk(ask));
@@ -217,6 +220,9 @@ export class MultiplayerConnection {
       | "react"
       | "fastTravel"
       | "agberoAnswer"
+      | "songSync"
+      | "songRequest"
+      | "songDecide"
       | "travelAnswer"
       | "joinRequest"
       | "goState"
