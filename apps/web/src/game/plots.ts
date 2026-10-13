@@ -23,6 +23,8 @@ type PlotView = {
   gate: { leaf: TransformNode; open: number; target: number; width: number } | null;
   /** Models placed in world space (props freeze their matrices), disposed when the plot is redrawn. */
   extras: Array<{ dispose(): void }>;
+  /** The back-garden pool once it is built: centre, half extents across and into the plot, and the water level. */
+  pool: { centre: [number, number]; across: number; into: number; surface: number } | null;
 };
 
 const STOREY = 3;
@@ -83,7 +85,7 @@ export class PlotsView {
     board.parent = root;
     const house = new TransformNode(`plot house ${plot.id}`, this.scene);
     house.parent = root;
-    return { root, house, key: "", sign: { texture, text: "" }, gate: null, extras: [] };
+    return { root, house, key: "", sign: { texture, text: "" }, gate: null, extras: [], pool: null };
   }
 
   private drawSign(view: PlotView, plot: Plot, title: string, line: string, colour: string) {
@@ -138,6 +140,7 @@ export class PlotsView {
       view.key = key;
       for (const child of view.house.getChildren()) child.dispose(false, false);
       for (const extra of view.extras.splice(0)) extra.dispose();
+      view.pool = null;
       const target = view.gate?.target ?? 0;
       view.gate = null;
       if (shop) this.buildShop(view, plot, shop);
@@ -146,6 +149,20 @@ export class PlotsView {
         if (construction.completed) view.gate = this.buildCompound(view.house, plot, target);
       }
     }
+  }
+
+  /** Water level of the villa pool at a world point, or null when the point is not in one. */
+  poolAt(x: number, z: number): number | null {
+    for (const [id, view] of this.views) {
+      const pool = view.pool;
+      if (!pool) continue;
+      const plot = PLOTS.find((entry) => entry.id === id)!;
+      const [dx, dz] = [x - pool.centre[0], z - pool.centre[1]];
+      const into = dx * plot.inward[0] + dz * plot.inward[1];
+      const across = dx * plot.inward[1] - dz * plot.inward[0];
+      if (Math.abs(across) < pool.across - 0.15 && Math.abs(into) < pool.into - 0.15) return pool.surface;
+    }
+    return null;
   }
 
   /** Opens or shuts a finished house's gate; it slides over a couple of seconds. */
@@ -386,6 +403,17 @@ export class PlotsView {
     this.box(house, "pool deck", [Math.min(plot.width - 1.2, poolW + 3.2), 0.1, Math.min(garden - 0.6, poolL + 2.2)], [0, 0.1, zc], m.pavers);
     this.box(house, "pool coping", [poolW + 0.5, 0.12, poolL + 0.5], [0, 0.16, zc], m.concrete);
     this.box(house, "pool water", [poolW, 0.04, poolL], [0, 0.21, zc], m.water);
+    const view = this.views.get(plot.id);
+    if (view) {
+      const [ax, az] = [plot.inward[1], -plot.inward[0]];
+      const [px, pz] = [house.position.x, house.position.z + zc];
+      view.pool = {
+        centre: [plot.center[0] + ax * px + plot.inward[0] * pz, plot.center[1] + az * px + plot.inward[1] * pz],
+        across: poolW / 2,
+        into: poolL / 2,
+        surface: view.root.position.y + 0.23,
+      };
+    }
     for (const [lx, lz] of [[-poolW / 2 + 0.25, -poolL / 2 + 0.25], [poolW / 2 - 0.25, poolL / 2 - 0.25]] as const) {
       this.box(house, "pool light", [0.2, 0.03, 0.2], [lx, 0.2, zc + lz], m.lamp);
     }

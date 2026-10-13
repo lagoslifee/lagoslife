@@ -225,6 +225,33 @@ type Instance = ReturnType<AvatarFactory["instantiate"]>;
 
 /** Joint angles (radians) for the sleeping and lounging poses. */
 const P = { sleepArm: 0.5, sleepIn: 1.35, sleepFore: 1.7, sleepHead: 0.5, sleepLegs: 0, sleepKnee: 0.08, readIn: 1.2, readUp: 0.62, readFore: 1.4, readHead: 0.35, readLieIn: 1.0, readLieUp: 1.35, readLieFore: 1.2, readLieHead: 0.45, loungeBack: -0.35, loungeArm: -1.2, loungeArmBack: -0.3, loungeFore: 0.9, loungeLegs: 0.4 };
+/** Swimming pose numbers (radians, metres, cycles); exported so the pose preview can tune them live. */
+export const SWIM_TUNING = {
+  strokeRate: 3.2,
+  headUp: 0.1,
+  hipsFromFeet: 0.95,
+  depth: 0.14,
+  armDown: 1.35,
+  armOut: 0.9,
+  recoverReach: 1.0,
+  pullBend: 0.5,
+  recoverBend: 1.4,
+  kickRate: 9,
+  kick: 0.14,
+  kickKnee: 0.2,
+  roll: 0.3,
+  look: 0.35,
+  breath: 0.9,
+  treadDepth: 1.42,
+  treadArm: 1.1,
+  treadForward: 0.7,
+  treadHip: 0.6,
+  treadKnee: 0.9,
+  floatDepth: 0.1,
+  floatArm: 0.35,
+};
+const S = SWIM_TUNING;
+
 export const POSE_TUNING = P;
 /** The hip joints sit this far above the surface you sit on (the sit bones and flesh below them). */
 const HIP_ABOVE_CUSHION = 0.1;
@@ -553,6 +580,71 @@ export class Avatar {
     bend(limbs.leftFore, P.sleepFore);
     bend(limbs.neck, P.sleepHead, Axis.Y);
     bend(limbs.chest, breath * 0.025);
+  }
+
+  /**
+   * In the water, over the idle clip; `surface` is the water level and the root stands at the swimmer's point.
+   * "crawl" lays the body face down along the way it faces with the hips at the point and swims front crawl: arms
+   * turning over in turn, a flutter kick and a breath to the side every stroke. "tread" keeps the head up in deep
+   * water, sculling; "float" lies back on the surface, arms out, for pools too shallow to tread in.
+   */
+  swim(time: number, mode: "crawl" | "tread" | "float", surface: number) {
+    const limbs = this.instance.limbs;
+    for (const limb of [limbs.leftUp, limbs.rightUp, limbs.leftLow, limbs.rightLow, limbs.leftArm, limbs.rightArm, limbs.leftFore, limbs.rightFore]) this.relax(limb);
+    const yaw = this.root.rotation.y;
+    const [fx, fz] = [Math.sin(yaw), Math.cos(yaw)];
+    if (mode === "crawl") {
+      const stroke = time * S.strokeRate;
+      this.root.rotation.x = Math.PI / 2 - S.headUp;
+      this.root.position.x -= fx * S.hipsFromFeet;
+      this.root.position.z -= fz * S.hipsFromFeet;
+      this.root.position.y = surface - S.depth;
+      for (const [arm, fore, side, phase] of [[limbs.rightArm, limbs.rightFore, 1, 0], [limbs.leftArm, limbs.leftFore, -1, Math.PI]] as const) {
+        const angle = (stroke + phase) % (Math.PI * 2);
+        // Pull: the arm sweeps from overhead down under the body to the hip; recovery: elbow high, out over the water.
+        const pulling = angle < Math.PI;
+        const lift = pulling ? 0 : Math.sin(angle - Math.PI);
+        bend(arm, side * (S.armDown - S.armOut * lift), Axis.Z);
+        bend(arm, pulling ? Math.PI - angle : -(angle - Math.PI) * S.recoverReach);
+        bend(fore, pulling ? S.pullBend * Math.sin(angle) : S.recoverBend * lift);
+      }
+      const kick = Math.sin(time * S.kickRate);
+      bend(limbs.leftUp, S.kick * kick);
+      bend(limbs.rightUp, -S.kick * kick);
+      bend(limbs.leftLow, S.kickKnee * (0.6 + 0.4 * kick));
+      bend(limbs.rightLow, S.kickKnee * (0.6 - 0.4 * kick));
+      bend(limbs.spine, Math.sin(stroke) * S.roll, Axis.Y);
+      bend(limbs.neck, -S.look);
+      const breathe = Math.max(0, Math.sin(stroke - 0.6)) ** 6;
+      bend(limbs.neck, breathe * S.breath, Axis.Y);
+    } else if (mode === "tread") {
+      const scull = Math.sin(time * 2.6);
+      this.root.rotation.x = 0;
+      this.root.position.y = surface - S.treadDepth;
+      for (const [arm, fore, side] of [[limbs.rightArm, limbs.rightFore, 1], [limbs.leftArm, limbs.leftFore, -1]] as const) {
+        bend(arm, side * S.treadArm, Axis.Z);
+        bend(arm, S.treadForward + scull * 0.25);
+        bend(fore, 0.5 + 0.2 * scull);
+      }
+      const pedal = Math.sin(time * 2.2);
+      bend(limbs.leftUp, -S.treadHip + 0.3 * pedal);
+      bend(limbs.rightUp, -S.treadHip - 0.3 * pedal);
+      bend(limbs.leftLow, S.treadKnee - 0.35 * pedal);
+      bend(limbs.rightLow, S.treadKnee + 0.35 * pedal);
+    } else {
+      const drift = Math.sin(time * 0.9);
+      // On the back with the head still the way they were swimming, so stopping does not spin them round.
+      this.root.rotation.y = yaw + Math.PI;
+      this.root.rotation.x = -Math.PI / 2;
+      this.root.position.x -= fx * S.hipsFromFeet;
+      this.root.position.z -= fz * S.hipsFromFeet;
+      this.root.position.y = surface - S.floatDepth;
+      bend(limbs.rightArm, S.floatArm + drift * 0.08, Axis.Z);
+      bend(limbs.leftArm, -S.floatArm - drift * 0.08, Axis.Z);
+      bend(limbs.leftUp, 0.12, Axis.Z);
+      bend(limbs.rightUp, -0.12, Axis.Z);
+      bend(limbs.neck, -0.25);
+    }
   }
 
   /** Puts a joint back in its bind pose, dropping whatever the clips did to it this frame. */

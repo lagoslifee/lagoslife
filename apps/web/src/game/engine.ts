@@ -1443,11 +1443,14 @@ export class GameEngine {
         this.player.update(0, "idle", dt);
         this.player.exercise("repair", this.repairing.time);
       } else {
+        const water = chair || seatedTravel || inCar || bus ? null : this.waterAt(x, z);
+        this.controller.swimming = Boolean(water);
         if (chair) this.player.root.position.set(chair.seat[0], chair.y, chair.seat[1]);
         else this.player.root.position.set(x, seatedTravel ? TRAVEL_SEAT_Y : this.groundY + this.controller.hop, z);
         this.player.root.rotation.y = chair ? chair.yaw : seatedTravel ? this.seatYaw : this.controller.yaw;
         this.player.root.setEnabled(!bus && !inCar);
-        if (!inCar) this.player.update(speed, lying ? "idle" : motion, dt);
+        if (!inCar) this.player.update(speed, lying || water ? "idle" : motion, dt);
+        if (water) this.swimPose(this.player, speed, water, now * 0.001);
         if (this.reading && (!chair || chair.pose !== "sit" || (chair.rest !== "sofa" && chair.rest !== "bed"))) this.closeBook();
         if (this.reading && chair) {
           this.player.read(now * 0.001, lying);
@@ -2291,8 +2294,11 @@ export class GameEngine {
           remote.avatar.root.position.set(x, this.interior ? (this.travelView && b.motion === "sit" ? TRAVEL_SEAT_Y : (this.travelView?.floor(x, z) ?? 0.02)) : this.world.groundHeight(x, z), z);
           remote.avatar.root.rotation.y = a.yaw + dyaw * t;
         }
+        remote.avatar.root.rotation.x = 0;
         remote.avatar.root.setEnabled(!b.busId && !b.vehicleId);
-        remote.avatar.update(remote.speed, b.motion, dt);
+        const water = seat || b.busId || b.vehicleId ? null : this.waterAt(x, z);
+        remote.avatar.update(remote.speed, water ? "idle" : b.motion, dt);
+        if (water) this.swimPose(remote.avatar, remote.speed, water, performance.now() * 0.001 + remote.speed);
         if (seat?.rest === "sofa" && b.motion === "sit") remote.avatar.lounge(performance.now() * 0.001);
         if (this.goalCheer && b.motion === "sit") remote.avatar.cheer(performance.now() * 0.001 + remote.speed);
         if (b.motion === "sit" && seat && seat.rest !== "bed") remote.avatar.seatHips(seat.y, seat.at);
@@ -2992,6 +2998,21 @@ export class GameEngine {
       deadline: performance.now() + 15_000,
     };
     return true;
+  }
+
+  /** The pool at a point, if any: its water level and whether it is deep enough to stand in rather than float. */
+  private waterAt(x: number, z: number): { surface: number; standing: boolean } | null {
+    if (this.travelView) return this.travelView.kind === "pool" && this.travelView.floor(x, z) < -0.5 ? { surface: -0.25, standing: true } : null;
+    if (this.interior) return null;
+    const surface = this.plotsView?.poolAt(x, z);
+    // Villa pools are a water slab on the deck with no basin under it, so the swimmer rides higher to stay above the paving.
+    return surface == null ? null : { surface: surface + 0.16, standing: false };
+  }
+
+  /** Front crawl while moving; still, wade in a pool you can stand in or float on your back in a shallow one. */
+  private swimPose(avatar: Avatar, speed: number, water: { surface: number; standing: boolean }, time: number) {
+    if (speed > 0.25) avatar.swim(time, "crawl", water.surface);
+    else if (!water.standing) avatar.swim(time, "float", water.surface);
   }
 
   /** The placed piece of your own furniture within arm's reach, nearest first. */
@@ -4516,6 +4537,7 @@ export class GameEngine {
       room: () => (this.interior && !this.travelView ? (this.interior as InteriorView).bounds : null),
       seats: () => (this.interior && !this.travelView ? (this.interior as InteriorView).seats : []),
       homeSeat: (kind: HomeRest) => this.homeSeat(kind),
+      water: () => ({ water: this.waterAt(this.controller.x, this.controller.z), root: this.player ? [this.player.root.position.asArray(), this.player.root.rotation.asArray()] : null }),
       drone: (propertyId: string, cars: Array<{ id: string; modelId: string; colour: string; status: string }>) => this.startDrone(propertyId, cars),
       droneZoom: (level: number) => this.droneZoom(level),
       repair: () => ({ site: this.repairSite?.site.at ?? null, stand: this.repairSite?.site.stand ?? null, workingFor: this.repairing ? Math.max(0, this.repairing.until - performance.now()) : 0 }),

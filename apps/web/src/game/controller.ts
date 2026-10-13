@@ -206,6 +206,8 @@ export type MoveMode = "walk" | "jog" | "sprint";
  * a background tab, are cut short.
  */
 export const MAX_FRAME_DT = 1;
+/** Front crawl at an easy pace and flat out, in metres per second. */
+export const SWIM_SPEED = { easy: 1.1, fast: 1.8 } as const;
 export const SUBSTEP_DT = 1 / 120;
 
 export class LocomotionController {
@@ -217,6 +219,8 @@ export class LocomotionController {
   hop = 0;
   private hopVelocity = 0;
   mode: MoveMode = "jog";
+  /** In a pool: moves at swimming pace. */
+  swimming = false;
 
   constructor(private readonly collide: (x: number, z: number) => [number, number]) {}
 
@@ -246,7 +250,9 @@ export class LocomotionController {
   step(dt: number, input: [number, number], cameraYaw: number, mode: MoveMode) {
     this.mode = mode;
     const length = Math.min(1, Math.hypot(input[0], input[1]));
-    const maxSpeed = mode === "sprint" ? MOVEMENT.sprintSpeed : mode === "walk" ? MOVEMENT.walkSpeed : MOVEMENT.jogSpeed;
+    const maxSpeed = this.swimming
+      ? mode === "sprint" ? SWIM_SPEED.fast : SWIM_SPEED.easy
+      : mode === "sprint" ? MOVEMENT.sprintSpeed : mode === "walk" ? MOVEMENT.walkSpeed : MOVEMENT.jogSpeed;
     let tx = 0;
     let tz = 0;
     if (length > 0.05) {
