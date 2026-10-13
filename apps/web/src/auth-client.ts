@@ -49,6 +49,46 @@ export async function signOut() {
   await authClient.signOut().catch(() => undefined);
 }
 
+/**
+ * True (and reloading) when the deployed site now names a different game server than this tab was built with: the
+ * testing tunnel moved and the site has been rebuilt for the new address.
+ */
+export async function reloadIfServerMoved(): Promise<boolean> {
+  if (!import.meta.env.VITE_API_URL) return false;
+  try {
+    const response = await fetch(`/server.json?t=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) return false;
+    const { apiUrl: current } = (await response.json()) as { apiUrl?: string | null };
+    if (!current || current === apiUrl) return false;
+    location.reload();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function serverReachable(): Promise<boolean> {
+  try {
+    const response = await fetch(`${apiUrl}/api/health`, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Every minute while the tab is open, and when it comes back into view, move to a new server address if there is one. */
+export function watchServerAddress() {
+  const check = () => {
+    if (document.visibilityState === "visible") void reloadIfServerMoved();
+  };
+  const timer = window.setInterval(check, 60_000);
+  document.addEventListener("visibilitychange", check);
+  return () => {
+    window.clearInterval(timer);
+    document.removeEventListener("visibilitychange", check);
+  };
+}
+
 export async function startGuestSession() {
   const response = await fetch(`${apiUrl}/api/guest`, { method: "POST" });
   const body = (await response.json().catch(() => ({}))) as { token?: string; error?: string };

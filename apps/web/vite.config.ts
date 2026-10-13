@@ -1,8 +1,19 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
+
+/**
+ * `/server.json` names the game server this build talks to. Open tabs poll it, so when the testing tunnel moves and
+ * the site is rebuilt they reload onto the new address instead of failing every request to the old one.
+ */
+const serverManifest = (): Plugin => ({
+  name: "server-manifest",
+  generateBundle() {
+    this.emitFile({ type: "asset", fileName: "server.json", source: JSON.stringify({ apiUrl: process.env.VITE_API_URL ?? null }) });
+  },
+});
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), serverManifest()],
   server: {
     port: 5173,
   },

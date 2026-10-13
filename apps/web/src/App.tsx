@@ -21,7 +21,7 @@ import { CityReel } from "./ui/CityReel";
 import { LandingScene } from "./ui/LandingScene";
 import { CrashGuard } from "./ui/CrashGuard";
 import { ACCESSORY_LABELS, HAIR_COLOURS, HAIR_LABELS, OUTFITS, SKIN_TONE_COLOURS } from "./game/wardrobe";
-import { apiConfigured, apiUrl, authClient, authHeaders, guestMode, sessionToken, signOut, startGuestSession } from "./auth-client";
+import { apiConfigured, apiUrl, authClient, authHeaders, guestMode, reloadIfServerMoved, serverReachable, sessionToken, signOut, startGuestSession, watchServerAddress } from "./auth-client";
 
 /** After a new deploy, an open tab asks for chunk names that no longer exist; reload once to get the new build. */
 function reloadOnStaleChunk<T>(load: () => Promise<T>) {
@@ -103,22 +103,64 @@ function enterWithToken(token: string | null | undefined) {
   location.assign("/");
 }
 
+const AUTH_DRAFT = "lagos-auth-draft";
+type AuthDraft = { mode: AuthMode; email: string; identifier: string; name: string; body: (typeof bodies)[number] | null; username: string; invite: string };
+
+function takeAuthDraft(): AuthDraft | null {
+  const raw = sessionStorage.getItem(AUTH_DRAFT);
+  sessionStorage.removeItem(AUTH_DRAFT);
+  try {
+    return raw ? (JSON.parse(raw) as AuthDraft) : null;
+  } catch {
+    return null;
+  }
+}
+
 function AuthScreen() {
   const query = new URLSearchParams(location.search);
   const token = query.get("token");
-  const [mode, setMode] = useState<AuthMode>(token ? "reset" : query.has("login") ? "login" : "register");
-  const [email, setEmail] = useState("");
-  const [identifier, setIdentifier] = useState("");
-  const [name, setName] = useState("");
-  const [body, setBody] = useState<(typeof bodies)[number] | null>(null);
-  const [username, setUsername] = useState("");
+  const [draft] = useState(takeAuthDraft);
+  const [mode, setMode] = useState<AuthMode>(token ? "reset" : draft?.mode ?? (query.has("login") ? "login" : "register"));
+  const [email, setEmail] = useState(draft?.email ?? "");
+  const [identifier, setIdentifier] = useState(draft?.identifier ?? "");
+  const [name, setName] = useState(draft?.name ?? "");
+  const [body, setBody] = useState<(typeof bodies)[number] | null>(draft?.body ?? null);
+  const [username, setUsername] = useState(draft?.username ?? "");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(draft ? "The game server is back. Type your password again to continue." : "");
   const [busy, setBusy] = useState(false);
+  const [waiting, setWaiting] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
   const [invite, setInvite] = useState(() => {
+    if (draft) return draft.invite;
     const ref = (query.get("ref") ?? "").replace(/[^A-Za-z0-9_.]/g, "").slice(0, 30);
     if (ref) localStorage.setItem("lagos-ref", ref);
     return ref || localStorage.getItem("lagos-ref") || "";
+  });
+
+  /** Reloads onto the new server address if the site has one, keeping everything typed except the password. */
+  async function followServer() {
+    const saved: AuthDraft = { mode, email, identifier, name, body, username, invite };
+    sessionStorage.setItem(AUTH_DRAFT, JSON.stringify(saved));
+    if (await reloadIfServerMoved()) return true;
+    sessionStorage.removeItem(AUTH_DRAFT);
+    return false;
+  }
+
+  useEffect(() => {
+    if (!waiting) return;
+    let checking = false;
+    const timer = window.setInterval(async () => {
+      if (checking) return;
+      checking = true;
+      if (!(await followServer()) && (await serverReachable())) {
+        setWaiting(false);
+        setMessage("");
+        formRef.current?.requestSubmit();
+      }
+      checking = false;
+    }, 8_000);
+    return () => window.clearInterval(timer);
   });
 
   async function submit(event: FormEvent) {
@@ -174,6 +216,12 @@ function AuthScreen() {
         setMessage("Password updated. Log in with your new password.");
       }
     } catch (error) {
+      if (!(await serverReachable())) {
+        if (await followServer()) return;
+        setWaiting(true);
+        setMessage("Can't reach the game server right now; it's reconnecting. Keep this page open and we'll finish for you as soon as it's back (usually within a couple of minutes).");
+        return;
+      }
       setMessage(error instanceof Error ? error.message : "Something went wrong.");
     } finally {
       setBusy(false);
@@ -213,7 +261,7 @@ function AuthScreen() {
       </section>
 
       <section className="auth-panel">
-        <form className="auth-card" onSubmit={submit} data-testid="auth-card">
+        <form className="auth-card" onSubmit={submit} data-testid="auth-card" ref={formRef}>
           {(mode === "login" || mode === "register") && (
             <div className="auth-tabs" role="tablist">
               <button type="button" role="tab" aria-selected={mode === "register"} onClick={() => switchTo("register")}>Sign up</button>
@@ -528,6 +576,11 @@ function Main() {
   const local = ["localhost", "127.0.0.1"].includes(location.hostname);
   // Returning guests (a saved token) and `?guest=1` go straight in; new visitors see sign-up, log-in or play as guest.
   const autoGuest = guestMode && !manual && (Boolean(sessionToken.get()) || query.has("guest"));
+
+  useEffect(() => {
+    void reloadIfServerMoved();
+    return watchServerAddress();
+  }, []);
 
   useEffect(() => {
     if (session.isPending || session.data || manual || autoSignIn !== "idle") return;

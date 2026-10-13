@@ -34,6 +34,11 @@
     Cache-Control = "no-cache"
 
 [[headers]]
+  for = "/server.json"
+  [headers.values]
+    Cache-Control = "no-store"
+
+[[headers]]
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=3600, must-revalidate"
