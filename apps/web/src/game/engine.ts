@@ -1168,6 +1168,22 @@ export class GameEngine {
     if (this.pendingDrive && this.vehicles.has(this.pendingDrive)) this.startDriving(this.pendingDrive);
   }
 
+  /** Sits a car on the ground under its four corners; kerbs and road camber stay flat, dunes tilt it. */
+  private surfacePose(x: number, z: number, yaw: number): [number, number, number, number, number, number] {
+    const fx = Math.sin(yaw) * 1.3;
+    const fz = Math.cos(yaw) * 1.3;
+    const rx = Math.cos(yaw) * 0.8;
+    const rz = -Math.sin(yaw) * 0.8;
+    const ground = (px: number, pz: number) => this.world.groundHeight(px, pz);
+    const front = (ground(x + fx - rx, z + fz - rz) + ground(x + fx + rx, z + fz + rz)) / 2;
+    const back = (ground(x - fx - rx, z - fz - rz) + ground(x - fx + rx, z - fz + rz)) / 2;
+    const left = (ground(x + fx - rx, z + fz - rz) + ground(x - fx - rx, z - fz - rz)) / 2;
+    const right = (ground(x + fx + rx, z + fz + rz) + ground(x - fx + rx, z - fz + rz)) / 2;
+    const centre = ground(x, z);
+    if (Math.max(Math.abs(front - back), Math.abs(left - right)) < 0.25) return [x, centre, z, yaw, 0, 0];
+    return [x, Math.max(centre, (front + back) / 2), z, yaw, Math.atan2(back - front, 2.6), Math.atan2(right - left, 1.6)];
+  }
+
   private updateVehicles(now: number, dt: number) {
     const { x: cx, z: cz } = this.controller;
     this.updateRideApproach(dt);
@@ -1180,7 +1196,8 @@ export class GameEngine {
       else if (mine) pose = this.car;
       else if (state.driverSessionId || state.tow) pose = view.sample(now);
       else pose = state;
-      if (pose) view.setPose(pose.x, this.interior ? -50 : this.world.groundHeight(pose.x, pose.z), pose.z, pose.yaw);
+      if (pose && this.interior) view.setPose(pose.x, -50, pose.z, pose.yaw);
+      else if (pose) view.setPose(...this.surfacePose(pose.x, pose.z, pose.yaw));
       view.root.setEnabled(!this.interior);
       if (this.interior) continue;
       const car = rideCar ?? this.car;
@@ -4103,7 +4120,11 @@ export class GameEngine {
         this.maxFrameDt = seconds;
       },
       vehicles: () => [...this.vehicles.values()].map(({ state, view }) => ({ ...state, cx: view.x, cz: view.z })),
-      driving: () => (this.car && this.driving ? { ...this.driving, x: this.car.x, z: this.car.z, yaw: this.car.yaw, speed: this.car.speed } : null),
+      driving: () => {
+        if (!this.car || !this.driving) return null;
+        const root = this.vehicles.get(this.driving.vehicleId)?.view.root;
+        return { ...this.driving, x: this.car.x, z: this.car.z, yaw: this.car.yaw, speed: this.car.speed, y: root?.position.y ?? null, pitch: root?.rotation.x ?? null, roll: root?.rotation.z ?? null };
+      },
       enterVehicle: (id: string) => this.enterVehicle(id),
       exitVehicle: () => this.exitVehicle(),
       driveTo: (x: number, z: number, timeoutMs = 120_000) =>

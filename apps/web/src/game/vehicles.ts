@@ -510,9 +510,9 @@ export class VehicleView {
     return this.root.rotation.y;
   }
 
-  setPose(x: number, y: number, z: number, yaw: number) {
+  setPose(x: number, y: number, z: number, yaw: number, pitch = 0, roll = 0) {
     this.root.position.set(x, y, z);
-    this.root.rotation.y = yaw;
+    this.root.rotation.set(pitch, yaw, roll);
   }
 
   setLights(on: boolean) {

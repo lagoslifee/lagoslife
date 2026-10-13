@@ -530,6 +530,55 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     return best;
   };
 
+  type Dune = { x: number; z: number; yaw: number; ru: number; rv: number; tall: number; c: number; s: number };
+  const DUNE_STEP = 75;
+  const desertCampSite = PLACES.find((candidate) => candidate.kind === "desert");
+  const campCentre: Vec2 | null = desertCampSite ? [desertCampSite.door[0] - Math.sin(desertCampSite.facing) * 26, desertCampSite.door[1] - Math.cos(desertCampSite.facing) * 26] : null;
+  const duneCache = new Map<number, Dune | null>();
+  /** The dune seeded at one grid point round the desert camp, kept clear of the sand track and the camp itself. */
+  const duneAt = (gx: number, gz: number): Dune | null => {
+    const key = gx * 100_003 + gz;
+    const cached = duneCache.get(key);
+    if (cached !== undefined) return cached;
+    let found: Dune | null = null;
+    const h0 = hash(gx * 92821 + gz * 7);
+    const h1 = hash(gx * 13 + gz * 68023);
+    const x = gx + (h0 - 0.5) * 44;
+    const z = gz + (h1 - 0.5) * 44;
+    const ru = 16 + h0 * 26;
+    if (DESERT && x >= DESERT.minX - 700 && x <= DESERT.maxX + 700 && z >= DESERT.minZ - 700 && z <= DESERT.maxZ + 700
+      && !(campCentre && Math.hypot(x - campCentre[0], z - campCentre[1]) < 55 + ru) && sandTrackDistance(x, z) >= ru * 1.15 + 8) {
+      const yaw = 0.7 + (h1 - 0.5) * 0.6;
+      found = { x, z, yaw, ru, rv: ru * (0.45 + h1 * 0.35), tall: 2.5 + h0 * h1 * 9, c: Math.cos(yaw), s: Math.sin(yaw) };
+    }
+    duneCache.set(key, found);
+    return found;
+  };
+  /** Height of the dune surface, matching the four-ring mesh `dune()` draws, so cars and walkers ride over the sand. */
+  const duneHeight = (x: number, z: number) => {
+    if (!DESERT || x < DESERT.minX - 760 || x > DESERT.maxX + 760 || z < DESERT.minZ - 760 || z > DESERT.maxZ + 760) return 0;
+    let top = 0;
+    const gx0 = Math.floor(x / DUNE_STEP) * DUNE_STEP;
+    const gz0 = Math.floor(z / DUNE_STEP) * DUNE_STEP;
+    for (let gx = gx0 - DUNE_STEP; gx <= gx0 + DUNE_STEP; gx += DUNE_STEP) {
+      for (let gz = gz0 - DUNE_STEP; gz <= gz0 + DUNE_STEP; gz += DUNE_STEP) {
+        const d = duneAt(gx, gz);
+        if (!d) continue;
+        const dx = x - d.x;
+        const dz = z - d.z;
+        const u = dx * d.c - dz * d.s;
+        const v = dx * d.s + dz * d.c;
+        const r = Math.hypot(u / (d.ru * (u > 0 ? 0.7 : 1.15)), v / d.rv);
+        if (r >= 1) continue;
+        const t = (1 - r) * 4;
+        const ring = Math.min(3, Math.floor(t));
+        const at = (k: number) => d.tall * Math.sin((k / 4) * (Math.PI / 2)) - 0.05;
+        top = Math.max(top, at(ring) + (at(ring + 1) - at(ring)) * (t - ring));
+      }
+    }
+    return top;
+  };
+
   // Landmarks seen from far across the region are built once rather than with their tile.
   {
     const landmarks = new ChunkSet(100_000, "landmarks", [-1e6, -1e6], [1e6, 1e6]);
@@ -1946,32 +1995,14 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     addObstacle([px, pz], [px, pz], 0.12);
   }
 
-  // Dunes round the desert camp, kept clear of the track and the camp; inside the district they are solid.
+  // Dunes round the desert camp; groundHeight follows their surface, so any car or walker can go over them.
   if (nearDesert && DESERT) {
-    const camp = PLACES.find((candidate) => candidate.kind === "desert");
-    const campCentre: Vec2 | null = camp ? [camp.door[0] - Math.sin(camp.facing) * 26, camp.door[1] - Math.cos(camp.facing) * 26] : null;
     const sand = base.get(x0 + TILE / 2, z0 + TILE / 2, "sand");
-    const step = 75;
-    for (let gx = Math.ceil(x0 / step) * step; gx < x0 + TILE; gx += step) {
-      for (let gz = Math.ceil(z0 / step) * step; gz < z0 + TILE; gz += step) {
-        const h0 = hash(gx * 92821 + gz * 7);
-        const h1 = hash(gx * 13 + gz * 68023);
-        const x = gx + (h0 - 0.5) * 44;
-        const z = gz + (h1 - 0.5) * 44;
-        if (!inTile(x, z) || x < DESERT.minX - 700 || x > DESERT.maxX + 700 || z < DESERT.minZ - 700 || z > DESERT.maxZ + 700) continue;
-        const ru = 16 + h0 * 26;
-        const rv = ru * (0.45 + h1 * 0.35);
-        if (campCentre && Math.hypot(x - campCentre[0], z - campCentre[1]) < 55 + ru) continue;
-        if (sandTrackDistance(x, z) < ru * 1.15 + 8) continue;
-        const duneYaw = 0.7 + (h1 - 0.5) * 0.6;
-        dune(sand, x, z, duneYaw, ru, rv, 2.5 + h0 * h1 * 9, [1.03, 0.9, 0.71]);
-        const inside = x >= DESERT.minX && x <= DESERT.maxX && z >= DESERT.minZ && z <= DESERT.maxZ;
-        if (inside) {
-          const reach = Math.max(0, ru - rv) * 0.7;
-          const ux = Math.cos(duneYaw);
-          const uz = -Math.sin(duneYaw);
-          addObstacle([x - ux * reach, z - uz * reach], [x + ux * reach, z + uz * reach], rv * 0.75);
-        }
+    for (let gx = Math.ceil(x0 / DUNE_STEP) * DUNE_STEP; gx < x0 + TILE; gx += DUNE_STEP) {
+      for (let gz = Math.ceil(z0 / DUNE_STEP) * DUNE_STEP; gz < z0 + TILE; gz += DUNE_STEP) {
+        const d = duneAt(gx, gz);
+        if (!d || !inTile(d.x, d.z)) continue;
+        dune(sand, d.x, d.z, d.yaw, d.ru, d.rv, d.tall, [1.03, 0.9, 0.71]);
       }
     }
   }
@@ -2297,6 +2328,8 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
   }
 
   function groundHeight(x: number, z: number) {
+    const sand = duneHeight(x, z);
+    if (sand > 0) return sand;
     const hit = roads.nearest(x, z);
     if (!hit) return 0;
     const half = hit.road.width / 2;
