@@ -64,7 +64,7 @@ export function BusinessApp({ onRefresh, onToast }: Props) {
       {tab === "mine" && (
         <>
           {status.businesses.length === 0 ? (
-            <p className="muted small">You don't run a business yet. Tap <strong>Start one</strong>: a POS kiosk needs no certificate.</p>
+            <p className="muted small">You don't run a business yet. Tap <strong>Start one</strong>: a POS kiosk needs no certificate. Short of cash? Borrow from the Eko Hustle Fund in Phone → My Story.</p>
           ) : (
             <p className="muted small">Takings pile up for {BUSINESS.storeHours} hours, then stop until you collect. Together you earn {naira(totalPerHour)} an hour.</p>
           )}

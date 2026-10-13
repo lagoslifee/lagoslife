@@ -17,13 +17,15 @@ import { RankingsApp } from "./RankingsApp";
 import { PlacesApp, type CabDestination } from "./PlacesApp";
 import { GamesApp } from "./games/GamesApp";
 import { BusinessApp } from "./BusinessApp";
+import { StoryApp } from "./StoryApp";
 import { EstateApp } from "./EstateApp";
 import { BoutiqueApp } from "./BoutiqueApp";
 import { BankApp, BetApp, DocumentsApp } from "./FinanceApps";
 
-export type PhoneApp = "home" | "games" | "business" | "estate" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "order" | "bank" | "bet" | "documents" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "neighbours" | "invite" | "rankings" | "notifications" | "settings" | "help";
+export type PhoneApp = "home" | "story" | "games" | "business" | "estate" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "order" | "bank" | "bet" | "documents" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "neighbours" | "invite" | "rankings" | "notifications" | "settings" | "help";
 
 const APPS: Array<{ id: PhoneApp; label: string; icon: string; tint: string }> = [
+  { id: "story", label: "My Story", icon: "📖", tint: "#e7bd62, #ff9f0a" },
   { id: "places", label: "Places", icon: "📍", tint: "#ff3b30, #ff6b5e" },
   { id: "go", label: "Go", icon: "⚡", tint: "#ffcc00, #ff9500" },
   { id: "estate", label: "Estate", icon: "🏢", tint: "#5856d6, #7d7aff" },
@@ -168,6 +170,7 @@ export function Phone(props: Props) {
         )}
         {app === "games" && <GamesApp />}
         {app === "estate" && <EstateApp properties={props.properties} plots={props.plots} here={props.hud ? [props.hud.x, props.hud.z] : null} onRefresh={props.onRefresh} onToast={props.onToast} onNavigate={props.onNavigate} onView={props.engine ? (id, label) => props.engine!.estateViewing(id, label) : undefined} onClose={onClose} />}
+        {app === "story" && <StoryApp onRefresh={props.onRefresh} onToast={props.onToast} onBusiness={() => setApp("business")} />}
         {app === "business" && <BusinessApp onRefresh={props.onRefresh} onToast={props.onToast} />}
         {app === "go" && <GoApp engine={props.engine} onNavigate={props.onNavigate} onClose={onClose} />}
         {app === "boutique" && <BoutiqueApp engine={props.engine} economy={props.economy} onRefresh={props.onRefresh} onToast={props.onToast} />}

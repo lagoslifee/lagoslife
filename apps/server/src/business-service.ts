@@ -21,6 +21,7 @@ import { pool } from "./database.js";
 import { certificates, hasCertificate } from "./certificates.js";
 import { buildingEvents } from "./building-service.js";
 import { creditWallet, debitWallet, EconomyError, ensureWallet, withTransaction } from "./economy-service.js";
+import { repayFromTakings } from "./hustle-service.js";
 
 type BusinessRow = { id: string; type: BusinessTypeId; name: string; level: number; collected_at: Date; created_at: Date; plot_id: string | null; sale_price: string | null };
 const BUSINESS_COLUMNS = `id, type, name, level, collected_at, created_at, plot_id, sale_price`;
@@ -131,6 +132,7 @@ async function collectRow(client: PoolClient, userId: string, row: BusinessRow) 
   await client.query(`UPDATE player_business SET collected_at = NOW() WHERE id = $1`, [row.id]);
   if (amount <= 0) return 0;
   await creditWallet(client, userId, amount, "business_income", `${row.name} · takings`, `business-income:${row.id}:${randomUUID()}`);
+  await repayFromTakings(client, userId, amount, row.name);
   return amount;
 }
 

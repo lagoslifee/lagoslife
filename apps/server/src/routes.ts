@@ -87,6 +87,7 @@ import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import cors from "cors";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
+import { borrow, claimChapter, hustleStatus, repay } from "./hustle-service.js";
 import { businessMarket, businessStatus, buyBusiness, collectBusiness, enrol, listBusiness, sellToBroker, startBusiness, upgradeBusiness } from "./business-service.js";
 import { finishSet, gymStatus, hireTrainer, joinGym, startSet } from "./gym-service.js";
 import { buyViewingPass, orderAtViewing, viewingStatus } from "./viewing-service.js";
@@ -594,6 +595,18 @@ export function configureRoutes(app: Express) {
     const body = spraySchema.parse(req.body);
     return sprayMoney(userId, body.amount, body.idempotencyKey);
   }));
+
+  app.get("/api/hustle", requirePlayer, guarded("Hustle Fund unavailable", (_req, userId) => hustleStatus(userId)));
+  app.post("/api/hustle/borrow", requirePlayer, rateLimited, guarded("Loan could not be paid out", (req, userId) => {
+    const body = z.object({ amount: z.number().int().positive(), idempotencyKey: z.uuid() }).parse(req.body);
+    return borrow(userId, body.amount, body.idempotencyKey);
+  }));
+  app.post("/api/hustle/repay", requirePlayer, rateLimited, guarded("Repayment failed", (req, userId) => {
+    const body = z.object({ amount: z.number().int().positive().optional(), idempotencyKey: z.uuid() }).parse(req.body);
+    return repay(userId, body.amount, body.idempotencyKey);
+  }));
+  app.post("/api/story/:chapter/claim", requirePlayer, rateLimited, guarded("Reward could not be claimed", (req, userId) =>
+    claimChapter(userId, z.enum(["fresh", "hustler", "clean-slate", "moving", "landlord", "big-boss"]).parse(req.params.chapter))));
 
   app.get("/api/business", requirePlayer, guarded("Business unavailable", (_req, userId) => businessStatus(userId)));
   app.post("/api/business", requirePlayer, rateLimited, guarded("Business could not be registered", (req, userId) => {

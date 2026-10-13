@@ -5,7 +5,7 @@ import type { FloorFinishId, FoodParcel, FuelStationState, GeneratorId, HomeFini
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick, RepairAction } from "@lagos-living/shared";
 import type { AccountSummary, ClaimAccount, LifeGoals } from "@lagos-living/shared";
 import type { DirectMessage, FriendsStatus, RankingBoard, RankingState, ReferralStatus } from "@lagos-living/shared";
-import type { BusinessListing, ClubSong, OwambeKind, OwambeParty } from "@lagos-living/shared";
+import type { BusinessListing, ClubSong, HustleStatus, OwambeKind, OwambeParty, StoryChapterId } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -151,6 +151,10 @@ export const api = {
   gymSet: (exercise: ExerciseId, kg?: number) => post<{ exercise: ExerciseId; kg: number | null; endsAt: string; name: string }>("/api/gym/set", kg ? { exercise, kg } : { exercise }),
   gymFinish: () => post<{ counted: true; fitness: number; energy: number; kg: number | null; coached: boolean } | { counted: false; reason: string }>("/api/gym/finish", {}),
   gymTrainer: () => post<{ charged: boolean; balance: number; trainerUntil: string }>("/api/gym/trainer", { idempotencyKey: crypto.randomUUID() }),
+  hustle: () => request<HustleStatus>("/api/hustle"),
+  borrow: (amount: number) => post<HustleStatus>("/api/hustle/borrow", { amount, idempotencyKey: crypto.randomUUID() }),
+  repayLoan: (amount?: number) => post<HustleStatus>("/api/hustle/repay", { amount, idempotencyKey: crypto.randomUUID() }),
+  claimChapter: (chapter: StoryChapterId) => post<HustleStatus>(`/api/story/${chapter}/claim`, {}),
   business: () => request<BusinessStatus>("/api/business"),
   startBusiness: (type: BusinessTypeId, name: string, plotId?: string) => post<{ balance: number }>("/api/business", { type, name, plotId, idempotencyKey: crypto.randomUUID() }),
   upgradeBusiness: (businessId: string) => post<{ balance: number }>(`/api/business/${businessId}/upgrade`, { idempotencyKey: crypto.randomUUID() }),

@@ -132,6 +132,7 @@ export * from "./gigs.js";
 export * from "./generator-repair.js";
 export * from "./home-services.js";
 export * from "./business.js";
+export * from "./hustle.js";
 export * from "./power.js";
 export * from "./fuel.js";
 export * from "./street-football.js";

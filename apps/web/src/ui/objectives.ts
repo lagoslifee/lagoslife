@@ -1,4 +1,4 @@
-import { constructionStages, getPlace, houseDesign, PLOTS, ROUTES, stopLabel, type Vec2 } from "@lagos-living/shared";
+import { constructionStages, getPlace, houseDesign, HUSTLE_FUND, PLOTS, ROUTES, stopLabel, type Vec2 } from "@lagos-living/shared";
 import { naira, type EconomyState, type PlotState, type PropertyListing } from "../api";
 import type { HudState } from "../game/engine";
 import { buildProgress } from "../game/build-progress";
@@ -60,7 +60,7 @@ export function currentObjective(
     step,
     total: TOTAL,
     title: "Pick up a delivery job",
-    detail: `${why} ${hub.name} on ${hub.street} — press E at the door.`,
+    detail: `${why} ${hub.name} on ${hub.street} — press E at the door. Want to start bigger? Borrow up to ${naira(HUSTLE_FUND.firstLimit)} in Phone → My Story and open a business.`,
     target: { point: hub.door, label: hub.name },
   });
 
