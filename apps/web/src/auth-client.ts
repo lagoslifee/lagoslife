@@ -60,6 +60,10 @@ export async function reloadIfServerMoved(): Promise<boolean> {
     if (!response.ok) return false;
     const { apiUrl: current } = (await response.json()) as { apiUrl?: string | null };
     if (!current || current === apiUrl) return false;
+    // Mid-deploy the page and the manifest can disagree for a moment; one reload per new address avoids a loop.
+    const [lastUrl, lastAt] = (sessionStorage.getItem("lagos-server-reload") ?? "").split("|");
+    if (lastUrl === current && Date.now() - Number(lastAt) < 120_000) return false;
+    sessionStorage.setItem("lagos-server-reload", `${current}|${Date.now()}`);
     location.reload();
     return true;
   } catch {
