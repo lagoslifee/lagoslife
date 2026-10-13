@@ -440,6 +440,10 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .sheet-backdrop { position: absolute; inset: 0; z-index: 12; display: grid; place-items: end center; background: rgba(0,0,0,.25); }
 .sheet-backdrop.see-through { background: linear-gradient(to bottom, transparent 40%, rgba(0,0,0,.3)); }
 .sheet { width: min(560px, 96vw); max-height: 78vh; overflow-y: auto; margin-bottom: 24px; padding: 20px 22px; border-radius: 16px; color: #17312e; background: #f6f3ea; box-shadow: 0 20px 60px rgba(0,0,0,.4); font-size: calc(14px * var(--text-scale)); }
+.viewing-now { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 10px 0 6px; padding: 10px 12px; border-radius: 10px; color: #fff; background: #10261b; }
+.viewing-now strong { font-size: 1.05em; }
+.viewing-now .muted { color: #b7d4c2; }
+.viewing-live { padding: 2px 7px; border-radius: 4px; font-size: .72em; font-weight: 800; letter-spacing: .06em; color: #fff; background: #e5322d; }
 .sheet header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
 .sheet h2 { margin: 4px 0 0; font-size: calc(24px * var(--text-scale)); }
 .sheet .muted { margin-bottom: 12px; }

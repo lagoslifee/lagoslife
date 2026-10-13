@@ -33,8 +33,9 @@ import type { PropId, PropLibrary } from "./props";
 import { buildBottle } from "./drinks";
 import { GYM_RECEPTION, gymMachines, gymStations } from "./gym-stations";
 import { SignAtlas } from "./sign-atlas";
+import { buildViewingScreens, VIEWING_BENCH_LENGTH, VIEWING_BENCH_X, VIEWING_KIOSK, VIEWING_ROWS, VIEWING_SCREEN, VIEWING_SEAT_Y, viewingSeats } from "./viewing-hall";
 
-export type InteriorKind = "starter" | "preview" | "home" | "club" | "gym";
+export type InteriorKind = "starter" | "preview" | "home" | "club" | "gym" | "viewing";
 /** `x`/`z` are room-local metres; pieces saved before free placement only have their grid cell. */
 export type Placement = { id?: string; itemId: string; gridX: number; gridZ: number; rotation: number; x?: number | null; z?: number | null };
 export type InteriorSpot = { id: "exit" | "bed" | "storage" | "kitchen" | "bar" | "stool" | "dance" | "tv" | "sofa" | "dining" | "gym" | `table-${number}`; point: Vec2; label: string };
@@ -87,7 +88,7 @@ const GYM_LAYOUT: HomeLayout = { ...HOME_LAYOUTS.flat, halfX: GYM_ROOM.halfX, ba
 /** Meshy models a home needs before it is built, so the first frame already shows them. */
 export function interiorModels(kind: InteriorKind, layout: HomeLayout, placements: Placement[]): PropId[] {
   if (kind === "gym") return [...new Set([...gymMachines().map((machine) => machine.prop), "potted-palm" as const])];
-  if (kind === "club" || kind === "starter") return [];
+  if (kind === "club" || kind === "starter" || kind === "viewing") return [];
   const pieces = kind === "preview" ? previewPieces(layout).map((piece) => piece.itemId) : placements.map((piece) => piece.itemId);
   const models = pieces.map((itemId) => FURNITURE_MODELS[itemId]).filter((id): id is PropId => Boolean(id));
   return [...new Set([...models, ...(layout.tier === "flat" ? [] : SHOWPIECES)])];
@@ -119,7 +120,7 @@ export type InteriorOptions = { layout?: HomeLayout; props?: PropLibrary | null 
 
 /** Builds one room at the interior origin; obstacles are returned as axis-aligned boxes. */
 export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtlas, kind: InteriorKind, title: string, placements: Placement[], club?: Club, options: InteriorOptions = {}) {
-  const layout = kind === "gym" ? GYM_LAYOUT : kind === "club" || kind === "starter" ? HOME_LAYOUTS.flat : (options.layout ?? HOME_LAYOUTS.flat);
+  const layout = kind === "gym" ? GYM_LAYOUT : kind === "club" || kind === "starter" || kind === "viewing" ? HOME_LAYOUTS.flat : (options.layout ?? HOME_LAYOUTS.flat);
   const props = options.props ?? null;
   const [X0, X1, Z0, Z1, H] = [OX - layout.halfX, OX + layout.halfX, OZ + FRONT_WALL, OZ + layout.back, layout.height];
   const disposables: Array<{ dispose(): void }> = [];
@@ -150,15 +151,16 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   const corners: Vec2[] = [[X0, Z0], [X1, Z0], [X1, Z1], [X0, Z1]];
   const marina = kind === "club" && club?.id === DUBAI_CLUB;
   const gym = kind === "gym";
-  const plain = kind === "club" || kind === "starter" || gym;
+  const viewing = kind === "viewing";
+  const plain = kind === "club" || kind === "starter" || gym || viewing;
   const grand = !plain && layout.tier !== "flat";
   if (grand) get(local_.floorKey).polygon(corners, 0.02, local_.floorTile);
   else if (gym) get("vertexPaint").polygon(corners, 0.02, 1, [0.15, 0.15, 0.17]);
-  else get("tiles").polygon(corners, 0.02, 1.2, marina ? [0.78, 0.76, 0.74] : kind === "club" ? [0.16, 0.14, 0.2] : undefined);
+  else get("tiles").polygon(corners, 0.02, 1.2, marina ? [0.78, 0.76, 0.74] : kind === "club" ? [0.16, 0.14, 0.2] : viewing ? [0.5, 0.48, 0.44] : undefined);
   // The ceiling is its own mesh so the home designer can lift it off for a view from above.
   const ceiling = new MeshBuilderBatch("interior ceiling");
-  ceiling.polygon(corners, H, 3, marina ? [0.14, 0.12, 0.1] : kind === "club" ? [0.08, 0.07, 0.1] : gym ? [0.2, 0.2, 0.22] : [0.97, 0.97, 0.95], true);
-  const wallColor: [number, number, number] = marina ? [0.3, 0.25, 0.19] : kind === "club" ? [0.13, 0.11, 0.17] : gym ? [0.34, 0.34, 0.37] : kind === "starter" ? [0.86, 0.9, 0.84] : local_.wall;
+  ceiling.polygon(corners, H, 3, marina ? [0.14, 0.12, 0.1] : kind === "club" ? [0.08, 0.07, 0.1] : gym ? [0.2, 0.2, 0.22] : viewing ? [0.16, 0.17, 0.18] : [0.97, 0.97, 0.95], true);
+  const wallColor: [number, number, number] = marina ? [0.3, 0.25, 0.19] : kind === "club" ? [0.13, 0.11, 0.17] : gym ? [0.34, 0.34, 0.37] : viewing ? [0.1, 0.3, 0.17] : kind === "starter" ? [0.86, 0.9, 0.84] : local_.wall;
   const RAIL = 1.05;
   // Inward normals of the front, east, back and west walls.
   const inward: Vec2[] = [[0, 1], [-1, 0], [0, -1], [1, 0]];
@@ -184,7 +186,7 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   let upstairs: Upstairs | null = null;
   if (grand) {
     upstairs = dressHome(layout, { get, solid, model, boxes });
-  } else if (!gym) {
+  } else if (!gym && !viewing) {
     // Windows with a bright daylight view on the north and east walls.
     for (const x of kind === "club" ? [] : [-3, 0, 3]) {
       get("lamp").quad([OX + x + 0.7, 1.0, Z1 - 0.02], [OX + x - 0.7, 1.0, Z1 - 0.02], [OX + x - 0.7, 2.3, Z1 - 0.02], [OX + x + 0.7, 2.3, Z1 - 0.02], [0, 0, -1], [[0, 0], [1, 0], [1, 1], [0, 1]]);
@@ -197,8 +199,8 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   // Exit door on the south wall.
   const [exitX, exitZ] = INTERIOR_EXIT;
   const exitDisposables: Array<{ dispose(): void }> = [];
-  buildExitDoor(scene, exitX, OZ - HZ + 0.02, 0, exitDisposables, { label: kind === "club" ? "Back to the street" : gym ? "Out to Admiralty Way" : "Out to the street", width: 1.4 });
-  const subtitle = club ? `Tonight: ${club.dj}` : gym ? "Members' training floor" : kind === "preview" ? "Show flat preview" : kind === "starter" ? "Starter room" : "Your home";
+  buildExitDoor(scene, exitX, OZ - HZ + 0.02, 0, exitDisposables, { label: kind === "club" ? "Back to the street" : gym || viewing ? "Out to Admiralty Way" : "Out to the street", width: 1.4 });
+  const subtitle = club ? `Tonight: ${club.dj}` : gym ? "Members' training floor" : viewing ? "Every match live" : kind === "preview" ? "Show flat preview" : kind === "starter" ? "Starter room" : "Your home";
   const uv = atlas.get(title, "plate", subtitle);
   const signs = new MeshBuilderBatch("interior title");
   signs.quad([exitX + 2.4, 2.1, OZ - HZ + 0.03], [exitX + 0.9, 2.1, OZ - HZ + 0.03], [exitX + 0.9, 2.1 + 1.5 / SignAtlas.aspect, OZ - HZ + 0.03], [exitX + 2.4, 2.1 + 1.5 / SignAtlas.aspect, OZ - HZ + 0.03], [0, 0, 1], [[uv.u0, uv.v0], [uv.u1, uv.v0], [uv.u1, uv.v1], [uv.u0, uv.v1]]);
@@ -262,6 +264,12 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     dressGym(atlas, signs, { get, solid, model, boxes });
     for (const station of gymStations()) addSpot("gym", station.spot, GYM_SPOT_LABELS[station.exercise]);
     addSpot("gym", GYM_RECEPTION.spot, "Reception · membership");
+  } else if (viewing) {
+    dressViewing(atlas, signs, { get, solid, model, boxes });
+    for (const seat of viewingSeats()) if (seat.fan === null) addSeat(seat.at, seat.yaw, VIEWING_SEAT_Y, "dining");
+    for (const row of VIEWING_ROWS) for (const bx of VIEWING_BENCH_X) addSpot("dining", [OX + bx, OZ + row + 0.65], "Sit and watch the match");
+    const screens = buildViewingScreens(scene, disposables);
+    animate = (seconds) => screens.update(seconds);
   } else if (kind === "starter") {
     bed(OX - HX + 1.0, OZ + HZ - 1.4, Math.PI);
     table(OX + 2.5, OZ + 2.6, 0);
@@ -303,9 +311,9 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
     : layout.tier === "mansion" ? [[0, 1.5], [-7, 8], [7, 8]] : layout.tier === "flat" || !grand ? [[0, 0]] : [[0, 0.5], [0, layout.back - 4]];
   const lights = lightPoints.map(([lx, lz], index) => {
     const light = new PointLight(`interior light ${index}`, new Vector3(OX + lx, Math.min(H - 0.6, 4.2), OZ + lz), scene);
-    light.intensity = kind === "club" ? 5 : grand ? 26 : gym ? 16 : 18;
+    light.intensity = kind === "club" ? 5 : viewing ? 7 : grand ? 26 : gym ? 16 : 18;
     light.range = grand || gym ? 20 : 14;
-    light.diffuse = Color3.FromHexString(kind === "club" ? "#b8a8ff" : gym ? "#f1f4ff" : "#fff1dc");
+    light.diffuse = Color3.FromHexString(kind === "club" ? "#b8a8ff" : gym ? "#f1f4ff" : viewing ? "#dfe8ff" : "#fff1dc");
     // A light hanging just under the ceiling would burn a bright disc into it; the ceiling's own glow lights it evenly.
     if (roof && !plain) light.excludedMeshes.push(roof);
     return light;
@@ -906,6 +914,72 @@ const GYM_SPOT_LABELS: Record<ExerciseId, string> = { treadmill: "Treadmill · c
  * benches, dumbbells) on black rubber along the east wall, a stretch mat, lockers, the front desk by the door, and a
  * glazed street front. The machines come from gym-stations.ts so members train exactly where they are drawn.
  */
+/** A Lagos viewing centre: green walls, rows of wooden benches facing a projector screen, a drinks kiosk by the door. */
+function dressViewing(atlas: SignAtlas, signs: MeshBuilderBatch, { get, solid, boxes }: Dresser) {
+  const HX_ = HX;
+  const Z1 = OZ + HZ;
+  const Z0 = OZ - HZ;
+  const sign = (text: string, sub: string, x0: number, x1: number, y0: number, z: number, style: "plate" | "club" = "plate") => {
+    const uv = atlas.get(text, style, sub);
+    const y1 = y0 + Math.abs(x1 - x0) / SignAtlas.aspect;
+    signs.quad([x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z], [0, 0, x1 > x0 ? -1 : 1], [[uv.u0, uv.v0], [uv.u1, uv.v0], [uv.u1, uv.v1], [uv.u0, uv.v1]]);
+  };
+
+  // Painted dado band and a darker floor strip down the aisle.
+  for (const [ax, az, bx, bz] of [[OX - HX_, Z1, OX + HX_, Z1], [OX + HX_, Z0, OX + HX_, Z1], [OX - HX_, Z0, OX - HX_, Z1]] as const) {
+    const yaw = ax === bx ? Math.PI / 2 : 0;
+    const length = Math.hypot(bx - ax, bz - az);
+    const [cx, cz] = [(ax + bx) / 2 + (ax === bx ? (ax < OX ? 0.03 : -0.03) : 0), (az + bz) / 2 + (ax === bx ? 0 : -0.03)];
+    get("vertexPaint").box(cx, 0.55, cz, length, 1.1, 0.02, yaw, 1, [0.06, 0.18, 0.1]);
+    get("vertexPaint").box(cx, 1.12, cz, length, 0.05, 0.03, yaw, 1, [0.95, 0.85, 0.2]);
+  }
+  get("vertexPaint").polygon([[OX - 0.8, Z0], [OX + 0.8, Z0], [OX + 0.8, Z1 - 0.6], [OX - 0.8, Z1 - 0.6]], 0.025, 1, [0.32, 0.3, 0.28]);
+
+  // Screen: a black frame and a raised stage the speakers stand on.
+  const { width: SW, height: SH, y: SY, z: SZ } = VIEWING_SCREEN;
+  get("vertexPaint").box(OX, SY, OZ + SZ + 0.03, SW + 0.24, SH + 0.24, 0.05, 0, 1, [0.03, 0.03, 0.04]);
+  solid("vertexPaint", OX, 0.15, Z1 - 0.4, 7.4, 0.3, 0.8, 0, [0.12, 0.12, 0.13]);
+  for (const side of [-1, 1]) {
+    solid("vertexPaint", OX + side * 3.25, 0.85, Z1 - 0.45, 0.5, 1.1, 0.45, 0, [0.05, 0.05, 0.06]);
+    for (const y of [0.6, 1.05]) get("chrome").box(OX + side * 3.25, y, Z1 - 0.68, 0.3, 0.3, 0.02, 0, 1, [0.25, 0.25, 0.27]);
+  }
+  // Side TVs sit in black bezels.
+  for (const side of [-1, 1]) get("vertexPaint").box(OX + side * 5.57, 2.05, OZ - 0.2, 0.04, 1.0, 1.72, 0, 1, [0.03, 0.03, 0.04]);
+
+  // Benches: a thick plank on three pairs of legs, a footrail behind.
+  for (const row of VIEWING_ROWS) {
+    for (const bx of VIEWING_BENCH_X) {
+      const [x, z] = [OX + bx, OZ + row];
+      solid("wood", x, 0.42, z, VIEWING_BENCH_LENGTH, 0.06, 0.42, 0, [0.55, 0.36, 0.2]);
+      for (const lx of [-1.45, 0, 1.45]) {
+        for (const lz of [-0.16, 0.16]) get("wood").box(x + lx, 0.2, z + lz, 0.07, 0.4, 0.07, 0, 1, [0.38, 0.24, 0.13]);
+      }
+      get("wood").box(x, 0.1, z - 0.16, VIEWING_BENCH_LENGTH - 0.2, 0.05, 0.05, 0, 1, [0.38, 0.24, 0.13]);
+    }
+  }
+
+  // Drinks kiosk by the door: counter, a glass-front fridge glowing blue, crates stacked beside it.
+  const [kx, kz] = VIEWING_KIOSK.counter;
+  solid("vertexPaint", kx, 0.55, kz, 0.6, 1.1, 1.8, 0, [0.85, 0.12, 0.12]);
+  get("vertexPaint").box(kx, 1.12, kz, 0.72, 0.05, 1.9, 0, 1, [0.92, 0.92, 0.9]);
+  solid("vertexPaint", OX - HX_ + 0.35, 0.95, OZ - 1.5, 0.6, 1.9, 0.7, 0, [0.85, 0.86, 0.88]);
+  get("neon").box(OX - HX_ + 0.66, 1.05, OZ - 1.5, 0.01, 1.4, 0.55, 0, 1, [0.55, 0.8, 1.0]);
+  for (const [lx, h] of [[0, 0.3], [0, 0.6], [0.35, 0.3]] as const) get("vertexPaint").box(OX - HX_ + 0.35 + lx, h - 0.15, OZ - 0.7, 0.4, 0.28, 0.3, 0, 1, [0.9, 0.7, 0.1]);
+  boxes.push({ x: OX - HX_ + 0.5, z: OZ - 0.7, hx: 0.35, hz: 0.2 });
+
+  // Signs: the name over the screen, the match-day rules by the door, a jersey strip on the east wall.
+  sign("Champions Viewing Centre", "Every match live", OX - 2.1, OX + 2.1, SY + SH / 2 + 0.18, OZ + SZ - 0.01, "club");
+  sign("Pass ₦1,500 / hour", "Cold drinks at the kiosk", OX + 4.9, OX + 3.3, 1.7, Z0 + 0.03, "plate");
+  for (let index = 0; index < 4; index += 1) {
+    const z = OZ + 1.6 + index * 0.75;
+    const colour: Rgb = ([[0.88, 0.15, 0.17], [0.11, 0.31, 0.7], [0.99, 0.88, 0.0], [0.04, 0.4, 0.2]] as Rgb[])[index]!;
+    get("vertexPaint").box(OX + HX_ - 0.03, 1.75, z, 0.02, 0.55, 0.5, 0, 1, colour);
+    get("vertexPaint").box(OX + HX_ - 0.035, 1.98, z, 0.02, 0.1, 0.62, 0, 1, colour);
+  }
+  // Strip lights down the room.
+  for (const x of [-2.6, 2.6]) get("lamp").box(OX + x, HEIGHT - 0.03, OZ - 0.2, 0.12, 0.03, 7.5);
+}
+
 function dressGym(atlas: SignAtlas, signs: MeshBuilderBatch, { get, solid, model, boxes }: Dresser) {
   const { halfX, back, height: H } = GYM_ROOM;
   const [X0, X1, Z0, Z1] = [OX - halfX, OX + halfX, OZ + FRONT_WALL, OZ + back];

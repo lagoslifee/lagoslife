@@ -415,6 +415,16 @@ export class Avatar {
     bend(limbs.leftUp, -P.loungeLegs * 0.4);
   }
 
+  /** Both arms thrown up and pumping after a goal, over the sit or idle clip. */
+  cheer(time: number) {
+    const limbs = this.instance.limbs;
+    const pump = Math.sin(time * 11);
+    for (const [arm, fore, side] of [[limbs.rightArm, limbs.rightFore, 1], [limbs.leftArm, limbs.leftFore, -1]] as const) {
+      bend(arm, side * (-2.45 - 0.2 * pump), Axis.Z);
+      bend(fore, side * (-0.35 + 0.35 * pump), Axis.Z);
+    }
+  }
+
   /** The animation library has no wave, so the right arm is raised and the forearm swings on top of idle. */
   private wave(dt: number) {
     this.waveTime += dt;

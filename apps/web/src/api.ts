@@ -1,6 +1,6 @@
 import type { CabinClass, CharacterAppearance, OutfitId, HotelBookingState, RoomType, TicketState, TravelStatus, VisaPlan, VisaState } from "@lagos-living/shared";
 import type { BottleItem, Citation, PoliceCase, StreetIncident, RobberyRecord, SecurityPlanId, SecurityStatus, ClubMenuItem, ClubStatus, ClubTable, HouseDesign, CommunityStatus, ModerationActionKind, OwnedVehicle, PlayerSettings, ReportReason, SafetyStatus, StaffRole } from "@lagos-living/shared";
-import type { BusinessStatus, BusinessTypeId, CourseId, ExerciseId, GymStatus, RestResult } from "@lagos-living/shared";
+import type { BusinessStatus, BusinessTypeId, CourseId, ExerciseId, GymStatus, RestResult, ViewingStatus } from "@lagos-living/shared";
 import type { FoodParcel, HomeStaffRole, HomeStaffState, HomeTier } from "@lagos-living/shared";
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick, RepairAction } from "@lagos-living/shared";
 import type { AccountSummary, ClaimAccount, LifeGoals } from "@lagos-living/shared";
@@ -223,6 +223,8 @@ export const api = {
   travelOrder: (menu: "room-service" | "rooftop" | "lounge" | "pool", itemId: string, bookingId?: string) =>
     post<{ balance: number; name: string }>("/api/travel/order", { menu, itemId, bookingId, idempotencyKey: crypto.randomUUID() }),
   clubStatus: (placeId: string) => request<ClubStatus>(`/api/clubs/${placeId}`),
+  viewingStatus: (placeId: string) => request<ViewingStatus>(`/api/viewing?placeId=${encodeURIComponent(placeId)}`),
+  buyViewingPass: (placeId: string) => post<{ charged: number; balance: number; status: ViewingStatus }>("/api/viewing/entry", { placeId }),
   buyWristband: (placeId: string) => post<{ charged: number; balance: number; status: ClubStatus }>(`/api/clubs/${placeId}/wristband`),
   clubOrder: (placeId: string, itemId: string) =>
     post<{ replayed: boolean; item: ClubMenuItem; balance: number; needs: { hunger: number; energy: number } }>(`/api/clubs/${placeId}/order`, { itemId, idempotencyKey: crypto.randomUUID() }),

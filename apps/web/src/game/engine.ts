@@ -110,12 +110,15 @@ import {
   type GuardsChase,
   propertyPlace,
   regionOf,
+  broadcastAt,
+  hash01,
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
 import { COMPOUND_PLACES, compoundCars } from "./compounds";
 import { EntranceMarkers, type EntranceCandidate } from "./entrance-markers";
 import { TourGuide, tourStops } from "./tour-guide";
 import { GYM_RECEPTION, gymRegulars, gymStations, type GymRegular, type GymStation } from "./gym-stations";
+import { VIEWING_KIOSK, VIEWING_SEAT_Y, viewingSeats } from "./viewing-hall";
 import { RepairSite } from "./repair-site";
 import { PropLibrary } from "./props";
 import { HomeStaffView, type StaffPost } from "./home-staff-view";
@@ -292,10 +295,10 @@ const PLACE_ACTIONS: Record<Place["kind"], string> = {
   car_rental: "Hire a car",
   tourism: "Things to do in Dubai",
   gym: "Enter gym",
+  viewing: "Watch football",
   estate: "Estate agent",
 };
 
-  viewing: "Watch football",
 /** Lines the crew say on a 60-second flight, keyed by phase. */
 const CABIN_ANNOUNCEMENTS: Partial<Record<FlightPhase, string>> = {
   takeoff: "Cabin crew, seats for take-off. Please keep your seatbelt fastened.",
@@ -472,6 +475,8 @@ export class GameEngine {
   private tableBottles = new Map<number, string[]>();
   /** Members training on the iFitness floor while the player is inside. */
   private regulars: Array<{ avatar: Avatar; plan: GymRegular; time: number }> = [];
+  private fans: Array<{ avatar: Avatar; side: "home" | "away"; time: number }> = [];
+  private goalCheer = false;
   private waiters: Array<{ avatar: Avatar; path: Vec2[]; t: number; table: number; bottles: Array<{ id: string; itemId: string }>; prop: TransformNode; sparkler: boolean }> = [];
   private settings: PlayerSettings;
   private bindings: Bindings;
@@ -1416,6 +1421,7 @@ export class GameEngine {
         if (!inCar) this.player.update(speed, lying ? "idle" : motion, dt);
         if (lying) this.player.sleep(now * 0.001);
         else if (chair?.rest === "sofa" && chair.pose === "sit") this.player.lounge(now * 0.001);
+        if (this.goalCheer && !lying && !inCar) this.player.cheer(now * 0.001);
       }
     } else if (this.playerFallback) {
       this.playerFallback.position.set(x, this.groundY + 0.88, z);
@@ -1452,6 +1458,7 @@ export class GameEngine {
     this.interior?.update(now * 0.001);
     this.updateWaiters(dt);
     this.updateRegulars(dt);
+    this.updateFans(dt);
     if (!this.staff.idle) this.staff.update(dt, [this.controller.x, this.controller.z], now * 0.001);
     if (now - this.boardsAt > 1_000) {
       this.boardsAt = now;
@@ -1757,7 +1764,8 @@ export class GameEngine {
         return;
       }
       if (chair) {
-        this.prompt = { key: bind("interact"), label: chair.rest === "bed" ? "Get up" : "Stand up", detail: chair.rest && chair.rest !== "bed" ? "Resting restores energy" : undefined };
+        const watching = this.self?.location.startsWith("viewing:");
+        this.prompt = { key: bind("interact"), label: chair.rest === "bed" ? "Get up" : "Stand up", detail: watching ? "Enjoy the match" : chair.rest && chair.rest !== "bed" ? "Resting restores energy" : undefined };
         this.interaction = () => this.playEmote("none");
         return;
       }
@@ -2230,6 +2238,7 @@ export class GameEngine {
         remote.avatar.root.setEnabled(!b.busId && !b.vehicleId);
         remote.avatar.update(remote.speed, b.motion, dt);
         if (seat?.rest === "sofa" && b.motion === "sit") remote.avatar.lounge(performance.now() * 0.001);
+        if (this.goalCheer && b.motion === "sit") remote.avatar.cheer(performance.now() * 0.001 + remote.speed);
       }
     }
   }
@@ -2936,9 +2945,12 @@ export class GameEngine {
     const taken = [...this.remotes.values()].map((remote) => remote.avatar?.root.position).filter((at): at is NonNullable<typeof at> => Boolean(at));
     const free = seats.filter((seat) => !taken.some((at) => Math.hypot(at.x - seat.at[0], at.z - seat.at[1]) < 0.35));
     const pool = free.length ? free : seats;
-    const seat = pool.reduce((best, entry) => (Math.hypot(entry.at[0] - here[0], entry.at[1] - here[1]) < Math.hypot(best.at[0] - here[0], best.at[1] - here[1]) ? entry : best));
+    // Judged from where you would stand to sit, so a bench row behind you never wins over the one in front of you.
+    const frontOf = (entry: (typeof seats)[number]): Vec2 => [entry.at[0] + Math.sin(entry.yaw) * 0.6, entry.at[1] + Math.cos(entry.yaw) * 0.6];
+    const reach = (entry: (typeof seats)[number]) => Math.hypot(frontOf(entry)[0] - here[0], frontOf(entry)[1] - here[1]);
+    const seat = pool.reduce((best, entry) => (reach(entry) < reach(best) ? entry : best));
     // Walk to just in front of the seat, or past the foot of the bed; the collider keeps the player off the furniture.
-    const front: Vec2 = [seat.at[0] + Math.sin(seat.yaw) * 0.6, seat.at[1] + Math.cos(seat.yaw) * 0.6];
+    const front = frontOf(seat);
     this.autopilot?.resolve(false);
     this.autopilot = {
       path: [front],
@@ -2951,6 +2963,7 @@ export class GameEngine {
         this.emote = "sit";
         this.net.send("emote", { emote: "sit" });
         this.sitting = { seat: seat.at, yaw: seat.yaw, y: seat.y, pose: "sit", rest: kind };
+        if (this.self?.location.startsWith("viewing:")) this.cameraYaw = seat.yaw;
         onSeated?.();
       },
       lastProgress: performance.now(),
@@ -2992,7 +3005,8 @@ export class GameEngine {
     this.audio.setCabinHum(0);
     const club = self.location.startsWith("club:") && self.propertyId ? CLUBS[self.propertyId] : undefined;
     const gym = self.location.startsWith("gym:");
-    const kind: InteriorKind = club ? "club" : gym ? "gym" : self.location.startsWith("starter:") ? "starter" : self.previewOnly ? "preview" : "home";
+    const viewing = self.location.startsWith("viewing:");
+    const kind: InteriorKind = club ? "club" : gym ? "gym" : viewing ? "viewing" : self.location.startsWith("starter:") ? "starter" : self.previewOnly ? "preview" : "home";
     const title = self.propertyId ? propertyTitle(self.propertyId) : "Home";
     let placements: Placement[] = [];
     let layout = homeLayout(self.propertyId);
@@ -3014,10 +3028,13 @@ export class GameEngine {
         ? [{ id: "bar", at: CLUB_BARTENDER, yaw: Math.PI / 2, look: staffLook(70 + club.bpm, regionOf(self.x, self.z) === "dubai" || club.id === TRAVEL_PLACES.club, "hostess") }]
         : gym
           ? [{ id: "gym-desk", at: GYM_RECEPTION.staff, yaw: Math.PI / 2, look: { ...staffLook(64, false, "hostess"), outfit: "athleisure" } }]
-          : [],
+          : viewing
+            ? [{ id: "viewing-kiosk", at: VIEWING_KIOSK.staff, yaw: Math.PI / 2, look: staffLook(91, false, "waiter") }]
+            : [],
     );
     this.clearRegulars();
     if (gym) this.spawnRegulars();
+    if (viewing) this.spawnFans();
     this.club = club ?? null;
     this.audio.setClub(this.club);
   }
@@ -3132,6 +3149,38 @@ export class GameEngine {
   private clearRegulars() {
     for (const regular of this.regulars) regular.avatar.dispose();
     this.regulars = [];
+    for (const fan of this.fans) fan.avatar.dispose();
+    this.fans = [];
+    this.goalCheer = false;
+  }
+
+  /** Regulars on the benches at the viewing centre; each backs one side and is on their feet when that side scores. */
+  private spawnFans() {
+    if (!this.avatars) return;
+    for (const seat of viewingSeats()) {
+      if (seat.fan === null) continue;
+      const seed = 700 + seat.fan;
+      const avatar = this.avatars.create(`viewing fan ${seed}`, { ...appearanceFor(seed), accessory: "none" });
+      avatar.root.position.set(seat.at[0] + Math.sin(seat.yaw) * 0.08, VIEWING_SEAT_Y, seat.at[1] + Math.cos(seat.yaw) * 0.08);
+      avatar.root.rotation.y = seat.yaw;
+      this.fans.push({ avatar, side: hash01(`viewing-fan-side:${seed}`) < 0.5 ? "home" : "away", time: seed * 0.41 });
+    }
+  }
+
+  /** The hall reacts to the screen: the scoring side's fans and every seated player cheer for a few seconds after a goal. */
+  private updateFans(dt: number) {
+    if (!this.self?.location.startsWith("viewing:")) {
+      this.goalCheer = false;
+      return;
+    }
+    const match = broadcastAt(Date.now());
+    const goal = match.phase !== "pre" && match.lastGoal && match.lastGoal.ago < 4_500 ? match.lastGoal : null;
+    this.goalCheer = Boolean(goal);
+    for (const fan of this.fans) {
+      fan.time += dt;
+      fan.avatar.update(0, "sit", dt);
+      if (goal?.side === fan.side) fan.avatar.cheer(fan.time);
+    }
   }
 
   private clearWaiters() {

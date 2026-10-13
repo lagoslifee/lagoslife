@@ -16,7 +16,7 @@ import { RideAskCard, TravelPromptCard } from "./GoApp";
 import type { RideAsk } from "../multiplayer";
 import { AgberoPrompt } from "./AgberoPrompt";
 import { ClubRadio } from "./ClubRadio";
-import { ClubBarSheet, ClubDoorSheet, ClubTableSheet } from "./ClubSheets";
+import { ClubBarSheet, ClubDoorSheet, ClubTableSheet, ViewingDoorSheet } from "./ClubSheets";
 import { COMMUNITY_KINDS, CommunitySheet } from "./CommunitySheets";
 import { PlaceSheet } from "./Sheets";
 import { airportStep } from "./airport-guide";
@@ -66,7 +66,7 @@ function loadHousing(): HousingPath | "later" | null {
 function roomName(location: string) {
   const venue = venueOf(location);
   const [kind, id = ""] = venue.split(":");
-  if (kind === "club" || kind === "gym") return placeById.get(id)?.name ?? "This venue";
+  if (kind === "club" || kind === "gym" || kind === "viewing") return placeById.get(id)?.name ?? "This venue";
   if (kind === "flight") return "This flight";
   if (kind === "airport") return "The terminal";
   if (kind === "hotel") return "The hotel";
@@ -1290,6 +1290,9 @@ export function GameView({
           </section>
         </div>
       )}
+      {sheet?.kind === "viewing" && (
+        <ViewingDoorSheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} onEnter={() => engine?.enterProperty(sheet.id, "enter")} />
+      )}
       {sheet?.kind === "club" && (
         <ClubDoorSheet place={sheet} economy={economy} onClose={() => setSheet(null)} onRefresh={refresh} onToast={toast} onEnter={() => engine?.enterProperty(sheet.id, "enter")} />
       )}
@@ -1381,7 +1384,7 @@ export function GameView({
           onNavigate={chooseTrip}
         />
       )}
-      {sheet && !["dealership", "mechanic", "club", "police", "security", "gym", "estate"].includes(sheet.kind) && !COMMUNITY_KINDS.has(sheet.kind) && !TRAVEL_SHEET_KINDS.has(sheet.kind) && (
+      {sheet && !["dealership", "mechanic", "club", "police", "security", "gym", "viewing", "estate"].includes(sheet.kind) && !COMMUNITY_KINDS.has(sheet.kind) && !TRAVEL_SHEET_KINDS.has(sheet.kind) && (
         <PlaceSheet
           place={sheet}
           economy={economy}

@@ -1,4 +1,4 @@
-import { BOTTLE_MENU, CLUB_MENU, CLUBS, TABLE_GUESTS_MAX, type ClubStatus, type ClubTable, type Notice, type Place } from "@lagos-living/shared";
+import { BOTTLE_MENU, broadcastAt, CLUB_MENU, CLUBS, TABLE_GUESTS_MAX, VIEWING, type ViewingStatus, type ClubStatus, type ClubTable, type Notice, type Place } from "@lagos-living/shared";
 import { useEffect, useState } from "react";
 import { api, naira, type EconomyState } from "../api";
 
@@ -268,6 +268,81 @@ export function ClubTableSheet({
                 </ul>
               </>
             )}
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
+/** At the viewing-centre door: what is on the screen right now, and an hour's pass to go in and watch. */
+export function ViewingDoorSheet({ place, economy, onClose, onRefresh, onToast, onEnter }: Common & { place: Place; onEnter: () => void }) {
+  const [status, setStatus] = useState<ViewingStatus | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [busy, run] = useRun({ onRefresh, onToast });
+  useEffect(() => {
+    let live = true;
+    api.viewingStatus(place.id).then((next) => live && setStatus(next)).catch(() => undefined);
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [place.id]);
+  const match = broadcastAt(now);
+  const fee = status?.fee ?? VIEWING.entryFee;
+  const balance = economy?.balance ?? 0;
+  const clock = match.phase === "pre" ? "Kick-off" : match.phase === "half" ? "Half-time" : match.phase === "full" ? "Full-time" : `${Math.floor(match.minute) + 1}'`;
+  const pass = status?.passUntil && new Date(status.passUntil).getTime() > now ? status.passUntil : null;
+  const enter = () => {
+    onClose();
+    onEnter();
+  };
+
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <section className="sheet club-sheet" role="dialog" aria-label={place.name} data-testid="viewing-door" onClick={(event) => event.stopPropagation()} style={{ borderTop: "4px solid #0f7a3a" }}>
+        <header>
+          <div>
+            <p className="eyebrow">VIEWING CENTRE · {place.street.toUpperCase()}</p>
+            <h2>{place.name}</h2>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close">✕</button>
+        </header>
+        <div className="viewing-now" data-testid="viewing-now">
+          <span className="viewing-live">LIVE</span>
+          <strong>
+            {match.home.name} {match.score.home} – {match.score.away} {match.away.name}
+          </strong>
+          <span className="muted small">
+            {match.league} · {clock}
+          </span>
+        </div>
+        <p className="muted small">
+          Up next: {match.next.home.name} v {match.next.away.name}. A new match kicks off every two minutes on the big screen and both side TVs.
+        </p>
+        {pass ? (
+          <>
+            <p data-testid="viewing-pass">Your pass works until {untilLabel(pass)}.</p>
+            <button className="primary" onClick={enter}>Go in and watch</button>
+          </>
+        ) : (
+          <>
+            <p>
+              Entry <strong>{naira(fee)}</strong> for {VIEWING.passMinutes} minutes. Grab a bench, chat with whoever is watching, and cheer when your side scores.
+            </p>
+            <button
+              className="primary"
+              data-testid="viewing-pay"
+              disabled={busy || balance < fee}
+              onClick={() => void run(async () => {
+                const result = await api.buyViewingPass(place.id);
+                setStatus(result.status);
+                return result.charged ? `Paid ${naira(result.charged)} at the door. Balance ${naira(result.balance)}.` : "Your pass is still running.";
+              }).then((ok) => ok && enter())}
+            >
+              {balance < fee ? `Need ${naira(fee)}` : `Pay ${naira(fee)} and go in`}
+            </button>
           </>
         )}
       </section>
