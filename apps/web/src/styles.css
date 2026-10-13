@@ -1281,3 +1281,46 @@ button.wide { width: 100%; margin: 6px 0; }
 .trip-options button { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 56px; padding: 6px 4px; font-size: 13px; line-height: 1.2; }
 .trip-options small { font-size: 11px; opacity: .75; font-weight: 400; }
 .trip-note { margin: 8px 0 0; font-size: 12px; opacity: .8; }
+
+/* ---------- Appearance ---------- */
+.theme-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 8px; }
+.theme-option { display: grid; justify-items: center; gap: 6px; padding: 10px 6px 8px; border-radius: 14px; border: 2px solid transparent; background: rgba(120,120,128,.12); color: inherit; font-weight: 600; }
+.theme-option[aria-checked="true"] { border-color: #0a84ff; }
+.theme-option i { display: block; width: 46px; height: 74px; border-radius: 9px; border: 2px solid #1c1c1e; background: linear-gradient(#f2f2f7 0 30%, #fff 30% 46%, #f2f2f7 46% 54%, #fff 54% 70%, #f2f2f7 70%); }
+.theme-option.dark i { background: linear-gradient(#000 0 30%, #1c1c1e 30% 46%, #000 46% 54%, #1c1c1e 54% 70%, #000 70%); }
+
+[data-theme="dark"] { color-scheme: dark; --hud-bg: rgba(6, 10, 12, .84); --hud-line: rgba(255,255,255,.1); }
+[data-theme="dark"] .phone { background: #000; color: #f2f2f7; }
+[data-theme="dark"] .phone.on-home { background: radial-gradient(120% 70% at 15% 0%, #7a3f22 0%, transparent 55%), radial-gradient(110% 80% at 100% 35%, #3b2a86 0%, transparent 60%), linear-gradient(170deg, #0f1d44 0%, #160d33 55%, #050410 100%); }
+[data-theme="dark"] .phone-header { border-bottom-color: rgba(84,84,88,.65); }
+[data-theme="dark"] .phone-home-bar { background: #f2f2f7; }
+[data-theme="dark"] .phone-back, [data-theme="dark"] .link { color: #0a84ff; }
+[data-theme="dark"] .city-reel-meta .link, [data-theme="dark"] .link.small, [data-theme="dark"] .chat-actions .link, [data-theme="dark"] .flight-strip .link { color: #ffd75a; }
+[data-theme="dark"] .muted, [data-theme="dark"] .venue-list li span, [data-theme="dark"] .map-results span, [data-theme="dark"] .notice-log time { color: #98989f; }
+[data-theme="dark"] .icon-button { background: rgba(255,255,255,.12); }
+[data-theme="dark"] .secondary { color: #e7efe9; background: #2c2c2e; }
+[data-theme="dark"] .sheet, [data-theme="dark"] .designer, [data-theme="dark"] .map-panel { color: #f2f2f7; background: #141416; }
+[data-theme="dark"] .map-results button { color: #f2f2f7; }
+[data-theme="dark"] .map-results button:hover { background: #2c2c2e; }
+[data-theme="dark"] :is(.job-card, .home-card, .vehicle-card, .menu li, .choice, .stages li, .citation-list li, .parking-elsewhere li, .designer-shop li, .designer-guests li, .house-card, .repair-parts li, .travel-card, .trade-sheet, .bet-slip, .boutique-item, .place-card, .claim-card, .reported-line) { background: #1c1c1e; border-color: #38383a; color: #f2f2f7; box-shadow: none; }
+[data-theme="dark"] :is(.key, .designer-tabs button, .designer-bag .chip, .category-chips .chip, .fixture .odds button, .studio-chips button) { background: #2c2c2e; border-color: #48484a; color: #f2f2f7; }
+[data-theme="dark"] :is(.designer-tabs button.active, .studio-chips button[aria-pressed="true"]) { background: #f2f2f7; border-color: #f2f2f7; color: #000; }
+[data-theme="dark"] .category-chips .chip.selected { background: #e6bd62; border-color: #e6bd62; color: #1d1a12; }
+[data-theme="dark"] .fixture .odds button.selected { background: #116c60; border-color: #116c60; color: #fff; }
+[data-theme="dark"] :is(.sheet select, .sheet textarea, .app-section textarea, .app-section input, .app-section select, .field input) { background: #1c1c1e; border-color: #48484a; color: #f2f2f7; }
+[data-theme="dark"] .app-section input[type="range"], [data-theme="dark"] .app-section input[type="checkbox"] { background: none; }
+[data-theme="dark"] :is(.route-card, .confirm-bar, .tow-request, .tow-progress) { background: #3a3012; border-color: #6b5615; color: #fbecc0; }
+[data-theme="dark"] .route-number { color: #1d1a10; }
+[data-theme="dark"] .tow-progress li { background: #2c2c2e; color: #c7c2b3; }
+[data-theme="dark"] .tow-progress li.now { background: #f2b705; color: #1d1a10; }
+[data-theme="dark"] :is(.callout, .home-card.starter) { background: #123328; color: #d7f0e3; }
+[data-theme="dark"] .travel-card.warn { background: #33270d; border-color: #7a5a1c; }
+[data-theme="dark"] .travel-card.ok { background: #0f2a1b; border-color: #2f6b47; }
+[data-theme="dark"] .cabin-business { background: #2c2512; border-color: #8a7236; }
+[data-theme="dark"] .travel-flag { background: #2c2c2e; }
+[data-theme="dark"] .travel-flag.warn { background: #3a2b0c; color: #ffd27a; }
+[data-theme="dark"] .travel-flag.ok { background: #10301e; color: #8fe0ae; }
+[data-theme="dark"] .stages li:not(.done):not(.working) > span, [data-theme="dark"] .stage-bar { background: #3a3a3c; }
+[data-theme="dark"] :is(.venue-list li, .bag li, .transactions li, .bindings li, .notice-log li) { border-bottom-color: #2c2c2e; }
+[data-theme="dark"] .notice-log li.error { color: #ff8a75; }
+[data-theme="dark"] .chat-bubble { color: #f2f2f7; background: #1c1c1e; }

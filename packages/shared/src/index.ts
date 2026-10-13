@@ -280,6 +280,7 @@ export const settingsSchema = z.object({
   carSpotters: z.boolean().default(true),
   /** Fictional roadside touts (agberos) asking a slow or stopped car for small change. */
   streetEncounters: z.boolean().default(true),
+  theme: z.enum(["light", "dark"]).default("light"),
 });
 export type PlayerSettings = z.infer<typeof settingsSchema>;
 export const defaultSettings: PlayerSettings = {
@@ -298,6 +299,7 @@ export const defaultSettings: PlayerSettings = {
   graphics: "medium",
   autoGraphics: true,
   needsEnabled: true,
+  theme: "light",
 };
 
 const furnitureRotation = z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]);

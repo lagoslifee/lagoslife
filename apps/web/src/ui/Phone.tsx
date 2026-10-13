@@ -688,6 +688,15 @@ function SettingsApp({ settings, onSettings, bindings, onBindings, quality, onQu
   );
   return (
     <div className="app-section settings">
+      <h3>Appearance</h3>
+      <div className="theme-switch" role="radiogroup" aria-label="Appearance">
+        {(["light", "dark"] as const).map((theme) => (
+          <button key={theme} role="radio" aria-checked={settings.theme === theme} className={`theme-option ${theme}`} onClick={() => onSettings({ ...settings, theme })}>
+            <i aria-hidden="true" />
+            {theme === "light" ? "Light" : "Dark"}
+          </button>
+        ))}
+      </div>
       <h3>Controls</h3>
       {slider("mouseSensitivity", "Camera sensitivity", 0.2, 3, 0.1)}
       {toggle("invertY", "Invert camera Y")}

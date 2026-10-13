@@ -126,7 +126,7 @@ export function GameView({
   const [plotsLoaded, setPlotsLoaded] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
-  const [settings, setSettings] = useState<PlayerSettings>(defaultSettings);
+  const [settings, setSettings] = useState<PlayerSettings>(() => ({ ...defaultSettings, theme: localStorage.getItem("lagos-theme") === "dark" ? "dark" : "light" }));
   const [bindings, setBindings] = useState<Bindings>(loadBindings);
   const [quality, setQuality] = useState<Quality>(loadQuality);
   useEffect(() => setReportedQuality(quality), [quality]);
@@ -490,6 +490,12 @@ export function GameView({
   useEffect(() => {
     document.documentElement.style.setProperty("--text-scale", String(settings.textScale));
   }, [settings.textScale]);
+
+  useEffect(() => {
+    const theme = settings.theme ?? "light";
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("lagos-theme", theme);
+  }, [settings.theme]);
 
   const chosenPath = housing === "later" ? null : housing;
   const settledPath = housingPath(properties, plots, null);
