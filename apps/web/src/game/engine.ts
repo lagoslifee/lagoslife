@@ -2,6 +2,7 @@ import "@babylonjs/loaders/glTF";
 import "@babylonjs/core/Helpers/sceneHelpers";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import "@babylonjs/core/Culling/ray";
+import "./memory-trim";
 import { TargetCamera } from "@babylonjs/core/Cameras/targetCamera";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import { DefaultRenderingPipeline } from "@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline";

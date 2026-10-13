@@ -20,6 +20,7 @@ import {
 } from "@lagos-living/shared";
 import { GarmentPlugin, hairHex, OUTFITS, skinTint, type Accessory, type Body, type Hairstyle, type Kit } from "./appearance";
 import { dressHead, HEAD_UNIT, headAnchor, type HeadStyle } from "./avatar-style";
+import { shareBodyRig } from "./shared-rig";
 
 /**
  * Ground speed (m/s) at which each in-place clip's feet keep pace with the ground, from the foot travel
@@ -83,6 +84,8 @@ export class AvatarFactory {
 
   static async load(scene: Scene) {
     const [male, female] = await Promise.all([LoadAssetContainerAsync(BODY_FILES.male, scene), LoadAssetContainerAsync(BODY_FILES.female, scene)]);
+    shareBodyRig(male);
+    shareBodyRig(female);
     return new AvatarFactory({ male, female }, scene);
   }
 
@@ -150,7 +153,7 @@ export class AvatarFactory {
       const found = node(bone);
       if (found) bones.set(bone, found);
     }
-    return { holder, meshes, body, brows, skirt, garments, hair, anchor, groups, all: entries.animationGroups, limbs, bones, rest };
+    return { holder, meshes, body, brows, skirt, garments, hair, anchor, groups, all: entries.animationGroups, skeletons: entries.skeletons, limbs, bones, rest };
   }
 }
 
@@ -763,6 +766,8 @@ export class Avatar {
     for (const group of this.instance.all) group.dispose();
     this.instance.anchor?.dispose();
     this.instance.holder.dispose(false, true);
+    // Meshes don't take their skeleton (and its bone texture) with them, so every avatar that left the area leaked one.
+    for (const skeleton of this.instance.skeletons) skeleton.dispose();
   }
 
   dispose() {
