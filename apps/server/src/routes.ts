@@ -29,6 +29,7 @@ import {
   eatRequestSchema,
   settingsSchema,
   footballBetSchema,
+  owambeHostSchema,
   spinBetSchema,
   tradeRequestSchema,
   transferRequestSchema,
@@ -90,6 +91,7 @@ import { finishSet, gymStatus, hireTrainer, joinGym, startSet } from "./gym-serv
 import { buyViewingPass, viewingStatus } from "./viewing-service.js";
 import { finishRest, startRest } from "./home-living-service.js";
 import { buyFuel, buyStation, fuelStations, setStationPrice } from "./fuel-service.js";
+import { currentOwambe, hostOwambe } from "./owambe-service.js";
 import { agePower, buyDiesel, buyGenerator, homePower, switchGenerator } from "./power-service.js";
 import { applyCleaner, collectParcel, dismissStaff, eatParcel, hireStaff, homeStaff, openParcels, orderDelivery, partyUntil, staffByHome, startParty, stopParty } from "./home-services-service.js";
 import { addSong, listSongs, removeSong, songAudio } from "./song-service.js";
@@ -635,6 +637,8 @@ export function configureRoutes(app: Express) {
   app.post("/api/properties/:propertyId/furniture/move", requirePlayer, rateLimited, guarded("Furniture could not be moved", (req, userId) =>
     moveFurniture(userId, String(req.params.propertyId), moveFurnitureSchema.parse(req.body))));
 
+  app.get("/api/owambe", requirePlayer, guarded("The event ground is unavailable", () => currentOwambe()));
+  app.post("/api/owambe/host", requirePlayer, rateLimited, guarded("The owambe could not be booked", (req, userId) => hostOwambe(userId, owambeHostSchema.parse(req.body))));
   app.get("/api/fuel/stations", requirePlayer, guarded("Filling stations unavailable", (_req, userId) => fuelStations(userId)));
   app.post("/api/fuel/buy", requirePlayer, rateLimited, guarded("The attendant could not fill the tank", (req, userId) => buyFuel(userId, buyFuelSchema.parse(req.body))));
   app.post("/api/fuel/stations/:stationId/buy", requirePlayer, rateLimited, guarded("The station could not be bought", (req, userId) =>

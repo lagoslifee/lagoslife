@@ -128,6 +128,11 @@ import {
   songRequestSchema,
   footballJoinSchema,
   footballKickSchema,
+  owambeOrderSchema,
+  owambeSeat,
+  OWAMBE,
+  OWAMBE_GROUND,
+  type OwambeParty,
   FAST_TRAVEL,
   FAVOURITES,
   FAVOURITE_LABEL,
@@ -210,6 +215,7 @@ import { chargeSongRequest, findSong, guestDjs, refundSongRequest } from "../son
 import { TowDispatcher } from "./tow-dispatch.js";
 import { StreetFootball } from "./street-football.js";
 import { payMatchOut, payMatchStake } from "../football-service.js";
+import { currentOwambe, owambeEvents, servePlate } from "../owambe-service.js";
 import "../world-footprints.js";
 
 export const LagosState = schema({
@@ -440,6 +446,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     stake: payMatchStake,
     payOut: payMatchOut,
   });
+  private owambe: OwambeParty | null = null;
+  private owambeRefreshing = false;
+  private onOwambeChanged = () => void this.refreshOwambe();
   private tows = new TowDispatcher({
     vehicles: this.vehicles,
     owner: (userId) => {
@@ -524,6 +533,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     securityEvents.on("changed", this.onSecurityChanged);
     travelEvents.on("invite", this.onTravelInvite);
     homeEvents.on("furniture", this.onHomeFurniture);
+    owambeEvents.on("changed", this.onOwambeChanged);
+    void this.refreshOwambe();
     homeEvents.on("invited", this.onHomeInvite);
     playerEvents.on("notice", this.onPlayerNotice);
     try {
@@ -648,6 +659,15 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       const parsed = footballKickSchema.safeParse(payload);
       if (parsed.success) this.football.kick(client.sessionId, parsed.data);
     });
+    this.onMessage("owambeOrder", (client, payload) => {
+      const player = this.players.get(client.sessionId);
+      const parsed = owambeOrderSchema.safeParse(payload);
+      if (!player || !parsed.success || this.limited(player.actionRate, 2)) return;
+      void this.handleOwambeOrder(client, player, parsed.data).catch((error) => console.error("Owambe order failed", error));
+    });
+    this.onMessage("owambeSync", (client) => {
+      if (this.owambe) client.send("owambe", this.owambe);
+    });
     this.onMessage("footballTackle", (client) => this.football.tackle(client.sessionId));
     this.onMessage("carrying", (client, payload) => {
       const player = this.players.get(client.sessionId);
@@ -763,6 +783,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const orphaned = await refundOrphanedRides(player.userId, player.ride?.id ?? null).catch(() => 0);
     if (orphaned > 0) this.notify(client, { tone: "info", text: `A ride you paid for was cut off when the server restarted. ₦${orphaned.toLocaleString("en-NG")} has been refunded.` });
     client.send("bikeStock", Object.fromEntries(this.bikeStock));
+    if (this.owambe) client.send("owambe", this.owambe);
     client.send("tows", this.tows.states(player.userId));
     const rental = await activeRental(player.userId).catch(() => null);
     if (rental && this.players.get(client.sessionId) === player) this.placeRentalBike(player, rental);
@@ -853,6 +874,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     securityEvents.off("changed", this.onSecurityChanged);
     travelEvents.off("invite", this.onTravelInvite);
     homeEvents.off("furniture", this.onHomeFurniture);
+    owambeEvents.off("changed", this.onOwambeChanged);
     homeEvents.off("invited", this.onHomeInvite);
     playerEvents.off("notice", this.onPlayerNotice);
     await Promise.all(
@@ -871,6 +893,39 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     return savePlayerPlace(player.userId, x, z, onStreet ? "street" : player.location).then(() => {
       this.clientFor(player)?.send("saved", { at: Date.now() });
     });
+  }
+
+  private async refreshOwambe(now = Date.now()) {
+    if (this.owambeRefreshing) return;
+    this.owambeRefreshing = true;
+    try {
+      const party = await currentOwambe(now);
+      const before = this.owambe;
+      this.owambe = party;
+      if (!before || before.startsAt !== party.startsAt || before.celebrant !== party.celebrant || before.kind !== party.kind) this.broadcast("owambe", party);
+    } catch (error) {
+      console.error("Owambe refresh failed", error);
+    } finally {
+      this.owambeRefreshing = false;
+    }
+  }
+
+  /** A guest at a table asks for a plate; the caterers send a waiter with it and everyone nearby sees it served. */
+  private async handleOwambeOrder(client: Client, player: Player, order: { table: number; seat: number; dish: string }) {
+    const seat = owambeSeat(order.table, order.seat);
+    if (!seat || player.location !== "street" || player.vehicleId || player.busId) return;
+    if (Math.hypot(player.x - seat.at[0], player.z - seat.at[1]) > OWAMBE.seatReach) {
+      return this.notify(client, { tone: "error", text: "Take a seat at a table first; the waiters serve guests sitting down." });
+    }
+    const result = await servePlate(player.userId, order.dish);
+    if (!result.served) {
+      const minutes = Math.max(1, Math.ceil(result.wait / 60_000));
+      return this.notify(client, { tone: "info", text: `You've just eaten. The waiters will bring another plate in about ${minutes} minute${minutes === 1 ? "" : "s"}.` });
+    }
+    const served = { sessionId: player.sessionId, table: order.table, seat: order.seat, dish: order.dish, hunger: result.hunger, energy: result.energy };
+    for (const other of this.players.values()) {
+      if (other.connected && (other === player || Math.hypot(other.x - OWAMBE_GROUND.centre[0], other.z - OWAMBE_GROUND.centre[1]) < 150)) this.clientFor(other)?.send("owambeServe", served);
+    }
   }
 
   private limited(rate: { since: number; count: number }, max: number) {
@@ -2382,6 +2437,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.state.tick = (this.state.tick + 1) >>> 0;
     this.tows.tick(seconds, now);
     this.football.tick(dt, now);
+    if (this.state.tick % 200 === 0 || (this.owambe && now >= this.owambe.endsAt)) void this.refreshOwambe(now);
     if (this.state.tick % 5 === 0 && this.flights.size) this.checkFlights(now);
     if (this.state.tick % 100 === 0) this.checkDiscoveries(now);
     if (this.state.tick % 25 === 0) {

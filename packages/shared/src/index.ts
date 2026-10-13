@@ -135,6 +135,7 @@ export * from "./business.js";
 export * from "./power.js";
 export * from "./fuel.js";
 export * from "./street-football.js";
+export * from "./owambe.js";
 export * from "./gym.js";
 export * from "./home-living.js";
 export * from "./account.js";
