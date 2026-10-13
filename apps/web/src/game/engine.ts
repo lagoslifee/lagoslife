@@ -122,6 +122,7 @@ import {
   type FurnitureItem,
   type HomeLayout,
   type PlacedPiece,
+  twoWheeled,
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
 import { COMPOUND_PLACES, compoundCars } from "./compounds";
@@ -174,6 +175,8 @@ import { buildWorld, type BuiltWorld } from "./world-builder";
 
 /** How far the hips drop at the bottom of a squat (the legs fold under the body over the idle stance). */
 const SQUAT_DROP = 0.42;
+/** Crank angle that puts a rider's feet level on a motorbike's pegs. */
+const MOTORBIKE_FEET = Math.PI / 2;
 
 export type Prompt = { key: string; label: string; detail?: string | undefined; disabled?: boolean };
 
@@ -1462,9 +1465,9 @@ export class GameEngine {
       this.player.root.position.set(seat.x, this.world.groundHeight(seat.x, seat.z) + seatView.seatHeight(ride.seat), seat.z);
       this.player.root.rotation.y = seat.yaw;
       this.player.root.setEnabled(true);
-      const bike = seatView.model.body === "bicycle";
+      const bike = twoWheeled(seatView.model);
       this.player.update(0, ride.seat === 0 && !bike ? "drive" : "sit", dt);
-      if (bike && ride.seat === 0) this.player.pedal(seatView.crank);
+      if (bike && (ride.seat === 0 || seatView.model.body === "motorbike")) this.player.pedal(seatView.model.body === "motorbike" ? MOTORBIKE_FEET : seatView.crank);
     } else if (this.player) {
       if (this.sitting && (speed > 0.1 || this.emote !== this.sitting.pose || !this.interior)) this.sitting = null;
       const chair = this.sitting;
@@ -2340,10 +2343,10 @@ export class GameEngine {
         remote.avatar.root.position.set(seat.x, this.world.groundHeight(seat.x, seat.z) + seatView.seatHeight(b.vehicleSeat ?? 0), seat.z);
         remote.avatar.root.rotation.y = seat.yaw;
         remote.avatar.root.setEnabled(true);
-        const bike = seatView.model.body === "bicycle";
+        const bike = twoWheeled(seatView.model);
         const driver = (b.vehicleSeat ?? 0) === 0;
         remote.avatar.update(0, driver && !bike ? "drive" : "sit", dt);
-        if (bike && driver) remote.avatar.pedal(seatView.crank);
+        if (bike && (driver || seatView.model.body === "motorbike")) remote.avatar.pedal(seatView.model.body === "motorbike" ? MOTORBIKE_FEET : seatView.crank);
       } else if (remote.avatar) {
         const seat = b.motion === "sit" || b.motion === "dance"
           ? seats

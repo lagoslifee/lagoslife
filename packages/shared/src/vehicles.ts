@@ -2,7 +2,7 @@ import { z } from "zod";
 import { VEHICLE_ASSETS } from "./vehicle-assets.js";
 import { REAL_VEHICLE_ASSETS } from "./vehicle-assets-real.js";
 
-export const vehicleCategories = ["compact", "sedan", "suv", "luxury", "sports", "van", "bicycle"] as const;
+export const vehicleCategories = ["compact", "sedan", "suv", "luxury", "sports", "van", "motorbike", "bicycle"] as const;
 export type VehicleCategory = (typeof vehicleCategories)[number];
 export const vehicleCategoryLabels: Record<VehicleCategory, string> = {
   compact: "Compact",
@@ -11,6 +11,7 @@ export const vehicleCategoryLabels: Record<VehicleCategory, string> = {
   luxury: "Luxury",
   sports: "Sports & supercars",
   van: "Vans & utility",
+  motorbike: "Motorbikes",
   bicycle: "Bicycles",
 };
 
@@ -18,7 +19,7 @@ export type VehicleModel = {
   id: string;
   name: string;
   category: VehicleCategory;
-  body: "hatch" | "saloon" | "suv" | "pickup" | "van" | "bicycle";
+  body: "hatch" | "saloon" | "suv" | "pickup" | "van" | "motorbike" | "bicycle";
   price: number;
   /** Metres per second. */
   topSpeed: number;
@@ -213,6 +214,69 @@ const CATALOGUE: VehicleModel[] = [
     description: "A private eight-seat minibus for families, church groups and parties.",
   },
   {
+    id: "okada-boxer",
+    name: "Bajaj Boxer 150",
+    category: "motorbike",
+    body: "motorbike",
+    price: 380_000,
+    topSpeed: 17,
+    reverseSpeed: 1.2,
+    acceleration: 4.4,
+    braking: 9,
+    wheelbase: 1.3,
+    maxSteer: 0.6,
+    length: 2.0,
+    width: 0.78,
+    height: 1.1,
+    mass: 200,
+    wheelRadius: 0.31,
+    seats: 2,
+    colours: ["#101418", "#c8102e", "#1f3a5f", "#e0b02a"],
+    description: "The okada workhorse: cheap on fuel, threads Lagos go-slow and carries one passenger on the back.",
+  },
+  {
+    id: "honda-cbr600rr",
+    name: "Honda CBR600RR",
+    category: "motorbike",
+    body: "motorbike",
+    price: 2_800_000,
+    topSpeed: 27,
+    reverseSpeed: 1.2,
+    acceleration: 6.2,
+    braking: 11,
+    wheelbase: 1.38,
+    maxSteer: 0.55,
+    length: 2.05,
+    width: 0.72,
+    height: 1.12,
+    mass: 260,
+    wheelRadius: 0.32,
+    seats: 2,
+    colours: ["#c8102e", "#f2f2ee", "#101418", "#1f4fa8"],
+    description: "Fully faired supersport. Low tuck, sharp turn-in, and every head on Admiralty Way turns.",
+  },
+  {
+    id: "kawasaki-ninja-zx10r",
+    name: "Kawasaki Ninja ZX-10R",
+    category: "motorbike",
+    body: "motorbike",
+    price: 8_500_000,
+    topSpeed: 32,
+    reverseSpeed: 1.2,
+    acceleration: 7.2,
+    braking: 12,
+    wheelbase: 1.45,
+    maxSteer: 0.5,
+    length: 2.08,
+    width: 0.75,
+    height: 1.15,
+    mass: 280,
+    wheelRadius: 0.33,
+    seats: 2,
+    colours: ["#3aa635", "#101418", "#f2f2ee", "#7a1fa2"],
+    description: "Litre-class superbike in Kawasaki green. The loudest way across Third Mainland Bridge.",
+  },
+  {
     id: "yaba-city-bike",
     name: "Yaba City Bike",
     category: "bicycle",
@@ -320,6 +384,9 @@ export const VEHICLE_MODELS: VehicleModel[] = [...CATALOGUE, ...realModels].map(
   return { ...model, length, width, height, wheelbase, wheelRadius, seats: asset.seats.length, asset };
 });
 
+/** Bicycles and motorbikes: one wheel front and back, leaned into corners, ridden astride. */
+export const twoWheeled = (model: Pick<VehicleModel, "body">) => model.body === "bicycle" || model.body === "motorbike";
+
 export const vehicleModelById = new Map(VEHICLE_MODELS.map((model) => [model.id, model]));
 
 export function getVehicleModel(id: string) {
@@ -335,6 +402,7 @@ export function getVehicleModel(id: string) {
 export function vehicleSeats(model: VehicleModel): Array<{ x: number; z: number }> {
   if (model.asset) return model.asset.seats.map(({ x, z }) => ({ x, z }));
   if (model.body === "bicycle") return [{ x: 0, z: -0.1 }];
+  if (model.body === "motorbike") return [{ x: 0, z: -0.12 }, { x: 0, z: -0.5 }];
   const across = model.width * 0.22;
   const front = model.length * { hatch: -0.05, saloon: 0.01, suv: 0.06, pickup: 0.06, van: 0.3 }[model.body];
   const seats = [{ x: -across, z: front }, { x: across, z: front }];

@@ -1,11 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { VEHICLE_MODELS, vehicleOverlap, vehicleSeats } from "./vehicles";
+import { twoWheeled, VEHICLE_MODELS, vehicleOverlap, vehicleSeats } from "./vehicles";
 
 describe("modelled vehicle layouts", () => {
   const modelled = VEHICLE_MODELS.filter((model) => model.asset);
 
   it("gives every car in the catalogue a modelled body", () => {
-    expect(VEHICLE_MODELS.filter((model) => model.body !== "bicycle" && !model.asset)).toEqual([]);
+    expect(VEHICLE_MODELS.filter((model) => !twoWheeled(model) && !model.asset)).toEqual([]);
+  });
+
+  it("sells motorbikes for a rider and one passenger, astride on the centre line", () => {
+    const bikes = VEHICLE_MODELS.filter((model) => model.body === "motorbike");
+    expect(bikes.length).toBeGreaterThanOrEqual(3);
+    for (const bike of bikes) {
+      expect(vehicleSeats(bike)).toHaveLength(bike.seats);
+      expect(vehicleSeats(bike).every((seat) => seat.x === 0)).toBe(true);
+      expect(bike.topSpeed).toBeGreaterThan(VEHICLE_MODELS.find((model) => model.body === "bicycle")!.topSpeed);
+    }
   });
 
   it.each(modelled.map((model) => [model.id, model] as const))("%s seats fit inside the body, driver on the left behind the wheel", (_, model) => {

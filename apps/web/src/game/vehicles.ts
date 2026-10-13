@@ -12,7 +12,7 @@ import type { AssetContainer } from "@babylonjs/core/assetContainer";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import { MeshoptCompression } from "@babylonjs/core/Meshes/Compression/meshoptCompression";
-import { getVehicleModel, VEHICLE_MODELS, vehicleSeats, type VehicleModel } from "@lagos-living/shared";
+import { getVehicleModel, twoWheeled, VEHICLE_MODELS, vehicleSeats, type VehicleModel } from "@lagos-living/shared";
 import type { Materials } from "./materials";
 
 // Served from the game's own origin rather than Babylon's CDN.
@@ -23,7 +23,7 @@ type Station = readonly [z: number, bottom: number, top: number, half: number];
 type Cabin = { belt: number; roof: number; zA: number; zB: number; zC: number; zD: number; tumble: number };
 
 /** Side profiles as fractions of length (z, rear -0.5 to front 0.5), height and half-width. */
-const PROFILES: Record<Exclude<VehicleModel["body"], "bicycle">, { lower: Station[]; cabin: Cabin }> = {
+const PROFILES: Record<Exclude<VehicleModel["body"], "bicycle" | "motorbike">, { lower: Station[]; cabin: Cabin }> = {
   hatch: {
     lower: [[-0.5, 0.25, 0.52, 0.9], [-0.47, 0.19, 0.57, 0.98], [-0.2, 0.17, 0.57, 1], [0.15, 0.17, 0.56, 1], [0.4, 0.19, 0.5, 0.98], [0.5, 0.25, 0.44, 0.9]],
     cabin: { belt: 0.56, roof: 0.99, zA: 0.17, zB: -0.03, zC: -0.42, zD: -0.48, tumble: 0.82 },
@@ -228,12 +228,69 @@ function buildBicycle(scene: Scene, model: VehicleModel, parts: Record<Part, Mes
   parts.headOn.push(box(scene, 0.07, 0.05, 0.03, 0, 0.82 - R, 0.033));
 }
 
+/**
+ * A motorbike: engine block and exhaust low in the frame, a painted tank and tail, the seat for rider and passenger,
+ * and on the faster bikes a fairing with a small screen. The fork and bars turn with the front wheel.
+ */
+function buildMotorbike(scene: Scene, model: VehicleModel, parts: Record<Part, Mesh[]>, paint: Mesh[]) {
+  const R = model.wheelRadius;
+  const half = model.wheelbase / 2;
+  const sport = model.price >= 1_000_000;
+  const ellipsoid = (dx: number, dy: number, dz: number, x: number, y: number, z: number, tilt = 0) => {
+    const mesh = MeshBuilder.CreateSphere("bike shell", { diameterX: dx, diameterY: dy, diameterZ: dz, segments: 10 }, scene);
+    mesh.bakeTransformIntoVertices(Matrix.RotationX(tilt).multiply(Matrix.Translation(x, y, z)));
+    return mesh;
+  };
+  const head = v(0, 0.98, half - 0.2);
+  const pivot = v(0, 0.5, -0.22);
+  paint.push(tube(scene, head, pivot, 0.035));
+  paint.push(tube(scene, head.add(v(0, -0.12, 0)), v(0, 0.36, 0.12), 0.03));
+  paint.push(tube(scene, pivot, v(0, 0.86, -0.7), 0.028));
+  paint.push(tube(scene, v(0, 0.9, -0.1), v(0, 0.86, -0.7), 0.026));
+  paint.push(ellipsoid(0.36, 0.24, 0.52, 0, 0.98, 0.14, -0.12));
+  paint.push(ellipsoid(0.24, sport ? 0.16 : 0.1, 0.5, 0, sport ? 0.97 : 0.88, -0.64, sport ? -0.2 : 0));
+  if (sport) {
+    paint.push(ellipsoid(0.3, 0.3, 0.56, 0, 0.84, half - 0.18, 0.5));
+    paint.push(ellipsoid(0.3, 0.26, 0.72, 0, 0.56, 0.1, 0.1));
+    parts.glass.push(box(scene, 0.24, 0.18, 0.02, 0, 1.08, half - 0.08, -0.85));
+  } else {
+    for (const side of [-1, 1]) paint.push(box(scene, 0.04, 0.16, 0.24, side * 0.15, 0.7, -0.2));
+  }
+  parts.interior.push(box(scene, 0.27, 0.08, sport ? 0.44 : 0.66, 0, sport ? 0.93 : 0.93, sport ? -0.26 : -0.34));
+  parts.trim.push(box(scene, 0.3, 0.28, 0.4, 0, 0.45, 0.04));
+  parts.trim.push(ellipsoid(0.22, 0.2, 0.2, 0, 0.36, -0.12));
+  for (const side of [-1, 1]) parts.trim.push(tube(scene, v(side * 0.11, 0.5, -0.22), v(side * 0.1, R, -half), 0.025));
+  parts.trim.push(tube(scene, v(0, 0.84, -0.78), v(0, 0.62, -half - 0.22), 0.03));
+  parts.chrome.push(tube(scene, v(0.12, 0.3, 0.18), v(0.17, 0.3, -0.3), 0.032));
+  parts.chrome.push(tube(scene, v(0.17, 0.3, -0.3), v(0.2, sport ? 0.62 : 0.42, -0.82), sport ? 0.05 : 0.04));
+  parts.plate.push(box(scene, 0.2, 0.12, 0.012, 0, 0.6, -half - 0.24, -0.35));
+  const tailY = sport ? 0.94 : 0.86;
+  parts.tailOff.push(box(scene, 0.12, 0.05, 0.03, 0, tailY, -0.88));
+  parts.tailOn.push(box(scene, 0.12, 0.05, 0.03, 0, tailY, -0.883));
+  parts.tailBrake.push(box(scene, 0.12, 0.05, 0.03, 0, tailY, -0.886));
+  const lampY = sport ? 0.84 : 0.9;
+  const lampZ = sport ? half + 0.09 : half - 0.06;
+  parts.headOff.push(box(scene, sport ? 0.2 : 0.14, sport ? 0.06 : 0.12, 0.04, 0, lampY, lampZ));
+  parts.headOn.push(box(scene, sport ? 0.2 : 0.14, sport ? 0.06 : 0.12, 0.04, 0, lampY, lampZ + 0.004));
+
+  const fork = parts.fork;
+  for (const side of [-1, 1]) fork.push(tube(scene, v(side * 0.08, 0, 0), v(side * 0.08, 0.66, -0.2), 0.03));
+  fork.push(box(scene, 0.22, 0.05, 0.08, 0, 0.66, -0.2));
+  const bar = sport ? 0.24 : 0.36;
+  const barY = sport ? 0.68 : 0.8;
+  fork.push(tube(scene, v(-bar, barY, -0.26), v(bar, barY, -0.26), 0.016));
+  if (!sport) fork.push(tube(scene, v(0, 0.66, -0.2), v(0, barY, -0.26), 0.02));
+  for (const side of [-1, 1]) fork.push(tube(scene, v(side * bar, barY, -0.26), v(side * (bar + 0.1), barY, -0.27), 0.022));
+  fork.push(box(scene, 0.12, 0.03, 0.42, 0, R + 0.06, 0.02, 0.15));
+}
+
 /** One wheel: dark tyre and pale spoked rim in a single vertex-coloured mesh, so spin is visible. */
 function buildWheel(scene: Scene, model: VehicleModel) {
   const R = model.wheelRadius;
   const bike = model.body === "bicycle";
-  const width = bike ? 0.04 : 0.2;
-  const rimR = bike ? R * 0.92 : R * 0.62;
+  const moto = model.body === "motorbike";
+  const width = bike ? 0.04 : moto ? 0.13 : 0.2;
+  const rimR = bike ? R * 0.92 : moto ? R * 0.68 : R * 0.62;
   const tyre = MeshBuilder.CreateCylinder("tyre", { diameter: R * 2, height: width, tessellation: bike ? 20 : 22 }, scene);
   const rim = MeshBuilder.CreateCylinder("rim", { diameter: rimR * 2, height: width + 0.012, tessellation: 18 }, scene);
   const hub = MeshBuilder.CreateCylinder("hub", { diameter: bike ? 0.06 : rimR * 0.4, height: width + 0.03, tessellation: 10 }, scene);
@@ -339,9 +396,10 @@ function buildTemplate(scene: Scene, model: VehicleModel): Template {
   const parts = Object.fromEntries(PARTS.map((part) => [part, [] as Mesh[]])) as Record<Part, Mesh[]>;
   const paint: Mesh[] = [];
   if (model.body === "bicycle") buildBicycle(scene, model, parts, paint);
+  else if (model.body === "motorbike") buildMotorbike(scene, model, parts, paint);
   else buildCar(scene, model, parts, paint);
   parts.wheel.push(buildWheel(scene, model));
-  if (model.body !== "bicycle") parts.steer.push(...steeringWheel(scene));
+  if (!twoWheeled(model)) parts.steer.push(...steeringWheel(scene));
   const merge = (meshes: Mesh[], name: string) => (meshes.length ? templateSource(Mesh.MergeMeshes(meshes, true, true)!, `${model.id} ${name}`) : null);
   const sources = {} as Record<Part, Mesh | null>;
   for (const part of PARTS) sources[part] = merge(parts[part], part);
@@ -462,7 +520,7 @@ export class VehicleView {
       if (lamp) this.lamps[part] = lamp;
     }
     const R = model.wheelRadius;
-    const bike = model.body === "bicycle";
+    const bike = twoWheeled(model);
     const track = bike ? 0 : (model.asset?.track ?? model.width / 2 + 0.015 - 0.1);
     for (const [x, z] of bike ? ([[0, 1], [0, -1]] as const) : ([[-1, 1], [1, 1], [-1, -1], [1, -1]] as const)) {
       const pivot = new TransformNode(`${this.id} wheel pivot`, this.root.getScene());
@@ -544,9 +602,9 @@ export class VehicleView {
   animate(dt: number, motion: { speed: number; steer: number; braking: boolean; accel: number; yawRate: number }) {
     if (dt <= 0) return;
     const model = this.model;
-    const bike = model.body === "bicycle";
+    const bike = twoWheeled(model);
     // Roughly 2.4 wheel turns per crank turn; coasting freewheels instead of back-pedalling.
-    if (bike && motion.speed > 0.2 && motion.accel > -0.5) this.crank = (this.crank + (motion.speed * dt) / model.wheelRadius / 2.4) % (Math.PI * 2);
+    if (model.body === "bicycle" && motion.speed > 0.2 && motion.accel > -0.5) this.crank = (this.crank + (motion.speed * dt) / model.wheelRadius / 2.4) % (Math.PI * 2);
     for (const wheel of this.wheels) {
       wheel.spin.rotation.x = (wheel.spin.rotation.x + (motion.speed * dt) / model.wheelRadius) % (Math.PI * 2);
       if (wheel.front) wheel.pivot.rotation.y = motion.steer;
@@ -603,6 +661,7 @@ export class VehicleView {
   seatHeight(index = 0) {
     if (this.modelled && this.model.asset) return this.model.asset.seats[Math.min(index, this.model.asset.seats.length - 1)]!.y;
     if (this.model.body === "bicycle") return 0.5;
+    if (this.model.body === "motorbike") return index === 0 ? 0.6 : 0.68;
     const profile = PROFILES[this.model.body as keyof typeof PROFILES];
     return Math.max(0, profile.lower[1]![1] * this.model.height - 0.12);
   }

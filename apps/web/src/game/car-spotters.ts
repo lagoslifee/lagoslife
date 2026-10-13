@@ -23,7 +23,7 @@ let serial = 0;
 export function carRarity(car: Pick<SpottedCar, "modelId" | "colour" | "condition">) {
   const model = vehicleModelById.get(car.modelId);
   if (!model || model.category === "bicycle") return 0;
-  let score = model.price >= 8_000_000 ? 3 : model.price >= 3_000_000 ? 2 : model.category === "luxury" || model.category === "sports" ? 1 : 0;
+  let score = model.price >= 8_000_000 ? 3 : model.price >= 3_000_000 ? 2 : model.category === "luxury" || model.category === "sports" || (model.category === "motorbike" && model.price >= 1_000_000) ? 1 : 0;
   if (score > 0 && model.colours[0] && car.colour.toLowerCase() !== model.colours[0].toLowerCase()) score += 0.5;
   if (car.condition !== null && car.condition < 50) score -= 1;
   return score;

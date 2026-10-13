@@ -59,7 +59,7 @@ function liveryMaterials(scene: Scene) {
  */
 export function addTaxiLivery(view: VehicleView, region: "lagos" | "dubai" = "lagos") {
   const { model } = view;
-  if (model.body === "bicycle") return;
+  if (model.body === "bicycle" || model.body === "motorbike") return;
   const scene = view.root.getScene();
   const materials = liveryMaterials(scene);
   const { checks } = materials;
