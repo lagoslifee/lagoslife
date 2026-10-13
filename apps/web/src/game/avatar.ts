@@ -4,6 +4,7 @@ import type { AssetContainer } from "@babylonjs/core/assetContainer";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { Node } from "@babylonjs/core/node";
 import { Axis } from "@babylonjs/core/Maths/math.axis";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Quaternion } from "@babylonjs/core/Maths/math.vector";
@@ -262,6 +263,16 @@ export const POSE_TUNING = P;
 const HIP_ABOVE_CUSHION = 0.1;
 const flex = new Quaternion();
 /** Rotates a joint about one of its local axes, on top of the pose the clips set this frame. */
+/**
+ * Recomputes `node`'s world matrix from the top of its hierarchy down. Forcing only the node itself multiplies by
+ * its parents' matrices as cached at the last render, which trail this frame's pose (and the root's move) by a frame.
+ */
+function fresh(node: TransformNode) {
+  const chain: TransformNode[] = [];
+  for (let at: Node | null = node; at; at = at.parent) if (at instanceof TransformNode) chain.push(at);
+  for (let index = chain.length - 1; index >= 0; index -= 1) chain[index]!.computeWorldMatrix(true);
+}
+
 function bend(joint: TransformNode | null, angle: number, axis = Axis.X) {
   if (!joint?.rotationQuaternion) return;
   Quaternion.RotationAxisToRef(axis, angle, flex);
@@ -498,8 +509,7 @@ export class Avatar {
     const { leftHand, rightHand, leftFore, rightFore } = this.instance.limbs;
     if (!leftHand || !rightHand || !leftFore || !rightFore) return null;
     const palm = (wrist: TransformNode, elbow: TransformNode) => {
-      wrist.computeWorldMatrix(true);
-      elbow.computeWorldMatrix(true);
+      fresh(wrist);
       const at = wrist.getAbsolutePosition().clone();
       const along = at.subtract(elbow.getAbsolutePosition());
       return at.addInPlace(along.normalize().scaleInPlace(0.075));
@@ -572,7 +582,7 @@ export class Avatar {
   shoulders() {
     const { leftArm, rightArm, neck } = this.instance.limbs;
     if (!leftArm || !rightArm || !neck) return null;
-    for (const bone of [leftArm, rightArm, neck]) bone.computeWorldMatrix(true);
+    for (const bone of [leftArm, rightArm, neck]) fresh(bone);
     return { left: leftArm.getAbsolutePosition().clone(), right: rightArm.getAbsolutePosition().clone(), neck: neck.getAbsolutePosition().clone() };
   }
 
@@ -754,7 +764,7 @@ export class Avatar {
       node.position.set(this.root.position.x + Math.sin(yaw) * 0.3 + Math.cos(yaw) * 0.2, this.root.position.y + 1.05 + this.heldLift * 0.4, this.root.position.z + Math.cos(yaw) * 0.3 - Math.sin(yaw) * 0.2);
       return;
     }
-    hand.computeWorldMatrix(true);
+    fresh(hand);
     const at = hand.getAbsolutePosition();
     const yaw = this.root.rotation.y;
     if (this.heldGrip === "tray") {

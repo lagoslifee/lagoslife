@@ -4944,7 +4944,7 @@ export class GameEngine {
       setMaxFrameDt: (seconds: number) => {
         this.maxFrameDt = seconds;
       },
-      runners: () => this.staff.runnerStates(),
+      runners: () => this.staff.runnerStates(),      workout: (exercise: ExerciseId, kg?: number) => this.startWorkout(exercise, kg),
       vehicles: () => [...this.vehicles.values()].map(({ state, view }) => ({ ...state, cx: view.x, cz: view.z })),
       driving: () => {
         if (!this.car || !this.driving) return null;

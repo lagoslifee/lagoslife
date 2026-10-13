@@ -1,5 +1,5 @@
 import type { Scene } from "@babylonjs/core/scene";
-import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
@@ -30,16 +30,18 @@ export function platesFor(kg: number) {
   return loaded;
 }
 
-const materials = new WeakMap<Scene, Map<string, StandardMaterial>>();
+const materials = new WeakMap<Scene, Map<string, PBRMaterial>>();
+/** PBR like the room around it: the gym's lights are tuned for physical falloff and burn plain materials to white. */
 function material(scene: Scene, colour: string, shiny = false) {
   let cache = materials.get(scene);
   if (!cache) materials.set(scene, (cache = new Map()));
   const key = `${colour}${shiny ? "s" : ""}`;
   let found = cache.get(key);
   if (!found) {
-    found = new StandardMaterial(`gym gear ${key}`, scene);
-    found.diffuseColor = Color3.FromHexString(colour);
-    found.specularColor = shiny ? new Color3(0.7, 0.7, 0.7) : new Color3(0.12, 0.12, 0.12);
+    found = new PBRMaterial(`gym gear ${key}`, scene);
+    found.albedoColor = Color3.FromHexString(colour);
+    found.metallic = shiny ? 0.9 : 0.15;
+    found.roughness = shiny ? 0.32 : 0.7;
     cache.set(key, found);
   }
   return found;
@@ -116,21 +118,20 @@ export class GymGear {
     for (const node of this.nodes) node.setEnabled(Boolean(grips) && shown);
     if (!grips) return;
     const back = onBack && this.kind === "barbell" ? avatar.shoulders() : null;
+    // A loaded bar stays level and square to the lifter even when the clip moves one arm ahead of the other; it sits
+    // centred between the hands (or shoulders) so both grips stay on it.
     if (back) {
       const bar = this.nodes[0]!;
       const mid = back.left.add(back.right).scaleInPlace(0.5);
-      const dir = back.right.subtract(back.left);
       // Behind the neck, on the traps: a little above the shoulder joints and back from them.
       bar.position.set(mid.x - Math.sin(yaw) * 0.09, (mid.y * 2 + back.neck.y) / 3 + 0.02, mid.z - Math.cos(yaw) * 0.09);
-      bar.rotation.set(0, Math.atan2(-dir.z, dir.x), Math.atan2(dir.y, Math.hypot(dir.x, dir.z)));
+      bar.rotation.set(0, yaw, 0);
       return;
     }
     if (this.kind === "barbell") {
       const bar = this.nodes[0]!;
-      const mid = grips.left.add(grips.right).scaleInPlace(0.5);
-      const dir = grips.right.subtract(grips.left);
-      bar.position.copyFrom(mid);
-      bar.rotation.set(0, Math.atan2(-dir.z, dir.x), Math.atan2(dir.y, Math.hypot(dir.x, dir.z)));
+      bar.position.copyFrom(grips.left.add(grips.right).scaleInPlace(0.5));
+      bar.rotation.set(0, yaw, 0);
       return;
     }
     const [left, right] = this.nodes;
