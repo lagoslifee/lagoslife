@@ -8,6 +8,7 @@ import {
   outfits,
   NO_EMAIL_DOMAIN,
   PASSWORD_MIN,
+  REFERRAL,
   skinTones,
   starterOutfits,
   usernameSchema,
@@ -112,6 +113,11 @@ function AuthScreen() {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [invite, setInvite] = useState(() => {
+    const ref = (query.get("ref") ?? "").replace(/[^A-Za-z0-9_.]/g, "").slice(0, 30);
+    if (ref) localStorage.setItem("lagos-ref", ref);
+    return ref || localStorage.getItem("lagos-ref") || "";
+  });
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -132,6 +138,14 @@ function AuthScreen() {
           headers: { "content-type": "application/json", ...authHeaders() },
           body: JSON.stringify({ appearance: starterLook(body) }),
         }).catch(() => undefined);
+        if (invite.trim()) {
+          await fetch(`${apiUrl}/api/referral/claim`, {
+            method: "POST",
+            headers: { "content-type": "application/json", ...authHeaders() },
+            body: JSON.stringify({ code: invite.trim() }),
+          }).catch(() => undefined);
+        }
+        localStorage.removeItem("lagos-ref");
         enterWithToken(result.data?.token);
         return;
       } else if (mode === "login") {
@@ -246,6 +260,12 @@ function AuthScreen() {
             <label>Email <em className="optional">optional · recommended</em>
               <input type="email" autoComplete="email" maxLength={120} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
               <small className="field-hint">Only used to reset your password if you forget it. Without one, a lost password means a lost account.</small>
+            </label>
+          )}
+          {mode === "register" && (
+            <label>Invited by <em className="optional">optional</em>
+              <input autoCapitalize="none" maxLength={30} value={invite} onChange={(event) => setInvite(event.target.value.replace(/[^A-Za-z0-9_.@]/g, ""))} placeholder="Friend's username" />
+              <small className="field-hint">{`You get ₦${REFERRAL.newcomerBonus.toLocaleString("en-NG")} and your friend gets ₦${REFERRAL.referrerBonus.toLocaleString("en-NG")} when you finish your first job.`}</small>
             </label>
           )}
           {message && <p className="form-message" role="status">{message}</p>}

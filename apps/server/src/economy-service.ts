@@ -5,6 +5,7 @@ import type { PoolClient } from "pg";
 import { config } from "./config.js";
 import { pool } from "./database.js";
 import { getPlayerPosition, isNear } from "./player-presence.js";
+import { payReferralIfDue } from "./referral-service.js";
 import { vehicleEvents } from "./vehicle-events.js";
 
 export class EconomyError extends Error {
@@ -347,7 +348,8 @@ export async function startDelivery(userId: string) {
 }
 
 export async function completeDelivery(userId: string, jobId: string) {
-  return withTransaction(async (client) => {
+  let notify: (() => void) | undefined;
+  const outcome = await withTransaction(async (client) => {
     await ensureWallet(client, userId);
     const result = await client.query(
       `SELECT id, status, reward, pickup_x, pickup_z, destination_x, destination_z, started_at
@@ -382,8 +384,12 @@ export async function completeDelivery(userId: string, jobId: string) {
       [userId, GYM.staminaAtFullFitness],
     );
     await markProgress(client, userId, "first_wage");
-    return { balance, replayed: false, reward };
+    const referral = await payReferralIfDue(client, userId);
+    notify = referral?.notify;
+    return { balance: balance + (referral?.bonus ?? 0), replayed: false, reward };
   });
+  notify?.();
+  return outcome;
 }
 
 export async function cancelDelivery(userId: string) {

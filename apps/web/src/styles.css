@@ -1282,6 +1282,19 @@ button.wide { width: 100%; margin: 6px 0; }
 .trip-options small { font-size: 11px; opacity: .75; font-weight: 400; }
 .trip-note { margin: 8px 0 0; font-size: 12px; opacity: .8; }
 
+/* ---------- Invite ---------- */
+.invite-hero { display: grid; gap: 4px; padding: 14px; border-radius: 16px; color: #fff; background: linear-gradient(135deg, #ff2d55, #ff9500); }
+.invite-hero strong { font-size: calc(17px * var(--text-scale)); }
+.invite-hero span { font-size: calc(13px * var(--text-scale)); opacity: .92; }
+.invite-link { margin: 12px 0 8px !important; padding: 10px 12px; border-radius: 10px; background: rgba(120,120,128,.14); font-family: ui-monospace, Menlo, monospace; font-size: 12px; overflow-wrap: anywhere; user-select: all; }
+.invite-actions { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; }
+.invite-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0 4px; }
+.invite-stats div { display: grid; justify-items: center; padding: 10px 4px; border-radius: 12px; background: rgba(120,120,128,.12); }
+.invite-stats b { font-size: calc(16px * var(--text-scale)); }
+.invite-stats span { font-size: 11px; opacity: .7; }
+.invite-claim .chat-input input { background: #fff; color: #17312e; border-color: #cfcabd; }
+[data-theme="dark"] .invite-claim .chat-input input { background: #1c1c1e; color: #f2f2f7; border-color: #48484a; }
+
 /* ---------- Appearance ---------- */
 .theme-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 8px; }
 .theme-option { display: grid; justify-items: center; gap: 6px; padding: 10px 6px 8px; border-radius: 14px; border: 2px solid transparent; background: rgba(120,120,128,.12); color: inherit; font-weight: 600; }

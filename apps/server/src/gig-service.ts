@@ -5,6 +5,7 @@ import { pool } from "./database.js";
 import { creditWallet, EconomyError, ensureWallet, withTransaction } from "./economy-service.js";
 import { fortune } from "./finance-service.js";
 import { isNear } from "./player-presence.js";
+import { payReferralIfDue } from "./referral-service.js";
 
 type GigRow = { id: string; gig_id: string; type_id: string; title: string; task: string; emoji: string; place_id: string; reward: string; work_seconds: number; status: "travelling" | "working"; started_work_at: Date | null; repair: RepairState | null; repair_action_at: Date | null };
 
@@ -101,7 +102,8 @@ export async function repairGig(userId: string, action: RepairAction) {
 
 /** Pays once the work time has passed at the door; the row lock and per-run ledger key stop double pay. */
 export async function completeGig(userId: string) {
-  return withTransaction(async (client) => {
+  let notify: (() => void) | undefined;
+  const outcome = await withTransaction(async (client) => {
     const row = await openGig(userId, true, client);
     if (!row || row.status !== "working" || !row.started_work_at) throw new EconomyError("Start the job at the place first.", 409);
     if (handsOn(row) && !row.repair?.running) throw new EconomyError("The generator still isn't running. Find the fault, fix it and start it.", 409);
@@ -111,8 +113,12 @@ export async function completeGig(userId: string) {
     await ensureWallet(client, userId);
     const balance = await creditWallet(client, userId, Number(row.reward), "job_reward", `${row.title} · ${getPlace(row.place_id).name}`, `gig:${row.id}`);
     await client.query(`UPDATE gig_run SET status = 'completed', completed_at = NOW() WHERE id = $1`, [row.id]);
-    return { reward: Number(row.reward), balance, title: row.title };
+    const referral = await payReferralIfDue(client, userId);
+    notify = referral?.notify;
+    return { reward: Number(row.reward), balance: balance + (referral?.bonus ?? 0), title: row.title };
   });
+  notify?.();
+  return outcome;
 }
 
 export async function cancelGig(userId: string) {

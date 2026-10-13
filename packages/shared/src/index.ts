@@ -302,6 +302,18 @@ export const defaultSettings: PlayerSettings = {
   theme: "light",
 };
 
+/** Invite bonuses are paid once the new resident finishes their first paid job, so empty sign-ups earn nothing. */
+export const REFERRAL = { newcomerBonus: 25_000, referrerBonus: 50_000, maxPaidInvites: 50, claimWindowHours: 72 } as const;
+export interface ReferralStatus {
+  code: string;
+  invited: number;
+  paid: number;
+  earned: number;
+  referredBy: string | null;
+  bonusPending: boolean;
+  canClaim: boolean;
+}
+
 const furnitureRotation = z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]);
 /** Room-local metres from the interior origin; the largest plan (see HOME_LAYOUTS) fits inside. */
 const floorCoordinate = z.number().finite().min(-14).max(20);

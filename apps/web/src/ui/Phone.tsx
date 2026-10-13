@@ -11,6 +11,7 @@ import { VehiclesApp } from "./VehicleSheets";
 import { JusticeApp, SafetyApp, type ReportTarget } from "./SafetyUI";
 import { GoApp } from "./GoApp";
 import { FriendsApp } from "./FriendsApp";
+import { InviteApp } from "./InviteApp";
 import { PlacesApp, type CabDestination } from "./PlacesApp";
 import { GamesApp } from "./games/GamesApp";
 import { BusinessApp } from "./BusinessApp";
@@ -18,7 +19,7 @@ import { EstateApp } from "./EstateApp";
 import { BoutiqueApp } from "./BoutiqueApp";
 import { BankApp, BetApp, DocumentsApp } from "./FinanceApps";
 
-export type PhoneApp = "home" | "games" | "business" | "estate" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "order" | "bank" | "bet" | "documents" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "notifications" | "settings" | "help";
+export type PhoneApp = "home" | "games" | "business" | "estate" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "order" | "bank" | "bet" | "documents" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "invite" | "notifications" | "settings" | "help";
 
 const APPS: Array<{ id: PhoneApp; label: string; icon: string; tint: string }> = [
   { id: "places", label: "Places", icon: "📍", tint: "#ff3b30, #ff6b5e" },
@@ -43,6 +44,7 @@ const APPS: Array<{ id: PhoneApp; label: string; icon: string; tint: string }> =
   { id: "justice", label: "Justice", icon: "⚖", tint: "#8e6c3a, #b08d57" },
   { id: "safety", label: "Safety", icon: "🛡", tint: "#ff453a, #ff9f0a" },
   { id: "friends", label: "Friends", icon: "👥", tint: "#32ade6, #5ac8fa" },
+  { id: "invite", label: "Invite", icon: "🎁", tint: "#ff2d55, #ffcc00" },
   { id: "notifications", label: "Alerts", icon: "🔔", tint: "#ff3b30, #ff9500" },
   { id: "settings", label: "Settings", icon: "⚙", tint: "#8e8e93, #aeaeb2" },
   { id: "help", label: "Help", icon: "?", tint: "#007aff, #5ac8fa" },
@@ -191,6 +193,7 @@ export function Phone(props: Props) {
         {app === "justice" && <JusticeApp onToast={props.onToast} onRefresh={props.onRefresh} />}
         {app === "safety" && <SafetyApp onToast={props.onToast} onReport={props.onReport} />}
         {app === "friends" && <FriendsApp online={props.hud?.online ?? 1} onToast={props.onToast} />}
+        {app === "invite" && <InviteApp onToast={props.onToast} onRefresh={props.onRefresh} />}
         {app === "notifications" && (
           <ul className="notice-log">
             {props.notices.length === 0 && <li className="muted">No notifications yet.</li>}
