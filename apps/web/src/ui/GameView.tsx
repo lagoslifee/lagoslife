@@ -673,8 +673,8 @@ export function GameView({
   }, [engine, airportGuide?.spot, airportGuide?.label]);
 
   useEffect(() => {
-    engine?.setCovered(Boolean(phone || mapOpen));
-  }, [engine, phone, mapOpen]);
+    engine?.setCovered(Boolean(phone || mapOpen || overlayOpen));
+  }, [engine, phone, mapOpen, overlayOpen]);
 
   useEffect(() => {
     engine?.setEvening(settings.theme === "dark");

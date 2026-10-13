@@ -495,8 +495,12 @@ function GameShell({
     );
   }
 
+  // A new resident picks a look before the city starts loading: building Lagos and the avatar preview at the same
+  // time starves a phone, and the creator stops answering taps.
+  const choosingFirstLook = creatorOpen && welcomeLook;
   return (
     <main className="game-shell">
+      {!choosingFirstLook && (
       <CrashGuard area="game" fallback={<div className="loading-screen">Restoring the city…</div>}>
       <Suspense fallback={<div className="loading-screen">Preparing Lagos…</div>}>
         <GameView
@@ -512,6 +516,7 @@ function GameShell({
         />
       </Suspense>
       </CrashGuard>
+      )}
       {goalsOpen && !creatorOpen && <LifeGoalsDialog playerName={playerName} onClose={() => setGoalsOpen(false)} />}
       {creatorOpen && (appearanceLoaded || !welcomeLook) && (
         <CharacterCreator
