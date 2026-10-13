@@ -303,7 +303,7 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 @keyframes transfer-drive { from { transform: translateX(-28px); } to { transform: translateX(28px); } }
 
 .eyebrow { margin: 0; font-size: calc(10px * var(--text-scale)); letter-spacing: .14em; font-weight: 800; color: #e7bd62; }
-.hud-location, .hud-status > div, .objective, .bus-panel, .controls-card, .job-chip, .prompt, .preview-banner, .hud-buttons button, .perf, .guide-tab, .rent-reminder {
+.hud-location, .hud-status > div, .hud-status > .net, .objective, .bus-panel, .controls-card, .job-chip, .prompt, .preview-banner, .hud-buttons button, .perf, .guide-tab, .rent-reminder {
   backdrop-filter: blur(8px); background: var(--hud-bg); border: 1px solid var(--hud-line); color: #f5f2e8;
 }
 .hud-location { position: absolute; left: 20px; top: 18px; min-width: 260px; max-width: 380px; padding: 12px 16px; border-radius: 12px; }
@@ -312,7 +312,9 @@ input:focus, select:focus { border-color: #168272; box-shadow: 0 0 0 3px rgba(22
 .hud-location p:last-child { margin: 0; color: #b8c2bd; font-size: calc(12px * var(--text-scale)); }
 
 .hud-status { position: absolute; right: 20px; top: 18px; display: grid; gap: 6px; justify-items: end; }
-.hud-status > div { padding: 6px 12px; border-radius: 10px; font-size: calc(12px * var(--text-scale)); }
+.hud-status > div, .hud-status > .net { padding: 6px 12px; border-radius: 10px; font-size: calc(12px * var(--text-scale)); }
+button.net { font: inherit; cursor: pointer; pointer-events: auto; }
+button.net:hover { border-color: rgba(100, 217, 145, .6); }
 .wallet { display: grid; justify-items: end; padding: 8px 14px !important; }
 .wallet span { font-size: 9px; letter-spacing: .14em; color: #e7bd62; font-weight: 800; }
 .wallet strong { font-size: calc(22px * var(--text-scale)); font-variant-numeric: tabular-nums; }
@@ -1612,3 +1614,16 @@ button.wide { width: 100%; margin: 6px 0; }
   .landing-chill { display: none; }
   .landing-city { height: 22%; opacity: .5; }
 }
+
+/* Phone → Neighbours */
+.neighbours-intro { margin: 0 0 10px; font-size: 13px; line-height: 1.4; }
+.neighbour-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.neighbour { border-radius: 12px; background: rgba(127, 127, 127, .1); overflow: hidden; }
+.neighbour.away { opacity: .6; }
+.neighbour-row { display: grid; grid-template-columns: 36px 1fr auto; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.neighbour-face { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 13px; color: #fff; background: linear-gradient(160deg, #30d158, #0a84ff); }
+.neighbour-name { display: grid; gap: 2px; font-weight: 700; min-width: 0; }
+.neighbour-name small { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.neighbour-more { opacity: .6; }
+.neighbour-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 10px 56px; }
+.neighbour-actions button { padding: 6px 10px; border-radius: 999px; font-size: 12px; }

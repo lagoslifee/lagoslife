@@ -71,8 +71,8 @@ test("two residents see each other online and moving", async ({ browser }) => {
   try {
     await register(first, "First");
     const secondAccount = await register(second, "Second");
-    await expect(first.getByTestId("network")).toContainText(/[2-9] online/, { timeout: 20_000 });
-    await expect(second.getByTestId("network")).toContainText(/[2-9] online/, { timeout: 20_000 });
+    await expect(first.getByTestId("network")).toContainText(/[2-9] neighbours/, { timeout: 20_000 });
+    await expect(second.getByTestId("network")).toContainText(/[2-9] neighbours/, { timeout: 20_000 });
     const before = await first.evaluate(() => window.__lagos.state());
     await first.evaluate(() => window.__lagos.key("KeyW", true));
     await first.waitForTimeout(2_500);

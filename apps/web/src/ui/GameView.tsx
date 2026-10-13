@@ -1047,9 +1047,14 @@ export function GameView({
             {economy && (
               <NeedBars hunger={economy.needs.hunger} energy={economy.needs.energy} />
             )}
-            <div className={`net ${hud.network}`} data-testid="network">
-              <i /> {hud.network === "connected" ? `${hud.online} online` : hud.network === "connecting" ? "Connecting…" : hud.networkReason}
-            </div>
+            <button
+              className={`net ${hud.network}`}
+              data-testid="network"
+              title="See your neighbours"
+              onClick={() => hud.network === "connected" && setPhone("neighbours")}
+            >
+              <i /> {hud.network === "connected" ? `${hud.online} ${hud.online === 1 ? "neighbour" : "neighbours"} · 🏘` : hud.network === "connecting" ? "Connecting…" : hud.networkReason}
+            </button>
             <div className="save-state" data-testid="save-state">✓ {ago(savedAt, now)}</div>
           </section>
 

@@ -57,7 +57,7 @@ test("chats nearby, filters contact details, reports, blocks, and a moderator mu
     await waitForGame(mod);
 
     const speakerName = await register(speaker, "Speaker");
-    await expect(mod.getByTestId("network")).toContainText(/[2-9] online/, { timeout: 30_000 });
+    await expect(mod.getByTestId("network")).toContainText(/[2-9] neighbours/, { timeout: 30_000 });
 
     await say(speaker, "Hello neighbour! Call me on 0803 555 1234");
     const heard = mod.getByTestId("chat-line").filter({ hasText: "Hello neighbour" });

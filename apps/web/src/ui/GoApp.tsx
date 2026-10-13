@@ -171,6 +171,10 @@ export function TravelPromptCard({ prompt, onAnswer }: { prompt: TravelPrompt; o
           <>
             <strong>{prompt.fromName}</strong> invites you to {prompt.label}.
           </>
+        ) : prompt.kind === "invite" ? (
+          <>
+            <strong>{prompt.fromName}</strong> invites you to come and meet them at {prompt.label}.
+          </>
         ) : (
           <>
             <strong>{prompt.fromName}</strong> wants to join you.
@@ -179,7 +183,7 @@ export function TravelPromptCard({ prompt, onAnswer }: { prompt: TravelPrompt; o
         <small className="muted">{left}s</small>
       </p>
       <div className="row">
-        <button className="primary" data-testid="travel-accept" onClick={() => onAnswer(true)}>{prompt.kind === "together" ? "Go with them" : "Let them come"}</button>
+        <button className="primary" data-testid="travel-accept" onClick={() => onAnswer(true)}>{prompt.kind === "together" ? "Go with them" : prompt.kind === "invite" ? "Go to them" : "Let them come"}</button>
         <button data-testid="travel-decline" onClick={() => onAnswer(false)}>Not now</button>
       </div>
     </section>

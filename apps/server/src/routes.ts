@@ -414,10 +414,22 @@ export function configureRoutes(app: Express) {
     }
   });
 
+  /**
+   * Which group a resident joins: their own district's if it has room, otherwise the liveliest group with a free place,
+   * so a quiet district doesn't leave someone alone while another group has space. A new group starts only when all are full.
+   */
+  async function neighbourhoodFor(home: string) {
+    const open = (await matchMaker.query({ name: "lagos" })).filter((room) => !room.locked && !room.private && room.clients < room.maxClients);
+    if (open.some((room) => room.metadata?.area === home)) return home;
+    const liveliest = open.filter((room) => room.clients > 0 && typeof room.metadata?.area === "string").sort((a, b) => b.clients - a.clients)[0];
+    return (liveliest?.metadata?.area as string | undefined) ?? home;
+  }
+
   app.post("/api/multiplayer-token", requirePlayer, async (req, res) => {
     const { userId, name } = (req as AuthenticatedRequest).player;
     const place = await loadPlayerPlace(userId).catch(() => null);
-    res.json({ token: createMultiplayerToken({ userId, name }), area: place ? roomArea(place.x, place.z) : roomArea(...getPlace("starter-home").door) });
+    const home = place ? roomArea(place.x, place.z) : roomArea(...getPlace("starter-home").door);
+    res.json({ token: createMultiplayerToken({ userId, name }), area: await neighbourhoodFor(home).catch(() => home) });
   });
 
   app.get("/api/referral", requirePlayer, guarded("Invites unavailable", (_req, userId) => referralStatus(userId)));

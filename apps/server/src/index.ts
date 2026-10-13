@@ -37,8 +37,9 @@ const gameServer = defineServer({
     ...(config.PUBLIC_ADDRESS && { publicAddress: config.PUBLIC_ADDRESS }),
   }),
   rooms: {
-    // Residents starting in the same district share a room, so neighbours see each other.
-    lagos: defineRoom(LagosRoom).filterBy(["area"]),
+    // Residents starting in the same district share a room of up to NEIGHBOURS.groupSize, the fullest first, so every
+    // group is lively without being packed and a seat someone leaves goes to the next arrival.
+    lagos: defineRoom(LagosRoom).filterBy(["area"]).sortBy({ clients: -1 }),
   },
   express: (app) => {
     app.use(express.json({ limit: "32kb" }));

@@ -1346,3 +1346,55 @@ describe("LagosRoom agbero encounters", () => {
     expect(player.encounter).toBeNull();
   });
 });
+
+describe("LagosRoom neighbours", () => {
+  beforeEach(() => vi.clearAllMocks());
+  type NeighbourRoom = {
+    handleWave(client: FakeClient, payload: unknown): void;
+    handleInviteRequest(client: FakeClient, payload: unknown): void;
+    handleTravelAnswer(client: FakeClient, payload: unknown): void;
+    moveOnIdle(now: number): void;
+    maxClients: number;
+  };
+
+  it("passes a wave on once, with the wave shown to people around", () => {
+    const { room, join, notices } = setup();
+    const ada = join("ada");
+    const tunde = join("tunde");
+    const neighbours = room as unknown as NeighbourRoom;
+    neighbours.handleWave(ada, { sessionId: tunde.sessionId });
+    neighbours.handleWave(ada, { sessionId: tunde.sessionId });
+    expect(notices(tunde).filter((text) => text.includes("ada waved at you"))).toHaveLength(1);
+    expect(tunde.send).toHaveBeenCalledWith("react", { sessionId: ada.sessionId, emoji: "👋" });
+  });
+
+  it("brings an invited neighbour next to the inviter only after they accept", () => {
+    const { room, join, player } = setup();
+    const ada = join("ada");
+    const tunde = join("tunde");
+    Object.assign(player(tunde), { x: (player(ada).x as number) + 300 });
+    const neighbours = room as unknown as NeighbourRoom;
+    neighbours.handleInviteRequest(ada, { sessionId: tunde.sessionId });
+    const [, prompt] = tunde.send.mock.calls.find(([type]) => type === "travelPrompt")! as [string, { requestId: string; kind: string }];
+    expect(prompt.kind).toBe("invite");
+    expect(Math.hypot((player(tunde).x as number) - (player(ada).x as number), (player(tunde).z as number) - (player(ada).z as number))).toBeGreaterThan(100);
+    neighbours.handleTravelAnswer(tunde, { requestId: prompt.requestId, accept: true });
+    expect(Math.hypot((player(tunde).x as number) - (player(ada).x as number), (player(tunde).z as number) - (player(ada).z as number))).toBeLessThan(8);
+  });
+
+  it("gives a long-idle resident's place away only when the group is busy", () => {
+    const { room, join, player } = setup();
+    const neighbours = room as unknown as NeighbourRoom;
+    const ada = join("ada");
+    const tunde = join("tunde");
+    Object.assign(player(ada), { activeAt: Date.now() - 60 * 60_000 });
+    neighbours.maxClients = 25;
+    neighbours.moveOnIdle(Date.now());
+    expect(ada.leave).not.toHaveBeenCalled();
+    neighbours.maxClients = 2;
+    neighbours.moveOnIdle(Date.now());
+    expect(ada.send).toHaveBeenCalledWith("away", expect.anything());
+    expect(ada.leave).toHaveBeenCalledWith(4005);
+    expect(tunde.leave).not.toHaveBeenCalled();
+  });
+});

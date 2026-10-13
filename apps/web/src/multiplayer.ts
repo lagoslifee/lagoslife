@@ -89,10 +89,21 @@ export class MultiplayerConnection {
 
   private connecting = false;
 
+  /** Moved on after a long idle spell: the next tap or key press rejoins (possibly in another group). */
+  private away = false;
+
   constructor(private readonly handlers: MultiplayerHandlers) {
     window.addEventListener("online", this.resume);
     document.addEventListener("visibilitychange", this.resume);
+    for (const type of ["pointerdown", "keydown"] as const) window.addEventListener(type, this.comeBack, { passive: true });
   }
+
+  private readonly comeBack = () => {
+    if (!this.away || document.hidden) return;
+    this.away = false;
+    this.closed = false;
+    void this.connect();
+  };
 
   /** After a screen lock, app switch or dropped signal, rejoin at once instead of waiting for the retry timer. */
   private readonly resume = () => {
@@ -191,6 +202,12 @@ export class MultiplayerConnection {
         this.closed = true;
         this.handlers.suspended({ reason: String(payload?.reason ?? ""), until: typeof payload?.until === "string" ? payload.until : null });
       });
+      room.onMessage("away", () => {
+        this.closed = true;
+        this.away = true;
+        this.room = undefined;
+        this.handlers.status({ state: "offline", reason: "You were away a while, so your place went to a new neighbour. Tap anywhere to come back." });
+      });
       room.onMessage("replaced", () => {
         this.closed = true;
         this.room = undefined;
@@ -279,7 +296,9 @@ export class MultiplayerConnection {
       | "footballKick"
       | "footballTackle"
       | "owambeOrder"
-      | "owambeSync",
+      | "owambeSync"
+      | "inviteRequest"
+      | "wave",
     payload?: unknown,
   ) {
     this.room?.send(type, payload);
@@ -290,6 +309,8 @@ export class MultiplayerConnection {
     clearTimeout(this.retry);
     window.removeEventListener("online", this.resume);
     document.removeEventListener("visibilitychange", this.resume);
+    for (const type of ["pointerdown", "keydown"] as const) window.removeEventListener(type, this.comeBack);
+    this.away = false;
     const room = this.room;
     this.room = undefined;
     if (room) await room.leave();

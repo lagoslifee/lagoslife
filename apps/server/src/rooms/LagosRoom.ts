@@ -139,6 +139,8 @@ import {
   fastTravelSchema,
   travelAnswerSchema,
   joinRequestSchema,
+  NEIGHBOURS,
+  waveSchema,
   isFastTravelKind,
   type Favourite,
   type FastTravelState,
@@ -266,6 +268,10 @@ type Player = {
   connected: boolean;
   lastSequence: number;
   lastAcceptedAt: number;
+  /** Last time the resident moved, chatted or waved; long-idle residents give their place in a busy group away. */
+  activeAt?: number;
+  /** When they last waved at each neighbour, by session. */
+  wavedAt?: Map<string, number>;
   lastSavedAt: number;
   lastUnstuckAt: number;
   rate: { since: number; count: number };
@@ -319,7 +325,7 @@ type Player = {
 
 type TravelRequest = {
   id: string;
-  kind: "together" | "join";
+  kind: "together" | "join" | "invite";
   fromSessionId: string;
   toSessionId: string;
   /** Together: where the inviter went. Join: filled in from the host's position when they accept. */
@@ -603,6 +609,8 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.onMessage("photo", (client, payload) => void this.handlePhoto(client, payload));
     this.onMessage("fastTravel", (client, payload) => this.handleFastTravel(client, payload));
     this.onMessage("travelAnswer", (client, payload) => this.handleTravelAnswer(client, payload));
+    this.onMessage("inviteRequest", (client, payload) => this.handleInviteRequest(client, payload));
+    this.onMessage("wave", (client, payload) => this.handleWave(client, payload));
     this.onMessage("joinRequest", (client, payload) => this.handleJoinRequest(client, payload));
     this.onMessage("agberoAnswer", (client, payload) => void this.handleAgberoAnswer(client, payload));
     this.onMessage("songSync", (client) => {
@@ -1002,6 +1010,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const parsed = positionUpdateSchema.safeParse(payload);
     if (!parsed.success || parsed.data.sequence <= player.lastSequence) return;
     player.lastSequence = parsed.data.sequence;
+    if (parsed.data.motion !== "idle" || Math.hypot(parsed.data.x - player.x, parsed.data.z - player.z) > 0.3) player.activeAt = Date.now();
     if (player.busId) return;
     if (player.entering) return;
     if (player.vehicleSeat && player.ride?.status !== "riding") return;
@@ -2374,6 +2383,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const parsed = chatSendSchema.safeParse(payload);
     if (!player || !parsed.success) return;
     const now = Date.now();
+    player.activeAt = now;
     if (player.mutedUntil !== null && player.mutedUntil > now) {
       const until = Number.isFinite(player.mutedUntil) ? ` until ${new Date(player.mutedUntil).toUTCString()}` : "";
       return this.notify(client, { tone: "error", text: `A moderator has muted your chat${until}.` });
@@ -2467,6 +2477,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (this.state.tick % 200 === 0 || (this.owambe && now >= this.owambe.endsAt)) void this.refreshOwambe(now);
     if (this.state.tick % 5 === 0 && this.flights.size) this.checkFlights(now);
     if (this.state.tick % 100 === 0) this.checkDiscoveries(now);
+    if (this.state.tick % 600 === 0) this.moveOnIdle(now);
     if (this.state.tick % 25 === 0) {
       this.checkTestDrives(now);
       this.checkRides(now);
@@ -3047,6 +3058,66 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     this.notify(client, { tone: "info", text: `Asked ${host.name} if you can join them. Nobody moves unless they agree.` });
   }
 
+  /** "Come and meet me": the neighbour gets a prompt, and only moves (next to you, or to your door) if they accept. */
+  private handleInviteRequest(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = joinRequestSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
+    const fail = (text: string) => this.notify(client, { tone: "error", text });
+    const guest = this.players.get(parsed.data.sessionId);
+    if (!guest || guest === player || !guest.connected || player.hidden.has(guest.userId) || guest.hidden.has(player.userId)) return fail("That resident is not available.");
+    if (player.location.startsWith("flight:") || (player.location !== "street" && !/^(home|starter|preview|club):/.test(player.location))) return fail("Invite people once you've arrived somewhere.");
+    for (const [id, existing] of this.travelRequests) if (existing.kind === "invite" && existing.fromSessionId === player.sessionId && existing.toSessionId === guest.sessionId) this.travelRequests.delete(id);
+    const request: TravelRequest = {
+      id: randomUUID(),
+      kind: "invite",
+      fromSessionId: player.sessionId,
+      toSessionId: guest.sessionId,
+      point: null,
+      label: this.whereIs(player).replace(/^at /, ""),
+      region: regionOf(...this.standingAt(player)),
+      expiresAt: Date.now() + FAST_TRAVEL.answerMs,
+    };
+    this.travelRequests.set(request.id, request);
+    this.sendPrompt(guest, request, player.name);
+    this.notify(client, { tone: "info", text: `Invited ${guest.name} to come and meet you. They choose whether to come.` });
+  }
+
+  /** A friendly wave: the neighbour hears about it, and everyone around sees 👋 over the waver. */
+  private handleWave(client: Client, payload: unknown) {
+    const player = this.players.get(client.sessionId);
+    const parsed = waveSchema.safeParse(payload);
+    if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
+    const other = this.players.get(parsed.data.sessionId);
+    if (!other || other === player || !other.connected || other.hidden.has(player.userId) || player.hidden.has(other.userId)) return;
+    const now = Date.now();
+    player.activeAt = now;
+    const waved = (player.wavedAt ??= new Map());
+    if (now - (waved.get(other.sessionId) ?? 0) < NEIGHBOURS.waveEverySeconds * 1_000) return;
+    waved.set(other.sessionId, now);
+    const otherClient = this.clientFor(other);
+    if (otherClient) this.notify(otherClient, { tone: "info", text: `👋 ${player.name} waved at you from ${this.whereIs(player).replace(/^at /, "")}. Phone → Neighbours to wave back or meet up.` });
+    for (const near of this.players.values()) {
+      const nearClient = this.clientFor(near);
+      if (nearClient && near !== player && near.location === player.location && Math.hypot(near.x - player.x, near.z - player.z) < 60) nearClient.send("react", { sessionId: player.sessionId, emoji: "👋" });
+    }
+    this.notify(client, { tone: "success", text: `You waved at ${other.name}.` });
+  }
+
+  /** In a busy group, residents who have done nothing for a long while give their place to the next person to arrive. */
+  private moveOnIdle(now: number) {
+    if (this.clients.length < Math.ceil(this.maxClients * NEIGHBOURS.busyShare)) return;
+    for (const player of this.players.values()) {
+      if (!player.connected || player.kicked || player.busId || player.vehicleId || player.ride || player.location.startsWith("flight:")) continue;
+      if (now - (player.activeAt ?? player.lastAcceptedAt) < NEIGHBOURS.idleMinutes * 60_000) continue;
+      const client = this.clientFor(player);
+      if (!client) continue;
+      player.kicked = true;
+      client.send("away", { minutes: NEIGHBOURS.idleMinutes });
+      client.leave(4005);
+    }
+  }
+
   private handleTravelAnswer(client: Client, payload: unknown) {
     const player = this.players.get(client.sessionId);
     const parsed = travelAnswerSchema.safeParse(payload);
@@ -3069,24 +3140,34 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       if (askerClient) this.notify(askerClient, { tone: "success", text: `${player.name} joined you.` });
       return;
     }
+    if (request.kind === "invite") {
+      // The invited neighbour (this player) agreed: they come to whoever invited them.
+      if (!asker || !askerClient || !asker.connected) return this.notify(client, { tone: "info", text: "They've gone offline." });
+      return this.bringTo(player, client, asker, askerClient);
+    }
     // Join: the host (this player) agreed; move the asker next to them, or to the door of the building they're in.
     if (!asker || !askerClient) return;
-    const block = this.fastTravelBlock(asker);
-    if (block) return this.notify(askerClient, { tone: "error", text: block });
-    if (regionOf(...this.standingAt(player)) !== regionOf(...this.standingAt(asker))) {
-      return this.notify(askerClient, { tone: "error", text: `${player.name} is in another city. Fly there first.` });
+    this.bringTo(asker, askerClient, player, client);
+  }
+
+  /** Moves `mover` next to `host` on the street, or to the door of the building the host is in. */
+  private bringTo(mover: Player, moverClient: Client, host: Player, hostClient: Client) {
+    const block = this.fastTravelBlock(mover);
+    if (block) return this.notify(moverClient, { tone: "error", text: block });
+    if (regionOf(...this.standingAt(host)) !== regionOf(...this.standingAt(mover))) {
+      return this.notify(moverClient, { tone: "error", text: `${host.name} is in another city. Fly there first.` });
     }
-    if (player.location === "street") {
-      if (player.vehicleId || player.busId) return this.notify(askerClient, { tone: "error", text: `${player.name} is on the move. Try again when they've stopped.` });
-      this.moveByTravel(asker, this.besides([player.x, player.z], 1 + randomInt(4)), `You joined ${player.name}.`);
-    } else if (/^(home|starter|preview|club):/.test(player.location)) {
-      const place = player.propertyId ? (CLUBS[player.propertyId] ? getPlace(player.propertyId) : propertyPlace(player.propertyId) ?? builtHomePlace(player.propertyId)) : null;
+    if (host.location === "street") {
+      if (host.vehicleId || host.busId) return this.notify(moverClient, { tone: "error", text: `${host.name} is on the move. Try again when they've stopped.` });
+      this.moveByTravel(mover, this.besides([host.x, host.z], 1 + randomInt(4)), `You joined ${host.name}.`);
+    } else if (/^(home|starter|preview|club):/.test(host.location)) {
+      const place = host.propertyId ? (CLUBS[host.propertyId] ? getPlace(host.propertyId) : propertyPlace(host.propertyId) ?? builtHomePlace(host.propertyId)) : null;
       const name = place?.name ?? "the building";
-      this.moveByTravel(asker, this.besides(player.returnPoint, 1), `${player.name} is inside ${name}. You're at the door — go in if you have access (a wristband for clubs, an invite for homes).`);
+      this.moveByTravel(mover, this.besides(host.returnPoint, 1), `${host.name} is inside ${name}. You're at the door — go in if you have access (a wristband for clubs, an invite for homes).`);
     } else {
-      return this.notify(askerClient, { tone: "error", text: `${player.name} is travelling right now. Try again when they're back on the street.` });
+      return this.notify(moverClient, { tone: "error", text: `${host.name} is travelling right now. Try again when they're back on the street.` });
     }
-    this.notify(client, { tone: "success", text: `${asker.name} is on their way to you.` });
+    this.notify(hostClient, { tone: "success", text: `${mover.name} is on their way to you.` });
   }
 
   /** Marks public places discovered as players pass them, and expires unanswered travel requests. */
@@ -3177,7 +3258,17 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
           return { sessionId: other.sessionId, name: other.name, distance: Math.round(Math.hypot(x - ox, z - oz)) };
         })
         .filter((entry) => entry.distance <= FAST_TRAVEL.togetherRadius),
-      online: others.slice(0, 40).map((other) => ({ sessionId: other.sessionId, name: other.name, where: this.whereIs(other) })),
+      online: others.slice(0, 40).map((other) => {
+        const [x, z] = this.standingAt(other);
+        const outside = player.location === "street" && other.location === "street" && regionOf(x, z) === regionOf(ox, oz);
+        return {
+          sessionId: other.sessionId,
+          name: other.name,
+          where: this.whereIs(other),
+          distance: outside ? Math.round(Math.hypot(x - ox, z - oz)) : null,
+          away: Date.now() - (other.activeAt ?? other.lastAcceptedAt) > 5 * 60_000,
+        };
+      }),
       happenings: this.happenings(Date.now()),
     };
   }

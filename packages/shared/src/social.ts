@@ -12,6 +12,19 @@ export const SOCIAL = {
   retentionDays: 90,
 } as const;
 
+/** Everyone in a game room is a neighbour: a group small enough to enjoy, big enough to always find someone. */
+export const NEIGHBOURS = {
+  groupSize: 25,
+  /** Someone who hasn't moved or done anything for this long gives their place in a busy group to the next arrival. */
+  idleMinutes: 15,
+  /** Idle residents are only moved on when the group is at least this full. */
+  busyShare: 0.8,
+  /** A wave (and its notice) to the same person at most this often. */
+  waveEverySeconds: 20,
+} as const;
+
+export const waveSchema = z.object({ sessionId: z.string().min(1).max(64) });
+
 export const friendRequestSchema = z.object({ userName: z.string().trim().min(2).max(40) });
 export const friendRespondSchema = z.object({ userId: z.string().min(1).max(100), accept: z.boolean() });
 export const directMessageSendSchema = z.object({ to: z.string().min(1).max(100), text: z.string().trim().min(1).max(SOCIAL.messageMaxLength) });

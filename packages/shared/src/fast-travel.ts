@@ -37,7 +37,7 @@ export const joinRequestSchema = z.object({ sessionId: z.string().min(1).max(64)
 /** A prompt shown to the player who must agree before anyone moves. */
 export type TravelPrompt = {
   requestId: string;
-  kind: "together" | "join";
+  kind: "together" | "join" | "invite";
   fromName: string;
   /** Where they would go (together) or where they are (join). */
   label: string;
@@ -61,6 +61,7 @@ export type FastTravelState = {
   favourites: Array<{ id: Favourite; label: string; placeId: string | null; point: [number, number] | null; note: string | null }>;
   cooldownUntil: number;
   nearby: Array<{ sessionId: string; name: string; distance: number }>;
-  online: Array<{ sessionId: string; name: string; where: string }>;
+  /** Everyone else in this group (your neighbours): metres away when you are both out on the street, and whether they have gone quiet. */
+  online: Array<{ sessionId: string; name: string; where: string; distance: number | null; away: boolean }>;
   happenings: Happening[];
 };

@@ -123,7 +123,7 @@ test("one resident holds up another, and a report at the police station returns 
     const dealer = await placeById(victim, "lekki-motors");
     await walk(victim, dealer.kerb);
     const spot = await state(victim);
-    await expect(robber.getByTestId("network")).toContainText(/[2-9] online/, { timeout: 30_000 });
+    await expect(robber.getByTestId("network")).toContainText(/[2-9] neighbours/, { timeout: 30_000 });
     await walk(robber, [spot.x + 1.2, spot.z]);
     await until(async () => (await prompt(robber))?.label === `Hold up ${victimName}`, 15_000, "hold-up prompt");
     await robber.evaluate(() => window.__lagos.interact());

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { NEIGHBOURS } from "@lagos-living/shared";
 import { z } from "zod";
 
 const DEVELOPMENT_SECRET = "development-only-secret-change-me-now";
@@ -46,7 +47,7 @@ const configSchema = z
      */
     TEST_FUNDS: z.coerce.number().int().nonnegative().max(1_000_000_000).default(0),
     /** Players per world instance before a new instance opens. Raise it only after measuring a full room. */
-    ROOM_CAPACITY: z.coerce.number().int().min(2).max(500).default(100),
+    ROOM_CAPACITY: z.coerce.number().int().min(2).max(500).default(NEIGHBOURS.groupSize),
     /**
      * Comma-separated IPs/CIDRs of reverse proxies that append to X-Forwarded-For. Without it only a single-value
      * header is trusted, so the proxy in front of the API must overwrite that header.

@@ -3203,6 +3203,17 @@ export class GameEngine {
     this.net.send("joinRequest", { sessionId });
   }
 
+  /** Asks a neighbour to come to you; they move only if they accept. */
+  inviteToMe(sessionId: string) {
+    this.net.send("inviteRequest", { sessionId });
+  }
+
+  /** Waves at a neighbour: they get a notice wherever they are, and people around see the wave. */
+  waveAt(sessionId: string) {
+    this.net.send("wave", { sessionId });
+    if (!this.interior && !this.driving && !this.sitting) this.playEmote("wave");
+  }
+
   /** Seated reactions, shown over this player's avatar to everyone in the same cabin or boat. */
   react(emoji: string) {
     this.net.send("react", { emoji });
