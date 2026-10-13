@@ -126,6 +126,8 @@ import {
   type AgberoOutcome,
   songDecisionSchema,
   songRequestSchema,
+  footballJoinSchema,
+  footballKickSchema,
   FAST_TRAVEL,
   FAVOURITES,
   FAVOURITE_LABEL,
@@ -206,6 +208,8 @@ import { config } from "../config.js";
 import { ClubJukebox } from "./club-jukebox.js";
 import { chargeSongRequest, findSong, guestDjs, refundSongRequest } from "../song-service.js";
 import { TowDispatcher } from "./tow-dispatch.js";
+import { StreetFootball } from "./street-football.js";
+import { payMatchOut, payMatchStake } from "../football-service.js";
 import "../world-footprints.js";
 
 export const LagosState = schema({
@@ -416,6 +420,27 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       }
     },
   });
+  private football = new StreetFootball({
+    people: () =>
+      [...this.players.values()]
+        .filter((player) => player.connected)
+        .map((player) => ({
+          sessionId: player.sessionId,
+          userId: player.userId,
+          name: player.name,
+          x: player.x,
+          z: player.z,
+          yaw: player.yaw,
+          free: player.location === "street" && !player.busId && !player.vehicleId,
+        })),
+    send: (sessionId, state) => this.clients.find((client) => client.sessionId === sessionId)?.send("football", state),
+    notify: (sessionId, notice) => {
+      const client = this.clients.find((entry) => entry.sessionId === sessionId);
+      if (client) this.notify(client, notice);
+    },
+    stake: payMatchStake,
+    payOut: payMatchOut,
+  });
   private tows = new TowDispatcher({
     vehicles: this.vehicles,
     owner: (userId) => {
@@ -608,6 +633,23 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       if (!player || typeof emoji !== "string" || !(REACTIONS as readonly string[]).includes(emoji) || this.limited(player.actionRate, 3)) return;
       for (const other of this.chatRecipients(player)) this.clientFor(other)?.send("react", { sessionId: player.sessionId, emoji });
     });
+    this.onMessage("footballSync", (client, payload) => {
+      const player = this.players.get(client.sessionId);
+      if (player && typeof payload === "string" && !this.limited(player.actionRate, 6)) this.football.sync(client.sessionId, payload);
+    });
+    this.onMessage("footballJoin", (client, payload) => {
+      const player = this.players.get(client.sessionId);
+      const parsed = footballJoinSchema.safeParse(payload);
+      if (!player || !parsed.success || this.limited(player.actionRate, 4)) return;
+      void this.football.join(client.sessionId, parsed.data).catch((error) => console.error("Football join failed", error));
+    });
+    this.onMessage("footballLeave", (client) => void this.football.leave(client.sessionId).catch((error) => console.error("Football leave failed", error)));
+    this.onMessage("footballKickoff", (client) => this.football.kickoff(client.sessionId));
+    this.onMessage("footballKick", (client, payload) => {
+      const parsed = footballKickSchema.safeParse(payload);
+      if (parsed.success) this.football.kick(client.sessionId, parsed.data);
+    });
+    this.onMessage("footballTackle", (client) => this.football.tackle(client.sessionId));
     this.onMessage("carrying", (client, payload) => {
       const player = this.players.get(client.sessionId);
       if (player) player.carrying = payload === true;
@@ -787,6 +829,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       if (player.robbing) {
         for (const other of this.players.values()) if (other.heldUp?.robberSessionId === player.sessionId) await this.finishHoldUp(other, "timeout").catch(() => undefined);
       }
+      await this.football.leave(player.sessionId).catch(() => undefined);
       await this.endRide(player, "cancelled", "You disconnected, so the ride ended.", "system").catch(() => undefined);
       await this.parkPlayerVehicle(player).catch(() => undefined);
       for (const vehicle of this.vehicles.values()) {
@@ -2339,6 +2382,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const now = Date.now();
     this.state.tick = (this.state.tick + 1) >>> 0;
     this.tows.tick(seconds, now);
+    this.football.tick(dt, now);
     if (this.state.tick % 5 === 0 && this.flights.size) this.checkFlights(now);
     if (this.state.tick % 100 === 0) this.checkDiscoveries(now);
     if (this.state.tick % 25 === 0) {
