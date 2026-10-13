@@ -1493,7 +1493,7 @@ button.wide { width: 100%; margin: 6px 0; }
 .fuel-line b { display: block; height: 100%; background: #6fd18b; }
 .fuel-line.low b { background: #ff6b4a; }
 .fuel-line.low { color: #ffb4a3; }
-.fuel-prompt { position: absolute; left: 50%; bottom: 170px; transform: translateX(-50%); padding: 11px 18px; border-radius: 999px; font-weight: 700; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
+.fuel-prompt { position: absolute; left: 50%; bottom: 250px; transform: translateX(-50%); padding: 11px 18px; border-radius: 999px; font-weight: 700; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
 .fuel-sheet { max-width: 420px; }
 .fuel-tabs { display: flex; gap: 6px; margin: 4px 0 10px; }
 .fuel-tabs button { flex: 1; padding: 7px; border-radius: 8px; border: 1px solid rgba(20,40,60,.15); background: transparent; font-weight: 600; }

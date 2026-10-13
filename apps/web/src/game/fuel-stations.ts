@@ -36,10 +36,11 @@ export class FuelStationsView {
     }
   }
 
-  /** A point `forward` metres along the road and `right` metres towards the road (negative is further onto the pavement). */
-  private offset(site: FuelStationSite, forward: number, right: number): Vec2 {
+  /** A point `forward` metres along the road and `out` metres towards the road (negative is further onto the pavement). */
+  private offset(site: FuelStationSite, forward: number, out: number): Vec2 {
     const [x, z] = site.point;
-    return [x + Math.sin(site.yaw) * forward + Math.cos(site.yaw) * right, z + Math.cos(site.yaw) * forward - Math.sin(site.yaw) * right];
+    // Traffic keeps right, so the kerb is on the right of the direction of travel and the road on its left.
+    return [x + Math.sin(site.yaw) * forward - Math.cos(site.yaw) * out, z + Math.cos(site.yaw) * forward + Math.sin(site.yaw) * out];
   }
 
   private material(name: string, hex: string, glow = 0) {
@@ -95,24 +96,25 @@ export class FuelStationsView {
       parts.push(mesh);
       return mesh;
     };
-    // Local axes: +z along the road, +x towards the road.
-    part(MeshBuilder.CreateBox(`fuel ${site.id} island`, { width: 1.4, height: 0.18, depth: 7 }, this.scene), steel, -0.2, 0.09, 0);
+    // Local axes: +z along the road, -x towards the road.
+    part(MeshBuilder.CreateBox(`fuel ${site.id} island`, { width: 1.4, height: 0.18, depth: 7 }, this.scene), steel, 0.2, 0.09, 0);
     for (const along of [-2, 2]) {
-      part(MeshBuilder.CreateBox(`fuel ${site.id} pump`, { width: 0.6, height: 1.6, depth: 0.9 }, this.scene), body, -0.2, 0.98, along);
-      part(MeshBuilder.CreateBox(`fuel ${site.id} pump band`, { width: 0.62, height: 0.25, depth: 0.92 }, this.scene), trim, -0.2, 1.62, along);
-      part(MeshBuilder.CreateBox(`fuel ${site.id} pump screen`, { width: 0.64, height: 0.3, depth: 0.5 }, this.scene), glass, -0.2, 1.25, along);
-      part(MeshBuilder.CreateCylinder(`fuel ${site.id} nozzle`, { diameter: 0.08, height: 0.5 }, this.scene), steel, 0.15, 1.05, along + 0.3);
+      part(MeshBuilder.CreateBox(`fuel ${site.id} pump`, { width: 0.6, height: 1.6, depth: 0.9 }, this.scene), body, 0.2, 0.98, along);
+      part(MeshBuilder.CreateBox(`fuel ${site.id} pump band`, { width: 0.62, height: 0.25, depth: 0.92 }, this.scene), trim, 0.2, 1.62, along);
+      part(MeshBuilder.CreateBox(`fuel ${site.id} pump screen`, { width: 0.64, height: 0.3, depth: 0.5 }, this.scene), glass, 0.2, 1.25, along);
+      part(MeshBuilder.CreateCylinder(`fuel ${site.id} nozzle`, { diameter: 0.08, height: 0.5 }, this.scene), steel, -0.15, 1.05, along + 0.3);
     }
-    for (const along of [-3.2, 3.2]) part(MeshBuilder.CreateCylinder(`fuel ${site.id} column`, { diameter: 0.28, height: 4.6 }, this.scene), steel, -0.2, 2.3, along);
-    part(MeshBuilder.CreateBox(`fuel ${site.id} canopy`, { width: 7, height: 0.35, depth: 9 }, this.scene), body, 1.6, 4.75, 0);
-    part(MeshBuilder.CreateBox(`fuel ${site.id} canopy band`, { width: 7.05, height: 0.45, depth: 9.05 }, this.scene), trim, 1.6, 4.4, 0);
-    const totem = part(MeshBuilder.CreatePlane(`fuel ${site.id} board`, { width: 1.4, height: 2.1 }, this.scene), this.material(`fuel ${site.id} board`, "#ffffff", 0.6), -1.4, 2.6, -5.4);
-    totem.rotation.y = -Math.PI / 2;
+    for (const along of [-3.2, 3.2]) part(MeshBuilder.CreateCylinder(`fuel ${site.id} column`, { diameter: 0.28, height: 4.6 }, this.scene), steel, 0.2, 2.3, along);
+    part(MeshBuilder.CreateBox(`fuel ${site.id} canopy`, { width: 7, height: 0.35, depth: 9 }, this.scene), body, -1.6, 4.75, 0);
+    part(MeshBuilder.CreateBox(`fuel ${site.id} canopy band`, { width: 7.05, height: 0.45, depth: 9.05 }, this.scene), trim, -1.6, 4.4, 0);
+    const totem = part(MeshBuilder.CreatePlane(`fuel ${site.id} board`, { width: 1.4, height: 2.1 }, this.scene), this.material(`fuel ${site.id} board`, "#ffffff", 0.6), 1.4, 2.6, -5.4);
+    // Faces the road.
+    totem.rotation.y = Math.PI / 2;
     station.board = new DynamicTexture(`fuel ${site.id} board`, { width: 256, height: 384 }, this.scene, true);
     const boardMaterial = totem.material as StandardMaterial;
     boardMaterial.diffuseTexture = station.board;
     boardMaterial.emissiveTexture = station.board;
-    part(MeshBuilder.CreateBox(`fuel ${site.id} board post`, { width: 0.2, height: 1.6, depth: 0.2 }, this.scene), steel, -1.4, 0.8, -5.4);
+    part(MeshBuilder.CreateBox(`fuel ${site.id} board post`, { width: 0.2, height: 1.6, depth: 0.2 }, this.scene), steel, 1.4, 0.8, -5.4);
     this.drawBoard(station);
     for (const mesh of parts) mesh.freezeWorldMatrix();
     this.addCaster(parts);
@@ -120,7 +122,7 @@ export class FuelStationsView {
     const attendant = this.avatars.create(`fuel attendant ${site.id}`, ATTENDANT);
     attendant.onMeshes = (meshes) => this.addCaster(meshes);
     attendant.root.position.set(station.home[0], this.ground(...station.home), station.home[1]);
-    attendant.root.rotation.y = site.yaw + Math.PI / 2;
+    attendant.root.rotation.y = site.yaw - Math.PI / 2;
     station.attendant = attendant;
     const pos = MeshBuilder.CreateBox(`fuel ${site.id} pos`, { width: 0.09, height: 0.17, depth: 0.03 }, this.scene);
     pos.material = this.material(`fuel ${site.id} pos`, "#20242b", 0.2);
@@ -183,7 +185,7 @@ export class FuelStationsView {
         at.z += (dz / gap) * step;
         at.y = this.ground(at.x, at.z);
         attendant.root.rotation.y = Math.atan2(dx, dz);
-      } else if (!visit) attendant.root.rotation.y = station.site.yaw + Math.PI / 2;
+      } else if (!visit) attendant.root.rotation.y = station.site.yaw - Math.PI / 2;
       else attendant.root.rotation.y = Math.atan2(station.home[0] - at.x, station.home[1] - at.z) + Math.PI;
       attendant.update(gap > 0.05 ? 2.2 : 0, gap > 0.05 ? "walk" : "idle", dt);
       // Arrived at the door: the POS is held out at chest height for the card tap.
