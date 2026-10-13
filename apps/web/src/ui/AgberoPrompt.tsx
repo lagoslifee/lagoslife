@@ -2,7 +2,7 @@ import { AGBERO, type AgberoChoice, type AgberoEncounter } from "@lagos-living/s
 import { useEffect, useState } from "react";
 import { naira } from "../api";
 
-/** Non-blocking choice card: steering, pedals and the camera keep working, and simply driving off is an answer. */
+/** Non-blocking choice card: steering, pedals and the camera keep working, and simply driving or walking off is an answer. */
 export function AgberoPrompt({ encounter, onAnswer }: { encounter: AgberoEncounter; onAnswer: (choice: AgberoChoice) => void }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -10,10 +10,33 @@ export function AgberoPrompt({ encounter, onAnswer }: { encounter: AgberoEncount
     return () => clearInterval(timer);
   }, []);
   const left = Math.max(0, Math.ceil((encounter.expiresAt - now) / 1_000));
+  const where = encounter.spotName.split("·").pop()?.trim();
+  if (encounter.onFoot) {
+    return (
+      <section className="travel-prompt agbero-prompt" role="alertdialog" aria-label="Agbero boys" data-testid="agbero-prompt">
+        <p>
+          <strong>Agbero boys</strong> (fictional touts) surround you as you step out at {where}: "Oga! Na our area — settle the boys, {naira(encounter.ask)}!"{" "}
+          <small className="muted">{left}s</small>
+        </p>
+        {encounter.hasGuards ? (
+          <p className="muted small" data-testid="agbero-guards-moving">Your guards are already moving in…</p>
+        ) : (
+          <p className="muted small">Spray them and they hail you, or just walk off — they shout, but nobody follows you or touches the car.</p>
+        )}
+        <div className="row">
+          {encounter.hasGuards && <button className="primary" data-testid="agbero-guards" onClick={() => onAnswer("guards")}>🛡️ Guards, clear them</button>}
+          <button className={encounter.hasGuards ? "" : "primary"} data-testid="agbero-pay" onClick={() => onAnswer("pay")}>💸 Spray {naira(encounter.ask)}</button>
+          {!encounter.negotiated && <button data-testid="agbero-negotiate" onClick={() => onAnswer("negotiate")}>Haggle</button>}
+          <button data-testid="agbero-police" onClick={() => onAnswer("police")}>Call police</button>
+        </div>
+        <p className="muted small">Turn these off in Phone → Settings → Street life. Lowest they take: {naira(AGBERO.floor)}.</p>
+      </section>
+    );
+  }
   return (
     <section className="travel-prompt agbero-prompt" role="alertdialog" aria-label="Roadside tout" data-testid="agbero-prompt">
       <p>
-        <strong>An agbero</strong> (fictional tout) at {encounter.spotName.split("·").pop()?.trim()} wants {naira(encounter.ask)} to "settle the boys". <small className="muted">{left}s</small>
+        <strong>An agbero</strong> (fictional tout) at {where} wants {naira(encounter.ask)} to "settle the boys". <small className="muted">{left}s</small>
       </p>
       <p className="muted small">
         Paying is optional. If you drive off he may slap the car — at worst one small cosmetic dent (no effect on driving), and nobody follows you.

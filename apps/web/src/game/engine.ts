@@ -105,6 +105,7 @@ import {
   type FastTravelState,
   type AgberoChoice,
   type AgberoEncounter,
+  type AgberoOutcome,
   type Favourite,
   type TravelPrompt,
   type FoodParcel,
@@ -439,6 +440,8 @@ export class GameEngine {
   private staffPostsAt = 0;
   private partyLights: PartyLights | null = null;
   private spotters: CarSpotters | null = null;
+  /** The agbero boys who scramble for notes sprayed at a bus stop; never spawns on its own. */
+  private agberoCrowd: CarSpotters | null = null;
   private gatePlot: string | null = null;
   private looks = new Map<string, CharacterAppearance>();
   private builds = new Map<string, number>();
@@ -673,6 +676,7 @@ export class GameEngine {
         this.showTout(encounter);
         this.callbacks.agbero(encounter);
       },
+      agberoOutcome: (outcome) => this.agberoOutcome(outcome),
       react: ({ sessionId, emoji }) => {
         if (sessionId === this.net.sessionId) return;
         const remote = this.remotes.get(sessionId);
@@ -874,6 +878,15 @@ export class GameEngine {
         (amount) => this.callbacks.spray(amount),
       );
       this.spotters.enabled = this.settings.carSpotters;
+      this.agberoCrowd = new CarSpotters(
+        this.avatars,
+        this.overlay,
+        (x, z) => this.world.groundHeight(x, z),
+        (x, z) => walkable(x, z),
+        (x, y, z) => this.project(x, y, z),
+        () => undefined,
+        async () => false,
+      );
     }
 
     this.input = new InputState(this.canvas, this.bindings);
@@ -1585,6 +1598,7 @@ export class GameEngine {
     this.entrances?.update(dt, [x, z], !this.interior && !bus && !seatedTravel, () => this.entranceCandidates(), this.interior && !seatedTravel ? (this.interior.spots.find((spot) => spot.id === "exit")?.point ?? null) : null, this.interior ? indoorTarget : outdoorTarget, this.camera.maxZ);
     this.updateGuideLine([x, z], guideSpot?.point ?? null);
     this.spotters?.update(dt, now, this.spottedCar(x, z), [x, z], !this.interior && !bus);
+    this.agberoCrowd?.update(dt, now, null, [x, z], !this.interior && !bus);
     this.updateTout(dt, now, x, z);
     this.plotsView?.animate(dt);
     this.updateGates(x, z);
@@ -2501,7 +2515,7 @@ export class GameEngine {
         this.escorts.set(id, escort);
       }
       if (escort.count !== count) escort.setCount(count);
-      escort.chase(this.chaseTarget(id === "self" ? this.net.sessionId : id, own));
+      escort.chase(this.chaseTarget(id === "self" ? this.net.sessionId : id, own) ?? (id === "self" ? this.fleeingTout() : null));
       escort.update(dt, leader);
     }
   }
@@ -2802,47 +2816,114 @@ export class GameEngine {
     this.net.send("agberoAnswer", { encounterId, choice });
   }
 
-  /** One tout NPC stands on the kerb by the driver's window for the encounter, then walks off and is removed. */
-  private tout: { avatar: Avatar; tag: HTMLDivElement; at: Vec2; leaveAt: number | null } | null = null;
+  /**
+   * The touts for an encounter: one by the driver's window, or a crew of three round a player who just stepped out. When
+   * it ends they walk off, run from charging guards, or dance for sprayed notes, then are removed.
+   */
+  private tout: {
+    boys: Array<{ avatar: Avatar; at: Vec2 }>;
+    tag: HTMLDivElement;
+    leaveAt: number | null;
+    mode: "ask" | "walk" | "flee" | "hail";
+    away: Vec2;
+    onFoot: boolean;
+  } | null = null;
 
   private showTout(encounter: AgberoEncounter | null) {
     if (!encounter) {
       if (this.tout && this.tout.leaveAt === null) {
         this.tout.leaveAt = performance.now() + 2_500;
+        this.tout.mode = "walk";
         this.tout.tag.textContent = "…";
       }
       return;
     }
+    const line = encounter.onFoot ? `"Oga! Na our area o — settle the boys, ₦${encounter.ask}!"` : `"Oga, settle the boys — ₦${encounter.ask}"`;
     if (this.tout) {
-      this.tout.tag.textContent = `"Oga, settle the boys — ₦${encounter.ask}"`;
+      this.tout.tag.textContent = line;
       return;
     }
     if (!this.avatars) return;
     const [px, pz] = encounter.point;
     const yaw = this.car && this.driving ? this.car.yaw : this.controller.yaw;
-    const side: Vec2 = [px + Math.cos(yaw) * 2.2, pz - Math.sin(yaw) * 2.2];
-    const at: Vec2 = walkable(side[0], side[1]) ? side : [px - Math.cos(yaw) * 2.2, pz + Math.sin(yaw) * 2.2];
-    const avatar = this.avatars.create("agbero", { ...appearanceFor(1_337), outfit: "athleisure", accessory: "cap" });
-    avatar.root.position.set(at[0], this.world.groundHeight(at[0], at[1]), at[1]);
+    const spots: Vec2[] = encounter.onFoot
+      ? [0.4, 2.3, 4.2].map((angle) => [px + Math.sin(yaw + angle) * 1.9, pz + Math.cos(yaw + angle) * 1.9] as Vec2)
+      : [[px + Math.cos(yaw) * 2.2, pz - Math.sin(yaw) * 2.2], [px - Math.cos(yaw) * 2.2, pz + Math.sin(yaw) * 2.2]];
+    const free = spots.filter(([x, z]) => walkable(x, z));
+    const chosen = encounter.onFoot ? (free.length ? free : [spots[0]!]) : [free[0] ?? spots[1]!];
+    const boys = chosen.map((at, index) => {
+      const avatar = this.avatars!.create(`agbero ${index}`, { ...appearanceFor(1_337 + index * 211), outfit: index === 1 ? "denim-street" : "athleisure", accessory: index === 2 ? "beard" : "cap" });
+      avatar.root.position.set(at[0], this.world.groundHeight(at[0], at[1]), at[1]);
+      return { avatar, at };
+    });
     const tag = document.createElement("div");
     tag.className = "world-tag spotter-tag agbero-tag";
-    tag.textContent = `"Oga, settle the boys — ₦${encounter.ask}"`;
+    tag.textContent = line;
     this.overlay.appendChild(tag);
-    this.tout = { avatar, tag, at, leaveAt: null };
+    const lead = boys[0]!.at;
+    const out = Math.hypot(lead[0] - px, lead[1] - pz) || 1;
+    this.tout = { boys, tag, leaveAt: null, mode: "ask", away: [(lead[0] - px) / out, (lead[1] - pz) / out], onFoot: encounter.onFoot };
+  }
+
+  /** Plays out how an encounter ended: notes fly for a spray, the boys bolt with the guards on their heels, and so on. */
+  private agberoOutcome(outcome: AgberoOutcome) {
+    const tout = this.tout;
+    const [px, pz] = outcome.point;
+    if (outcome.outcome === "paid" && outcome.onFoot) {
+      this.agberoCrowd?.rain(px, pz, this.world.groundHeight(px, pz) + 2.1, Math.max(2_000, outcome.amount * 6), 2, "Shey na money dey fall? 🏃");
+      if (tout) {
+        tout.mode = "hail";
+        tout.leaveAt = performance.now() + 5_000;
+        tout.tag.textContent = "\"Odogwu! Chairman! We hail you o! 🙌💸\"";
+      }
+      return;
+    }
+    if (outcome.outcome === "guards" && tout) {
+      tout.mode = "flee";
+      tout.leaveAt = performance.now() + 4_500;
+      tout.tag.textContent = "\"Ah! Na security! Run o! 🏃💨\"";
+      const away = this.navigator.snap([px + tout.away[0] * 30, pz + tout.away[1] * 30]).point;
+      const dx = away[0] - px;
+      const dz = away[1] - pz;
+      const length = Math.hypot(dx, dz) || 1;
+      tout.away = [dx / length, dz / length];
+    }
+  }
+
+  /** Where the fleeing lead tout is, so the player's own guards can run him down. */
+  private fleeingTout(): Vec2 | null {
+    return this.tout?.mode === "flee" ? this.tout.boys[0]!.at : null;
   }
 
   private updateTout(dt: number, now: number, x: number, z: number) {
     const tout = this.tout;
     if (!tout) return;
-    if (this.interior || (tout.leaveAt !== null && now > tout.leaveAt) || Math.hypot(tout.at[0] - x, tout.at[1] - z) > 60) {
-      tout.avatar.dispose();
+    if (this.interior || (tout.leaveAt !== null && now > tout.leaveAt) || Math.hypot(tout.boys[0]!.at[0] - x, tout.boys[0]!.at[1] - z) > 60) {
+      for (const boy of tout.boys) boy.avatar.dispose();
       tout.tag.remove();
       this.tout = null;
       return;
     }
-    tout.avatar.root.rotation.y = Math.atan2(x - tout.at[0], z - tout.at[1]);
-    tout.avatar.update(0, tout.leaveAt === null ? "wave" : "idle", dt);
-    const screen = this.project(tout.at[0], this.world.groundHeight(tout.at[0], tout.at[1]) + 2.1, tout.at[1]);
+    for (const [index, boy] of tout.boys.entries()) {
+      let motion: MotionState = tout.mode === "ask" ? (index === 0 || Math.sin(now / 400 + index) > 0.3 ? "wave" : "idle") : "idle";
+      let speed = 0;
+      if (tout.mode === "walk" || tout.mode === "flee") {
+        speed = tout.mode === "flee" ? 6.2 - index * 0.4 : 1.3;
+        const spread = tout.mode === "flee" ? (index - 1) * 0.35 : 0;
+        const dir: Vec2 = [tout.away[0] * Math.cos(spread) - tout.away[1] * Math.sin(spread), tout.away[1] * Math.cos(spread) + tout.away[0] * Math.sin(spread)];
+        const next: Vec2 = [boy.at[0] + dir[0] * speed * dt, boy.at[1] + dir[1] * speed * dt];
+        if (walkable(next[0], next[1]) || tout.mode === "flee") boy.at = next;
+        boy.avatar.root.rotation.y = Math.atan2(dir[0], dir[1]);
+        motion = tout.mode === "flee" ? "sprint" : "walk";
+      } else {
+        boy.avatar.root.rotation.y = Math.atan2(x - boy.at[0], z - boy.at[1]);
+        if (tout.mode === "hail") motion = Math.sin(now / 180 + index * 2) > 0 ? "wave" : "dance";
+      }
+      boy.avatar.root.position.set(boy.at[0], this.world.groundHeight(boy.at[0], boy.at[1]), boy.at[1]);
+      boy.avatar.update(speed, motion, dt);
+    }
+    const lead = tout.boys[0]!.at;
+    const screen = this.project(lead[0], this.world.groundHeight(lead[0], lead[1]) + 2.1, lead[1]);
     tout.tag.style.display = screen.visible ? "block" : "none";
     if (screen.visible) tout.tag.style.transform = `translate(${screen.x}px, ${screen.y}px) translate(-50%, -100%)`;
   }

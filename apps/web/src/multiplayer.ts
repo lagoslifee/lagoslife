@@ -23,6 +23,7 @@ import {
   type FastTravelState,
   type TravelPrompt,
   type AgberoEncounter,
+  type AgberoOutcome,
   ROBBERY,
 } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
@@ -67,6 +68,7 @@ export type MultiplayerHandlers = {
   travelPrompt: (prompt: TravelPrompt) => void;
   rideAsk: (ask: RideAsk) => void;
   agbero: (encounter: AgberoEncounter | null) => void;
+  agberoOutcome: (outcome: AgberoOutcome) => void;
   /** The owner rearranged the home this player is standing in. */
   interior: () => void;
 };
@@ -165,6 +167,7 @@ export class MultiplayerConnection {
         this.handlers.react({ sessionId: String(reaction?.sessionId ?? ""), emoji: String(reaction?.emoji ?? "") }),
       );
       room.onMessage("agbero", (encounter: AgberoEncounter | null) => this.handlers.agbero(encounter && typeof encounter.id === "string" ? encounter : null));
+      room.onMessage("agberoOutcome", (outcome: AgberoOutcome) => Array.isArray(outcome?.point) && this.handlers.agberoOutcome(outcome));
       room.onMessage("goState", (state: FastTravelState) => Array.isArray(state?.discovered) && this.handlers.goState(state));
       room.onMessage("rideAsk", (ask: RideAsk) => typeof ask?.sessionId === "string" && typeof ask.name === "string" && this.handlers.rideAsk(ask));
       room.onMessage("travelPrompt", (prompt: TravelPrompt) => typeof prompt?.requestId === "string" && this.handlers.travelPrompt(prompt));

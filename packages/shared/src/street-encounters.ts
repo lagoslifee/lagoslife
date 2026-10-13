@@ -25,6 +25,12 @@ export const AGBERO = {
   /** Panel-beating per dent at the mechanic; comprehensive cover pays this share. */
   dentRepair: 4_000,
   insuranceShare: 0.7,
+  /** Stepping out of your own car this close to a stop, this soon after parking, brings the touts over on foot. */
+  stepOutMs: 45_000,
+  /** On foot, walking this far from where they surrounded you counts as walking off. */
+  walkOffMetres: 18,
+  /** With guards on foot, the guards move in by themselves after this beat. */
+  guardsMoveMs: 2_500,
   /** Spots must be at least this far from homes, the spawn, airports and police. */
   protectedMetres: 120,
 } as const;
@@ -70,9 +76,14 @@ export type AgberoEncounter = {
   ask: number;
   negotiated: boolean;
   hasGuards: boolean;
+  /** The player just stepped out of their car: the boys surround them on foot. */
+  onFoot: boolean;
   expiresAt: number;
   point: Vec2;
 };
+
+/** How an encounter ended, so the client can play it out: notes sprayed, guards chasing the boys off, and so on. */
+export type AgberoOutcome = { id: string; outcome: StreetIncident["outcome"]; amount: number; point: Vec2; onFoot: boolean };
 
 export type StreetIncident = {
   id: string;

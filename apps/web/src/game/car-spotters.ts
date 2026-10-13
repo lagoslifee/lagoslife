@@ -240,9 +240,16 @@ export class CarSpotters {
 
   /** Notes thrown up off the car roof flutter down round it, and the spotters (plus a few who come running) scramble for them. */
   private shower(car: SpottedCar, amount: number) {
-    const now = performance.now();
     const model = vehicleModelById.get(car.modelId);
-    const roof = this.ground(car.x, car.z) + (model?.height ?? 1.5) + 0.25;
+    this.rain(car.x, car.z, this.ground(car.x, car.z) + (model?.height ?? 1.5) + 0.25, amount, 3, "Money dey fall! 🏃");
+    this.onAnswer(`You sprayed ₦${amount.toLocaleString("en-NG")} from the roof. The spotters go wild! (Game money, paid to NPCs.)`);
+  }
+
+  /** Notes thrown up from `top` at (x, z) flutter down, and `crowd` people come running from up the road to scramble for them. */
+  rain(x: number, z: number, top: number, amount: number, crowd: number, line: string) {
+    const car: SpottedCar = { id: "rain", x, z, speed: 0, modelId: "", colour: "", condition: null };
+    const now = performance.now();
+    const roof = top;
     const source = this.noteMesh();
     const count = Math.min(40, Math.max(10, Math.round(amount / 500)));
     for (let index = 0; index < count; index++) {
@@ -267,14 +274,13 @@ export class CarSpotters {
       note.floor = this.ground(note.x + note.vx * 1.4, note.z + note.vz * 1.4) + 0.012;
       this.notes.push(note);
     }
-    for (let index = 0; index < 3; index++) this.addSpotter(car, now + 12_000, "Money dey fall! 🏃", 12, 20, "scramble");
+    for (let index = 0; index < crowd; index++) this.addSpotter(car, now + 12_000, line, 12, 20, "scramble");
     for (const spotter of this.spotters) {
       if (spotter.phase === "leave") continue;
       spotter.phase = "scramble";
       spotter.until = now + 12_000;
       spotter.tag.textContent = "💸💸 Ehen!!";
     }
-    this.onAnswer(`You sprayed ₦${amount.toLocaleString("en-NG")} from the roof. The spotters go wild! (Game money, paid to NPCs.)`);
   }
 
   private stepNotes(dt: number) {

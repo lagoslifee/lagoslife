@@ -1251,4 +1251,41 @@ describe("LagosRoom agbero encounters", () => {
     expect(encounters.startEncounter).not.toHaveBeenCalled();
     expect(sentAgbero(ada)).toHaveLength(0);
   });
+
+  it("surrounds a player who just stepped out of their own car, and their guards chase the boys off by themselves", async () => {
+    const { room, join } = setup();
+    const internals = room as Internals;
+    const ada = join("ada");
+    const player = atSpot(internals, ada);
+    Object.assign(player, { vehicleId: null, vehicleSeat: null, steppedOut: { at: Date.now(), vehicleId: "car-1" }, guards: 2, guardsUntil: Date.now() + 3_600_000 });
+    internals.checkEncounters(Date.now());
+    await flush();
+    const [encounter] = sentAgbero(ada) as Array<{ id: string; onFoot: boolean; hasGuards: boolean } | null>;
+    expect(encounter).toMatchObject({ onFoot: true, hasGuards: true });
+    internals.checkEncounters(Date.now() + AGBERO.guardsMoveMs + 100);
+    await flush();
+    expect((encounters.resolveEncounter.mock.calls[0] as unknown[])[2]).toBe("guards");
+    const outcome = ada.send.mock.calls.find(([type]) => type === "agberoOutcome")?.[1] as { outcome: string } | undefined;
+    expect(outcome?.outcome).toBe("guards");
+  });
+
+  it("lets a player on foot walk off, and ignores a car parked long ago", async () => {
+    const { room, join } = setup();
+    const internals = room as Internals;
+    const ada = join("ada");
+    const player = atSpot(internals, ada) as unknown as { x: number; encounter: { onFoot: boolean } | null; steppedOut: unknown };
+    Object.assign(player, { vehicleId: null, vehicleSeat: null, steppedOut: { at: Date.now() - AGBERO.stepOutMs - 1, vehicleId: "car-1" } });
+    internals.checkEncounters(Date.now());
+    await flush();
+    expect(encounters.startEncounter).not.toHaveBeenCalled();
+    player.steppedOut = { at: Date.now(), vehicleId: "car-1" };
+    internals.checkEncounters(Date.now());
+    await flush();
+    expect(player.encounter?.onFoot).toBe(true);
+    player.x += AGBERO.walkOffMetres + 2;
+    internals.checkEncounters(Date.now());
+    await flush();
+    expect((encounters.resolveEncounter.mock.calls[0] as unknown[])[2]).toBe("ignored");
+    expect(player.encounter).toBeNull();
+  });
 });

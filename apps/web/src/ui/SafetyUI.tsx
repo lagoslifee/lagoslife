@@ -1,4 +1,4 @@
-import { CHAT, JUSTICE, REPORT_REASONS, type ChatMessage, type Citation, type Notice, type ReportReason, type SafetyStatus } from "@lagos-living/shared";
+import { CHAT, JUSTICE, REPORT_REASONS, type ChatMessage, type Citation, type Notice, type ReportReason, type SafetyStatus, type SecurityStatus } from "@lagos-living/shared";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { api, naira } from "../api";
 
@@ -207,6 +207,46 @@ export function WarningNotice({ warnings, onAcknowledge }: { warnings: SafetySta
   );
 }
 
+/** Hired guards can be released from anywhere; unused time is not refunded. */
+function GuardsOnDuty({ onToast }: { onToast: (notice: Notice) => void }) {
+  const [security, setSecurity] = useState<SecurityStatus | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.security().then(setSecurity).catch(() => undefined);
+  }, []);
+  if (!security?.guards || !security.until) return null;
+  const release = async () => {
+    setBusy(true);
+    try {
+      setSecurity(await api.dismissSecurity());
+      onToast({ tone: "success", text: "You released your guards. They salute and head back to base in the Hilux." });
+    } catch (error) {
+      onToast({ tone: "error", text: (error as Error).message });
+    } finally {
+      setBusy(false);
+      setConfirming(false);
+    }
+  };
+  return (
+    <section className="guards-duty" data-testid="guards-duty">
+      <h3>🛡️ Your security</h3>
+      <p className="muted small">
+        {security.guards} guards on duty until {new Date(security.until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.
+      </p>
+      {confirming ? (
+        <div className="row">
+          <button className="danger" disabled={busy} onClick={() => void release()} data-testid="release-guards-confirm">Release them now</button>
+          <button className="secondary" disabled={busy} onClick={() => setConfirming(false)}>Keep them</button>
+        </div>
+      ) : (
+        <button className="secondary" onClick={() => setConfirming(true)} data-testid="release-guards">Release guards</button>
+      )}
+      {confirming && <p className="muted small">Unused hours are not refunded.</p>}
+    </section>
+  );
+}
+
 export function SafetyApp({ onToast, onReport }: { onToast: (notice: Notice) => void; onReport: (target: ReportTarget) => void }) {
   const [status, setStatus] = useState<SafetyStatus | null>(null);
   const [name, setName] = useState("");
@@ -223,6 +263,7 @@ export function SafetyApp({ onToast, onReport }: { onToast: (notice: Notice) => 
   };
   return (
     <div className="app-section" data-testid="safety-app">
+      <GuardsOnDuty onToast={onToast} />
       {status?.mutedUntil && <p className="error-text">Your chat is muted until {status.mutedUntil === "indefinitely" ? "a moderator lifts it" : new Date(status.mutedUntil).toLocaleString("en-NG")}.</p>}
       <h3>Blocked residents</h3>
       {status && status.blocked.length === 0 && <p className="muted small">Nobody. Blocking hides their chat from you and yours from them.</p>}

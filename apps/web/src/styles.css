@@ -1435,3 +1435,6 @@ button.wide { width: 100%; margin: 6px 0; }
 [data-theme="dark"] .minimap { border-color: rgba(120,130,160,.7); }
 [data-theme="dark"] .minimap canvas { filter: brightness(.62) saturate(.85) hue-rotate(-8deg); }
 [data-theme="dark"] .minimap .north { color: #f2f2f7; }
+.guards-duty { margin-bottom: 14px; padding: 12px; border-radius: 12px; background: rgba(20,40,60,.06); border: 1px solid rgba(20,40,60,.12); }
+.guards-duty h3 { margin: 0 0 4px; }
+[data-theme="dark"] .guards-duty { background: #2c2c2e; border-color: #48484a; }

@@ -120,6 +120,7 @@ import {
   AGBERO_SPOTS,
   agberoAnswerSchema,
   type AgberoEncounter,
+  type AgberoOutcome,
   FAST_TRAVEL,
   FAVOURITES,
   FAVOURITE_LABEL,
@@ -293,6 +294,8 @@ type Player = {
   /** A roadside tout (agbero) waiting for this driver's answer. */
   encounter: (AgberoEncounter & { spotId: string; vehicleId: string | null }) | null;
   lastEncounterAt: number;
+  /** When the driver last stepped out of their own car; touts at a stop pounce on someone who just parked. */
+  steppedOut: { at: number; vehicleId: string } | null;
   /** Cached result of the account-age and settings check, so a driver idling near a spot is not re-queried. */
   encounterCheck: { at: number; ok: boolean } | null;
 };
@@ -644,6 +647,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       homePropertyId,
       encounter: null,
       lastEncounterAt: 0,
+      steppedOut: null,
       encounterCheck: null,
     };
     for (const [sessionId, existing] of this.players) {
@@ -1250,6 +1254,9 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     player.motion = "idle";
     if (!vehicle) return null;
     if (seat > 0) return vehicle;
+    if (vehicle.ownerUserId === player.userId && !vehicle.testDrive && !vehicle.npc && !vehicle.tow && !vehicle.rental && !vehicle.hire) {
+      player.steppedOut = { at: Date.now(), vehicleId: vehicle.id };
+    }
     vehicle.driverSessionId = null;
     vehicle.lights = false;
     if (vehicle.testDrive) {
@@ -2539,24 +2546,29 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       const encounter = player.encounter;
       if (encounter) {
         const moved = Math.hypot(player.x - encounter.point[0], player.z - encounter.point[1]);
-        if (this.measuredSpeed(player) > AGBERO.driveOffSpeed || moved > 30) void this.settleAgbero(player, "drive");
+        if (encounter.onFoot) {
+          if (player.location !== "street" || moved > AGBERO.walkOffMetres || player.vehicleId) void this.settleAgbero(player, "ignore");
+          else if (encounter.hasGuards && now > encounter.expiresAt - AGBERO.answerMs + AGBERO.guardsMoveMs) void this.settleAgbero(player, "guards");
+          else if (encounter.expiresAt < now) void this.settleAgbero(player, "ignore");
+        } else if (this.measuredSpeed(player) > AGBERO.driveOffSpeed || moved > 30) void this.settleAgbero(player, "drive");
         else if (encounter.expiresAt < now) void this.settleAgbero(player, "ignore");
         continue;
       }
       if (now - player.lastEncounterAt < AGBERO.playerCooldownMs || player.location !== "street") continue;
-      if (player.checkpoint || player.heldUp || player.robbing || player.ride) continue;
+      if (player.checkpoint || player.heldUp || player.robbing || player.ride || player.busId) continue;
       const car = this.ownedCar(player);
-      if (!car || this.measuredSpeed(player) > AGBERO.maxSpeed) continue;
+      const parked = !player.vehicleId && player.steppedOut && now - player.steppedOut.at < AGBERO.stepOutMs ? player.steppedOut.vehicleId : null;
+      if (!parked && (!car || this.measuredSpeed(player) > AGBERO.maxSpeed)) continue;
       const spot = AGBERO_SPOTS.find((entry) => Math.hypot(entry.point[0] - player.x, entry.point[1] - player.z) < AGBERO.triggerMetres);
       if (!spot || now - (this.spotUsedAt.get(spot.id) ?? -Infinity) < AGBERO.spotCooldownMs) continue;
       if (player.encounterCheck && now - player.encounterCheck.at < 60_000 && !player.encounterCheck.ok) continue;
       player.lastEncounterAt = now;
       this.spotUsedAt.set(spot.id, now);
-      void this.beginAgbero(player, spot, car.id);
+      void this.beginAgbero(player, spot, parked ?? car!.id, Boolean(parked));
     }
   }
 
-  private async beginAgbero(player: Player, spot: (typeof AGBERO_SPOTS)[number], vehicleId: string) {
+  private async beginAgbero(player: Player, spot: (typeof AGBERO_SPOTS)[number], vehicleId: string, onFoot = false) {
     const ok = await encounterEligible(player.userId).catch(() => false);
     player.encounterCheck = { at: Date.now(), ok };
     if (!ok) {
@@ -2576,6 +2588,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       ask,
       negotiated: false,
       hasGuards: player.guards > 0 && player.guardsUntil > Date.now(),
+      onFoot,
       expiresAt: Date.now() + AGBERO.answerMs,
       point: [player.x, player.z],
     };
@@ -2617,16 +2630,25 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const client = this.clientFor(player);
     client?.send("agbero", null);
     const say = (tone: "info" | "success" | "error", text: string) => client && this.notify(client, { tone, text });
+    const show = (outcome: AgberoOutcome["outcome"], amount = 0) =>
+      client?.send("agberoOutcome", { id: encounter.id, outcome, amount, point: encounter.point, onFoot: encounter.onFoot } satisfies AgberoOutcome);
+    if (encounter.onFoot && how === "drive") how = "ignore";
     try {
       if (how === "pay") {
         const result = await payEncounter(player.userId, encounter.id, encounter.ask);
-        if (result.paid) say("info", `You gave him ₦${encounter.ask}. "Correct guy! Move on." It's on your record at any police station.`);
+        if (result.paid) {
+          show("paid", encounter.ask);
+          say("info", encounter.onFoot
+            ? `You sprayed the boys ₦${encounter.ask}. "Odogwu! Chairman! Your motor dey safe here!" It's on your record at any police station.`
+            : `You gave him ₦${encounter.ask}. "Correct guy! Move on." It's on your record at any police station.`);
+        }
         return;
       }
       if (how === "drive") {
         const dent = randomInt(1_000) < AGBERO.dentChance * 1_000;
         const done = await resolveEncounter(player.userId, encounter.id, "drove_off", { dent, vehicleId: encounter.vehicleId });
         if (done) {
+          show("drove_off");
           say("info", dent
             ? "He slapped the boot as you pulled away — a small cosmetic dent. It doesn't affect driving; any mechanic can panel-beat it and insurance pays most of it."
             : "You drove off. He shouted something about 'next time' and went back to the kerb. Nobody follows you.");
@@ -2636,6 +2658,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       if (how === "police") {
         const cctv = policeWitness(encounter.point[0], encounter.point[1]);
         const done = await resolveEncounter(player.userId, encounter.id, "police", { cctv });
+        if (done) show("police");
         if (done) say("success", cctv
           ? "You called it in. A police camera covers this junction, so the tout was identified and warned off. The report is on your record at any police station."
           : "You called it in and he backed off before anyone arrived. There's no police camera here, but your report is on record at any police station.");
@@ -2643,11 +2666,17 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       }
       if (how === "guards") {
         const done = await resolveEncounter(player.userId, encounter.id, "guards");
-        if (done) say("success", "Your guards stepped out and had a quiet word. He waved you on, no money changed hands.");
+        if (done) {
+          show("guards");
+          say("success", encounter.onFoot
+            ? "Your guards charged in — \"Comot for here!\" — and the boys scattered down the road. Nobody touches your car."
+            : "Your guards stepped out and had a quiet word. He waved you on, no money changed hands.");
+        }
         return;
       }
       await resolveEncounter(player.userId, encounter.id, "ignored");
-      say("info", "He lost interest and went back to the bus stop.");
+      show("ignored");
+      say("info", encounter.onFoot ? "You walked off. The boys hissed and went back to the bus stop." : "He lost interest and went back to the bus stop.");
     } catch (error) {
       if (error instanceof EconomyError) say("error", `${error.message}. He waves you on anyway.`);
       else console.error("Agbero encounter failed", error);
