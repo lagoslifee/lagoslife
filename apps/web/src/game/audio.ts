@@ -16,10 +16,15 @@ export class CityAudio {
   private club: { bpm: number; gain: GainNode; nextStep: number; step: number } | null = null;
 
   private clubTimer: ReturnType<typeof setInterval> | null = null;
+  private effects: GainNode | null = null;
+  private motor: { low: OscillatorNode; high: OscillatorNode; filter: BiquadFilterNode; gain: GainNode } | null = null;
+  private stride = 0;
+  private lastTap = 0;
 
   constructor(settings: PlayerSettings) {
     this.settings = settings;
-    for (const type of ["pointerdown", "touchend", "keydown"]) window.addEventListener(type, this.gesture, { passive: true });
+    for (const type of ["pointerdown", "touchend", "click", "keydown"]) window.addEventListener(type, this.gesture, { passive: true });
+    document.addEventListener("click", this.tapped, { capture: true, passive: true });
     document.addEventListener("visibilitychange", this.visibility);
   }
 
@@ -29,7 +34,30 @@ export class CityAudio {
    */
   private gesture = () => {
     if (!this.context) this.start();
-    else if (this.context.state !== "running" && !document.hidden) void this.context.resume().catch(() => undefined);
+    else if (this.context.state !== "running" && !document.hidden) {
+      void this.context.resume().catch(() => undefined);
+      this.unlock();
+    }
+  };
+
+  /** iOS only opens the audio output after something is played inside the gesture itself, so play a blank tick. */
+  private unlock() {
+    const context = this.context;
+    if (!context) return;
+    const source = context.createBufferSource();
+    source.buffer = context.createBuffer(1, 1, 22_050);
+    source.connect(context.destination);
+    source.start(0);
+  }
+
+  private tapped = (event: Event) => {
+    const target = event.target as Element | null;
+    if (!target?.closest?.("button, [role=button], a")) return;
+    const now = performance.now();
+    if (now - this.lastTap < 60 || !this.context || !this.effects) return;
+    this.lastTap = now;
+    const at = this.context.currentTime + 0.005;
+    this.tone(this.effects, "sine", 1_400, 900, at, 0.05, 0.08);
   };
 
   /** A suspended context stops the audio thread, so a backgrounded tab doesn't keep the phone working. */
@@ -43,9 +71,19 @@ export class CityAudio {
     if (this.context) return;
     const AudioCtor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtor) return;
-    const context = new AudioCtor();
+    // Without this iOS treats game audio as "ambient" and the ringer switch silences all of it.
+    const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+    if (session) {
+      try {
+        session.type = "playback";
+      } catch {
+        // Older WebKit exposes the object read-only.
+      }
+    }
+    const context = new AudioCtor({ latencyHint: "interactive" });
     this.context = context;
     if (context.state !== "running") void context.resume().catch(() => undefined);
+    this.unlock();
     context.addEventListener("statechange", () => {
       if (context.state !== "running" && context.state !== "closed" && !document.hidden) void context.resume().catch(() => undefined);
     });
@@ -53,6 +91,9 @@ export class CityAudio {
     this.master.connect(context.destination);
     this.ambience = context.createGain();
     this.ambience.connect(this.master);
+    this.effects = context.createGain();
+    this.effects.gain.value = 0.9;
+    this.effects.connect(this.master);
     const length = context.sampleRate * 4;
     const buffer = context.createBuffer(1, length, context.sampleRate);
     const data = buffer.getChannelData(0);
@@ -190,6 +231,112 @@ export class CityAudio {
     }
   }
 
+  private burst(out: AudioNode, at: number, length: number, volume: number, type: BiquadFilterType, frequency: number) {
+    const context = this.context!;
+    const buffer = context.createBuffer(1, Math.ceil(context.sampleRate * length), context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < data.length; index += 1) data[index] = (Math.random() * 2 - 1) * (1 - index / data.length) ** 2;
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    const filter = context.createBiquadFilter();
+    filter.type = type;
+    filter.frequency.value = frequency;
+    const gain = context.createGain();
+    gain.gain.value = volume;
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(out);
+    source.start(at);
+  }
+
+  /** Notes and coins: a till's bright double ping over the rustle of paper money. */
+  cash() {
+    if (!this.context || !this.effects) return;
+    const at = this.context.currentTime + 0.01;
+    this.tone(this.effects, "sine", 1_975, 1_970, at, 0.18, 0.12);
+    this.tone(this.effects, "sine", 2_637, 2_630, at + 0.09, 0.35, 0.1);
+    this.tone(this.effects, "triangle", 3_950, 3_900, at + 0.09, 0.12, 0.03);
+    for (let i = 0; i < 4; i++) this.burst(this.effects, at + 0.05 + i * 0.07, 0.06, 0.12, "bandpass", 3_200);
+  }
+
+  /** A hit in the car: a body thump scaled by how hard, the crumple of panels and, when it's bad, glass. */
+  crash(strength: number) {
+    if (!this.context || !this.effects) return;
+    const hard = Math.max(0.2, Math.min(1, strength));
+    const at = this.context.currentTime + 0.005;
+    this.tone(this.effects, "sine", 110, 38, at, 0.35, 0.9 * hard);
+    this.burst(this.effects, at, 0.28, 0.7 * hard, "lowpass", 900);
+    this.burst(this.effects, at + 0.02, 0.18, 0.3 * hard, "bandpass", 2_200);
+    if (hard > 0.6) for (let i = 0; i < 5; i++) this.tone(this.effects, "triangle", 3_000 + Math.random() * 2_500, 2_500, at + 0.08 + i * 0.04, 0.09, 0.05);
+  }
+
+  /**
+   * The engine of whatever the player drives, pitched by road speed and growling louder on the throttle; null when
+   * they're out of the car (or on a bicycle).
+   */
+  setEngine(engine: { speed: number; throttle: number; bike: boolean } | null) {
+    const context = this.context;
+    if (!context || !this.effects) return;
+    if (!engine) {
+      if (this.motor) {
+        const { low, high, gain } = this.motor;
+        gain.gain.setTargetAtTime(0, context.currentTime, 0.15);
+        setTimeout(() => {
+          low.stop();
+          high.stop();
+          gain.disconnect();
+        }, 900);
+        this.motor = null;
+      }
+      return;
+    }
+    if (!this.motor) {
+      const low = context.createOscillator();
+      const high = context.createOscillator();
+      low.type = "sawtooth";
+      high.type = "square";
+      const filter = context.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = 500;
+      filter.Q.value = 2;
+      const gain = context.createGain();
+      gain.gain.value = 0;
+      low.connect(filter);
+      high.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.effects);
+      low.start();
+      high.start();
+      this.motor = { low, high, filter, gain };
+    }
+    const { low, high, filter, gain } = this.motor;
+    const now = context.currentTime;
+    // A gear change every quarter of top speed: revs climb through each gear and drop back at the shift.
+    const gear = Math.min(0.999, engine.speed) * 4;
+    const revs = 0.25 + (gear - Math.floor(gear)) * 0.55 + Math.floor(gear) * 0.05 + engine.throttle * 0.1;
+    const base = (engine.bike ? 70 : 38) + revs * (engine.bike ? 120 : 70);
+    low.frequency.setTargetAtTime(base, now, 0.08);
+    high.frequency.setTargetAtTime(base * 2.01, now, 0.08);
+    filter.frequency.setTargetAtTime(380 + revs * 900 + engine.throttle * 500, now, 0.1);
+    gain.gain.setTargetAtTime((0.05 + engine.throttle * 0.07 + Math.min(1, engine.speed) * 0.04) * (0.6 + this.settings.ambienceVolume * 0.6), now, 0.1);
+  }
+
+  /** Footfalls in time with the stride; softer and duller indoors. */
+  footsteps(speed: number, dt: number, indoors: boolean) {
+    if (!this.context || !this.effects || speed < 0.3) {
+      this.stride = 0;
+      return;
+    }
+    // About two steps a second walking, three and a half running.
+    this.stride += dt * (1.2 + speed * 0.42);
+    if (this.stride < 1) return;
+    this.stride -= 1;
+    const at = this.context.currentTime + 0.005;
+    const volume = Math.min(0.32, 0.12 + speed * 0.03);
+    this.burst(this.effects, at, 0.07, volume, "lowpass", indoors ? 520 : 900 + Math.random() * 300);
+    this.tone(this.effects, "sine", 90, 60, at, 0.05, volume * 0.6);
+  }
+
   private cabin: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
 
   /** Low engine rumble while seated on a flight; `level` 0 stops it. */
@@ -249,8 +396,10 @@ export class CityAudio {
   }
 
   dispose() {
-    for (const type of ["pointerdown", "touchend", "keydown"]) window.removeEventListener(type, this.gesture);
+    for (const type of ["pointerdown", "touchend", "click", "keydown"]) window.removeEventListener(type, this.gesture);
+    document.removeEventListener("click", this.tapped, { capture: true });
     document.removeEventListener("visibilitychange", this.visibility);
+    this.setEngine(null);
     if (this.clubTimer) clearInterval(this.clubTimer);
     this.clubTimer = null;
     this.club = null;

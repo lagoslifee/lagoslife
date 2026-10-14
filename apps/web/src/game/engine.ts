@@ -1282,10 +1282,11 @@ export class GameEngine {
     if (dialSpeed(impact) >= VEHICLE_RULES.impactMinSpeed && now - this.lastContactAt > 600 && now - this.lastImpactSentAt > 900) {
       this.lastImpactSentAt = now;
       this.net.send("vehicleImpact", { speed: impact });
-      this.audio.horn(0.15);
+      this.audio.crash(dialSpeed(impact) / 60);
       this.caption("Crunch — your car hit something");
     }
     if (impact > 0.5) this.lastContactAt = now;
+    this.engineNote = car.model.body === "bicycle" || dry ? null : { speed: Math.abs(car.speed) / Math.max(1, topSpeed), throttle: Math.abs(throttle), bike: twoWheeled(car.model) };
     car.yaw = Math.atan2(Math.sin(car.yaw), Math.cos(car.yaw));
     this.controller.teleport(car.x, car.z);
     this.controller.yaw = car.yaw;
@@ -1298,6 +1299,8 @@ export class GameEngine {
     }
     this.input.consume("jump");
   }
+
+  private engineNote: { speed: number; throttle: number; bike: boolean } | null = null;
 
   private startDriving(vehicleId: string) {
     const entry = this.vehicles.get(vehicleId);
@@ -1582,6 +1585,7 @@ export class GameEngine {
     const speed = inCar ? Math.abs(this.car!.speed) : this.controller.speed();
     const seatedTravel = Boolean(this.travelView?.seated);
     const motion: MotionState = inCar ? "drive" : this.passenger || seatedTravel ? "sit" : this.emote && speed < 0.1 ? this.emote : bus ? "sit" : this.controller.motion();
+    this.audio.footsteps(motion === "walk" || motion === "jog" || motion === "sprint" ? speed : 0, dt, Boolean(this.interior));
     const ride = inCar ? { vehicleId: this.driving!.vehicleId, seat: 0 } : this.passenger;
     const seatView = ride ? this.vehicles.get(ride.vehicleId)?.view : undefined;
     if (this.player && seatView && ride) {
@@ -1765,6 +1769,8 @@ export class GameEngine {
     this.updateTags();
     const busy = this.interior ? 0 : Math.max(0, 1 - (this.world.roads.nearest(x, z, (road) => road.kind === "primary")?.distance ?? 200) / 90);
     this.audio.update(now, busy);
+    this.audio.setEngine(this.car && this.driving ? this.engineNote : null);
+    if (!this.car || !this.driving) this.engineNote = null;
     if (now - this.lastHud > 160) {
       this.lastHud = now;
       this.emitHud(now, bus, motion);
