@@ -1834,11 +1834,30 @@ function DriveControls({ engine, lights, canExit, bicycle }: { engine: GameEngin
       engine.setTouchDrive(null);
     };
     const hidden = () => document.hidden && reset();
+    // Phones sometimes drop a control's own pointerup (finger slides off, a frame hangs), which left a pedal held.
+    const released = (event: PointerEvent) => {
+      const owned = fingers.current;
+      const key = (["steer", "gas", "brake"] as const).find((name) => owned[name] === event.pointerId);
+      if (!key) return;
+      owned[key] = null;
+      pedals.current = { ...pedals.current, ...(key === "gas" ? { throttle: 0 } : key === "brake" ? { brake: 0 } : { steer: 0 }) };
+      setShown(pedals.current);
+      engine.setTouchDrive(pedals.current);
+    };
+    const allUp = (event: TouchEvent) => event.touches.length === 0 && reset();
     window.addEventListener("blur", reset);
     document.addEventListener("visibilitychange", hidden);
+    window.addEventListener("pointerup", released, true);
+    window.addEventListener("pointercancel", released, true);
+    window.addEventListener("touchend", allUp, true);
+    window.addEventListener("touchcancel", allUp, true);
     return () => {
       window.removeEventListener("blur", reset);
       document.removeEventListener("visibilitychange", hidden);
+      window.removeEventListener("pointerup", released, true);
+      window.removeEventListener("pointercancel", released, true);
+      window.removeEventListener("touchend", allUp, true);
+      window.removeEventListener("touchcancel", allUp, true);
       engine.setTouchDrive(null);
     };
   }, [engine]);
@@ -1851,7 +1870,6 @@ function DriveControls({ engine, lights, canExit, bicycle }: { engine: GameEngin
   };
   const pedal = (key: "gas" | "brake") => ({
     onPointerDown: (event: React.PointerEvent) => {
-      if (fingers.current[key] !== null) return;
       fingers.current[key] = event.pointerId;
       (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
       update(key === "gas" ? { throttle: 1 } : { brake: 1 });
@@ -1872,7 +1890,6 @@ function DriveControls({ engine, lights, canExit, bicycle }: { engine: GameEngin
         className="steer-pad"
         aria-label="Steering: drag left or right"
         onPointerDown={(event) => {
-          if (fingers.current.steer !== null) return;
           fingers.current.steer = event.pointerId;
           (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
           const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
@@ -1919,13 +1936,36 @@ function TouchControls({ engine }: { engine: GameEngine }) {
     setKnob([0, 0]);
     engine.setTouchMove(0, 0, false);
   };
-  useEffect(() => () => engine.setTouchMove(0, 0, false), [engine]);
+  useEffect(() => {
+    const stop = () => {
+      base.current = null;
+      setKnob([0, 0]);
+      engine.setTouchMove(0, 0, false);
+    };
+    const released = (event: PointerEvent) => base.current?.id === event.pointerId && stop();
+    const allUp = (event: TouchEvent) => event.touches.length === 0 && base.current && stop();
+    const hidden = () => document.hidden && stop();
+    window.addEventListener("pointerup", released, true);
+    window.addEventListener("pointercancel", released, true);
+    window.addEventListener("touchend", allUp, true);
+    window.addEventListener("touchcancel", allUp, true);
+    window.addEventListener("blur", stop);
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      window.removeEventListener("pointerup", released, true);
+      window.removeEventListener("pointercancel", released, true);
+      window.removeEventListener("touchend", allUp, true);
+      window.removeEventListener("touchcancel", allUp, true);
+      window.removeEventListener("blur", stop);
+      document.removeEventListener("visibilitychange", hidden);
+      engine.setTouchMove(0, 0, false);
+    };
+  }, [engine]);
   return (
     <>
       <div
         className="touch-stick"
         onPointerDown={(event) => {
-          if (base.current) return;
           const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
           base.current = { id: event.pointerId, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
           (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);

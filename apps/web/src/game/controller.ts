@@ -95,6 +95,7 @@ export class InputState {
     };
     const onKeyUp = (event: KeyboardEvent) => this.down.delete(event.code);
     const onBlur = () => this.down.clear();
+    const onHidden = () => document.hidden && this.down.clear();
     const onMouseMove = (event: MouseEvent) => {
       if (!this.enabled) return;
       if (document.pointerLockElement === canvas || this.dragging) {
@@ -125,6 +126,7 @@ export class InputState {
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
+    document.addEventListener("visibilitychange", onHidden);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
     canvas.addEventListener("mousedown", onMouseDown);
@@ -135,6 +137,7 @@ export class InputState {
       () => window.removeEventListener("keydown", onKeyDown),
       () => window.removeEventListener("keyup", onKeyUp),
       () => window.removeEventListener("blur", onBlur),
+      () => document.removeEventListener("visibilitychange", onHidden),
       () => window.removeEventListener("mousemove", onMouseMove),
       () => window.removeEventListener("mouseup", onMouseUp),
       () => canvas.removeEventListener("mousedown", onMouseDown),
