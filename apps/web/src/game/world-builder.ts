@@ -17,6 +17,7 @@ import {
   stopLabel,
   type Place,
   type Vec2,
+  OWAMBE_GROUND,
 } from "@lagos-living/shared";
 import { densify, hash, MeshBuilderBatch, offsetPolyline, pointAt, polylineLength, slicePolyline } from "./geometry";
 import type { Materials, Quality } from "./materials";
@@ -320,6 +321,16 @@ function shoelace(points: Vec2[]) {
     sum += a[0] * b[1] - b[0] * a[1];
   }
   return sum / 2;
+}
+
+function insideRing(ring: Vec2[], x: number, z: number) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, zi] = ring[i]!;
+    const [xj, zj] = ring[j]!;
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
 }
 
 function centroid(points: Vec2[]): Vec2 {
@@ -722,6 +733,79 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     }
   }
 
+  /** Tufts of upright blades scattered over a park or garden, a shade lighter or darker each, so lawns aren't flat paint. */
+  const tufts = (ring: Vec2[], cx: number, cz: number) => {
+    if (quality === "low") return;
+    const xs = ring.map((point) => point[0]);
+    const zs = ring.map((point) => point[1]);
+    const [minX, maxX, minZ, maxZ] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+    const count = Math.min(quality === "medium" ? 90 : 150, Math.floor(Math.abs(shoelace(ring)) / 10));
+    let seed = (Math.floor(cx * 13) * 73_856_093) ^ (Math.floor(cz * 7) * 19_349_663);
+    const rand = () => ((seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0) / 4_294_967_296);
+    for (let placed = 0, tries = 0; placed < count && tries < count * 3; tries += 1) {
+      const x = minX + rand() * (maxX - minX);
+      const z = minZ + rand() * (maxZ - minZ);
+      if (!inTile(x, z) || !insideRing(ring, x, z)) continue;
+      placed += 1;
+      tuft(x, z, rand, 5);
+    }
+  };
+  const tuft = (x: number, z: number, rand: () => number, count: number) => {
+    const blades = detail.get(x, z, "bush");
+    const shade = 0.8 + rand() * 0.45;
+    const tint: Color = [shade * (0.85 + rand() * 0.25), shade * (1 + rand() * 0.2), shade * 0.8];
+    for (let blade = 0; blade < count; blade += 1) {
+      const h = 0.2 + rand() * 0.3;
+      const turn = rand() * Math.PI * 2;
+      const out = rand() * 0.12;
+      blades.box(x + Math.cos(turn) * out, h / 2, z + Math.sin(turn) * out, 0.04, h, 0.01, turn, 1, tint, true);
+    }
+  };
+  /**
+   * Lagos's bare ground between compounds gets patches of grass and loose tufts, the way verges and empty plots grow
+   * over in the rains; kept off roads, pavements, buildings, water and the event ground.
+   */
+  const wildGrass = () => {
+    if (dubai) return;
+    let seed = (tx * 92_821) ^ (tz * 68_917) ^ 0x5bd1e995;
+    const rand = () => ((seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0) / 4_294_967_296);
+    const [ox, oz] = OWAMBE_GROUND.centre;
+    const open = (x: number, z: number) =>
+      inTile(x, z) &&
+      !overWater(x, z) &&
+      !insideBuilding(x, z, 1.2) &&
+      !roads.onAsphalt(x, z, 3.6) &&
+      !(Math.abs(x - ox) < OWAMBE_GROUND.width / 2 + 3 && Math.abs(z - oz) < OWAMBE_GROUND.depth / 2 + 3);
+    const patches = quality === "low" ? 14 : quality === "medium" ? 24 : 32;
+    const perPatch = quality === "low" ? 0 : quality === "medium" ? 12 : 22;
+    for (let made = 0, tries = 0; made < patches && tries < patches * 4; tries += 1) {
+      const cx = x0 + rand() * TILE;
+      const cz = z0 + rand() * TILE;
+      const radius = 3 + rand() * 6;
+      const ring: Vec2[] = [];
+      for (let i = 0; i < 14; i += 1) {
+        const turn = (i / 14) * Math.PI * 2;
+        const r = radius * (0.75 + rand() * 0.35);
+        ring.push([cx + Math.cos(turn) * r, cz + Math.sin(turn) * r]);
+      }
+      if (!open(cx, cz) || !ring.every(([x, z]) => open(x, z))) continue;
+      made += 1;
+      const shade = 0.85 + rand() * 0.25;
+      base.get(cx, cz, "grass").polygon(ring, 0.011, 5, [shade * 0.95, shade * 1.05, shade * 0.85]);
+      for (let i = 0; i < perPatch; i += 1) {
+        const turn = rand() * Math.PI * 2;
+        const r = Math.sqrt(rand()) * radius * 0.6;
+        tuft(cx + Math.cos(turn) * r, cz + Math.sin(turn) * r, rand, 3);
+      }
+    }
+    if (quality === "low") return;
+    for (let i = 0; i < (quality === "medium" ? 40 : 70); i += 1) {
+      const x = x0 + rand() * TILE;
+      const z = z0 + rand() * TILE;
+      if (open(x, z)) tuft(x, z, rand, 3);
+    }
+  };
+
   yield;
   for (const area of content?.areas ?? []) {
     const [cx, cz] = centroid(area.points);
@@ -733,6 +817,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
         base.get(cx, cz, "wood").polygon(ring, -0.25, 3, [0.7, 0.6, 0.5], true);
       } else if (["pitch", "park", "garden", "grass", "playground", "dog_park", "grassland", "recreation_ground", "golf_course", "village_green"].includes(area.kind)) {
         base.get(cx, cz, "grass").polygon(ring, 0.012, 5, [0.9, 1.05, 0.85]);
+        if (area.kind !== "pitch" && area.kind !== "golf_course" && area.kind !== "playground") tufts(ring, cx, cz);
       } else if (area.kind === "swimming_pool" || area.kind === "water") {
         base.get(cx, cz, "water").polygon(ring, 0.05, 4);
       } else if (area.kind === "construction" || area.kind === "brownfield") {
@@ -742,6 +827,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     }
     if (["pitch", "recreation_ground", "greenfield", "park", "garden", "golf_course", "grass", "village_green"].includes(area.kind)) {
       base.get(cx, cz, "grass").polygon(ring, 0.012, 5);
+      if (area.kind !== "pitch" && area.kind !== "golf_course") tufts(ring, cx, cz);
     } else if (area.kind === "swimming_pool") {
       base.get(cx, cz, "water").polygon(ring, 0.05, 4);
     } else if (area.kind === "drain") {
@@ -750,6 +836,8 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       base.get(cx, cz, "dirt").polygon(ring, 0.01, 4, [1.05, 0.82, 0.68]);
     }
   }
+
+  wildGrass();
 
   yield;
   for (const { road, part: dense } of roadParts.get(key) ?? []) {
