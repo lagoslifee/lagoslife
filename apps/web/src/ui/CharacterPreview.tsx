@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { OUTFITS } from "../game/wardrobe";
 import { AvatarFactory, type Avatar } from "../game/avatar";
 import { capTextureSize, TOUCH_DEVICE } from "../game/device-limits";
+import { report } from "../diagnostics";
 
 /** Live 3D preview of the resident with the chosen look, using the same recolouring as the street. */
 export function CharacterPreview({ appearance }: { appearance: CharacterAppearance }) {
@@ -21,6 +22,7 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
   appearanceRef.current = appearance;
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
   const [generation, setGeneration] = useState(0);
+  const failures = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -33,20 +35,42 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
       return;
     }
     capTextureSize(engine);
+    const gpu = (() => {
+      try {
+        const info = engine.getGlInfo();
+        return `${info.renderer} / WebGL ${engine.webGLVersion}`.slice(0, 200);
+      } catch {
+        return "unknown";
+      }
+    })();
     // iOS drops a page's WebGL context under memory pressure, leaving only the panel's green backdrop behind. A lost
-    // canvas can't make a new context, so the preview starts over on a fresh one once the page is showing.
+    // canvas can't make a new context, so the preview starts over on a fresh one once the page is showing; after a
+    // second failure it settles for a still picture so the creator always stays usable.
     let rebuild: ReturnType<typeof setTimeout> | undefined;
     const restart = () => {
       if (disposed || document.hidden) return;
       document.removeEventListener("visibilitychange", restart);
       rebuild = setTimeout(() => !disposed && setGeneration((value) => value + 1), 800);
     };
-    engine.onContextLostObservable.add(() => {
-      if (disposed) return;
+    let stopped = false;
+    const fail = (why: string, error?: unknown) => {
+      if (disposed || stopped) return;
+      stopped = true;
+      engine.stopRenderLoop();
+      failures.current += 1;
+      report(why === "context lost" ? "context-lost" : "error", `preview: ${why} #${failures.current}`, {
+        stack: error instanceof Error ? error.stack : undefined,
+        detail: { message: error instanceof Error ? error.message : String(error ?? ""), attempt: failures.current, gpu },
+      });
+      if (failures.current >= 2) {
+        setState("failed");
+        return;
+      }
       setState("loading");
       document.addEventListener("visibilitychange", restart);
       restart();
-    });
+    };
+    engine.onContextLostObservable.add(() => fail("context lost"));
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0, 0, 0, 0);
     scene.imageProcessingConfiguration.toneMappingEnabled = true;
@@ -81,12 +105,18 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
     const rim = new DirectionalLight("preview rim", new Vector3(0.6, -0.3, -0.8), scene);
     rim.intensity = 1.1;
     let last = performance.now();
+    // Babylon only queues the next frame after this returns, so one throw would freeze the preview on a cleared canvas.
     engine.runRenderLoop(() => {
+      if (disposed || stopped) return;
       const now = performance.now();
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
-      avatarRef.current?.update(0, "idle", dt);
-      scene.render();
+      try {
+        avatarRef.current?.update(0, "idle", dt);
+        scene.render();
+      } catch (error) {
+        fail("render error", error);
+      }
     });
     const resize = new ResizeObserver(() => engine.resize());
     resize.observe(canvas);
@@ -97,7 +127,7 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
         avatarRef.current = avatar;
         setState("ready");
       })
-      .catch(() => !disposed && setState("failed"));
+      .catch((error: unknown) => fail("load error", error));
     return () => {
       disposed = true;
       clearTimeout(rebuild);
@@ -114,9 +144,14 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
 
   return (
     <div className="character-preview-3d" data-testid="character-preview" data-state={state}>
-      <canvas key={generation} ref={canvasRef} aria-label="3D preview of your resident" />
+      <canvas key={generation} ref={canvasRef} aria-label="3D preview of your resident" style={state === "failed" ? { visibility: "hidden" } : undefined} />
       {state === "loading" && <p className="preview-status">Loading your resident…</p>}
-      {state === "failed" && <p className="preview-status">The 3D preview could not load on this device. Your choices still save.</p>}
+      {state === "failed" && (
+        <div className="preview-status preview-still">
+          <span aria-hidden="true">{appearance.body === "female" ? "🧍🏾‍♀️" : "🧍🏾‍♂️"}</span>
+          <p>The 3D preview isn't available on this device. Your choices still save and show in the city.</p>
+        </div>
+      )}
       <p className="preview-caption">{OUTFITS[appearance.outfit].label}</p>
       <small>Drag to turn · scroll to zoom</small>
     </div>
