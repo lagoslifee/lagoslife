@@ -4043,6 +4043,7 @@ export class GameEngine {
         const x = place.door[0] + fx * out - fz * side * 3.2;
         const z = place.door[1] + fz * out + fx * side * 3.2;
         props.place("restaurant-table", x, z, Math.atan2(fx, fz), this.streetProps, this.world.groundHeight(x, z));
+        this.world.obstacles.add([x, z], [x, z], 0.95);
       }
     }
   }
