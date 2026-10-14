@@ -206,6 +206,15 @@ export class ObstacleGrid {
         this.grid.set(key, list);
       }
     }
+    return item;
+  }
+
+  remove(items: ReadonlyArray<{ a: Vec2; b: Vec2; r: number }>) {
+    const gone = new Set(items);
+    for (const [key, list] of this.grid) {
+      const kept = list.filter((item) => !gone.has(item));
+      if (kept.length !== list.length) this.grid.set(key, kept);
+    }
   }
 
   resolve(x: number, z: number, radius: number): Vec2 {

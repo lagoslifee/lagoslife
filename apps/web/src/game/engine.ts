@@ -133,6 +133,8 @@ import {
   type FootballState,
   OWAMBE,
   OWAMBE_GROUND,
+  OWAMBE_HIGH_TABLE,
+  owambeTables,
   type OwambeParty,
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
@@ -172,7 +174,7 @@ import { BAY_SIZE, buildServiceBay, serviceBay } from "./service-bay";
 import { BikeStationsView } from "./bike-stations";
 import { FuelStationsView } from "./fuel-stations";
 import { StreetCagesView } from "./street-cage";
-import { OwambeView } from "./owambe";
+import { OWAMBE_CHAIR_Y, OwambeView } from "./owambe";
 import { equipAgbero, equipWaiter } from "./costume-kit";
 import { defaultBindings, frameStep, InputState, LocomotionController, MAX_FRAME_DT, SUBSTEP_DT, type Bindings, type MoveMode } from "./controller";
 import { DanfoFactory, type DanfoView } from "./danfo";
@@ -728,6 +730,15 @@ export class GameEngine {
         this.owambeView?.setParty(party);
         this.callbacks.owambe?.(party);
       },
+      owambeSeated: ({ table, seat, ok }) => {
+        const pending = this.pendingOwambeSeat;
+        if (!pending || pending.table !== table || pending.seat !== seat) return;
+        this.pendingOwambeSeat = null;
+        if (ok) this.seatAtOwambe({ table, seat });
+        else if (pending.retry) this.owambeSit(false);
+        else this.callbacks.notice({ tone: "info", text: "Someone just took that chair. Try Find a seat again." });
+      },
+      owambeSpray: (spray) => this.onOwambeSpray(spray),
       owambeServe: (served) => {
         this.owambeView?.serve(served);
         if (served.sessionId === this.net.sessionId) this.callbacks.owambeServed?.(served.dish);
@@ -930,7 +941,7 @@ export class GameEngine {
         if (sessionId === this.net.sessionId) return this.player ? { avatar: this.player, local: true } : null;
         const avatar = this.remotes.get(sessionId)?.avatar;
         return avatar ? { avatar, local: false } : null;
-      });
+      }, () => this.world?.obstacles ?? null);
     }
     this.cages = new StreetCagesView(scene, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes), (sessionId) => this.footballerPose(sessionId));
     if (this.avatars) {
@@ -2296,29 +2307,53 @@ export class GameEngine {
     const free = this.freeSeats(view.seats, true);
     if (!free.length) return false;
     const seat = free.reduce((best, entry) => (Math.hypot(entry.at[0] - here[0], entry.at[1] - here[1]) < Math.hypot(best.at[0] - here[0], best.at[1] - here[1]) ? entry : best));
-    const behind: Vec2 = [seat.at[0] - Math.sin(seat.yaw) * 0.75, seat.at[1] - Math.cos(seat.yaw) * 0.75];
     const owambe = { table: Math.floor(seat.table! / 10), seat: seat.table! % 10 };
+    const behind: Vec2 = [seat.at[0] - Math.sin(seat.yaw) * 0.75, seat.at[1] - Math.cos(seat.yaw) * 0.75];
     this.autopilot?.resolve(false);
-    this.autopilot = {
-      path: [behind],
-      index: 0,
-      sprint: false,
-      resolve: (ok) => {
-        if (!ok || this.interior) return;
-        if (this.seatTaken(seat.at)) {
-          if (retry) this.owambeSit(false);
-          return;
-        }
-        this.controller.yaw = seat.yaw;
-        this.emote = "sit";
-        this.net.send("emote", { emote: "sit" });
-        this.sitting = { seat: seat.at, yaw: seat.yaw, y: seat.y, pose: "sit", owambe };
-      },
-      lastProgress: performance.now(),
-      lastPoint: here,
-      deadline: performance.now() + 20_000,
-    };
+    this.autopilot = null;
+    if (Math.hypot(behind[0] - here[0], behind[1] - here[1]) < 1.5) {
+      this.controller.teleport(behind[0], behind[1]);
+      this.seatAtOwambe(owambe);
+      return true;
+    }
+    // The tables and chairs crowd any walk in, so the server walks the guest to the chair and seats them.
+    this.pendingOwambeSeat = { ...owambe, retry };
+    this.net.send("owambeSit", owambe);
     return true;
+  }
+
+  private pendingOwambeSeat: { table: number; seat: number; retry: boolean } | null = null;
+
+  private seatAtOwambe(pick: { table: number; seat: number }) {
+    const seat = owambeTables()[pick.table]?.seats[pick.seat];
+    if (!seat || this.interior) return;
+    this.forcedInput = null;
+    this.controller.yaw = seat.yaw;
+    this.emote = "sit";
+    this.net.send("emote", { emote: "sit" });
+    this.sitting = { seat: seat.at, yaw: seat.yaw, y: this.world.groundHeight(...seat.at) + OWAMBE_CHAIR_Y, pose: "sit", owambe: pick };
+  }
+
+  owambeSpray(amount: number) {
+    this.net.send("owambeSpray", { amount });
+  }
+
+  /** How far the player is from the celebrants at the high table, or null when not out on the street. */
+  owambeSprayDistance() {
+    if (this.interior || !this.owambeView) return null;
+    return Math.hypot(this.controller.x - OWAMBE_HIGH_TABLE[0], this.controller.z - OWAMBE_HIGH_TABLE[1]);
+  }
+
+  /** Notes fly off the sprayer's hand over the celebrants, who get up and dance for it. */
+  private onOwambeSpray(spray: { sessionId: string; name: string; amount: number; x: number; z: number }) {
+    if (this.interior || !this.world) return;
+    const [hx, hz] = OWAMBE_HIGH_TABLE;
+    const x = hx + (spray.x - hx) * 0.25;
+    const z = hz + 0.8 + (spray.z - hz - 0.8) * 0.25;
+    this.agberoCrowd?.rain(x, z, this.world.groundHeight(x, z) + 2.2, spray.amount, 0, "");
+    this.owambeView?.celebrate(8);
+    this.audio.cash();
+    if (spray.sessionId !== this.net.sessionId) this.caption(`💸 ${spray.name} is spraying ₦${spray.amount.toLocaleString("en-NG")} on the celebrants!`);
   }
 
   owambeOrder(dish: string) {

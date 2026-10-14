@@ -78,6 +78,8 @@ export type MultiplayerHandlers = {
   football: (state: FootballState) => void;
   owambe: (party: OwambeParty) => void;
   owambeServe: (served: { sessionId: string; table: number; seat: number; dish: string }) => void;
+  owambeSeated: (result: { table: number; seat: number; ok: boolean }) => void;
+  owambeSpray: (spray: { sessionId: string; name: string; amount: number; x: number; z: number }) => void;
   /** The owner rearranged the home this player is standing in. */
   interior: () => void;
 };
@@ -189,6 +191,8 @@ export class MultiplayerConnection {
       room.onMessage("agbero", (encounter: AgberoEncounter | null) => this.handlers.agbero(encounter && typeof encounter.id === "string" ? encounter : null));
       room.onMessage("clubMusic", (state: ClubMusicState) => typeof state?.club === "string" && Array.isArray(state.queue) && this.handlers.clubMusic(state));
       room.onMessage("owambe", (party: OwambeParty) => typeof party?.celebrant === "string" && this.handlers.owambe(party));
+      room.onMessage("owambeSeated", (result: { table: number; seat: number; ok: boolean }) => Number.isInteger(result?.table) && this.handlers.owambeSeated(result));
+      room.onMessage("owambeSpray", (spray: { sessionId: string; name: string; amount: number; x: number; z: number }) => Number.isFinite(spray?.amount) && this.handlers.owambeSpray(spray));
       room.onMessage("owambeServe", (served: { sessionId: string; table: number; seat: number; dish: string }) => typeof served?.sessionId === "string" && Number.isInteger(served.table) && this.handlers.owambeServe(served));
       room.onMessage("football", (state: FootballState) => typeof state?.pitchId === "string" && Array.isArray(state.players) && this.handlers.football(state));
       room.onMessage("fuel", (fuel: { vehicleId: string; litres: number; tank: number }) => typeof fuel?.vehicleId === "string" && Number.isFinite(fuel.litres) && this.handlers.fuel(fuel));
@@ -300,6 +304,10 @@ export class MultiplayerConnection {
       | "footballTackle"
       | "owambeOrder"
       | "owambeSync"
+      | "owambeSit"
+      | "owambeSpray"
+      | "helicopterHop"
+      | "jetFlight"
       | "inviteRequest"
       | "wave",
     payload?: unknown,
