@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "nod
 import { join } from "node:path";
 import { z } from "zod";
 import { config } from "./config.js";
+import { pool } from "./database.js";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const startedAt = Date.now();
@@ -43,7 +44,7 @@ export function installCrashHandlers() {
 }
 
 export const clientReportSchema = z.object({
-  kind: z.enum(["error", "rejection", "context-lost", "context-restored", "disconnect", "reconnect", "low-fps", "unclean-exit", "memory"]),
+  kind: z.enum(["error", "rejection", "context-lost", "context-restored", "disconnect", "reconnect", "low-fps", "unclean-exit", "memory", "ui-crash"]),
   message: z.string().max(500).default(""),
   stack: z.string().max(2_000).optional(),
   detail: z.record(z.string(), z.union([z.string().max(200), z.number(), z.boolean(), z.null()])).optional(),
@@ -52,9 +53,21 @@ export const clientReportSchema = z.object({
   page: z.string().max(200).optional(),
 });
 
+const REPORT_DAYS = 14;
+
 export function recordClientReport(report: z.infer<typeof clientReportSchema>, userId: string | null) {
   clientReports += 1;
   writeLog("client.log", { userId, ...report });
+  // The host's disk log is out of reach on managed hosting; the table is what gets read when a device misbehaves.
+  void pool
+    .query(
+      `INSERT INTO client_report (user_id, kind, message, stack, detail, quality, device, page) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [userId, report.kind, report.message, report.stack ?? null, report.detail ? JSON.stringify(report.detail) : null, report.quality ?? null, report.device ?? null, report.page ?? null],
+    )
+    .then(async () => {
+      if (clientReports % 200 === 0) await pool.query(`DELETE FROM client_report WHERE at < NOW() - make_interval(days => $1)`, [REPORT_DAYS]);
+    })
+    .catch(() => undefined);
 }
 
 export function processHealth() {
