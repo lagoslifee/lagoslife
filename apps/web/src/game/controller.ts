@@ -209,6 +209,19 @@ export type MoveMode = "walk" | "jog" | "sprint";
  * a background tab, are cut short.
  */
 export const MAX_FRAME_DT = 1;
+/** Longest frame a driven car is stepped through at once; beyond it the car can't be steered anyway. */
+export const DRIVE_MAX_FRAME_DT = 0.25;
+
+/**
+ * Seconds to simulate for a frame. A one-off hitch (longer than twice the device's
+ * typical frame) is cut short, so a stall pauses the game instead of jumping the
+ * player or car metres ahead into whatever is there; a steadily slow device keeps
+ * full speed.
+ */
+export function frameStep(elapsed: number, typical: number, driving: boolean, maxFrameDt = MAX_FRAME_DT) {
+  const hitch = Math.max(0.1, typical * 2);
+  return Math.max(0, Math.min(elapsed, hitch, driving ? DRIVE_MAX_FRAME_DT : maxFrameDt, maxFrameDt));
+}
 /** Front crawl at an easy pace and flat out, in metres per second. */
 export const SWIM_SPEED = { easy: 1.1, fast: 1.8 } as const;
 export const SUBSTEP_DT = 1 / 120;

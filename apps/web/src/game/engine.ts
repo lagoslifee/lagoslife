@@ -173,7 +173,7 @@ import { BikeStationsView } from "./bike-stations";
 import { FuelStationsView } from "./fuel-stations";
 import { StreetCagesView } from "./street-cage";
 import { OwambeView } from "./owambe";
-import { defaultBindings, InputState, LocomotionController, MAX_FRAME_DT, SUBSTEP_DT, type Bindings, type MoveMode } from "./controller";
+import { defaultBindings, frameStep, InputState, LocomotionController, MAX_FRAME_DT, SUBSTEP_DT, type Bindings, type MoveMode } from "./controller";
 import { DanfoFactory, type DanfoView } from "./danfo";
 import { MeshBuilderBatch } from "./geometry";
 import { buildMealTray, buildTrolley } from "./flight-scenes";
@@ -548,7 +548,10 @@ export class GameEngine {
   private updateMs = 0;
   private readonly callbacks: EngineCallbacks;
   private frameTimes: number[] = [];
+  private frameCount = 0;
   private shadowsShown = true;
+  /** Median recent frame, in seconds; frames far beyond it are hitches. */
+  private typicalFrame = 1 / 30;
   private readonly adaptive = new AdaptiveQuality();
   private frameGap = 0;
   private lastUpdateAt = 0;
@@ -623,6 +626,7 @@ export class GameEngine {
     stuckSince: number | null;
     recovery: { until: number; swerveUntil: number; side: number } | null;
     recoveries: number;
+    cruise?: number | undefined;
   } | null = null;
 
   constructor(
@@ -1447,7 +1451,7 @@ export class GameEngine {
       pilot.recovery = { until: now + 1800, swerveUntil: now + 3000, side };
     }
     const remaining = Math.hypot(target[0] - car.x, target[1] - car.z);
-    const cruise = Math.abs(delta) > 0.6 ? 4 : last ? Math.min(8, 1.5 + remaining * 0.5) : 9;
+    const cruise = Math.abs(delta) > 0.6 ? 4 : last ? Math.min(8, 1.5 + remaining * 0.5) : (pilot.cruise ?? 9);
     const throttle = car.speed < cruise ? 0.8 : car.speed > cruise + 1.5 ? -0.6 : 0;
     return [throttle, Math.max(-1, Math.min(1, delta * 2.2))];
   }
@@ -1461,7 +1465,12 @@ export class GameEngine {
     const now = performance.now();
     const elapsed = this.lastUpdateAt ? now - this.lastUpdateAt : this.engine.getDeltaTime();
     this.lastUpdateAt = now;
-    const dt = Math.min(this.maxFrameDt, elapsed / 1000);
+    this.frameCount += 1;
+    if (this.frameTimes.length && this.frameCount % 30 === 0) {
+      const sorted = [...this.frameTimes].sort((a, b) => a - b);
+      this.typicalFrame = sorted[sorted.length >> 1]! / 1000;
+    }
+    const dt = frameStep(elapsed / 1000, this.typicalFrame, Boolean(this.car && this.driving), this.maxFrameDt);
     this.frameTimes.push(elapsed);
     if (this.frameTimes.length > 120) this.frameTimes.shift();
     if (this.readyFired && this.settings.autoGraphics && !document.hidden && !this.showcase) {
@@ -4960,11 +4969,11 @@ export class GameEngine {
       },
       enterVehicle: (id: string) => this.enterVehicle(id),
       exitVehicle: () => this.exitVehicle(),
-      driveTo: (x: number, z: number, timeoutMs = 120_000) =>
+      driveTo: (x: number, z: number, timeoutMs = 120_000, cruise?: number) =>
         new Promise<boolean>((resolve) => {
           if (!this.car) return resolve(false);
           const path = this.navigator.route([this.car.x, this.car.z], [x, z]).slice(1);
-          this.carPilot = { path: path.length ? path : [[x, z]], index: 0, resolve, deadline: performance.now() + timeoutMs, stuckSince: null, recovery: null, recoveries: 0 };
+          this.carPilot = { path: path.length ? path : [[x, z]], index: 0, resolve, deadline: performance.now() + timeoutMs, stuckSince: null, recovery: null, recoveries: 0, cruise };
         }),
       fps: () => this.engine.getFps(),
       streamProbe: (probe: { x: number; z: number; vx: number; vz: number } | null) => {

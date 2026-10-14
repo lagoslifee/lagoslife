@@ -1,6 +1,6 @@
 import { MOVEMENT } from "@lagos-living/shared";
 import { describe, expect, it } from "vitest";
-import { LocomotionController, MAX_FRAME_DT, SUBSTEP_DT, type MoveMode } from "./controller";
+import { DRIVE_MAX_FRAME_DT, frameStep, LocomotionController, MAX_FRAME_DT, SUBSTEP_DT, type MoveMode } from "./controller";
 
 /** Steps the controller the same way the engine does (120 Hz substeps inside each rendered frame). */
 function timeToCover(distance: number, mode: MoveMode, fps: number) {
@@ -61,5 +61,20 @@ describe("LocomotionController", () => {
     for (let index = 0; index < 240; index += 1) controller.step(1 / 120, [1, 1], 0, "jog");
     expect(controller.x).toBeCloseTo(1, 5);
     expect(controller.z).toBeGreaterThan(3);
+  });
+});
+
+describe("frameStep", () => {
+  it("cuts a one-off hitch short so a stall can't throw the car into traffic", () => {
+    // 30 fps phone, one frame hangs for a second: at 150 km/h that used to be a 42 m jump.
+    expect(frameStep(1, 1 / 30, true)).toBeCloseTo(0.1, 5);
+    expect(frameStep(1, 1 / 30, false)).toBeCloseTo(0.1, 5);
+    expect(frameStep(1 / 30, 1 / 30, true)).toBeCloseTo(1 / 30, 5);
+  });
+
+  it("keeps a steadily slow device at full walking speed but caps a driving step", () => {
+    expect(frameStep(0.5, 0.5, false)).toBeCloseTo(0.5, 5);
+    expect(frameStep(0.5, 0.5, true)).toBeCloseTo(DRIVE_MAX_FRAME_DT, 5);
+    expect(frameStep(5, 0.5, false)).toBeCloseTo(MAX_FRAME_DT, 5);
   });
 });
