@@ -1024,10 +1024,18 @@ export class GameEngine {
       this.frameDrawCalls = (counter?.current ?? 0) - before;
     });
     window.addEventListener("resize", this.resize);
+    document.addEventListener("visibilitychange", this.visible);
     if (import.meta.env.DEV || import.meta.env.VITE_TEST_HOOKS === "true") this.installTestHooks();
   }
 
   private resize = () => this.engine?.resize();
+  /** The gap spent in another app is not a slow frame: without this the first frame back reads as a huge hitch. */
+  private visible = () => {
+    if (document.hidden) return;
+    this.lastUpdateAt = performance.now();
+    this.lastInputAt = performance.now();
+    this.engine?.resize();
+  };
   private covered = false;
   private lastInputAt = performance.now();
 
@@ -5084,6 +5092,10 @@ export class GameEngine {
       stallConnection: () => {
         this.net.blackhole = true;
       },
+      deafenConnection: () => {
+        this.net.deaf = true;
+      },
+      sessionId: () => this.net.sessionId,
       homePower: (source: "nepa" | "generator" | "none" | null) => this.setHomePower(source),
       estateViewing: (propertyId: string) => this.estateViewing(propertyId, propertyId),
       room: () => (this.interior && !this.travelView ? (this.interior as InteriorView).bounds : null),
@@ -5110,6 +5122,7 @@ export class GameEngine {
     for (const prop of this.streetProps.splice(0)) prop.dispose();
     this.disposed = true;
     window.removeEventListener("resize", this.resize);
+    document.removeEventListener("visibilitychange", this.visible);
     await this.net.disconnect().catch(() => undefined);
     this.input?.dispose();
     this.audio.dispose();

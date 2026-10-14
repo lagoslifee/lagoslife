@@ -165,6 +165,8 @@ export function GameView({
   const restartsRef = useRef(0);
   const [graphicsPaused, setGraphicsPaused] = useState(false);
   const lostTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const restartQueued = useRef(false);
+  const lostWait = useRef<(() => void) | undefined>(undefined);
   const lowered = useRef<{ from: Quality; to: Quality } | null>(null);
   const lastRestart = useRef(0);
   /**
@@ -173,6 +175,21 @@ export function GameView({
    */
   const restartGraphics = useCallback((why: string) => {
     clearTimeout(lostTimer.current);
+    // A background tab can't get a GPU context, so a rebuild there fails and burns one of the four tries.
+    if (document.hidden) {
+      setGraphicsPaused(true);
+      if (!restartQueued.current) {
+        restartQueued.current = true;
+        const later = () => {
+          if (document.hidden) return;
+          document.removeEventListener("visibilitychange", later);
+          restartQueued.current = false;
+          restartRef.current(why);
+        };
+        document.addEventListener("visibilitychange", later);
+      }
+      return;
+    }
     setGraphicsPaused(false);
     if (Date.now() - lastRestart.current > 10 * 60_000) restartsRef.current = 0;
     lastRestart.current = Date.now();
@@ -197,6 +214,8 @@ export function GameView({
     });
     setRestarts(restartsRef.current);
   }, []);
+  const restartRef = useRef(restartGraphics);
+  restartRef.current = restartGraphics;
   const [manualTarget, setManualTarget] = useState<{ point: Vec2; label: string } | null>(null);
   const [tripTo, setTripTo] = useState<TripTarget | null>(null);
   /** "Go to" from an app or the map asks how to travel; at the wheel it just draws the route. */
@@ -374,13 +393,25 @@ export function GameView({
         plotsChanged: () => void refreshPlots(),
         graphics: (event) => {
           report(event === "restored" ? "context-restored" : "context-lost", event, { detail: { quality } });
+          lostWait.current?.();
           if (event === "restored") {
             clearTimeout(lostTimer.current);
             setGraphicsPaused(false);
           } else if (event === "lost") {
             setGraphicsPaused(true);
             clearTimeout(lostTimer.current);
-            lostTimer.current = setTimeout(() => restartGraphics("Graphics did not come back."), 6_000);
+            // Browsers only hand the context back once the tab is showing, so the wait starts when the player returns.
+            const arm = () => {
+              if (document.hidden) return;
+              lostWait.current?.();
+              lostTimer.current = setTimeout(() => restartGraphics("Graphics did not come back."), 6_000);
+            };
+            document.addEventListener("visibilitychange", arm);
+            lostWait.current = () => {
+              document.removeEventListener("visibilitychange", arm);
+              lostWait.current = undefined;
+            };
+            arm();
           } else {
             restartGraphics("The game hit repeated errors.");
           }

@@ -96,6 +96,13 @@ export class MultiplayerConnection {
   /** Moved on after a long idle spell: the next tap or key press rejoins (possibly in another group). */
   private away = false;
 
+  /** Snapshots arrive 20 times a second, so a long silence means the socket died without telling us. */
+  private lastHeard = 0;
+  private readonly watchdog = setInterval(() => {
+    if (document.hidden || this.closed || this.connecting || !this.room) return;
+    if (Date.now() - this.lastHeard > 5_000) this.rejoin();
+  }, 1_000);
+
   constructor(private readonly handlers: MultiplayerHandlers) {
     window.addEventListener("online", this.resume);
     document.addEventListener("visibilitychange", this.resume);
@@ -111,6 +118,8 @@ export class MultiplayerConnection {
 
   /** After a screen lock, app switch or dropped signal, rejoin at once instead of waiting for the retry timer. */
   private readonly resume = () => {
+    // A frozen background tab heard nothing; give the socket a moment to deliver what queued up before judging it dead.
+    if (!document.hidden && this.room) this.lastHeard = Math.max(this.lastHeard, Date.now() - 2_500);
     if (this.closed || this.room || this.connecting || document.hidden || !navigator.onLine) return;
     clearTimeout(this.retry);
     void this.connect();
@@ -136,7 +145,10 @@ export class MultiplayerConnection {
         return;
       }
       this.room = room;
+      this.lastHeard = Date.now();
       room.onMessage("snapshot", (payload: unknown) => {
+        if (this.deaf) return;
+        this.lastHeard = Date.now();
         const parsed = worldSnapshotSchema.safeParse(payload);
         if (parsed.success) this.handlers.snapshot(parsed.data, room.sessionId);
       });
@@ -320,6 +332,8 @@ export class MultiplayerConnection {
 
   /** Test hook: swallow outgoing messages the way a dead phone socket does, until the room is rejoined. */
   blackhole = false;
+  /** Test hook: stop hearing snapshots, as when a phone wakes with a socket that died while it slept. */
+  deaf = false;
 
   /**
    * A phone's socket can look open long after the network under it died, so messages vanish without an error. Drops
@@ -330,6 +344,7 @@ export class MultiplayerConnection {
     if (this.closed || this.connecting || !room) return;
     this.room = undefined;
     this.blackhole = false;
+    this.deaf = false;
     clearTimeout(this.retry);
     room.removeAllListeners();
     void room.leave(false).catch(() => undefined);
@@ -340,6 +355,7 @@ export class MultiplayerConnection {
   async disconnect() {
     this.closed = true;
     clearTimeout(this.retry);
+    clearInterval(this.watchdog);
     window.removeEventListener("online", this.resume);
     document.removeEventListener("visibilitychange", this.resume);
     for (const type of ["pointerdown", "keydown"] as const) window.removeEventListener(type, this.comeBack);
