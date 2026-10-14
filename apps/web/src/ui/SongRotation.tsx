@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../api";
 
 /** Which song is on and how far in, from the clock alone, so everyone at the party hears the same moment. */
-function slot(playlist: ClubSong[], now: number) {
+export function slot(playlist: ClubSong[], now: number) {
   const total = playlist.reduce((sum, song) => sum + song.seconds, 0);
   let at = (now / 1000) % total;
   for (const [index, song] of playlist.entries()) {
@@ -15,7 +15,7 @@ function slot(playlist: ClubSong[], now: number) {
 
 /**
  * Plays the songs the music team filed under `venue` on a loop shared by everyone there. With none uploaded it shows
- * `fallback` instead (the house-party YouTube DJ), or nothing.
+ * `fallback` instead (the club's own set), or nothing.
  */
 export function SongRotation({ venue, volume, label, fallback = null }: { venue: SongVenue; volume: number; label: string; fallback?: ReactNode }) {
   const [playlist, setPlaylist] = useState<ClubSong[] | null>(null);

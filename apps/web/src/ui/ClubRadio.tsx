@@ -1,51 +1,8 @@
-import { clubNowPlaying, SONG_REQUEST, type ClubMusicState, type ClubSong } from "@lagos-living/shared";
+import { hash01, SONG_REQUEST, type ClubMusicState, type ClubSong } from "@lagos-living/shared";
 import { useEffect, useRef, useState } from "react";
 import { api, naira } from "../api";
+import { slot } from "./SongRotation";
 
-type YtPlayer = {
-  loadVideoById(options: { videoId: string; startSeconds: number }): void;
-  playVideo(): void;
-  pauseVideo(): void;
-  setVolume(volume: number): void;
-  destroy(): void;
-};
-type YtNamespace = {
-  Player: new (
-    element: HTMLElement,
-    options: {
-      width: string | number;
-      height: string | number;
-      videoId: string;
-      playerVars: Record<string, number | string>;
-      events: { onReady?: () => void; onStateChange?: (event: { data: number }) => void; onError?: () => void };
-    },
-  ) => YtPlayer;
-};
-
-const PLAYING = 1;
-const ENDED = 0;
-
-let apiPromise: Promise<YtNamespace> | null = null;
-function youtubeApi() {
-  apiPromise ??= new Promise<YtNamespace>((resolve, reject) => {
-    const host = window as unknown as { YT?: YtNamespace & { loaded?: number }; onYouTubeIframeAPIReady?: () => void };
-    if (host.YT?.Player) return resolve(host.YT);
-    host.onYouTubeIframeAPIReady = () => resolve(host.YT!);
-    const script = document.createElement("script");
-    script.src = "https://www.youtube.com/iframe_api";
-    script.onerror = () => {
-      apiPromise = null;
-      reject(new Error("YouTube unavailable"));
-    };
-    document.head.appendChild(script);
-  });
-  return apiPromise;
-}
-
-/**
- * The club's DJ set as YouTube's own player, kept visible (YouTube requires that) in a corner card. Everyone in the
- * same club is on the same track and position. `onPlaying` lets the game drop its synthesised beat while a song plays.
- */
 export type SongRequests = {
   state: ClubMusicState | null;
   balance: number;
@@ -54,135 +11,175 @@ export type SongRequests = {
   decide: (requestId: string, approve: boolean) => void;
 };
 
+type Track = { songId: string; title: string; artist: string; offset: number; requestedBy: string | null };
+
+/**
+ * The club's DJ set: the songs the music team uploaded for clubs, on a loop shared by everyone in the same club (each
+ * club starts somewhere different in it), and an approved request plays over it for its length. `onPlaying` lets the
+ * game drop its synthesised beat while a song is actually coming out of the speakers; with nothing uploaded the beat
+ * carries the night.
+ */
 export function ClubRadio({ clubId, volume, onPlaying, requests }: { clubId: string; volume: number; onPlaying: (playing: boolean) => void; requests?: SongRequests }) {
-  const host = useRef<HTMLDivElement>(null);
-  const player = useRef<YtPlayer | null>(null);
-  const [now, setNow] = useState(() => clubNowPlaying(clubId, Date.now()));
-  const [failed, setFailed] = useState(false);
+  const [playlist, setPlaylist] = useState<ClubSong[] | null>(null);
   const [open, setOpen] = useState(true);
+  const [blocked, setBlocked] = useState(false);
+  const [track, setTrack] = useState<Track | null>(null);
+  const [requestLive, setRequestLive] = useState(false);
+  const audio = useRef<HTMLAudioElement | null>(null);
   const playingRef = useRef(onPlaying);
   playingRef.current = onPlaying;
-  const requestPlaying = useRef(false);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const next = clubNowPlaying(clubId, Date.now());
-      setNow((current) => (current.index === next.index ? current : next));
-    }, 1_000);
-    return () => clearInterval(timer);
-  }, [clubId]);
-
-  useEffect(() => {
-    if (!open || !host.current) return;
-    let live = true;
-    const start = clubNowPlaying(clubId, Date.now());
-    const target = document.createElement("div");
-    host.current.replaceChildren(target);
-    // Buffering and stalls flicker in and out; only a set that stays stopped hands back to the game's own beat.
-    let silent: ReturnType<typeof setTimeout> | undefined;
-    youtubeApi()
-      .then((YT) => {
-        if (!live) return;
-        player.current = new YT.Player(target, {
-          width: "100%",
-          height: "100%",
-          videoId: start.track.videoId,
-          playerVars: { autoplay: 1, start: start.seconds, playsinline: 1, controls: 1, modestbranding: 1, rel: 0 },
-          events: {
-            onReady: () => player.current?.setVolume(Math.round(volume * 100)),
-            onStateChange: (event) => {
-              clearTimeout(silent);
-              if (event.data === PLAYING) playingRef.current(true);
-              else silent = setTimeout(() => live && !requestPlaying.current && playingRef.current(false), event.data === ENDED ? 0 : 2_500);
-            },
-            onError: () => playingRef.current(false),
-          },
-        });
-      })
-      .catch(() => live && setFailed(true));
-    return () => {
-      live = false;
-      clearTimeout(silent);
-      playingRef.current(false);
-      player.current?.destroy();
-      player.current = null;
-    };
-    // Volume changes are applied below without rebuilding the player.
-  }, [clubId, open]);
-
-
-  const requested = requests?.state?.playing ?? null;
-  const [requestLive, setRequestLive] = useState(false);
-  requestPlaying.current = requestLive;
-  const audio = useRef<HTMLAudioElement | null>(null);
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
   const syncRef = useRef(requests?.sync);
   syncRef.current = requests?.sync;
+  const requested = requests?.state?.playing ?? null;
+
+  useEffect(() => {
+    let live = true;
+    api
+      .songs("club")
+      .then((songs) => live && setPlaylist(songs.filter((song) => song.seconds > 0).sort((a, b) => a.id.localeCompare(b.id))))
+      .catch(() => live && setPlaylist([]));
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useEffect(() => {
     syncRef.current?.();
   }, [clubId]);
 
   useEffect(() => {
-    if (!requested || !open) {
+    if (!requested) {
       setRequestLive(false);
       return;
     }
-    const element = new Audio(api.songUrl(requested.songId));
-    element.preload = "auto";
-    audio.current = element;
-    let live = true;
-    const start = () => {
-      if (!live) return;
-      const into = (Date.now() - requested.startedAt) / 1000;
-      if (into >= requested.seconds) return;
-      element.currentTime = Math.max(0, into);
-      void element.play().then(() => {
-        if (!live) return;
-        setRequestLive(true);
-        player.current?.pauseVideo();
-        playingRef.current(true);
-      }).catch(() => live && setRequestLive(false));
-    };
-    const wait = Math.max(0, requested.startedAt - Date.now());
-    const timer = setTimeout(start, wait);
-    const stop = setTimeout(() => live && setRequestLive(false), wait + requested.seconds * 1000 + 500);
+    const startIn = requested.startedAt - Date.now();
+    const endIn = startIn + requested.seconds * 1_000;
+    if (endIn <= 0) {
+      setRequestLive(false);
+      return;
+    }
+    const begin = setTimeout(() => setRequestLive(true), Math.max(0, startIn));
+    const end = setTimeout(() => setRequestLive(false), endIn + 300);
     return () => {
-      live = false;
-      clearTimeout(timer);
-      clearTimeout(stop);
-      element.pause();
-      element.removeAttribute("src");
-      audio.current = null;
+      clearTimeout(begin);
+      clearTimeout(end);
       setRequestLive(false);
     };
-  }, [requested?.id, requested?.startedAt, open]);
+  }, [requested?.id, requested?.startedAt, requested?.seconds]);
 
   useEffect(() => {
-    if (requestLive) return;
-    player.current?.loadVideoById({ videoId: now.track.videoId, startSeconds: clubNowPlaying(clubId, Date.now()).seconds });
-  }, [requestLive, now.index, clubId, now.track.videoId]);
+    if (!open || playlist === null) {
+      playingRef.current(false);
+      return;
+    }
+    const element = new Audio();
+    element.preload = "auto";
+    element.setAttribute("playsinline", "");
+    audio.current = element;
+    let live = true;
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const shift = hash01(`club-set:${clubId}`) * 6 * 3_600_000;
+    const pick = (): Track | null => {
+      if (requestLive && requested) {
+        return { songId: requested.songId, title: requested.title, artist: requested.artist, offset: Math.max(0, (Date.now() - requested.startedAt) / 1_000), requestedBy: requested.byName };
+      }
+      if (!playlist.length) return null;
+      const { song, offset } = slot(playlist, Date.now() + shift);
+      return { songId: song.id, title: song.title, artist: song.artist, offset, requestedBy: null };
+    };
+    let loaded = "";
+    const play = () => {
+      if (!live) return;
+      const next = pick();
+      setTrack(next);
+      if (!next) {
+        playingRef.current(false);
+        return;
+      }
+      if (loaded !== next.songId) {
+        loaded = next.songId;
+        element.src = api.songUrl(next.songId);
+      }
+      const seek = () => {
+        if (Math.abs(element.currentTime - next.offset) > 1.5) element.currentTime = next.offset;
+      };
+      if (element.readyState >= 1) seek();
+      else element.addEventListener("loadedmetadata", seek, { once: true });
+      element.volume = Math.max(0, Math.min(1, volumeRef.current));
+      element.play().then(
+        () => live && setBlocked(false),
+        () => live && setBlocked(true),
+      );
+    };
+    // Buffering flickers; only a set that stays stopped hands back to the game's beat.
+    const silent = () => {
+      clearTimeout(quiet);
+      quiet = setTimeout(() => live && element.paused && playingRef.current(false), 2_500);
+    };
+    element.addEventListener("playing", () => {
+      clearTimeout(quiet);
+      playingRef.current(true);
+    });
+    element.addEventListener("pause", silent);
+    element.addEventListener("ended", play);
+    // A dropped stream picks the shared loop back up where everyone else is, rather than going quiet.
+    element.addEventListener("error", () => {
+      loaded = "";
+      silent();
+      clearTimeout(retry);
+      retry = setTimeout(play, 2_000);
+    });
+    const wake = () => {
+      if (!document.hidden && element.paused) play();
+    };
+    document.addEventListener("visibilitychange", wake);
+    play();
+    return () => {
+      live = false;
+      clearTimeout(quiet);
+      clearTimeout(retry);
+      document.removeEventListener("visibilitychange", wake);
+      element.pause();
+      element.removeAttribute("src");
+      element.load();
+      audio.current = null;
+      playingRef.current(false);
+    };
+  }, [open, playlist, requestLive, requested?.id, clubId]);
 
   useEffect(() => {
-    player.current?.setVolume(Math.round(volume * 100));
     if (audio.current) audio.current.volume = Math.max(0, Math.min(1, volume));
-  }, [volume, requestLive]);
+  }, [volume]);
 
+  const empty = playlist !== null && !playlist.length && !requestLive;
   return (
     <aside className="club-radio" data-testid="club-radio">
       <header>
         <div>
-          <small>{requestLive && requested ? `REQUESTED BY ${requested.byName.toUpperCase()}` : "NOW PLAYING"}</small>
-          <strong>{requestLive && requested ? requested.title : now.track.title}</strong>
-          <span>{requestLive && requested ? requested.artist : now.track.artist}</span>
+          <small>{track?.requestedBy ? `REQUESTED BY ${track.requestedBy.toUpperCase()}` : "NOW PLAYING"}</small>
+          <strong>{!open ? "DJ off" : track ? track.title : empty ? "The DJ's own mix" : "…"}</strong>
+          {open && track && <span>{track.artist}</span>}
         </div>
         <button className="icon-button" onClick={() => setOpen((current) => !current)} aria-label={open ? "Turn the DJ off" : "Turn the DJ on"}>
           {open ? "■" : "▶"}
         </button>
       </header>
-      {failed ? <p className="muted small">The DJ's set needs YouTube, which isn't reachable right now.</p> : open && <div className="club-radio-player" ref={host} hidden={requestLive} />}
-      {requestLive && <div className="club-radio-request" aria-hidden="true"><span className="vinyl" /><span className="bars"><i /><i /><i /><i /><i /></span></div>}
-      {open && !failed && !requestLive && <p className="muted small">Tap play if your device blocks autoplay.</p>}
-      {requestLive && <p className="muted small" data-testid="request-playing">🎵 Playing a request · the DJ's set carries on after.</p>}
+      {open && track && (
+        <div className="club-radio-request" aria-hidden="true">
+          <span className="vinyl" />
+          <span className="bars"><i /><i /><i /><i /><i /></span>
+        </div>
+      )}
+      {open && blocked && (
+        <button className="secondary" onClick={() => void audio.current?.play().then(() => setBlocked(false), () => undefined)} data-testid="club-radio-unmute">
+          🔊 Tap to hear the music
+        </button>
+      )}
+      {open && empty && <p className="muted small">No club songs uploaded yet, so the DJ is playing the house beat.</p>}
+      {track?.requestedBy && <p className="muted small" data-testid="request-playing">🎵 Playing a request · the DJ's set carries on after.</p>}
       {requests && <SongDesk requests={requests} />}
     </aside>
   );
