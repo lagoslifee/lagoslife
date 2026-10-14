@@ -32,7 +32,7 @@ export function report(kind: DiagnosticKind, message = "", extra: { stack?: stri
     detail: extra.detail,
     quality,
     device: navigator.userAgent.slice(0, 240),
-    page: location.pathname.slice(0, 200),
+    page: `${location.pathname}${area ? `#${area}` : ""}`.slice(0, 200),
   };
   void fetch(`${apiUrl}/api/diagnostics`, {
     method: "POST",
@@ -62,6 +62,14 @@ export function noteFps(fps: number) {
 }
 
 const CRASHED_KEY = "lagos-crashed";
+let area = "";
+let beatNow = () => undefined as void;
+
+/** Which screen is showing, so a tab that dies without a word still says where it was. */
+export function setArea(next: string) {
+  area = next;
+  beatNow();
+}
 
 /**
  * Whether a page in this tab was killed while showing (iOS does this to a tab that uses too much memory), asked once.
@@ -89,12 +97,13 @@ export function installDiagnostics() {
     report("rejection", reason instanceof Error ? reason.message : String(reason), { stack: reason instanceof Error ? reason.stack : undefined });
   });
   try {
-    const previous = JSON.parse(localStorage.getItem(RUNNING_KEY) ?? "null") as { at: number; clean: boolean } | null;
+    const previous = JSON.parse(localStorage.getItem(RUNNING_KEY) ?? "null") as { at: number; clean: boolean; area?: string } | null;
     if (previous && !previous.clean && Date.now() - previous.at < 120_000) {
       sessionStorage.setItem(CRASHED_KEY, "1");
-      report("unclean-exit", "Previous session ended without closing", { detail: { secondsAgo: Math.round((Date.now() - previous.at) / 1_000) } });
+      report("unclean-exit", "Previous session ended without closing", { detail: { secondsAgo: Math.round((Date.now() - previous.at) / 1_000), area: previous.area ?? null } });
     }
-    const beat = (clean: boolean) => localStorage.setItem(RUNNING_KEY, JSON.stringify({ at: Date.now(), clean }));
+    const beat = (clean: boolean) => localStorage.setItem(RUNNING_KEY, JSON.stringify({ at: Date.now(), clean, area }));
+    beatNow = () => beat(false);
     beat(false);
     setInterval(() => !document.hidden && beat(false), 10_000);
     window.addEventListener("pagehide", () => beat(true));

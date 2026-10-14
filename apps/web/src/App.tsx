@@ -20,6 +20,7 @@ import { LifeGoalsDialog } from "./ui/LifeGoals";
 import { CityReel } from "./ui/CityReel";
 import { LandingScene } from "./ui/LandingScene";
 import { CrashGuard } from "./ui/CrashGuard";
+import { setArea } from "./diagnostics";
 import { ACCESSORY_LABELS, HAIR_COLOURS, HAIR_LABELS, OUTFITS, SKIN_TONE_COLOURS } from "./game/wardrobe";
 import { apiConfigured, apiUrl, authClient, authHeaders, guestMode, serverReachable, sessionToken, signOut, startGuestSession, watchServerAddress } from "./auth-client";
 
@@ -367,6 +368,10 @@ function CharacterCreator({
   const [error, setError] = useState("");
   const [wearable, setWearable] = useState<readonly OutfitId[]>(() => (isStarterOutfit(initial.outfit) ? starterOutfits : [...starterOutfits, initial.outfit]));
   useEffect(() => {
+    setArea(welcome ? "creator-first" : "creator");
+    return () => setArea("game");
+  }, [welcome]);
+  useEffect(() => {
     void fetch(`${apiUrl}/api/wardrobe`, { credentials: "include", headers: authHeaders() })
       .then((response) => (response.ok ? (response.json() as Promise<{ outfits: OutfitId[] }>) : null))
       .then((body) => body && setWearable(body.outfits))
@@ -504,16 +509,18 @@ function GameShell({
       )}
       {goalsOpen && !creatorOpen && <LifeGoalsDialog playerName={playerName} onClose={() => setGoalsOpen(false)} />}
       {creatorOpen && (appearanceLoaded || !welcomeLook) && (
-        <CharacterCreator
-          initial={appearance}
-          welcome={welcomeLook}
-          onClose={(next) => {
-            if (next) setAppearance(next);
-            localStorage.removeItem("lagos-new-look");
-            setWelcomeLook(false);
-            setCreatorOpen(false);
-          }}
-        />
+        <CrashGuard area="creator" fallback={<div className="loading-screen">Opening your look…</div>}>
+          <CharacterCreator
+            initial={appearance}
+            welcome={welcomeLook}
+            onClose={(next) => {
+              if (next) setAppearance(next);
+              localStorage.removeItem("lagos-new-look");
+              setWelcomeLook(false);
+              setCreatorOpen(false);
+            }}
+          />
+        </CrashGuard>
       )}
     </main>
   );
@@ -553,7 +560,14 @@ function ServerMissingScreen() {
 }
 
 export function App() {
-  return apiConfigured ? <Main /> : <ServerMissingScreen />;
+  // Without a guard up here, one render error unmounts everything and leaves only the page's dark green background.
+  return apiConfigured ? (
+    <CrashGuard area="app" fallback={<div className="loading-screen">Restoring Naija World…</div>}>
+      <Main />
+    </CrashGuard>
+  ) : (
+    <ServerMissingScreen />
+  );
 }
 
 function Main() {

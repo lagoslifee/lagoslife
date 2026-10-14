@@ -11,7 +11,7 @@ type Props = {
   onCrash?: (error: Error) => void;
 };
 
-type State = { failures: number[]; generation: number; broken: boolean };
+type State = { failures: number[]; generation: number; broken: boolean; message?: string };
 
 /** Crashes inside a minute after which the guard stops rebuilding and offers a button instead. */
 const LIMIT = 4;
@@ -33,7 +33,7 @@ export class CrashGuard extends Component<Props, State> {
     const failures = [...this.state.failures.filter((at) => now - at < 60_000), now];
     report("ui-crash", this.props.area, { detail: { message: error.message, stack: error.stack?.slice(0, 800) ?? null } });
     this.props.onCrash?.(error);
-    this.setState({ failures });
+    this.setState({ failures, message: error.message.slice(0, 160) });
     if (failures.length >= LIMIT) return;
     clearTimeout(this.timer);
     this.timer = setTimeout(() => this.rebuild(), 250);
@@ -51,6 +51,7 @@ export class CrashGuard extends Component<Props, State> {
     return (
       <div className="crash-card" role="alert" data-testid={`crash-${this.props.area}`}>
         <p>This part of the game hit a problem. Your progress is saved.</p>
+        {this.state.message && <p className="small muted">{this.state.message}</p>}
         <button className="primary" onClick={() => this.setState({ failures: [], broken: false, generation: this.state.generation + 1 })}>Reopen</button>
       </div>
     );
