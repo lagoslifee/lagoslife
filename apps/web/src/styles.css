@@ -976,6 +976,10 @@ button.net:hover { border-color: rgba(100, 217, 145, .6); }
 .go-list { list-style: none; padding: 0; margin: 0; }
 .go-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(0, 0, 0, .06); }
 .go-list li > span { min-width: 0; }
+.hangar-owned { flex-wrap: wrap; }
+.hangar-owned select { max-width: 160px; }
+.hangar-catalog { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.hangar-catalog li { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; background: rgba(0, 0, 0, .04); }
 .go-favourites { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .go-favourites button { display: grid; gap: 2px; text-align: left; }
 .go-favourites small { font-size: 11px; opacity: .75; font-weight: normal; }

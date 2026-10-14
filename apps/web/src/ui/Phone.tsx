@@ -21,8 +21,9 @@ import { StoryApp } from "./StoryApp";
 import { EstateApp } from "./EstateApp";
 import { BoutiqueApp } from "./BoutiqueApp";
 import { BankApp, BetApp, DocumentsApp } from "./FinanceApps";
+import { HangarApp } from "./HangarApp";
 
-export type PhoneApp = "home" | "story" | "games" | "business" | "estate" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "transport" | "jobs" | "wallet" | "order" | "bank" | "bet" | "documents" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "neighbours" | "invite" | "rankings" | "notifications" | "settings" | "help";
+export type PhoneApp = "home" | "story" | "games" | "business" | "estate" | "places" | "boutique" | "go" | "map" | "ride" | "travel" | "hangar" | "transport" | "jobs" | "wallet" | "order" | "bank" | "bet" | "documents" | "property" | "vehicles" | "community" | "justice" | "safety" | "friends" | "neighbours" | "invite" | "rankings" | "notifications" | "settings" | "help";
 
 const APPS: Array<{ id: PhoneApp; label: string; icon: string; tint: string }> = [
   { id: "story", label: "My Story", icon: "📖", tint: "#e7bd62, #ff9f0a" },
@@ -33,6 +34,7 @@ const APPS: Array<{ id: PhoneApp; label: string; icon: string; tint: string }> =
   { id: "map", label: "Map", icon: "🗺", tint: "#34c759, #30b0c7" },
   { id: "ride", label: "Ride", icon: "🚕", tint: "#1c1c1e, #3a3a3c" },
   { id: "travel", label: "Travel", icon: "✈", tint: "#0a84ff, #64d2ff" },
+  { id: "hangar", label: "Hangar", icon: "🚁", tint: "#1c1c1e, #c8a24a" },
   { id: "transport", label: "Transport", icon: "🚌", tint: "#ff9f0a, #ffd60a" },
   { id: "jobs", label: "Jobs", icon: "📦", tint: "#a2845e, #c9a477" },
   { id: "bank", label: "Bank", icon: "🏦", tint: "#0b6e4f, #2fbf71" },
@@ -176,6 +178,7 @@ export function Phone(props: Props) {
         {app === "boutique" && <BoutiqueApp engine={props.engine} economy={props.economy} onRefresh={props.onRefresh} onToast={props.onToast} />}
         {app === "ride" && <RideApp key={cabTo?.key ?? "ride"} engine={props.engine} ride={props.ride} properties={props.properties} initial={cabTo} onNavigate={props.onNavigate} onClose={onClose} />}
         {app === "travel" && <TravelApp engine={props.engine} economy={props.economy} onNavigate={props.onNavigate} onRefresh={props.onRefresh} onToast={props.onToast} onClose={onClose} />}
+        {app === "hangar" && <HangarApp engine={props.engine} economy={props.economy} onRefresh={props.onRefresh} onToast={props.onToast} onClose={onClose} />}
         {app === "transport" && <TransportApp {...props} />}
         {app === "jobs" && <JobsApp {...props} />}
         {app === "wallet" && <WalletApp {...props} />}

@@ -5,6 +5,7 @@ import type { FloorFinishId, FoodParcel, FuelStationState, GeneratorId, HomeFini
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick, RepairAction } from "@lagos-living/shared";
 import type { AccountSummary, ClaimAccount, LifeGoals } from "@lagos-living/shared";
 import type { DirectMessage, FriendsStatus, RankingBoard, RankingState, ReferralStatus } from "@lagos-living/shared";
+import type { OwnedAircraft } from "@lagos-living/shared";
 import type { BusinessListing, ClubSong, HustleStatus, SongVenue, OwambeKind, OwambeParty, StoryChapterId } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
@@ -147,6 +148,8 @@ export const api = {
   properties: () => request<PropertyListing[]>("/api/properties"),
   interior: (id: string) => request<InteriorState>(`/api/properties/${id}/interior`),
   gym: () => request<GymStatus>("/api/gym"),
+  aircraft: () => request<{ owned: OwnedAircraft[] }>("/api/aircraft"),
+  buyAircraft: (modelId: string) => post<{ aircraft: OwnedAircraft; replayed: boolean }>("/api/aircraft/purchase", { modelId, idempotencyKey: crypto.randomUUID() }),
   gymJoin: () => post<{ balance: number }>("/api/gym/join", { idempotencyKey: crypto.randomUUID() }),
   gymSet: (exercise: ExerciseId, kg?: number) => post<{ exercise: ExerciseId; kg: number | null; endsAt: string; name: string }>("/api/gym/set", kg ? { exercise, kg } : { exercise }),
   gymFinish: () => post<{ counted: true; fitness: number; energy: number; kg: number | null; coached: boolean } | { counted: false; reason: string }>("/api/gym/finish", {}),

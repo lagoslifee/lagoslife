@@ -2356,6 +2356,14 @@ export class GameEngine {
     if (spray.sessionId !== this.net.sessionId) this.caption(`💸 ${spray.name} is spraying ₦${spray.amount.toLocaleString("en-NG")} on the celebrants!`);
   }
 
+  helicopterHop(aircraftId: string, placeId: string) {
+    this.net.send("helicopterHop", { aircraftId, placeId });
+  }
+
+  jetFlight(aircraftId: string) {
+    this.net.send("jetFlight", { aircraftId });
+  }
+
   owambeOrder(dish: string) {
     const seated = this.sitting?.owambe;
     if (seated) this.net.send("owambeOrder", { ...seated, dish });
