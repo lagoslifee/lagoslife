@@ -50,7 +50,8 @@ export type MultiplayerHandlers = {
   snapshot: (snapshot: WorldSnapshot, ownSessionId: string) => void;
   self: (self: SelfState) => void;
   notice: (notice: Notice) => void;
-  correction: (point: { x: number; z: number }) => void;
+  /** `blocked` is a real obstacle; otherwise the server just couldn't vouch for the move (late or bunched packets). */
+  correction: (point: { x: number; z: number; blocked: boolean }) => void;
   saved: (at: number) => void;
   status: (status: MultiplayerStatus) => void;
   vehicleStatus: (status: { vehicleId: string; condition: number; damage?: number }) => void;
@@ -144,8 +145,8 @@ export class MultiplayerConnection {
         const parsed = noticeSchema.safeParse(payload);
         if (parsed.success) this.handlers.notice(parsed.data);
       });
-      room.onMessage("correction", (payload: { x: number; z: number }) => {
-        if (Number.isFinite(payload?.x) && Number.isFinite(payload?.z)) this.handlers.correction(payload);
+      room.onMessage("correction", (payload: { x: number; z: number; blocked?: boolean }) => {
+        if (Number.isFinite(payload?.x) && Number.isFinite(payload?.z)) this.handlers.correction({ x: payload.x, z: payload.z, blocked: payload.blocked !== false });
       });
       room.onMessage("saved", (payload: { at: number }) => this.handlers.saved(payload?.at ?? Date.now()));
       room.onMessage("vehicleStatus", (payload: { vehicleId: string; condition: number; damage?: number }) => {

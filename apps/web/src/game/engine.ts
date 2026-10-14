@@ -656,13 +656,13 @@ export class GameEngine {
           this.audio.announce(notice.announcement);
         }
       },
-      correction: ({ x, z }) => {
+      correction: ({ x, z, blocked }) => {
         this.controller.teleport(x, z);
         for (const car of [this.car, this.rideCar?.car]) {
           if (!car) continue;
           car.x = x;
           car.z = z;
-          car.speed = 0;
+          if (blocked) car.speed = 0;
         }
       },
       saved: (at) => this.callbacks.saved(at),

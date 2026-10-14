@@ -1017,7 +1017,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     if (player.location.startsWith("flight:") || player.location.startsWith("excursion:")) return;
     const now = Date.now();
     // Mobile links stall for seconds and then deliver a burst; the first packet of the burst covers the whole gap.
-    const elapsed = Math.min(4, Math.max(0.03, (now - player.lastAcceptedAt) / 1_000));
+    const elapsed = Math.min(8, Math.max(0.03, (now - player.lastAcceptedAt) / 1_000));
     const vehicle = player.vehicleId ? this.vehicles.get(player.vehicleId) : undefined;
     const topSpeed = vehicle
       ? vehicle.fuel === 0
@@ -1040,7 +1040,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
         : Math.abs(parsed.data.x - INTERIOR_ORIGIN[0]) <= half[0] && Math.abs(parsed.data.z - INTERIOR_ORIGIN[1]) <= half[1];
     const intoCar = Boolean(vehicle && !inInterior && this.drivesIntoParkedCar(vehicle, parsed.data, player));
     if (distance > allowed || !valid || intoCar) {
-      client.send("correction", { x: player.x, z: player.z, yaw: player.yaw, sequence: parsed.data.sequence });
+      client.send("correction", { x: player.x, z: player.z, yaw: player.yaw, sequence: parsed.data.sequence, blocked: !valid || intoCar });
       player.lastAcceptedAt = now;
       return;
     }
