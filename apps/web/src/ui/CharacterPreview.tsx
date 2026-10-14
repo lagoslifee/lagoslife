@@ -11,6 +11,7 @@ import type { CharacterAppearance } from "@lagos-living/shared";
 import { useEffect, useRef, useState } from "react";
 import { OUTFITS } from "../game/wardrobe";
 import { AvatarFactory, type Avatar } from "../game/avatar";
+import { capTextureSize, TOUCH_DEVICE } from "../game/device-limits";
 
 /** Live 3D preview of the resident with the chosen look, using the same recolouring as the street. */
 export function CharacterPreview({ appearance }: { appearance: CharacterAppearance }) {
@@ -19,17 +20,33 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
   const appearanceRef = useRef(appearance);
   appearanceRef.current = appearance;
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
+  const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     const canvas = canvasRef.current!;
     let disposed = false;
     let engine: Engine;
     try {
-      engine = new Engine(canvas, true, { stencil: false, preserveDrawingBuffer: false }, false);
+      engine = new Engine(canvas, !TOUCH_DEVICE, { stencil: false, preserveDrawingBuffer: false }, false);
     } catch {
       setState("failed");
       return;
     }
+    capTextureSize(engine);
+    // iOS drops a page's WebGL context under memory pressure, leaving only the panel's green backdrop behind. A lost
+    // canvas can't make a new context, so the preview starts over on a fresh one once the page is showing.
+    let rebuild: ReturnType<typeof setTimeout> | undefined;
+    const restart = () => {
+      if (disposed || document.hidden) return;
+      document.removeEventListener("visibilitychange", restart);
+      rebuild = setTimeout(() => !disposed && setGeneration((value) => value + 1), 800);
+    };
+    engine.onContextLostObservable.add(() => {
+      if (disposed) return;
+      setState("loading");
+      document.addEventListener("visibilitychange", restart);
+      restart();
+    });
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0, 0, 0, 0);
     scene.imageProcessingConfiguration.toneMappingEnabled = true;
@@ -83,11 +100,13 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
       .catch(() => !disposed && setState("failed"));
     return () => {
       disposed = true;
+      clearTimeout(rebuild);
+      document.removeEventListener("visibilitychange", restart);
       resize.disconnect();
       avatarRef.current = null;
       engine.dispose();
     };
-  }, []);
+  }, [generation]);
 
   useEffect(() => {
     avatarRef.current?.setAppearance(appearance);
@@ -95,7 +114,7 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
 
   return (
     <div className="character-preview-3d" data-testid="character-preview" data-state={state}>
-      <canvas ref={canvasRef} aria-label="3D preview of your resident" />
+      <canvas key={generation} ref={canvasRef} aria-label="3D preview of your resident" />
       {state === "loading" && <p className="preview-status">Loading your resident…</p>}
       {state === "failed" && <p className="preview-status">The 3D preview could not load on this device. Your choices still save.</p>}
       <p className="preview-caption">{OUTFITS[appearance.outfit].label}</p>
