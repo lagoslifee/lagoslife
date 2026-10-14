@@ -79,7 +79,8 @@ export const reportSchema = z.object({
 
 export const blockSchema = z.object({ userName: z.string().min(1).max(40) });
 
-export const STAFF_ROLES = ["moderator", "admin"] as const;
+/** `music` only manages the song library (clubs, owambe, house parties); it has no moderation powers. */
+export const STAFF_ROLES = ["moderator", "admin", "music"] as const;
 export type StaffRole = (typeof STAFF_ROLES)[number];
 
 export const MODERATION_ACTIONS = ["warn", "mute", "suspend", "lift_mute", "lift_suspension"] as const;

@@ -286,7 +286,7 @@ export function SafetyApp({ onToast, onReport }: { onToast: (notice: Notice) => 
         hidden automatically. Moderators review every report.
       </p>
       {status?.role && (
-        <p><a className="link" href="/moderation" target="_blank" rel="noreferrer" data-testid="open-moderation">Open the moderation console ({status.role})</a></p>
+        <p><a className="link" href="/moderation" target="_blank" rel="noreferrer" data-testid="open-moderation">{status.role === "music" ? "Open the music library" : `Open the moderation console (${status.role})`}</a></p>
       )}
     </div>
   );

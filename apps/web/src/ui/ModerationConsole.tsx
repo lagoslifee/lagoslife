@@ -1,4 +1,4 @@
-import { MODERATION_ACTIONS, SONG_REQUEST, type ClubSong, type ModerationActionKind, type StaffRole } from "@lagos-living/shared";
+import { MODERATION_ACTIONS, SONG_REQUEST, SONG_VENUE_LABEL, SONG_VENUES, type ClubSong, type ModerationActionKind, type SongVenue, type StaffRole } from "@lagos-living/shared";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, ApiError, modApi, naira, type Appeal, type AuditEntry, type ModReport, type ResidentRecord, type StaffOverview } from "../api";
 
@@ -27,10 +27,13 @@ export function ModerationConsole({ staffName }: { staffName: string }) {
   const loadOverview = useCallback(() => modApi.overview().then(setOverview).catch(fail), [fail]);
 
   useEffect(() => {
-    api.safety().then((status) => setRole(status.role)).catch(() => setRole(null));
+    api.safety().then((status) => {
+      setRole(status.role);
+      if (status.role === "music") setTab("music");
+    }).catch(() => setRole(null));
   }, []);
   useEffect(() => {
-    if (role) void loadOverview();
+    if (role === "moderator" || role === "admin") void loadOverview();
   }, [role, loadOverview]);
 
   const openResident = useCallback(async (userId: string, report: ModReport | null = null) => {
@@ -60,7 +63,7 @@ export function ModerationConsole({ staffName }: { staffName: string }) {
     <main className="mod-console" data-testid="moderation-console">
       <header className="mod-header">
         <div>
-          <p className="eyebrow">NAIJA WORLD · MODERATION</p>
+          <p className="eyebrow">NAIJA WORLD · {role === "music" ? "MUSIC LIBRARY" : "MODERATION"}</p>
           <h1>Signed in as {staffName} <span className="pill">{role}</span></h1>
         </div>
         {overview && (
@@ -75,14 +78,14 @@ export function ModerationConsole({ staffName }: { staffName: string }) {
         <a className="link" href="/">Back to the game</a>
       </header>
       <nav className="mod-tabs" role="tablist">
-        {(["reports", "appeals", "residents", "audit", ...(role === "admin" ? ["staff" as const, "music" as const] : [])] as Tab[]).map((id) => (
+        {((role === "music" ? ["music"] : ["reports", "appeals", "residents", "audit", ...(role === "admin" ? ["staff", "music"] : [])]) as Tab[]).map((id) => (
           <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
             {id[0]!.toUpperCase() + id.slice(1)}
           </button>
         ))}
       </nav>
       {message && <p className={`mod-message ${message.tone}`} role="status" data-testid="mod-message">{message.text}</p>}
-      {tab === "reports" && <ReportsTab onOpen={openResident} onDone={(text) => { say("success", text); void loadOverview(); }} onError={fail} />}
+      {tab === "reports" && role !== "music" && <ReportsTab onOpen={openResident} onDone={(text) => { say("success", text); void loadOverview(); }} onError={fail} />}
       {tab === "appeals" && <AppealsTab onDone={(text) => { say("success", text); void loadOverview(); }} onError={fail} />}
       {tab === "residents" && (
         <ResidentsTab
@@ -343,7 +346,7 @@ function AuditTab({ onError }: { onError: (error: unknown) => void }) {
 
 function StaffTab({ overview, onDone, onError }: { overview: StaffOverview; onDone: (text: string) => void; onError: (error: unknown) => void }) {
   const [name, setName] = useState("");
-  const [role, setRole] = useState<"moderator" | "admin" | "none">("moderator");
+  const [role, setRole] = useState<StaffRole | "none">("moderator");
   const [reason, setReason] = useState("");
   return (
     <section className="mod-panel">
@@ -370,6 +373,7 @@ function StaffTab({ overview, onDone, onError }: { overview: StaffOverview; onDo
         <select value={role} onChange={(event) => setRole(event.target.value as typeof role)} aria-label="Role">
           <option value="moderator">Moderator</option>
           <option value="admin">Admin</option>
+          <option value="music">Music library only</option>
           <option value="none">No staff role</option>
         </select>
         <textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Reason (audited)" aria-label="Reason" minLength={3} required rows={2} />
@@ -397,22 +401,26 @@ function audioSeconds(file: File) {
   });
 }
 
-/** Admins upload and name the songs residents can request from club DJs. */
+/** The song library: what club DJs take requests for, and what plays at owambes and house parties. */
 function MusicTab({ onDone, onError }: { onDone: (text: string) => void; onError: (error: unknown) => void }) {
   const [songs, setSongs] = useState<ClubSong[] | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
+  const [venues, setVenues] = useState<SongVenue[]>(["club"]);
   const [busy, setBusy] = useState(false);
+  const [filter, setFilter] = useState<SongVenue | "all">("all");
   useEffect(() => {
-    api.songs().then(setSongs).catch(onError);
+    api.allSongs().then(setSongs).catch(onError);
   }, [onError]);
+  const shown = songs?.filter((song) => filter === "all" || song.venues.includes(filter)) ?? null;
   return (
     <section className="mod-panel" data-testid="music-tab">
-      <h3>Club request songs</h3>
+      <h3>Song library</h3>
       <p className="muted small">
-        Residents tip {naira(SONG_REQUEST.tip)} to request one of these in a club; the DJ approves it and it plays for everyone there. Only upload music
-        you have the rights to share. MP3, M4A, OGG or WAV, up to 12 MB and {Math.floor(SONG_REQUEST.maxSeconds / 60)} minutes.
+        Club songs are what residents can request from the DJ (a {naira(SONG_REQUEST.tip)} tip; the DJ approves and it plays for everyone there). Owambe and
+        house-party songs play in rotation at those parties. Only upload music you have the rights to share. MP3, M4A, OGG or WAV, up to 12 MB and{" "}
+        {Math.floor(SONG_REQUEST.maxSeconds / 60)} minutes.
       </p>
       <form
         className="mod-action"
@@ -421,11 +429,12 @@ function MusicTab({ onDone, onError }: { onDone: (text: string) => void; onError
           if (!file) return;
           setBusy(true);
           try {
+            if (!venues.length) throw new Error("Pick at least one place for the song to play.");
             const seconds = Math.round(await audioSeconds(file));
             if (seconds < SONG_REQUEST.minSeconds || seconds > SONG_REQUEST.maxSeconds) throw new Error(`Songs must be ${SONG_REQUEST.minSeconds} s to ${SONG_REQUEST.maxSeconds / 60} minutes long.`);
-            const song = await api.uploadSong(file, { title: title.trim(), artist: artist.trim(), seconds });
+            const song = await api.uploadSong(file, { title: title.trim(), artist: artist.trim(), seconds, venues });
             setSongs((list) => [song, ...(list ?? [])]);
-            onDone(`"${song.title}" is in the DJ crates.`);
+            onDone(`"${song.title}" is in the library.`);
             setFile(null);
             setTitle("");
             setArtist("");
@@ -437,7 +446,7 @@ function MusicTab({ onDone, onError }: { onDone: (text: string) => void; onError
           }
         }}
       >
-        <h3>Upload a song</h3>
+        <h3>Add a song</h3>
         <input
           type="file"
           accept="audio/*"
@@ -452,30 +461,83 @@ function MusicTab({ onDone, onError }: { onDone: (text: string) => void; onError
         />
         <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Song title" aria-label="Song title" maxLength={80} required />
         <input value={artist} onChange={(event) => setArtist(event.target.value)} placeholder="Artist" aria-label="Artist" maxLength={80} required />
-        <button className="primary" disabled={busy || !file}>{busy ? "Uploading…" : "Upload song"}</button>
+        <VenuePicker value={venues} onChange={setVenues} />
+        <button className="primary" disabled={busy || !file}>{busy ? "Uploading…" : "Add song"}</button>
       </form>
-      <ul className="mod-list compact" data-testid="song-list">
-        {songs?.length === 0 && <li className="muted">No songs yet.</li>}
-        {songs?.map((song) => (
-          <li key={song.id}>
-            <strong>{song.title}</strong> · {song.artist} · {Math.floor(song.seconds / 60)}:{String(song.seconds % 60).padStart(2, "0")}{" "}
-            <audio controls preload="none" src={api.songUrl(song.id)} />
-            <button
-              className="link"
-              onClick={async () => {
-                try {
-                  setSongs(await api.removeSong(song.id));
-                  onDone(`"${song.title}" was removed.`);
-                } catch (error) {
-                  onError(error);
-                }
-              }}
-            >
-              Remove
-            </button>
-          </li>
+      <div className="row" role="tablist" aria-label="Show songs for">
+        {(["all", ...SONG_VENUES] as const).map((id) => (
+          <button key={id} role="tab" aria-selected={filter === id} className={filter === id ? "secondary active" : "link"} onClick={() => setFilter(id)}>
+            {id === "all" ? `All (${songs?.length ?? 0})` : `${SONG_VENUE_LABEL[id]} (${songs?.filter((song) => song.venues.includes(id)).length ?? 0})`}
+          </button>
         ))}
+      </div>
+      <ul className="mod-list compact" data-testid="song-list">
+        {shown?.length === 0 && <li className="muted">No songs here yet.</li>}
+        {shown?.map((song) => <SongRow key={song.id} song={song} onSongs={setSongs} onDone={onDone} onError={onError} />)}
       </ul>
     </section>
+  );
+}
+
+function VenuePicker({ value, onChange }: { value: SongVenue[]; onChange: (venues: SongVenue[]) => void }) {
+  return (
+    <fieldset className="row venue-picker">
+      <legend className="small">Plays at</legend>
+      {SONG_VENUES.map((venue) => (
+        <label key={venue}>
+          <input type="checkbox" checked={value.includes(venue)} onChange={(event) => onChange(event.target.checked ? [...value, venue] : value.filter((entry) => entry !== venue))} />{" "}
+          {SONG_VENUE_LABEL[venue]}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+function SongRow({ song, onSongs, onDone, onError }: { song: ClubSong; onSongs: (songs: ClubSong[]) => void; onDone: (text: string) => void; onError: (error: unknown) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(song.title);
+  const [artist, setArtist] = useState(song.artist);
+  const [venues, setVenues] = useState(song.venues);
+  const act = async (work: () => Promise<ClubSong[]>, text: string) => {
+    try {
+      onSongs(await work());
+      onDone(text);
+      setEditing(false);
+    } catch (error) {
+      onError(error);
+    }
+  };
+  return (
+    <li data-testid="song-row">
+      {editing ? (
+        <form
+          className="mod-action"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void act(() => api.updateSong(song.id, { title: title.trim(), artist: artist.trim(), venues }), `"${title.trim()}" was updated.`);
+          }}
+        >
+          <input value={title} onChange={(event) => setTitle(event.target.value)} aria-label="Song title" maxLength={80} required />
+          <input value={artist} onChange={(event) => setArtist(event.target.value)} aria-label="Artist" maxLength={80} required />
+          <VenuePicker value={venues} onChange={setVenues} />
+          <div className="row">
+            <button className="primary" disabled={!venues.length}>Save</button>
+            <button type="button" className="link" onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <span>
+            <strong>{song.title}</strong> · {song.artist} · {Math.floor(song.seconds / 60)}:{String(song.seconds % 60).padStart(2, "0")} ·{" "}
+            <span className="muted small">{song.venues.map((venue) => SONG_VENUE_LABEL[venue]).join(", ")}</span>
+          </span>
+          <audio controls preload="none" src={api.songUrl(song.id)} />
+          <div className="row">
+            <button className="link" onClick={() => setEditing(true)}>Edit</button>
+            <button className="link" onClick={() => window.confirm(`Remove "${song.title}" from the library?`) && void act(() => api.removeSong(song.id), `"${song.title}" was removed.`)}>Remove</button>
+          </div>
+        </>
+      )}
+    </li>
   );
 }

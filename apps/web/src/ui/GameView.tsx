@@ -30,6 +30,7 @@ import { HomePower } from "./HomePower";
 import { FuelSheet } from "./FuelSheet";
 import { FootballHud, StreetFootballSheet } from "./StreetFootball";
 import { OwambeSheet, owambeTitle } from "./OwambeSheet";
+import { SongRotation } from "./SongRotation";
 import { DealershipSheet, MechanicSheet } from "./VehicleSheets";
 import { CheckpointPrompt, HoldUpPrompt, PoliceStationSheet, SecuritySheet } from "./PoliceSheets";
 import { GymSheet } from "./GymSheet";
@@ -1461,7 +1462,10 @@ export function GameView({
           }}
         />
       )}
-      {engine && homeId && partyOn && <ClubRadio clubId={homeId} volume={settings.muted ? 0 : settings.masterVolume} onPlaying={() => undefined} />}
+      {engine && homeId && partyOn && (
+        <SongRotation venue="party" label="HOUSE PARTY" volume={settings.muted ? 0 : settings.masterVolume} fallback={<ClubRadio clubId={homeId} volume={settings.muted ? 0 : settings.masterVolume} onPlaying={() => undefined} />} />
+      )}
+      {engine && hud?.owambe && owambe && <SongRotation venue="owambe" label={`${OWAMBE_STYLE[owambe.kind].emoji} OWAMBE MUSIC`} volume={settings.muted ? 0 : settings.masterVolume} />}
       {engine && owambeOpen && owambe && (
         <OwambeSheet engine={engine} party={owambe} seated={Boolean(hud?.owambe?.seated)} balance={economy?.balance ?? 0} onClose={() => setOwambeOpen(false)} onToast={toast} onRefresh={refresh} />
       )}

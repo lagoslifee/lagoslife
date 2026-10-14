@@ -60,7 +60,12 @@ export const SONG_REQUEST = {
   maxBytes: 12 * 1024 * 1024,
 } as const;
 
-export type ClubSong = { id: string; title: string; artist: string; seconds: number };
+/** Where a song can play: club DJs' request lists, owambe parties, and house parties. */
+export const SONG_VENUES = ["club", "owambe", "party"] as const;
+export type SongVenue = (typeof SONG_VENUES)[number];
+export const SONG_VENUE_LABEL: Record<SongVenue, string> = { club: "Clubs (requests)", owambe: "Owambe parties", party: "House parties" };
+
+export type ClubSong = { id: string; title: string; artist: string; seconds: number; venues: SongVenue[] };
 
 export type SongRequestView = { id: string; songId: string; title: string; artist: string; seconds: number; byName: string; mine: boolean; status: "pending" | "approved" };
 
@@ -74,8 +79,18 @@ export type ClubMusicState = {
 
 export const songRequestSchema = z.object({ songId: z.string().min(1).max(64) });
 export const songDecisionSchema = z.object({ requestId: z.string().min(1).max(64), approve: z.boolean() });
+const venuesField = z
+  .union([z.string(), z.array(z.string())])
+  .transform((value) => [...new Set((Array.isArray(value) ? value : value.split(",")).map((entry) => entry.trim()).filter(Boolean))])
+  .pipe(z.array(z.enum(SONG_VENUES)).min(1, "Pick at least one place for the song to play"));
 export const songUploadSchema = z.object({
   title: z.string().trim().min(1).max(80),
   artist: z.string().trim().min(1).max(80),
   seconds: z.coerce.number().int().min(SONG_REQUEST.minSeconds).max(SONG_REQUEST.maxSeconds),
+  venues: venuesField.default(["club"]),
+});
+export const songUpdateSchema = z.object({
+  title: z.string().trim().min(1).max(80),
+  artist: z.string().trim().min(1).max(80),
+  venues: venuesField,
 });

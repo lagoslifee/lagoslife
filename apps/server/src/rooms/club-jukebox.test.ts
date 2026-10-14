@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ClubJukebox } from "./club-jukebox.js";
 
 const CLUB = "club:eko-nights#1";
-const song = { id: "song-1", title: "Lagos Love", artist: "Test Artist", seconds: 60 };
+const song = { id: "song-1", title: "Lagos Love", artist: "Test Artist", seconds: 60, venues: ["club"] as ("club" | "owambe" | "party")[] };
 
 function setup(options: { guest?: string } = {}) {
   const seen = new Map<string, ClubMusicState>();

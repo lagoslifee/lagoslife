@@ -27,7 +27,8 @@ export async function getRole(userId: string, db: Db = pool): Promise<StaffRole 
 
 export async function requireStaff(userId: string, needed: StaffRole = "moderator") {
   const role = await getRole(userId);
-  if (!role || (needed === "admin" && role !== "admin")) throw new EconomyError("Not found", 404);
+  const allowed = role === "admin" || role === needed;
+  if (!allowed) throw new EconomyError("Not found", 404);
   return role;
 }
 
@@ -198,7 +199,7 @@ async function audit(
 async function requireAuthority(client: Db, actor: Actor, targetId: string) {
   if (actor.userId === targetId) throw new EconomyError("You cannot moderate your own account.", 403);
   const [actorRole, targetRole] = await Promise.all([getRole(actor.userId, client), getRole(targetId, client)]);
-  if (!actorRole) throw new EconomyError("Not found", 404);
+  if (actorRole !== "moderator" && actorRole !== "admin") throw new EconomyError("Not found", 404);
   if (targetRole === "admin" || (targetRole === "moderator" && actorRole !== "admin")) {
     throw new EconomyError("Only an admin can act on staff accounts, and admins cannot be moderated here.", 403);
   }

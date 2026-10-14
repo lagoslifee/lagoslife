@@ -5,7 +5,7 @@ import type { FloorFinishId, FoodParcel, FuelStationState, GeneratorId, HomeFini
 import type { ActiveGig, BettingStatus, DailyStatus, GigStatus, MarketStatus, Pick, RepairAction } from "@lagos-living/shared";
 import type { AccountSummary, ClaimAccount, LifeGoals } from "@lagos-living/shared";
 import type { DirectMessage, FriendsStatus, RankingBoard, RankingState, ReferralStatus } from "@lagos-living/shared";
-import type { BusinessListing, ClubSong, HustleStatus, OwambeKind, OwambeParty, StoryChapterId } from "@lagos-living/shared";
+import type { BusinessListing, ClubSong, HustleStatus, SongVenue, OwambeKind, OwambeParty, StoryChapterId } from "@lagos-living/shared";
 import { apiUrl, authHeaders } from "./auth-client";
 
 export type CatalogItem = { id: string; name: string; description: string; category: string; price: number; vendorId: string | null };
@@ -298,10 +298,12 @@ export const api = {
   hireSecurity: (plan: SecurityPlanId) =>
     post<{ replayed: boolean; balance: number; status: SecurityStatus }>("/api/security/hire", { plan, idempotencyKey: crypto.randomUUID() }),
   dismissSecurity: () => post<SecurityStatus>("/api/security/dismiss"),
-  songs: () => request<ClubSong[]>("/api/songs"),
+  songs: (venue: SongVenue = "club") => request<ClubSong[]>(`/api/songs?venue=${venue}`),
+  allSongs: () => request<ClubSong[]>("/api/admin/songs"),
+  updateSong: (songId: string, change: { title: string; artist: string; venues: SongVenue[] }) => post<ClubSong[]>(`/api/admin/songs/${encodeURIComponent(songId)}`, change),
   songUrl: (songId: string) => `${apiUrl}/api/songs/${encodeURIComponent(songId)}/audio`,
-  uploadSong: async (file: File, meta: { title: string; artist: string; seconds: number }) => {
-    const query = new URLSearchParams({ title: meta.title, artist: meta.artist, seconds: String(Math.round(meta.seconds)) });
+  uploadSong: async (file: File, meta: { title: string; artist: string; seconds: number; venues: SongVenue[] }) => {
+    const query = new URLSearchParams({ title: meta.title, artist: meta.artist, seconds: String(Math.round(meta.seconds)), venues: meta.venues.join(",") });
     let response: Response;
     try {
       response = await fetch(`${apiUrl}/api/admin/songs?${query}`, {

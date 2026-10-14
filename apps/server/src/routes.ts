@@ -6,6 +6,9 @@ import {
   listBusinessSchema,
   sellToBrokerSchema,
   songUploadSchema,
+  songUpdateSchema,
+  SONG_VENUES,
+  type StaffRole,
   directMessageSendSchema,
   friendRequestSchema,
   friendRespondSchema,
@@ -96,7 +99,7 @@ import { buyFuel, buyStation, fuelStations, setStationPrice } from "./fuel-servi
 import { currentOwambe, hostOwambe } from "./owambe-service.js";
 import { agePower, buyDiesel, buyGenerator, homePower, switchGenerator } from "./power-service.js";
 import { applyCleaner, collectParcel, dismissStaff, eatParcel, hireStaff, homeStaff, openParcels, orderDelivery, partyUntil, staffByHome, startParty, stopParty } from "./home-services-service.js";
-import { addSong, listSongs, removeSong, songAudio } from "./song-service.js";
+import { addSong, listSongs, removeSong, songAudio, updateSong } from "./song-service.js";
 import { cancelGig, completeGig, gigStatus, repairGig, startGigWork, takeGig } from "./gig-service.js";
 import { betFootball, betSpin, bettingStatus, claimDaily, dailyStatus, marketStatus, sprayMoney, trade, transferMoney } from "./finance-service.js";
 import { auth } from "./auth.js";
@@ -273,7 +276,7 @@ function requirePlayer(req: Request, res: Response, next: NextFunction) {
   });
 }
 
-function staffOnly(role: "moderator" | "admin") {
+function staffOnly(role: StaffRole) {
   return (req: Request, res: Response, next: NextFunction) => {
     requireStaff((req as AuthenticatedRequest).player.userId, role)
       .then(() => next())
@@ -904,7 +907,9 @@ export function configureRoutes(app: Express) {
     return setStaffRole(actorOf(req), body.userName, body.role, body.reason);
   }));
 
-  app.get("/api/songs", requirePlayer, guarded("Songs unavailable", () => listSongs()));
+  app.get("/api/songs", requirePlayer, guarded("Songs unavailable", (req) =>
+    listSongs(z.enum(SONG_VENUES).default("club").parse(req.query.venue))));
+  app.get("/api/admin/songs", requirePlayer, staffOnly("music"), guarded("Songs unavailable", () => listSongs()));
 
   /** Public by unguessable id, so a plain <audio> element can stream it from another origin. */
   app.get("/api/songs/:songId/audio", async (req, res) => {
@@ -933,7 +938,7 @@ export function configureRoutes(app: Express) {
   app.post(
     "/api/admin/songs",
     requirePlayer,
-    staffOnly("admin"),
+    staffOnly("music"),
     rateLimited,
     express.raw({ type: ["audio/*", "application/octet-stream"], limit: SONG_REQUEST.maxBytes }),
     guarded("Song could not be uploaded", (req) => {
@@ -943,7 +948,9 @@ export function configureRoutes(app: Express) {
     }),
   );
 
-  app.post("/api/admin/songs/:songId/remove", requirePlayer, staffOnly("admin"), rateLimited, guarded("Song could not be removed", (req) =>
+  app.post("/api/admin/songs/:songId", requirePlayer, staffOnly("music"), rateLimited, guarded("Song could not be updated", (req) =>
+    updateSong(String(req.params.songId), songUpdateSchema.parse(req.body))));
+  app.post("/api/admin/songs/:songId/remove", requirePlayer, staffOnly("music"), rateLimited, guarded("Song could not be removed", (req) =>
     removeSong(String(req.params.songId))));
 
   /** Local test harness: makes the signed-in account staff, recorded in the audit log as a console action. */
