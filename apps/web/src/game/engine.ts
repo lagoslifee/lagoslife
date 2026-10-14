@@ -186,6 +186,7 @@ import { DroneCamera, droneMarker, droneSite } from "./drone";
 import { buildInterior, interiorModels, placementCentre, type ClubSeat, type HomeRest, type InteriorKind, type InteriorSpot, type InteriorView, type Placement } from "./interior";
 import { createMaterials, type Materials, type Quality } from "./materials";
 import { SignAtlas } from "./sign-atlas";
+import { capTextureSize, TOUCH_DEVICE } from "./device-limits";
 import { RoadNavigator, StreetTracker, type WorldData, type WorldTile } from "./street-index";
 import { AmbientLife, PERSON_RADIUS, trafficModels, type StaticCar } from "./traffic";
 import { buildWorld, type BuiltWorld } from "./world-builder";
@@ -796,6 +797,7 @@ export class GameEngine {
       throw new Error("WebGL context unavailable");
     }
     this.engine = engine;
+    capTextureSize(engine);
     const dpr = window.devicePixelRatio || 1;
     this.baseScaling = this.quality === "low" ? 1.2 : this.quality === "medium" ? Math.max(1, dpr / 1.25) / dpr : 1 / Math.min(dpr, 1.5);
     engine.setHardwareScalingLevel(this.baseScaling);
@@ -855,7 +857,7 @@ export class GameEngine {
     }
 
     this.materials = createMaterials(scene, this.quality);
-    this.atlas = new SignAtlas(scene, this.quality === "low" ? 0.5 : 1);
+    this.atlas = new SignAtlas(scene, this.quality === "low" || TOUCH_DEVICE ? 0.5 : 1);
     this.staff = new ServiceStaff(scene, () => this.avatars, (text) => this.callbacks.notice({ tone: "success", text }), (x, z) => (this.interior ? 0.02 : this.world.groundHeight(x, z)));
     MeshBuilderBatch.keepCpuCopies = this.quality !== "low";
     this.callbacks.loading("Loading Lagos streets…", 0.25);
