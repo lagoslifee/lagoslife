@@ -958,6 +958,7 @@ export class GameEngine {
         (x, y, z) => this.project(x, y, z),
         () => undefined,
         async () => false,
+        (avatar, index) => equipAgbero(this.scene, avatar, index),
       );
     }
 
@@ -969,7 +970,6 @@ export class GameEngine {
     this.snapCamera();
 
     this.callbacks.loading("Connecting to the city…", 0.92);
-        (avatar, index) => equipAgbero(this.scene, avatar, index),
     void this.net.connect();
     scene.onBeforeRenderObservable.add(() => {
       const t0 = performance.now();
