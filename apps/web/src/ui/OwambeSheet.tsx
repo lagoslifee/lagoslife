@@ -1,5 +1,5 @@
-import { OWAMBE, OWAMBE_KINDS, OWAMBE_MENU, OWAMBE_STYLE, type Notice, type OwambeKind, type OwambeParty } from "@lagos-living/shared";
-import { useState } from "react";
+import { OWAMBE, OWAMBE_KINDS, OWAMBE_MENU, OWAMBE_SPRAY_AMOUNTS, OWAMBE_SPRAY_REACH, OWAMBE_STYLE, type Notice, type OwambeKind, type OwambeParty } from "@lagos-living/shared";
+import { useEffect, useState } from "react";
 import { api, naira } from "../api";
 import type { GameEngine } from "../game/engine";
 
@@ -11,7 +11,10 @@ type Props = {
   onClose: () => void;
   onToast: (notice: Notice) => void;
   onRefresh: () => Promise<void>;
+  initialTab?: Tab | undefined;
 };
+
+type Tab = "food" | "spray" | "host";
 
 export const owambeTitle = (party: OwambeParty) => OWAMBE_STYLE[party.kind].banner(party.celebrant);
 
@@ -19,8 +22,14 @@ export const owambeTitle = (party: OwambeParty) => OWAMBE_STYLE[party.kind].bann
  * At the owambe: the waiter takes your order at the table (the family is paying), and the MC's desk books the ground
  * for a party of your own.
  */
-export function OwambeSheet({ engine, party, seated, balance, onClose, onToast, onRefresh }: Props) {
-  const [tab, setTab] = useState<"food" | "host">(seated ? "food" : "host");
+export function OwambeSheet({ engine, party, seated, balance, onClose, onToast, onRefresh, initialTab }: Props) {
+  const [tab, setTab] = useState<Tab>(initialTab ?? (seated ? "food" : "host"));
+  const [reach, setReach] = useState(() => engine.owambeSprayDistance());
+  useEffect(() => {
+    const timer = window.setInterval(() => setReach(engine.owambeSprayDistance()), 500);
+    return () => window.clearInterval(timer);
+  }, [engine]);
+  const close = reach !== null && reach <= OWAMBE_SPRAY_REACH;
   const [kind, setKind] = useState<OwambeKind>("birthday");
   const [celebrant, setCelebrant] = useState("");
   const [busy, setBusy] = useState(false);
@@ -55,8 +64,34 @@ export function OwambeSheet({ engine, party, seated, balance, onClose, onToast, 
         </header>
         <nav className="fuel-tabs">
           <button className={tab === "food" ? "active" : ""} onClick={() => setTab("food")}>Food</button>
+          <button className={tab === "spray" ? "active" : ""} onClick={() => setTab("spray")} data-testid="owambe-spray-tab">💸 Spray</button>
           <button className={tab === "host" ? "active" : ""} onClick={() => setTab("host")}>Host your own</button>
         </nav>
+        {tab === "spray" && (
+          <div className="owambe-host">
+            <p>Dance up to the high table and spray {party.celebrant} with crisp notes. {party.host ? `It all goes to ${party.host}, who's hosting.` : "The family thanks you."}</p>
+            <div className="owambe-menu">
+              {OWAMBE_SPRAY_AMOUNTS.map((amount) => (
+                <button
+                  key={amount}
+                  disabled={!close || balance < amount}
+                  onClick={() => {
+                    engine.owambeSpray(amount);
+                    window.setTimeout(() => void onRefresh(), 1_200);
+                  }}
+                  data-testid={`owambe-spray-${amount}`}
+                >
+                  <span className="owambe-dish-emoji">💸</span>
+                  <strong>{naira(amount)}</strong>
+                  <small>{amount >= 200_000 ? "Big man spray" : amount >= 50_000 ? "Make it rain" : "Wave of notes"}</small>
+                </button>
+              ))}
+            </div>
+            <p className="muted small">
+              {close ? "You're close enough to the celebrants. Keep spraying!" : reach === null ? "Step out onto the ground first." : `Walk ${Math.ceil(reach - OWAMBE_SPRAY_REACH)} m closer to the high table to spray.`}
+            </p>
+          </div>
+        )}
         {tab === "food" &&
           (seated ? (
             <>

@@ -142,6 +142,7 @@ export function GameView({
   const footballRef = useRef<FootballState | null>(null);
   const [owambe, setOwambe] = useState<OwambeParty | null>(null);
   const [owambeOpen, setOwambeOpen] = useState(false);
+  const [owambeTab, setOwambeTab] = useState<"spray" | undefined>(undefined);
   const [plots, setPlots] = useState<PlotState[]>([]);
   const [workout, setWorkout] = useState<{ exercise: ExerciseId; endsAt: number; kg: number | null } | null>(null);
   const [parcels, setParcels] = useState<FoodParcel[]>([]);
@@ -351,7 +352,7 @@ export function GameView({
         },
         notice: (notice) => {
           toast(notice);
-          if (/Fare paid|stepped off|Bike unlocked|Bike docked|Ade Recovery/.test(notice.text)) void refresh();
+          if (/Fare paid|stepped off|Bike unlocked|Bike docked|Ade Recovery|sprayed|wheels-up|set you down/.test(notice.text)) void refresh();
         },
         subtitle: (text, kind = "speech") => {
           const shown = { text, kind };
@@ -1174,6 +1175,16 @@ export function GameView({
               ) : (
                 <button className="primary" onClick={() => engine.owambeSit() || toast({ tone: "info", text: "Every chair is taken. Dance a little; a seat will free up." })} data-testid="owambe-sit">🪑 Find a seat</button>
               )}
+              <button
+                className="secondary"
+                onClick={() => {
+                  setOwambeTab("spray");
+                  setOwambeOpen(true);
+                }}
+                data-testid="owambe-spray"
+              >
+                💸 Spray
+              </button>
               <button className="secondary" onClick={() => setOwambeOpen(true)}>{OWAMBE_STYLE[owambe.kind].emoji} {owambeTitle(owambe)}</button>
             </div>
           )}
@@ -1467,7 +1478,14 @@ export function GameView({
       )}
       {engine && hud?.owambe && owambe && <SongRotation venue="owambe" label={`${OWAMBE_STYLE[owambe.kind].emoji} OWAMBE MUSIC`} volume={settings.muted ? 0 : settings.masterVolume} />}
       {engine && owambeOpen && owambe && (
-        <OwambeSheet engine={engine} party={owambe} seated={Boolean(hud?.owambe?.seated)} balance={economy?.balance ?? 0} onClose={() => setOwambeOpen(false)} onToast={toast} onRefresh={refresh} />
+        <OwambeSheet engine={engine} party={owambe} seated={Boolean(hud?.owambe?.seated)} balance={economy?.balance ?? 0} initialTab={owambeTab}
+          onClose={() => {
+            setOwambeOpen(false);
+            setOwambeTab(undefined);
+          }}
+          onToast={toast}
+          onRefresh={refresh}
+        />
       )}
       {engine && footballOpen && football && hud?.pitch?.id === football.pitchId && (
         <StreetFootballSheet engine={engine} state={football} selfId={engine.sessionId} pitchName={hud.pitch.name} balance={economy?.balance ?? 0} onClose={() => setFootballOpen(false)} />
