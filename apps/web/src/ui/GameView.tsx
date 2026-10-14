@@ -1,10 +1,11 @@
 import { CLUBS, OFFENCES, getPlace, type ActiveGig, ROBBERY, defaultSettings, type CheckpointStop, type HoldUp, type ClubTable, districtAt, propertyPlace, type CharacterAppearance, type ChatMessage, type Notice, type SafetyStatus, type Place, type PlayerSettings, type TravelInterior, type TripState, type TicketState, type TravelPrompt, type AgberoEncounter, type ClubMusicState, type FootballState, type OwambeParty, OWAMBE_MENU, OWAMBE_STYLE, type RideState, type SelfState, type TowState, type Vec2, TOW_STAGE_LABEL, EXERCISES, GYM, type ExerciseId, type FoodParcel, SEATED_MEAL_ENERGY, placeById, venueOf, venueRoom } from "@lagos-living/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, naira, type EconomyState, type MyVehicle, type PlotState, type PropertyListing } from "../api";
-import { noteFps, report, setReportedQuality } from "../diagnostics";
+import { noteFps, report, setReportedQuality, takeCrashFlag } from "../diagnostics";
 import { defaultBindings, keyLabel, type Bindings } from "../game/controller";
 import { describeTurn, turnArrow } from "../game/navigation";
 import { EngineDisposedError, GameEngine, VEHICLE_VIEW_LABEL, type HudState, type Interaction } from "../game/engine";
+import { TOUCH_DEVICE } from "../game/device-limits";
 import type { Quality } from "../game/materials";
 import { FullMap, Minimap } from "./MapView";
 import { currentObjective, housingPath, type HousingPath } from "./objectives";
@@ -48,6 +49,8 @@ function loadBindings(): Bindings {
   }
 }
 
+let crashStepDown: { from: Quality; to: Quality } | null = null;
+
 /**
  * The player's chosen quality, unless this browser session already had to step down after running out of graphics
  * memory. The step-down lasts only for the session so a one-off crash never pins a tablet to low for good.
@@ -55,11 +58,17 @@ function loadBindings(): Bindings {
 function loadQuality(): Quality {
   const valid = (value: string | null): value is Quality => value === "low" || value === "medium" || value === "high";
   const session = sessionStorage.getItem("lagos-quality-session");
-  if (valid(session)) return session;
   const stored = localStorage.getItem("lagos-quality");
-  if (valid(stored)) return stored;
-  // Every device starts on high; a one-time tip points phones and tablets at medium if it runs slowly.
-  return "high";
+  // High's sharper canvas and bloom buffers are what tip an iPad or phone over Safari's memory limit into a crash loop.
+  const chosen: Quality = valid(session) ? session : valid(stored) ? stored : TOUCH_DEVICE ? "medium" : "high";
+  // iOS reloads a tab it killed for memory with no warning to the page, so the next load steps down instead of looping.
+  if (!crashStepDown && takeCrashFlag() && TOUCH_DEVICE && chosen !== "low") {
+    const next: Quality = chosen === "high" ? "medium" : "low";
+    crashStepDown = { from: chosen, to: next };
+    sessionStorage.setItem("lagos-quality-session", next);
+    return next;
+  }
+  return chosen;
 }
 
 /** Netlify adds its own badge in the bottom-right corner of netlify.app sites. */
@@ -167,7 +176,7 @@ export function GameView({
   const lostTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const restartQueued = useRef(false);
   const lostWait = useRef<(() => void) | undefined>(undefined);
-  const lowered = useRef<{ from: Quality; to: Quality } | null>(null);
+  const lowered = useRef<{ from: Quality; to: Quality } | null>(crashStepDown);
   const lastRestart = useRef(0);
   /**
    * Rebuilds the 3D view in place (same session, same server connection afterwards). The first rebuild keeps the

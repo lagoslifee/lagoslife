@@ -61,6 +61,22 @@ export function noteFps(fps: number) {
   }
 }
 
+const CRASHED_KEY = "lagos-crashed";
+
+/**
+ * Whether a page in this tab was killed while showing (iOS does this to a tab that uses too much memory), asked once.
+ * Kept in session storage because sign-in can reload the page before the game asks.
+ */
+export function takeCrashFlag() {
+  try {
+    const crashed = sessionStorage.getItem(CRASHED_KEY) === "1";
+    sessionStorage.removeItem(CRASHED_KEY);
+    return crashed;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Global error hooks plus a heartbeat marker. If the previous page stopped heartbeating without a clean `pagehide`,
  * the tab was probably killed (out of memory or a browser crash) and that is reported once. Phones also discard
@@ -75,6 +91,7 @@ export function installDiagnostics() {
   try {
     const previous = JSON.parse(localStorage.getItem(RUNNING_KEY) ?? "null") as { at: number; clean: boolean } | null;
     if (previous && !previous.clean && Date.now() - previous.at < 120_000) {
+      sessionStorage.setItem(CRASHED_KEY, "1");
       report("unclean-exit", "Previous session ended without closing", { detail: { secondsAgo: Math.round((Date.now() - previous.at) / 1_000) } });
     }
     const beat = (clean: boolean) => localStorage.setItem(RUNNING_KEY, JSON.stringify({ at: Date.now(), clean }));
