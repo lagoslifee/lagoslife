@@ -119,7 +119,7 @@ export class MultiplayerConnection {
   /** After a screen lock, app switch or dropped signal, rejoin at once instead of waiting for the retry timer. */
   private readonly resume = () => {
     // A frozen background tab heard nothing; give the socket a moment to deliver what queued up before judging it dead.
-    if (!document.hidden && this.room) this.lastHeard = Math.max(this.lastHeard, Date.now() - 2_500);
+    if (!document.hidden && this.room) this.lastHeard = Math.max(this.lastHeard, Date.now() - 3_500);
     if (this.closed || this.room || this.connecting || document.hidden || !navigator.onLine) return;
     clearTimeout(this.retry);
     void this.connect();
