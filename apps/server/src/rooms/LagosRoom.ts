@@ -1477,9 +1477,14 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
 
   private handleExitProperty(client: Client) {
     const player = this.players.get(client.sessionId);
-    if (!player || player.location === "street") return;
+    if (!player) return;
+    // The client still thinks it's indoors (a dropped reply, a reconnect): put it back in step instead of ignoring it.
+    if (player.location === "street") return this.sendSelf(client, player, "exited");
     const blocked = this.travelExitBlock(player);
-    if (blocked) return this.notify(client, { tone: "info", text: blocked });
+    if (blocked) {
+      client.send("exitRefused");
+      return this.notify(client, { tone: "info", text: blocked });
+    }
     const wasTravel = travelInteriorOf(player.location) !== null;
     player.location = "street";
     player.previewOnly = false;

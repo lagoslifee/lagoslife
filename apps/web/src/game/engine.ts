@@ -739,6 +739,10 @@ export class GameEngine {
         else this.callbacks.notice({ tone: "info", text: "Someone just took that chair. Try Find a seat again." });
       },
       owambeSpray: (spray) => this.onOwambeSpray(spray),
+      exitRefused: () => {
+        this.exitAttempt += 1;
+        this.transitionAt = 0;
+      },
       owambeServe: (served) => {
         this.owambeView?.serve(served);
         if (served.sessionId === this.net.sessionId) this.callbacks.owambeServed?.(served.dish);
@@ -4389,9 +4393,28 @@ export class GameEngine {
     this.net.send("estateViewing", { propertyId });
   }
 
+  private exitAttempt = 0;
+
+  /** Asks to step outside; if the server never answers (a stalled connection), asks again, then rejoins. */
   exitProperty() {
     if (!this.beginTransition()) return;
+    const attempt = ++this.exitAttempt;
+    const stillInside = () => attempt === this.exitAttempt && !this.disposed && Boolean(this.interior) && this.self?.location !== "street";
+    if (!this.net.sessionId) {
+      this.callbacks.notice({ tone: "info", text: "Reconnecting… you'll be outside as soon as you're back online." });
+      this.net.rejoin();
+      return;
+    }
     this.net.send("exitProperty");
+    window.setTimeout(() => {
+      if (!stillInside()) return;
+      this.net.send("exitProperty");
+      window.setTimeout(() => {
+        if (!stillInside()) return;
+        this.callbacks.notice({ tone: "info", text: "The connection stalled, so we're reconnecting you. You'll be outside in a moment." });
+        this.net.rejoin();
+      }, 4_000);
+    }, 3_000);
   }
 
   /** One location change at a time: ignores repeat taps and hides the swap behind a short fade. */
@@ -5057,6 +5080,10 @@ export class GameEngine {
       emote: (emote: "wave" | "dance" | "sit" | "none") => this.playEmote(emote),
       fastTravel: (placeId: string) => this.fastTravel({ placeId }, placeId),
       enterProperty: (propertyId: string, mode: "enter" | "preview") => this.enterProperty(propertyId, mode),
+      exitProperty: () => this.exitProperty(),
+      stallConnection: () => {
+        this.net.blackhole = true;
+      },
       homePower: (source: "nepa" | "generator" | "none" | null) => this.setHomePower(source),
       estateViewing: (propertyId: string) => this.estateViewing(propertyId, propertyId),
       room: () => (this.interior && !this.travelView ? (this.interior as InteriorView).bounds : null),

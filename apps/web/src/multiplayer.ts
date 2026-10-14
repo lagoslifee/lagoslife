@@ -79,6 +79,7 @@ export type MultiplayerHandlers = {
   owambe: (party: OwambeParty) => void;
   owambeServe: (served: { sessionId: string; table: number; seat: number; dish: string }) => void;
   owambeSeated: (result: { table: number; seat: number; ok: boolean }) => void;
+  exitRefused: () => void;
   owambeSpray: (spray: { sessionId: string; name: string; amount: number; x: number; z: number }) => void;
   /** The owner rearranged the home this player is standing in. */
   interior: () => void;
@@ -191,6 +192,7 @@ export class MultiplayerConnection {
       room.onMessage("agbero", (encounter: AgberoEncounter | null) => this.handlers.agbero(encounter && typeof encounter.id === "string" ? encounter : null));
       room.onMessage("clubMusic", (state: ClubMusicState) => typeof state?.club === "string" && Array.isArray(state.queue) && this.handlers.clubMusic(state));
       room.onMessage("owambe", (party: OwambeParty) => typeof party?.celebrant === "string" && this.handlers.owambe(party));
+      room.onMessage("exitRefused", () => this.handlers.exitRefused());
       room.onMessage("owambeSeated", (result: { table: number; seat: number; ok: boolean }) => Number.isInteger(result?.table) && this.handlers.owambeSeated(result));
       room.onMessage("owambeSpray", (spray: { sessionId: string; name: string; amount: number; x: number; z: number }) => Number.isFinite(spray?.amount) && this.handlers.owambeSpray(spray));
       room.onMessage("owambeServe", (served: { sessionId: string; table: number; seat: number; dish: string }) => typeof served?.sessionId === "string" && Number.isInteger(served.table) && this.handlers.owambeServe(served));
@@ -312,7 +314,27 @@ export class MultiplayerConnection {
       | "wave",
     payload?: unknown,
   ) {
+    if (this.blackhole) return;
     this.room?.send(type, payload);
+  }
+
+  /** Test hook: swallow outgoing messages the way a dead phone socket does, until the room is rejoined. */
+  blackhole = false;
+
+  /**
+   * A phone's socket can look open long after the network under it died, so messages vanish without an error. Drops
+   * this room and joins again at once; the server puts a rejoining resident back on the street.
+   */
+  rejoin() {
+    const room = this.room;
+    if (this.closed || this.connecting || !room) return;
+    this.room = undefined;
+    this.blackhole = false;
+    clearTimeout(this.retry);
+    room.removeAllListeners();
+    void room.leave(false).catch(() => undefined);
+    report("disconnect", "Rejoined a stalled room", { detail: { online: navigator.onLine } });
+    void this.connect();
   }
 
   async disconnect() {
