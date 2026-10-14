@@ -548,6 +548,7 @@ export class GameEngine {
   private updateMs = 0;
   private readonly callbacks: EngineCallbacks;
   private frameTimes: number[] = [];
+  private shadowsShown = true;
   private readonly adaptive = new AdaptiveQuality();
   private frameGap = 0;
   private lastUpdateAt = 0;
@@ -4230,7 +4231,13 @@ export class GameEngine {
     if (!this.engine || !this.scene) return;
     const step = qualityStep(level);
     this.engine.setHardwareScalingLevel(Math.max(this.baseScaling, Math.min(MAX_AUTO_SCALING, this.baseScaling * step.scaling)));
-    if (this.shadows) this.sun.shadowEnabled = step.shadows;
+    // Toggling shadowEnabled changes every material's shader defines and recompiles the whole city mid-game;
+    // fading the shadow out and freezing its map costs nothing.
+    if (this.shadows && this.shadowsShown !== step.shadows) {
+      this.shadowsShown = step.shadows;
+      this.shadows.darkness = step.shadows ? 0 : 1;
+      this.shadows.getShadowMap()!.refreshRate = step.shadows ? 1 : 0;
+    }
     this.camera.maxZ = step.viewDistance;
     this.scene.fogDensity = step.fogDensity;
   }
@@ -4976,7 +4983,7 @@ export class GameEngine {
         frames: this.engine.frameId,
         signs: this.atlas.usage(),
       }),
-      quality: () => ({ step: this.adaptive.level, scaling: this.engine.getHardwareScalingLevel(), shadows: this.sun.shadowEnabled, viewDistance: this.camera.maxZ, fogDensity: this.scene.fogDensity }),
+      quality: () => ({ step: this.adaptive.level, scaling: this.engine.getHardwareScalingLevel(), shadows: Boolean(this.shadows && this.shadowsShown), viewDistance: this.camera.maxZ, fogDensity: this.scene.fogDensity }),
       meshesNamed: (prefix: string) =>
         this.scene.meshes
           .filter((mesh) => mesh.name.startsWith(prefix))

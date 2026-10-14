@@ -1,6 +1,6 @@
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
-import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
@@ -26,7 +26,7 @@ type Crew = {
   truck: VehicleView | null;
   stopped: VehicleView | null;
   lights: Mesh[];
-  flash: PointLight | null;
+  flash: Mesh | null;
   scan: { beam: Mesh; from: Vec2; to: Vec2; y: number } | null;
   torches: Mesh[];
   /** One boom per direction; together they close the whole road. `way` 1 is traffic along the checkpoint's yaw. */
@@ -62,6 +62,7 @@ export class StreetCrews {
   private readonly cone: StandardMaterial;
   private readonly red: StandardMaterial;
   private readonly blue: StandardMaterial;
+  private readonly glow: StandardMaterial;
   private readonly signMaterial: StandardMaterial;
   private readonly white: StandardMaterial;
   private readonly drum: StandardMaterial;
@@ -90,6 +91,12 @@ export class StreetCrews {
     this.cone = flat("traffic cone", "#ff6a13", 0.25);
     this.red = flat("light bar red", "#ff2a2a", 1);
     this.blue = flat("light bar blue", "#2a6bff", 1);
+    this.glow = new StandardMaterial("checkpoint glow", scene);
+    this.glow.disableLighting = true;
+    this.glow.emissiveColor = this.red.diffuseColor.clone();
+    this.glow.alpha = 0.16;
+    this.glow.alphaMode = Constants.ALPHA_ADD;
+    this.glow.backFaceCulling = false;
     const texture = new DynamicTexture("checkpoint sign", { width: 512, height: 256 }, scene, true);
     const context = texture.getContext() as CanvasRenderingContext2D;
     context.fillStyle = "#14213d";
@@ -214,9 +221,13 @@ export class StreetCrews {
       word.position.set(side * (truck.model.width / 2 + 0.02), 0.95, 0.1);
       word.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
     }
-    const flash = new PointLight(`checkpoint flash ${site.id}`, new Vector3(tx, y(tx, tz) + 2.4, tz), this.scene);
-    flash.range = 14;
-    flash.intensity = 1.1;
+    // A self-lit wash on the road rather than a real light: adding a scene light recompiles every material in the city.
+    const flash = MeshBuilder.CreateDisc(`checkpoint flash ${site.id}`, { radius: 7, tessellation: 24 }, this.scene);
+    flash.material = this.glow;
+    flash.rotation.x = Math.PI / 2;
+    flash.position.set(tx, y(tx, tz) + 0.06, tz);
+    flash.isPickable = false;
+    flash.parent = root;
     crew.flash = flash;
 
     // Striped drums down the centre line with a STOP plank across the middle pair.
@@ -343,10 +354,10 @@ export class StreetCrews {
       }
     }
     const flash = Math.floor(this.time * 3) % 2 === 0;
+    this.glow.emissiveColor.copyFrom(flash ? this.red.diffuseColor : this.blue.diffuseColor);
     for (const crew of this.crews.values()) {
       crew.lights[0]?.setEnabled(flash);
       crew.lights[1]?.setEnabled(!flash);
-      if (crew.flash) crew.flash.diffuse.copyFrom(flash ? this.red.diffuseColor : this.blue.diffuseColor);
       crew.truck?.track(dt);
       if (crew.scan) {
         const f = 0.5 - 0.5 * Math.cos(this.time * 1.6);
