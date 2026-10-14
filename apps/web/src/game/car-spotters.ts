@@ -12,7 +12,7 @@ export type SpottedCar = { id: string; x: number; z: number; speed: number; mode
 
 type Phase = "admire" | "photo" | "ask" | "react" | "scramble" | "leave";
 type Spotter = { avatar: Avatar; at: Vec2; phase: Phase; until: number; tag: HTMLDivElement; away: Vec2; target: Note | null; pause: number };
-type Note = { mesh: InstancedMesh; x: number; y: number; z: number; vx: number; vy: number; vz: number; spin: number; sway: number; floor: number; landed: boolean; claimed: boolean };
+type Note = { mesh: InstancedMesh; x: number; y: number; z: number; vx: number; vy: number; vz: number; spin: number; sway: number; floor: number; landed: boolean; claimed: boolean; age: number };
 
 const COOLDOWN_MS = 90_000;
 const THANKS = ["Boss! God bless you 🙏", "E choke! 💸💸", "Chairman! We hail you 👑", "Odogwu! Thank you sir 🙌", "Omo, na you be the main man 🔥"];
@@ -58,6 +58,8 @@ export class CarSpotters {
     private readonly onAnswer: (text: string) => void,
     /** Pays for a spray on the server; resolves false if it was refused (e.g. not enough money). */
     private readonly onSpray: (amount: number) => Promise<boolean>,
+    /** Work clothes for this crowd (the agbero boys wear their union tabards). */
+    private readonly dress: ((avatar: Avatar, index: number) => void) | null = null,
   ) {}
 
   update(dt: number, now: number, car: SpottedCar | null, player: Vec2, outdoors: boolean) {
@@ -91,7 +93,8 @@ export class CarSpotters {
     const spot = this.findSpot(car, near, far);
     if (!spot) return null;
     const look: CharacterAppearance = appearanceFor(900 + Math.floor(Math.random() * 400));
-    const avatar = this.avatars.create(`car spotter ${serial++}`, look);
+    const avatar = this.avatars.create(`car spotter ${serial++}`, this.dress ? { ...look, body: "male" } : look);
+    this.dress?.(avatar, serial);
     avatar.root.position.set(spot[0], this.ground(spot[0], spot[1]), spot[1]);
     avatar.root.rotation.y = Math.atan2(car.x - spot[0], car.z - spot[1]);
     const tag = document.createElement("div");
@@ -270,6 +273,7 @@ export class CarSpotters {
         floor: 0,
         landed: false,
         claimed: false,
+        age: 0,
       };
       note.floor = this.ground(note.x + note.vx * 1.4, note.z + note.vz * 1.4) + 0.012;
       this.notes.push(note);
@@ -284,6 +288,13 @@ export class CarSpotters {
   }
 
   private stepNotes(dt: number) {
+    // Notes nobody picks up (the celebrants' family gathers them off-screen) fade out rather than piling up.
+    for (const note of this.notes) note.age += dt;
+    const stale = this.notes.filter((note) => note.landed && !note.claimed && note.age > 25);
+    if (stale.length) {
+      for (const note of stale) note.mesh.dispose();
+      this.notes = this.notes.filter((note) => !stale.includes(note));
+    }
     for (const note of this.notes) {
       if (note.landed) continue;
       note.sway += dt * 5;

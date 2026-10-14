@@ -58,7 +58,7 @@ function staffLook(seed: number, dubai: boolean, role: "agent" | "officer" | "wa
 /** Club waitresses: a fitted red dress and braids in Lagos, wine lace and long hair in Dubai. */
 export function clubWaitress(seed: number, dubai: boolean): CharacterAppearance {
   const base = staffLook(seed, dubai, "hostess");
-  return { ...base, body: "female", hairstyle: dubai ? "long" : "braids", outfit: dubai ? "lace-wine" : "corporate-red", accessory: "none" };
+  return { ...base, body: "female", hairstyle: dubai ? "long" : "braids", outfit: "office-skirt", accessory: "none" };
 }
 
 /** Who stands behind each counter of a travel interior, as world points with the way they face. */
@@ -238,7 +238,7 @@ export class ServiceStaff {
    * A runner walks from `from` to the player carrying `prop`, serves it, and goes back. A built tray is carried flat
    * on the palm and reached out at the end; `route` threads the walk between furniture.
    */
-  deliver(from: Vec2, look: CharacterAppearance, prop: StaffProp | TransformNode, caption: string, onArrive?: () => void, route: Vec2[] = []) {
+  deliver(from: Vec2, look: CharacterAppearance, prop: StaffProp | TransformNode, caption: string, onArrive?: () => void, route: Vec2[] = [], dress?: (avatar: Avatar) => void) {
     const factory = this.avatars();
     if (!factory) {
       if (typeof prop !== "string") prop.dispose();
@@ -247,6 +247,7 @@ export class ServiceStaff {
       return;
     }
     const avatar = factory.create(`runner ${this.runners.length} ${Date.now()}`, look);
+    dress?.(avatar);
     avatar.root.position.set(from[0], this.ground(from[0], from[1]), from[1]);
     const inHand = typeof prop !== "string";
     const node = typeof prop === "string" ? this.buildProp(prop) : prop;

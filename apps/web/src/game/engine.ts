@@ -173,6 +173,7 @@ import { BikeStationsView } from "./bike-stations";
 import { FuelStationsView } from "./fuel-stations";
 import { StreetCagesView } from "./street-cage";
 import { OwambeView } from "./owambe";
+import { equipAgbero, equipWaiter } from "./costume-kit";
 import { defaultBindings, frameStep, InputState, LocomotionController, MAX_FRAME_DT, SUBSTEP_DT, type Bindings, type MoveMode } from "./controller";
 import { DanfoFactory, type DanfoView } from "./danfo";
 import { MeshBuilderBatch } from "./geometry";
@@ -968,6 +969,7 @@ export class GameEngine {
     this.snapCamera();
 
     this.callbacks.loading("Connecting to the city…", 0.92);
+        (avatar, index) => equipAgbero(this.scene, avatar, index),
     void this.net.connect();
     scene.onBeforeRenderObservable.add(() => {
       const t0 = performance.now();
@@ -3128,7 +3130,8 @@ export class GameEngine {
     const free = spots.filter(([x, z]) => walkable(x, z));
     const chosen = encounter.onFoot ? (free.length ? free : [spots[0]!]) : [free[0] ?? spots[1]!];
     const boys = chosen.map((at, index) => {
-      const avatar = this.avatars!.create(`agbero ${index}`, { ...appearanceFor(1_337 + index * 211), outfit: index === 1 ? "denim-street" : "athleisure", accessory: index === 2 ? "beard" : "cap" });
+      const avatar = this.avatars!.create(`agbero ${index}`, { ...appearanceFor(1_337 + index * 211), body: "male", outfit: index === 1 ? "denim-street" : "athleisure", accessory: index === 2 ? "beard" : "none" });
+      equipAgbero(this.scene, avatar, index + Math.floor(px));
       avatar.root.position.set(at[0], this.world.groundHeight(at[0], at[1]), at[1]);
       return { avatar, at };
     });
@@ -3378,11 +3381,11 @@ export class GameEngine {
       this.staff.deliver([from[0] + 1.0, from[1]], clubWaitress(seed, club.id === TRAVEL_PLACES.club), tray, `Your ${itemName} is here. ${food ? "Tap Eat for a bite." : "Tap Sip to drink it."}`, () => {
         if (this.club !== club) return;
         this.holdItem(itemId, itemName, food);
-      });
+      }, [], (avatar) => equipWaiter(this.scene, avatar));
       return;
     }
     if (this.club) return this.handOver("bar", "drink", `The bartender hands you your ${itemName}.`);
-    this.staff.deliver(from, staffLook(80 + itemName.length, dubai, kind === "hotel" ? "waiter" : "hostess"), drink ? "drink" : "tray", caption);
+    this.staff.deliver(from, staffLook(80 + itemName.length, dubai, kind === "hotel" ? "waiter" : "hostess"), drink ? "drink" : "tray", caption, undefined, [], (avatar) => equipWaiter(this.scene, avatar));
   }
 
   private holdItem(itemId: string, name: string, food: boolean) {

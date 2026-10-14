@@ -780,6 +780,10 @@ export class Avatar {
     node.rotation.set(0, yaw, -this.heldLift * 0.6);
   }
 
+  get female() {
+    return this.current.body === "female";
+  }
+
   /** Carries a prop (vest, tray, rifle) with the body: it shows and hides with the avatar and survives body changes. */
   attachProp(node: TransformNode) {
     this.props.push(node);
