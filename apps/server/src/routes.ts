@@ -42,6 +42,7 @@ import {
   hireStaffSchema,
   orderDeliverySchema,
   spraySchema,
+  aircraftPurchaseSchema,
   tenancyActionSchema,
   homeActionSchema,
   inviteGuestSchema,
@@ -91,6 +92,7 @@ import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import cors from "cors";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import { borrow, claimChapter, hustleStatus, repay } from "./hustle-service.js";
+import { buyAircraft, hangar } from "./aircraft-service.js";
 import { businessMarket, businessStatus, buyBusiness, collectBusiness, enrol, listBusiness, sellToBroker, startBusiness, upgradeBusiness } from "./business-service.js";
 import { finishSet, gymStatus, hireTrainer, joinGym, startSet } from "./gym-service.js";
 import { buyViewingPass, orderAtViewing, viewingStatus } from "./viewing-service.js";
@@ -607,6 +609,11 @@ export function configureRoutes(app: Express) {
   app.post("/api/hustle/repay", requirePlayer, rateLimited, guarded("Repayment failed", (req, userId) => {
     const body = z.object({ amount: z.number().int().positive().optional(), idempotencyKey: z.uuid() }).parse(req.body);
     return repay(userId, body.amount, body.idempotencyKey);
+  }));
+  app.get("/api/aircraft", requirePlayer, guarded("Hangar unavailable", async (_req, userId) => ({ owned: await hangar(userId) })));
+  app.post("/api/aircraft/purchase", requirePlayer, rateLimited, guarded("Aircraft purchase failed", (req, userId) => {
+    const body = aircraftPurchaseSchema.parse(req.body);
+    return buyAircraft(userId, body.modelId, body.idempotencyKey);
   }));
   app.post("/api/story/:chapter/claim", requirePlayer, rateLimited, guarded("Reward could not be claimed", (req, userId) =>
     claimChapter(userId, z.enum(["fresh", "hustler", "clean-slate", "moving", "landlord", "big-boss"]).parse(req.params.chapter))));

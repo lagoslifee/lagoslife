@@ -97,6 +97,14 @@ export const owambeOrderSchema = z.object({
   dish: z.enum(OWAMBE_MENU.map((dish) => dish.id) as [OwambeDish, ...OwambeDish[]]),
 });
 
+export const owambeSitSchema = owambeOrderSchema.pick({ table: true, seat: true });
+
+/** Notes a guest can spray on the celebrants; game naira, gone to the family. */
+export const OWAMBE_SPRAY_AMOUNTS = [5_000, 20_000, 50_000, 200_000] as const;
+export const owambeSpraySchema = z.object({ amount: z.union([z.literal(5_000), z.literal(20_000), z.literal(50_000), z.literal(200_000)]) });
+/** Sprayers stand on the dance floor or at the high table, within this of the celebrants. */
+export const OWAMBE_SPRAY_REACH = 9;
+
 /** The seat at a table, or null when the numbers don't name one. */
 export function owambeSeat(table: number, seat: number) {
   return owambeTables()[table]?.seats[seat] ?? null;

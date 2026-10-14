@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { filterChat, neighbourhoodParty, OWAMBE, OWAMBE_STYLE, owambeDish, type OwambeKind, type OwambeParty } from "@lagos-living/shared";
 import { pool } from "./database.js";
-import { debitWallet, EconomyError, ensureWallet, withTransaction } from "./economy-service.js";
+import { creditWallet, debitWallet, EconomyError, ensureWallet, withTransaction } from "./economy-service.js";
 
 export const owambeEvents = new EventEmitter<{ changed: [] }>();
 
@@ -50,6 +50,32 @@ export async function hostOwambe(userId: string, input: { kind: OwambeKind; cele
   }).then((result) => {
     owambeEvents.emit("changed");
     return result;
+  });
+}
+
+/**
+ * Notes sprayed on the celebrants. At a resident's party the host collects them, as the family does; at the
+ * neighbourhood's own party they go to the (NPC) celebrants.
+ */
+export async function sprayCelebrant(userId: string, amount: number, now = Date.now()) {
+  return withTransaction(async (client) => {
+    const { rows } = await client.query<{ host_user_id: string; celebrant: string }>(
+      `SELECT host_user_id, celebrant FROM owambe_booking WHERE starts_at <= $1 AND ends_at > $1 ORDER BY starts_at DESC LIMIT 1`,
+      [new Date(now)],
+    );
+    const booking = rows[0];
+    const celebrant = booking?.celebrant ?? neighbourhoodParty(now).celebrant;
+    const host = booking && booking.host_user_id !== userId ? booking.host_user_id : null;
+    await ensureWallet(client, userId);
+    if (host) await ensureWallet(client, host);
+    await client.query(`SELECT 1 FROM wallet WHERE user_id = ANY($1::text[]) ORDER BY user_id FOR UPDATE`, [[userId, ...(host ? [host] : [])]]);
+    const key = `owambe-spray:${randomUUID()}`;
+    const balance = await debitWallet(client, userId, amount, "owambe_spray", `Sprayed ₦${amount.toLocaleString("en-NG")} on ${celebrant}`, key);
+    if (host) {
+      const sprayer = await client.query<{ name: string }>(`SELECT COALESCE(username, name) AS name FROM "user" WHERE id = $1`, [userId]);
+      await creditWallet(client, host, amount, "owambe_spray_in", `${sprayer.rows[0]?.name ?? "A guest"} sprayed you ₦${amount.toLocaleString("en-NG")} at your owambe`, `${key}:in`);
+    }
+    return { balance, celebrant, hostUserId: host };
   });
 }
 

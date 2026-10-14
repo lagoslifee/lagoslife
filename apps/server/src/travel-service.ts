@@ -198,6 +198,29 @@ export async function buyTicket(userId: string, cabin: CabinClass, idempotencyKe
   });
 }
 
+/**
+ * A private jet flight rides on a Business ticket so landing, immigration and reconnects work as for any flight.
+ * With no ticket the jet's trip cost buys one (both legs); a resident already holding a ticket pays half of it for
+ * this leg. Returns the leg, checked in and ready to board.
+ */
+export async function privateJetLeg(userId: string, tripCost: number, label: string) {
+  return withTransaction(async (client) => {
+    await lockWallet(client, userId);
+    let ticket = await activeTicket(userId, client);
+    if (!ticket) {
+      await createTicket(client, userId, "business", tripCost, null, randomUUID(), `${label} · Lagos ⇄ Dubai`);
+      ticket = (await activeTicket(userId, client))!;
+    } else {
+      await debitWallet(client, userId, Math.round(tripCost / 2), "aircraft_trip", `${label} · ${ticket.outbound === "flown" ? "Dubai → Lagos" : "Lagos → Dubai"}`, `jet:${randomUUID()}`);
+    }
+    const leg: Leg = ticket.outbound === "flown" ? "return" : "outbound";
+    const status = leg === "outbound" ? ticket.outbound : ticket.return;
+    if (status === "boarded") throw new EconomyError("You're already on a flight.", 409);
+    await client.query(`UPDATE travel_ticket SET ${leg === "outbound" ? "outbound_status" : "return_status"} = 'checked_in' WHERE id = $1`, [ticket.id]);
+    return { leg, ticketId: ticket.id, partyId: ticket.partyId, seat: cabinSeats("business")[0]! };
+  });
+}
+
 /** Refund for cancelling now; null when the ticket can no longer be cancelled. */
 export function ticketRefund(ticket: Pick<TicketState, "fare" | "createdAt" | "outbound" | "cancelledAt">, now = Date.now()) {
   if (ticket.cancelledAt || (ticket.outbound !== "booked" && ticket.outbound !== "checked_in")) return null;

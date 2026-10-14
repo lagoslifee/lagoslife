@@ -129,9 +129,16 @@ import {
   footballJoinSchema,
   footballKickSchema,
   owambeOrderSchema,
+  owambeSitSchema,
+  owambeSpraySchema,
+  OWAMBE_HIGH_TABLE,
+  OWAMBE_SPRAY_REACH,
   owambeSeat,
   OWAMBE,
   OWAMBE_GROUND,
+  AIRCRAFT_RULES,
+  helicopterHopSchema,
+  jetFlightSchema,
   type OwambeParty,
   FAST_TRAVEL,
   FAVOURITES,
@@ -168,7 +175,9 @@ import {
   liveCarRental,
   recordPhoto,
   travelEvents,
+  privateJetLeg,
 } from "../travel-service.js";
+import { ownAircraft, payHop } from "../aircraft-service.js";
 import { Client, Room, type AuthContext } from "@colyseus/core";
 import { schema, t, type SchemaType } from "@colyseus/schema";
 import { randomInt, randomUUID } from "node:crypto";
@@ -217,7 +226,7 @@ import { chargeSongRequest, findSong, guestDjs, refundSongRequest } from "../son
 import { TowDispatcher } from "./tow-dispatch.js";
 import { StreetFootball } from "./street-football.js";
 import { payMatchOut, payMatchStake } from "../football-service.js";
-import { currentOwambe, owambeEvents, servePlate } from "../owambe-service.js";
+import { currentOwambe, owambeEvents, servePlate, sprayCelebrant } from "../owambe-service.js";
 import "../world-footprints.js";
 
 export const LagosState = schema({
@@ -341,6 +350,8 @@ type Flight = {
   departAt: number;
   arriveAt: number;
   seats: Map<string, { seat: string; cabin: CabinClass; partyId: string | null; name: string }>;
+  /** A resident's own jet: nobody else boards it. */
+  private?: string;
 };
 
 type Excursion = {
@@ -673,6 +684,30 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
       if (!player || !parsed.success || this.limited(player.actionRate, 2)) return;
       void this.handleOwambeOrder(client, player, parsed.data).catch((error) => console.error("Owambe order failed", error));
     });
+    this.onMessage("owambeSit", (client, payload) => {
+      const player = this.players.get(client.sessionId);
+      const parsed = owambeSitSchema.safeParse(payload);
+      if (!player || !parsed.success || this.limited(player.actionRate, 2)) return;
+      this.handleOwambeSit(client, player, parsed.data);
+    });
+    this.onMessage("owambeSpray", (client, payload) => {
+      const player = this.players.get(client.sessionId);
+      const parsed = owambeSpraySchema.safeParse(payload);
+      if (!player || !parsed.success || this.limited(player.actionRate, 2)) return;
+      void this.handleOwambeSpray(client, player, parsed.data.amount).catch((error) => console.error("Owambe spray failed", error));
+    });
+    this.onMessage("helicopterHop", (client, payload) => {
+      const player = this.players.get(client.sessionId);
+      const parsed = helicopterHopSchema.safeParse(payload);
+      if (!player || !parsed.success || this.limited(player.actionRate, 2)) return;
+      void this.handleHelicopterHop(client, player, parsed.data).catch((error) => console.error("Helicopter hop failed", error));
+    });
+    this.onMessage("jetFlight", (client, payload) => {
+      const player = this.players.get(client.sessionId);
+      const parsed = jetFlightSchema.safeParse(payload);
+      if (!player || !parsed.success || this.limited(player.actionRate, 2)) return;
+      void this.handleJetFlight(client, player, parsed.data.aircraftId).catch((error) => console.error("Jet flight failed", error));
+    });
     this.onMessage("owambeSync", (client) => {
       if (this.owambe) client.send("owambe", this.owambe);
     });
@@ -960,6 +995,113 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     const served = { sessionId: player.sessionId, table: order.table, seat: order.seat, dish: order.dish, hunger: result.hunger, energy: result.energy };
     for (const other of this.players.values()) {
       if (other.connected && (other === player || Math.hypot(other.x - OWAMBE_GROUND.centre[0], other.z - OWAMBE_GROUND.centre[1]) < 150)) this.clientFor(other)?.send("owambeServe", served);
+    }
+  }
+
+  /** Seats a guest at the chair they picked: the walk in between the tables is the server's, so nobody has to line up by hand. */
+  private handleOwambeSit(client: Client, player: Player, pick: { table: number; seat: number }) {
+    const spot = owambeSeat(pick.table, pick.seat);
+    if (!spot || !this.owambe || player.location !== "street" || player.vehicleId || player.busId || player.entering) return;
+    if (Math.hypot(player.x - OWAMBE_GROUND.centre[0], player.z - OWAMBE_GROUND.centre[1]) > OWAMBE.range) {
+      return this.notify(client, { tone: "info", text: "Walk into the marquee first, then find a seat." });
+    }
+    const taken = [...this.players.values()].some(
+      (other) => other !== player && other.connected && other.location === "street" && Math.hypot(other.x - spot.at[0], other.z - spot.at[1]) < 0.9,
+    );
+    if (taken) return client.send("owambeSeated", { ...pick, ok: false });
+    // Just behind the chair, where a guest who walked up would stand; the seated pose is drawn on the chair itself.
+    player.x = spot.at[0] - Math.sin(spot.yaw) * 0.75;
+    player.z = spot.at[1] - Math.cos(spot.yaw) * 0.75;
+    player.yaw = spot.yaw;
+    player.motion = "idle";
+    player.travel = [];
+    player.lastAcceptedAt = Date.now();
+    setPlayerPosition(player.userId, player.x, player.z, "street");
+    this.sendSelf(client, player, "seated");
+    client.send("owambeSeated", { ...pick, ok: true });
+  }
+
+  /** Notes sprayed on the celebrants: paid for on the server, then everyone at the party sees them fly. */
+  private async handleOwambeSpray(client: Client, player: Player, amount: number) {
+    if (!this.owambe || player.location !== "street" || player.vehicleId || player.busId) return;
+    if (Math.hypot(player.x - OWAMBE_HIGH_TABLE[0], player.z - OWAMBE_HIGH_TABLE[1]) > OWAMBE_SPRAY_REACH) {
+      return this.notify(client, { tone: "info", text: "Dance up to the high table to spray the celebrants." });
+    }
+    let result: Awaited<ReturnType<typeof sprayCelebrant>>;
+    try {
+      result = await sprayCelebrant(player.userId, amount);
+    } catch (error) {
+      return this.notify(client, { tone: "error", text: error instanceof EconomyError ? error.message : "Couldn't spray right now. Try again." });
+    }
+    const shown = `₦${amount.toLocaleString("en-NG")}`;
+    const event = { sessionId: player.sessionId, name: player.name, amount, x: player.x, z: player.z };
+    for (const other of this.players.values()) {
+      if (other.connected && other.location === "street" && Math.hypot(other.x - OWAMBE_GROUND.centre[0], other.z - OWAMBE_GROUND.centre[1]) < 150) this.clientFor(other)?.send("owambeSpray", event);
+    }
+    this.notify(client, { tone: "success", text: `You sprayed ${shown} on ${result.celebrant}! The DJ is hailing you. (Game money.)` });
+    const host = result.hostUserId ? this.playerByUser(result.hostUserId) : undefined;
+    const hostClient = host ? this.clientFor(host) : undefined;
+    if (hostClient) this.notify(hostClient, { tone: "success", text: `${player.name} sprayed you ${shown} at your owambe! 💸` });
+  }
+
+  private helicopterHopAt = new Map<string, number>();
+
+  /** Lifts off and sets down at any public place in this city: no discovery needed and no Go-now cooldown. */
+  private async handleHelicopterHop(client: Client, player: Player, hop: { aircraftId: string; placeId: string }) {
+    const fail = (text: string) => this.notify(client, { tone: "error", text });
+    const block = this.fastTravelBlock(player);
+    if (block) return fail(block);
+    const place = placeById.get(hop.placeId);
+    if (!place || !isFastTravelKind(place.kind)) return fail("Pick a public place to land at.");
+    const region = regionOf(...this.standingAt(player));
+    if (regionOf(place.door[0], place.door[1]) !== region) return fail("A helicopter can't cross to another country. Fly your jet, or take a flight.");
+    const wait = (this.helicopterHopAt.get(player.userId) ?? 0) + AIRCRAFT_RULES.hopGapMs - Date.now();
+    if (wait > 0) return fail(`Your pilot is refuelling — ${Math.ceil(wait / 1_000)} s.`);
+    let paid: Awaited<ReturnType<typeof payHop>>;
+    try {
+      paid = await payHop(player.userId, hop.aircraftId, place.name);
+    } catch (error) {
+      return fail(error instanceof EconomyError ? error.message : "Your pilot couldn't take off. Try again.");
+    }
+    const latest = this.players.get(client.sessionId);
+    if (!latest || this.fastTravelBlock(latest)) return;
+    this.helicopterHopAt.set(player.userId, Date.now());
+    this.moveByTravel(latest, this.arrivalPoint(place), `🚁 Your ${paid.model.name} (${paid.aircraft.tail}) set you down at ${place.name}. Fuel and landing fees ₦${paid.model.tripCost.toLocaleString("en-NG")}.`);
+  }
+
+  /** Your own jet between Lagos and Dubai: wheels-up in seconds from wherever you are in the city, no other passengers. */
+  private async handleJetFlight(client: Client, player: Player, aircraftId: string) {
+    const fail = (text: string) => this.notify(client, { tone: "error", text });
+    const block = this.fastTravelBlock(player);
+    if (block && !player.location.startsWith("airport:")) return fail(block);
+    if (player.location.startsWith("flight:")) return fail("You're already in the air.");
+    if (player.trip.stage === "arrived" && !player.trip.immigrationDone) return fail("Pass immigration first: the desks are straight ahead of the arrivals gate.");
+    player.entering = true;
+    try {
+      const { model, aircraft } = await ownAircraft(player.userId, aircraftId, "jet");
+      const region = regionOf(...this.standingAt(player));
+      const record = await tripRecord(player.userId);
+      const homeward = record?.outbound === "flown";
+      if (homeward !== (region === "dubai")) return fail(region === "dubai" ? "Your jet flies home with your trip ticket. Check Phone → Travel." : "Finish your Dubai trip first: your return leg is still open.");
+      const booked = await privateJetLeg(player.userId, model.tripCost, `${model.name} ${aircraft.tail}`);
+      const now = Date.now();
+      const departAt = now + 4_000;
+      const flight: Flight = { id: randomUUID(), leg: booked.leg, departAt, arriveAt: departAt + TRAVEL.flightSeconds * 1_000, seats: new Map(), private: player.userId };
+      this.flights.set(flight.id, flight);
+      flight.seats.set(player.userId, { seat: booked.seat, cabin: "business", partyId: booked.partyId, name: player.name });
+      try {
+        await advanceLeg(player.userId, booked.leg, "boarded", { id: flight.id, seat: booked.seat, departAt: flight.departAt, arriveAt: flight.arriveAt });
+      } catch (error) {
+        this.flights.delete(flight.id);
+        throw error;
+      }
+      await this.endHire(player);
+      this.seatInFlight(client, player, flight, booked.ticketId);
+      this.notify(client, { tone: "success", text: `✈️ Your ${model.name} (${aircraft.tail}) is wheels-up to ${booked.leg === "outbound" ? "Dubai" : "Lagos"}. Just you and the crew.` });
+    } catch (error) {
+      fail(error instanceof EconomyError ? error.message : "The crew couldn't get clearance. Try again.");
+    } finally {
+      player.entering = false;
     }
   }
 
@@ -3433,7 +3575,7 @@ export class LagosRoom extends Room<{ state: LagosState; client: LagosClient }> 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const now = Date.now();
       // Boarding is open until a second before doors close; later passengers join the next departure.
-      const open = (entry: Flight) => entry.leg === leg && entry.departAt > now + 1_000 && this.freeSeats(entry, record.cabin).length > 0;
+      const open = (entry: Flight) => !entry.private && entry.leg === leg && entry.departAt > now + 1_000 && this.freeSeats(entry, record.cabin).length > 0;
       let flight =
         [...this.flights.values()].find((entry) => open(entry) && [...entry.seats.values()].some((seat) => seat.partyId === party)) ??
         [...this.flights.values()].find(open);
