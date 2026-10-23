@@ -415,6 +415,7 @@ button.net:hover { border-color: rgba(100, 217, 145, .6); }
 .tow-progress li.now { background: #f2b705; color: #1d1a10; font-weight: 700; }
 .paint-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,.3); vertical-align: -1px; }
 .preview-banner { position: absolute; left: 50%; top: 120px; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; padding: 10px 14px; border-radius: 12px; }
+.game-view:has(.preview-banner) .objective, .game-view:has(.preview-banner) .guide-tab { display: none; }
 .preview-banner strong, .preview-banner span { display: block; }
 .preview-banner span { color: #d4dbd7; font-size: calc(12px * var(--text-scale)); }
 
@@ -803,7 +804,6 @@ button.net:hover { border-color: rgba(100, 217, 145, .6); }
 .game-view.touch .guide-tab { left: calc(8px + var(--sl)); top: calc(var(--hud-top, 96px) + var(--st)); transform: none; }
 .game-view.touch .rent-reminder { left: calc(8px + var(--sl)); top: auto; bottom: calc(340px + var(--sb)); max-width: calc(100% - 140px); font-size: 12px; }
 .game-view.touch .preview-banner { left: calc(8px + var(--sl)); right: calc(60px + var(--sr)); top: calc(var(--hud-top, 96px) + var(--st)); transform: none; flex-wrap: wrap; }
-.game-view.touch:has(.preview-banner) .objective, .game-view.touch:has(.preview-banner) .guide-tab { display: none; }
 .game-view.touch .prompt { left: 0; right: 0; margin-inline: auto; transform: none; width: max-content; bottom: calc(168px + var(--sb)); min-width: 0; max-width: calc(100% - 24px - var(--sl) - var(--sr)); padding: 10px 14px; }
 .game-view.touch .prompt kbd { min-width: 32px; height: 32px; font-size: 16px; }
 .game-view.touch .minimap { right: calc(8px + var(--sr)); bottom: calc(176px + var(--sb)); width: 104px; height: 104px; border-width: 2px; }
