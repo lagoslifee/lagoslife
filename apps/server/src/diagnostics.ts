@@ -45,9 +45,10 @@ export function installCrashHandlers() {
 
 export const clientReportSchema = z.object({
   kind: z.enum(["error", "rejection", "context-lost", "context-restored", "disconnect", "reconnect", "low-fps", "unclean-exit", "memory", "ui-crash"]),
-  message: z.string().max(500).default(""),
-  stack: z.string().max(2_000).optional(),
-  detail: z.record(z.string(), z.union([z.string().max(200), z.number(), z.boolean(), z.null()])).optional(),
+  // Trim instead of rejecting: a report dropped for an over-long field is the one that explains a crash.
+  message: z.string().default("").transform((value) => value.slice(0, 500)),
+  stack: z.string().transform((value) => value.slice(0, 2_000)).optional(),
+  detail: z.record(z.string(), z.union([z.string().transform((value) => value.slice(0, 200)), z.number(), z.boolean(), z.null()])).optional(),
   quality: z.string().max(10).optional(),
   device: z.string().max(240).optional(),
   page: z.string().max(200).optional(),
