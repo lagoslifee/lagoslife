@@ -30,11 +30,11 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
     let engine: Engine;
     try {
       engine = new Engine(canvas, !TOUCH_DEVICE, { stencil: false, preserveDrawingBuffer: false }, false);
-    } catch {
+    } catch (error) {
+      report("error", "preview: no WebGL", { stack: error instanceof Error ? error.stack : undefined, detail: { message: String(error).slice(0, 190) } });
       setState("failed");
       return;
     }
-    capTextureSize(engine);
     const gpu = (() => {
       try {
         const info = engine.getGlInfo();
@@ -60,7 +60,7 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
       failures.current += 1;
       report(why === "context lost" ? "context-lost" : "error", `preview: ${why} #${failures.current}`, {
         stack: error instanceof Error ? error.stack : undefined,
-        detail: { message: error instanceof Error ? error.message : String(error ?? ""), attempt: failures.current, gpu },
+        detail: { message: (error instanceof Error ? error.message : String(error ?? "")).slice(0, 190), attempt: failures.current, gpu },
       });
       if (failures.current >= 2) {
         setState("failed");
@@ -71,6 +71,10 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
       restart();
     };
     engine.onContextLostObservable.add(() => fail("context lost"));
+    let resize: ResizeObserver | undefined;
+    // A throw here would skip the cleanup below, crash the creator and strand a live WebGL context on every retry.
+    try {
+    capTextureSize(engine);
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0, 0, 0, 0);
     scene.imageProcessingConfiguration.toneMappingEnabled = true;
@@ -118,7 +122,7 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
         fail("render error", error);
       }
     });
-    const resize = new ResizeObserver(() => engine.resize());
+    resize = new ResizeObserver(() => !disposed && engine.resize());
     resize.observe(canvas);
     AvatarFactory.load(scene)
       .then((factory) => {
@@ -128,18 +132,30 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
         setState("ready");
       })
       .catch((error: unknown) => fail("load error", error));
+    } catch (error) {
+      failures.current = 1;
+      fail("setup error", error);
+    }
     return () => {
       disposed = true;
       clearTimeout(rebuild);
       document.removeEventListener("visibilitychange", restart);
-      resize.disconnect();
+      resize?.disconnect();
       avatarRef.current = null;
-      engine.dispose();
+      try {
+        engine.dispose();
+      } catch {
+        // Disposing after iOS took the context can throw; there is nothing left to free.
+      }
     };
   }, [generation]);
 
   useEffect(() => {
-    avatarRef.current?.setAppearance(appearance);
+    try {
+      avatarRef.current?.setAppearance(appearance);
+    } catch (error) {
+      report("error", "preview: appearance error", { stack: error instanceof Error ? error.stack : undefined, detail: { message: String(error).slice(0, 190) } });
+    }
   }, [appearance]);
 
   return (

@@ -11,5 +11,6 @@ export const TOUCH_DEVICE = typeof matchMedia === "function" && matchMedia("(poi
 export function capTextureSize(engine: AbstractEngine) {
   if (!TOUCH_DEVICE) return;
   const caps = engine.getCaps();
+  if (!caps) return;
   caps.maxTextureSize = Math.min(caps.maxTextureSize, 512);
 }

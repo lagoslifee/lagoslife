@@ -404,9 +404,21 @@ function CharacterCreator({
     <div className="modal-backdrop creator-backdrop">
       <section className="creator-card" role="dialog" aria-modal="true" aria-label="Character creator" data-testid="character-creator">
         <div className="character-preview">
-          <Suspense fallback={<p className="preview-status">Loading your resident…</p>}>
-            <CharacterPreview appearance={appearance} />
-          </Suspense>
+          <CrashGuard
+            area="preview"
+            replacement={
+              <div className="character-preview-3d">
+                <div className="preview-status preview-still">
+                  <span aria-hidden="true">{appearance.body === "female" ? "🧍🏾‍♀️" : "🧍🏾‍♂️"}</span>
+                  <p>The 3D preview isn't available on this device. Your choices still save and show in the city.</p>
+                </div>
+              </div>
+            }
+          >
+            <Suspense fallback={<p className="preview-status">Loading your resident…</p>}>
+              <CharacterPreview appearance={appearance} />
+            </Suspense>
+          </CrashGuard>
         </div>
         <div className="creator-options">
           <div className="creator-scroll">

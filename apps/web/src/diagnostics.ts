@@ -102,7 +102,14 @@ export function installDiagnostics() {
       sessionStorage.setItem(CRASHED_KEY, "1");
       report("unclean-exit", "Previous session ended without closing", { detail: { secondsAgo: Math.round((Date.now() - previous.at) / 1_000), area: previous.area ?? null } });
     }
-    const beat = (clean: boolean) => localStorage.setItem(RUNNING_KEY, JSON.stringify({ at: Date.now(), clean, area }));
+    // Safari throws from setItem once storage is full; a heartbeat must never take a screen down with it.
+    const beat = (clean: boolean) => {
+      try {
+        localStorage.setItem(RUNNING_KEY, JSON.stringify({ at: Date.now(), clean, area }));
+      } catch {
+        // The crash hint is lost, the game is not.
+      }
+    };
     beatNow = () => beat(false);
     beat(false);
     setInterval(() => !document.hidden && beat(false), 10_000);
