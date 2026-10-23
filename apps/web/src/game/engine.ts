@@ -799,7 +799,8 @@ export class GameEngine {
     this.engine = engine;
     capTextureSize(engine);
     const dpr = window.devicePixelRatio || 1;
-    this.baseScaling = this.quality === "low" ? 1.2 : this.quality === "medium" ? Math.max(1, dpr / 1.25) / dpr : 1 / Math.min(dpr, 1.5);
+    // Tablets have 2-3x screens: rendering every one of those pixels with MSAA and soft shadows is what drains them.
+    this.baseScaling = this.quality === "low" ? 1.2 : this.quality === "medium" ? Math.max(1, dpr / (TOUCH_DEVICE ? 1.5 : 1.25)) / dpr : 1 / Math.min(dpr, 1.5);
     engine.setHardwareScalingLevel(this.baseScaling);
     const scene = new Scene(engine);
     this.scene = scene;
