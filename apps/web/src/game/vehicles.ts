@@ -349,14 +349,16 @@ function buildAlloyWheel(scene: Scene, radius: number, width: number, sporty: bo
     return mesh;
   };
   const spokeHex = sporty ? "#3b3e44" : "#c9cdd3";
+  // A ring swept round the axle: a torus would share its 40 segments with the tube, costing thousands of triangles
+  // per wheel for a bulge eight segments draw just as round at street distance.
+  const ring = (name: string, radius: number, tube: number, y: number) =>
+    MeshBuilder.CreateLathe(name, { shape: Array.from({ length: 9 }, (_, index) => new Vector3(radius + tube * Math.cos((index / 8) * Math.PI * 2), y + tube * Math.sin((index / 8) * Math.PI * 2), 0)), tessellation: 32, sideOrientation: Mesh.DOUBLESIDE }, scene);
   const pieces: Mesh[] = [
-    colour(MeshBuilder.CreateCylinder("tyre tread", { diameter: R * 2, height: W * 0.78, tessellation: 40 }, scene), "#131313"),
-    ...[-1, 1].map((side) =>
-      colour(at(MeshBuilder.CreateTorus("tyre wall", { diameter: R * 2 - W * 0.22, thickness: W * 0.22, tessellation: 40 }, scene), Matrix.Translation(0, side * W * 0.36, 0)), "#161616"),
-    ),
-    colour(MeshBuilder.CreateCylinder("tyre wall face", { diameter: R * 1.86, height: W * 0.96, tessellation: 40 }, scene), "#1b1b1b"),
+    colour(MeshBuilder.CreateCylinder("tyre tread", { diameter: R * 2, height: W * 0.78, tessellation: 32 }, scene), "#131313"),
+    ...[-1, 1].map((side) => colour(ring("tyre wall", R - W * 0.11, W * 0.11, side * W * 0.36), "#161616")),
+    colour(MeshBuilder.CreateCylinder("tyre wall face", { diameter: R * 1.86, height: W * 0.96, tessellation: 32 }, scene), "#1b1b1b"),
     colour(MeshBuilder.CreateCylinder("rim barrel", { diameter: rimR * 2, height: W * 0.98, tessellation: 32 }, scene), "#24262a"),
-    colour(at(MeshBuilder.CreateTorus("rim lip", { diameter: rimR * 2, thickness: R * 0.05, tessellation: 36 }, scene), Matrix.Translation(0, face, 0)), "#e3e6ea"),
+    colour(ring("rim lip", rimR, R * 0.025, face), "#e3e6ea"),
     colour(at(MeshBuilder.CreateCylinder("brake disc", { diameter: rimR * 1.55, height: 0.025, tessellation: 28 }, scene), Matrix.Translation(0, face - W * 0.4, 0)), "#7a7c80"),
     colour(at(MeshBuilder.CreateBox("caliper", { width: rimR * 0.35, height: 0.06, depth: rimR * 0.5 }, scene), Matrix.Translation(0, face - W * 0.32, rimR * 0.58)), sporty ? "#c8102e" : "#3a3a3d"),
     colour(at(MeshBuilder.CreateCylinder("hub", { diameter: rimR * 0.42, height: 0.05, tessellation: 18 }, scene), Matrix.Translation(0, face - 0.01, 0)), spokeHex),
