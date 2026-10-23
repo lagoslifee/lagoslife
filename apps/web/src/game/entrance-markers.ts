@@ -43,6 +43,11 @@ export class EntranceMarkers {
     for (let index = 0; index < POOL; index += 1) this.markers.push(this.marker(`entrance ${index}`, gold, "#ffbe2e"));
     this.exit = this.marker("exit marker", green, "#33f273");
     this.draw(this.exit, "EXIT", "Way out");
+    // Indoors under a 3 m ceiling, beside a door that carries its own sign: a street-sized marker fills the room.
+    for (const child of this.exit.root.getChildMeshes()) {
+      if (child === this.exit.label) child.setEnabled(false);
+      else child.scaling.setAll(child === this.exit.arrow ? 0.55 : 0.6);
+    }
     const cyan = this.material("destination cyan", new Color3(0.2, 0.85, 1));
     this.destination = this.marker("destination marker", cyan, "#3fd8ff");
     const ring = MeshBuilder.CreateTorus("destination outer ring", { diameter: 3.4, thickness: 0.12, tessellation: 32 }, this.scene);
@@ -174,7 +179,7 @@ export class EntranceMarkers {
     } else this.destination.root.setEnabled(false);
     if (exit) {
       this.place(this.exit, exit, 0);
-      this.exit.arrow.position.y = bob;
+      this.exit.arrow.position.y = bob - 0.25;
     } else this.exit.root.setEnabled(false);
 
     if (!outdoors) {
