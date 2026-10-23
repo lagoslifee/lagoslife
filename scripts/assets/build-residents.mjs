@@ -336,7 +336,8 @@ function garments(document, buffer, bodyNode, bind, material) {
   const foot = at("foot_l");
   const shortSleeve = upper[0] + (lower[0] - upper[0]) * 0.5;
   const longSleeve = hand[0] - 0.035;
-  const hemTop = pelvis[1] - 0.015;
+  // Shirts end at the hip: a hem at the pelvis joint wraps between the legs and reads as a bodysuit over the trousers.
+  const hemTop = pelvis[1] + 0.05;
   const waistBand = pelvis[1] + 0.09;
   const ankle = foot[1] + 0.035;
   const shoeTop = foot[1] + 0.05;
