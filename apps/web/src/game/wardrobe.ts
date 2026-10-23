@@ -21,7 +21,7 @@ export const OUTFITS: Record<
   Outfit,
   { label: string; top: Fabric; longSleeves: boolean; trousers: Fabric | null; skirt: Fabric | null; shoes: string }
 > = {
-  "island-casual": { label: "Linen shirt, chinos", top: { colour: "#efe8d8" }, longSleeves: false, trousers: { colour: "#b49a74" }, skirt: null, shoes: "#6b4a2f" },
+  "island-casual": { label: "Linen shirt, olive chinos", top: { colour: "#e2d9c6" }, longSleeves: false, trousers: { colour: "#4a523a" }, skirt: null, shoes: "#6b4a2f" },
   "office-smart": { label: "Pale blue shirt, charcoal trousers", top: { colour: "#cfdff0" }, longSleeves: true, trousers: { colour: "#2d3139" }, skirt: null, shoes: "#3b2418" },
   "ankara-day": {
     label: "Ankara print shirt",
@@ -68,7 +68,7 @@ export const OUTFITS: Record<
   },
   "denim-street": { label: "White tee, blue jeans", top: { colour: "#f5f5f2" }, longSleeves: false, trousers: { colour: "#355f8f" }, skirt: null, shoes: "#f4f4f2" },
   "suit-navy": { label: "Navy suit", top: { colour: "#1b2a44" }, longSleeves: true, trousers: { colour: "#1b2a44" }, skirt: null, shoes: "#140d09" },
-  "polo-weekend": { label: "Navy polo, stone chinos", top: { colour: "#22355c" }, longSleeves: false, trousers: { colour: "#c8b48e" }, skirt: null, shoes: "#6b4a2f" },
+  "polo-weekend": { label: "Navy polo, khaki chinos", top: { colour: "#22355c" }, longSleeves: false, trousers: { colour: "#6f6448" }, skirt: null, shoes: "#6b4a2f" },
   "gown-emerald": { label: "Emerald gown", top: { colour: "#0f6b4f" }, longSleeves: false, trousers: null, skirt: { colour: "#0f6b4f" }, shoes: "#c9a36a" },
   "boubou-gold": {
     label: "Gold boubou",

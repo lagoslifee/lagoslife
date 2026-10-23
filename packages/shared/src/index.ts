@@ -50,7 +50,7 @@ export const BOUTIQUE = [
   { outfit: "aso-oke-wine", body: "male", name: "Wine aso-oke kaftan", price: 52_000, description: "Hand-woven wine aso-oke kaftan with matching trousers." },
   { outfit: "denim-street", body: "male", name: "White tee and denim", price: 18_000, description: "Clean white tee, straight blue jeans and white sneakers." },
   { outfit: "suit-navy", body: "male", name: "Navy two-piece suit", price: 75_000, description: "Tailored navy suit for Victoria Island boardrooms." },
-  { outfit: "polo-weekend", body: "male", name: "Weekend polo and chinos", price: 22_000, description: "Navy polo, stone chinos and loafers for a Lekki brunch." },
+  { outfit: "polo-weekend", body: "male", name: "Weekend polo and chinos", price: 22_000, description: "Navy polo, khaki chinos and loafers for a Lekki brunch." },
   { outfit: "gown-emerald", body: "female", name: "Emerald evening gown", price: 70_000, description: "Floor-length emerald gown for the club and the gala." },
   { outfit: "boubou-gold", body: "female", name: "Gold boubou", price: 48_000, description: "Wide, airy boubou in gold with a deep print border." },
   { outfit: "ankara-jumpsuit", body: "female", name: "Ankara jumpsuit", price: 34_000, description: "Bold ankara jumpsuit, long-legged and sleeveless." },
