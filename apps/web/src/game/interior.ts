@@ -207,14 +207,14 @@ export function buildInterior(scene: Scene, materials: Materials, atlas: SignAtl
   if (grand) {
     upstairs = dressHome(layout, { get, solid, model, boxes, paint: local_.wall });
   } else if (!gym && !viewing) {
-    // Windows with a bright daylight view on the north and east walls.
+    // Windows onto the street on the north and east walls.
     for (const x of kind === "club" ? [] : [-3, 0, 3]) {
-      get("lamp").quad([OX + x + 0.7, 1.0, Z1 - 0.02], [OX + x - 0.7, 1.0, Z1 - 0.02], [OX + x - 0.7, 2.3, Z1 - 0.02], [OX + x + 0.7, 2.3, Z1 - 0.02], [0, 0, -1], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      get("homeView").quad([OX + x + 0.7, 1.0, Z1 - 0.02], [OX + x - 0.7, 1.0, Z1 - 0.02], [OX + x - 0.7, 2.3, Z1 - 0.02], [OX + x + 0.7, 2.3, Z1 - 0.02], [0, 0, -1], [[0, 0], [1, 0], [1, 1], [0, 1]]);
       get("frame").box(OX + x, 1.65, Z1 - 0.04, 0.06, 1.3, 0.05);
       get("frame").box(OX + x, 1.0, Z1 - 0.06, 1.5, 0.06, 0.12);
       get("frame").box(OX + x, 2.3, Z1 - 0.04, 1.5, 0.06, 0.05);
     }
-    if (kind !== "club") get("lamp").quad([X1 - 0.02, 1.0, OZ - 0.8], [X1 - 0.02, 1.0, OZ + 0.8], [X1 - 0.02, 2.3, OZ + 0.8], [X1 - 0.02, 2.3, OZ - 0.8], [-1, 0, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+    if (kind !== "club") get("homeView").quad([X1 - 0.02, 1.0, OZ - 0.8], [X1 - 0.02, 1.0, OZ + 0.8], [X1 - 0.02, 2.3, OZ + 0.8], [X1 - 0.02, 2.3, OZ - 0.8], [-1, 0, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
   }
   // Exit door on the south wall.
   const [exitX, exitZ] = INTERIOR_EXIT;
@@ -518,15 +518,15 @@ function homeMaterials(scene: Scene, layout: HomeLayout, disposables: Array<{ di
   // Emissive adds the same grey to every colour, so it stays low enough not to wash the paint out.
   byKey.homeWall = pbr("home wall", (material) => {
     material.roughness = 0.85;
-    material.emissiveColor = new Color3(0.13, 0.12, 0.11);
+    material.emissiveColor = new Color3(0.07, 0.065, 0.06);
   });
   byKey.homeCeiling = pbr("home ceiling", (material) => {
     material.roughness = 0.9;
-    material.emissiveColor = Color3.FromArray(style.ceiling).scale(0.5);
+    material.emissiveColor = Color3.FromArray(style.ceiling).scale(0.16);
   });
   byKey.homePaper = pbr("home wallpaper", (material) => {
     material.roughness = 0.75;
-    material.emissiveColor = new Color3(0.1, 0.1, 0.09);
+    material.emissiveColor = new Color3(0.06, 0.06, 0.055);
     material.albedoTexture = painted(scene, `${style.id} wallpaper`, [256, 256], scheme.paper, disposables);
   });
   byKey.homeSkirting = pbr("home skirting", (material) => {
@@ -566,7 +566,6 @@ function homeMaterials(scene: Scene, layout: HomeLayout, disposables: Array<{ di
     material.backFaceCulling = false;
   });
   const floorTile = FLOOR_LOOKS[floorId].tile * (layout.tier === "flat" ? 0.8 : 1);
-  if (layout.tier === "flat") return { byKey, floorKey: "homeFloor", floorTile, wall: scheme.upper, scheme, ceiling: style.ceiling };
   const view = new StandardMaterial("home view", scene);
   view.disableLighting = true;
   view.emissiveTexture = painted(scene, "home view", [1024, 256], (context, w, h) => {
@@ -599,6 +598,8 @@ function homeMaterials(scene: Scene, layout: HomeLayout, disposables: Array<{ di
       context.fillRect(0, h * 0.8, w, h * 0.2);
     }
   }, disposables);
+  // Daylight through glass, not a light box: a full-strength view reads as a white panel next to lit paint.
+  view.emissiveTexture.level = 0.78;
   disposables.push(view);
   byKey.homeView = view;
   return { byKey, floorKey: "homeFloor", floorTile, wall: scheme.upper, scheme, ceiling: style.ceiling };

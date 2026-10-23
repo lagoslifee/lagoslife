@@ -1060,12 +1060,15 @@ export class GameEngine {
     this.sun.diffuse = Color3.FromHexString(look.sunColor);
     this.fill.diffuse = Color3.FromHexString(look.fillColor);
     this.fill.groundColor = Color3.FromHexString(look.ground);
+    // Under a roof the room's own lights carry it: full street sun and sky on top of them burn paint and fabric white.
     // A cut at home leaves the room to its candle: daylight through the windows and the sky fill barely reach in.
+    const indoors = Boolean(this.interior) && !this.travelView;
     const cut = this.homePower === "none" && Boolean(this.interior);
-    this.fill.intensity = cut ? look.fill * 0.25 : look.fill;
-    this.sun.intensity = cut ? look.sun * 0.3 : look.sun;
-    this.scene.environmentIntensity = cut ? look.env * 0.12 : look.env;
-    this.scene.imageProcessingConfiguration.exposure = cut ? look.exposure * 0.52 : look.exposure;
+    const shade = cut ? { fill: 0.25, sun: 0.3, env: 0.12, exposure: 0.52 } : indoors ? { fill: 0.55, sun: 0.3, env: 0.5, exposure: 0.95 } : { fill: 1, sun: 1, env: 1, exposure: 1 };
+    this.fill.intensity = look.fill * shade.fill;
+    this.sun.intensity = look.sun * shade.sun;
+    this.scene.environmentIntensity = look.env * shade.env;
+    this.scene.imageProcessingConfiguration.exposure = look.exposure * shade.exposure;
   }
 
   private frameErrors = { count: 0, loggedAt: 0, firstAt: 0, told: false };
@@ -2963,6 +2966,7 @@ export class GameEngine {
       this.interior?.dispose();
       this.interior = null;
       this.travelView = null;
+      this.setEvening(this.evening);
       this.clearCrew();
       this.staff?.clear();
       this.audio.setCabinHum(0);
@@ -3615,6 +3619,7 @@ export class GameEngine {
       const view = buildTravelInterior(this.scene, this.materials, this.atlas, travel, this.trip, this.props);
       this.interior = view;
       this.travelView = view;
+      this.setEvening(this.evening);
       this.club = null;
       this.audio.setClub(null);
       this.flightPhaseShown = null;
@@ -3650,6 +3655,7 @@ export class GameEngine {
     this.interior = buildInterior(this.scene, this.materials, this.atlas, kind, title, placements, club, { layout, props: this.props, finish });
     this.interior.setCutaway(this.planShare !== null);
     if (kind === "home") this.interior.setPower(this.homePower !== "none");
+    this.setEvening(this.evening);
     this.staff.setDesks(
       club
         ? [{ id: "bar", at: CLUB_BARTENDER, yaw: Math.PI / 2, look: staffLook(70 + club.bpm, regionOf(self.x, self.z) === "dubai" || club.id === TRAVEL_PLACES.club, "hostess") }]
