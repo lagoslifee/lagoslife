@@ -5081,9 +5081,17 @@ export class GameEngine {
         materials: this.scene.materials.length,
         meshes: this.scene.meshes.length,
         geometries: this.scene.geometries.length,
+        active: this.scene.getActiveMeshes().length,
+        triangles: this.scene.getActiveIndices() / 3,
+        lights: this.scene.lights.filter((light) => light.isEnabled()).length,
         frames: this.engine.frameId,
         signs: this.atlas.usage(),
       }),
+      heaviest: (count = 15) =>
+        [...this.scene.getActiveMeshes().data.slice(0, this.scene.getActiveMeshes().length)]
+          .map((mesh) => ({ name: mesh.name, triangles: mesh.getTotalIndices() / 3, instances: (mesh as Mesh).instances?.length ?? 0 }))
+          .sort((a, b) => b.triangles * (1 + b.instances) - a.triangles * (1 + a.instances))
+          .slice(0, count),
       quality: () => ({ step: this.adaptive.level, scaling: this.engine.getHardwareScalingLevel(), shadows: Boolean(this.shadows && this.shadowsShown), viewDistance: this.camera.maxZ, fogDensity: this.scene.fogDensity }),
       meshesNamed: (prefix: string) =>
         this.scene.meshes
