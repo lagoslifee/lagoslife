@@ -20,7 +20,7 @@ import { LifeGoalsDialog } from "./ui/LifeGoals";
 import { CityReel } from "./ui/CityReel";
 import { LandingScene } from "./ui/LandingScene";
 import { CrashGuard } from "./ui/CrashGuard";
-import { setArea } from "./diagnostics";
+import { previewDisabled, setArea } from "./diagnostics";
 import { ACCESSORY_LABELS, HAIR_COLOURS, HAIR_LABELS, OUTFITS, SKIN_TONE_COLOURS } from "./game/wardrobe";
 import { apiConfigured, apiUrl, authClient, authHeaders, guestMode, serverReachable, sessionToken, signOut, startGuestSession, watchServerAddress } from "./auth-client";
 
@@ -398,27 +398,30 @@ function CharacterCreator({
     const starter = starterLook(body);
     setAppearance({ ...appearance, body, hairstyle: starter.hairstyle, outfit: wearable.includes(starter.outfit) ? starter.outfit : appearance.outfit, accessory: appearance.accessory === "beard" ? "none" : appearance.accessory });
   };
+  const [stillPreview] = useState(previewDisabled);
+  const still = (
+    <div className="character-preview-3d">
+      <div className="preview-status preview-still">
+        <span aria-hidden="true">{appearance.body === "female" ? "🧍🏾‍♀️" : "🧍🏾‍♂️"}</span>
+        <p>The 3D preview isn't available on this device. Your choices still save and show in the city.</p>
+      </div>
+    </div>
+  );
   const outfitNames = Object.fromEntries(outfits.map((outfit) => [outfit, OUTFITS[outfit].label])) as Record<OutfitId, string>;
 
   return (
     <div className="modal-backdrop creator-backdrop">
       <section className="creator-card" role="dialog" aria-modal="true" aria-label="Character creator" data-testid="character-creator">
         <div className="character-preview">
-          <CrashGuard
-            area="preview"
-            replacement={
-              <div className="character-preview-3d">
-                <div className="preview-status preview-still">
-                  <span aria-hidden="true">{appearance.body === "female" ? "🧍🏾‍♀️" : "🧍🏾‍♂️"}</span>
-                  <p>The 3D preview isn't available on this device. Your choices still save and show in the city.</p>
-                </div>
-              </div>
-            }
-          >
-            <Suspense fallback={<p className="preview-status">Loading your resident…</p>}>
-              <CharacterPreview appearance={appearance} />
-            </Suspense>
-          </CrashGuard>
+          {stillPreview ? (
+            still
+          ) : (
+            <CrashGuard area="preview" replacement={still}>
+              <Suspense fallback={<p className="preview-status">Loading your resident…</p>}>
+                <CharacterPreview appearance={appearance} />
+              </Suspense>
+            </CrashGuard>
+          )}
         </div>
         <div className="creator-options">
           <div className="creator-scroll">

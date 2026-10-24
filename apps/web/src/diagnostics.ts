@@ -62,6 +62,7 @@ export function noteFps(fps: number) {
 }
 
 const CRASHED_KEY = "lagos-crashed";
+const PREVIEW_OFF_KEY = "lagos-preview-off";
 let area = "";
 let beatNow = () => undefined as void;
 
@@ -85,6 +86,15 @@ export function takeCrashFlag() {
   }
 }
 
+/** True once a page in this tab died on the look creator: show the still figure, not the 3D preview. */
+export function previewDisabled() {
+  try {
+    return sessionStorage.getItem(PREVIEW_OFF_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Global error hooks plus a heartbeat marker. If the previous page stopped heartbeating without a clean `pagehide`,
  * the tab was probably killed (out of memory or a browser crash) and that is reported once. Phones also discard
@@ -100,6 +110,9 @@ export function installDiagnostics() {
     const previous = JSON.parse(localStorage.getItem(RUNNING_KEY) ?? "null") as { at: number; clean: boolean; area?: string } | null;
     if (previous && !previous.clean && Date.now() - previous.at < 120_000) {
       sessionStorage.setItem(CRASHED_KEY, "1");
+      // iPad Safari kills the whole page (no error to catch) when the 3D look preview is too much for it; reopening
+      // the creator would kill it again, so the rest of this visit uses the still figure instead.
+      if (previous.area?.startsWith("creator") || previous.area === "preview") sessionStorage.setItem(PREVIEW_OFF_KEY, "1");
       report("unclean-exit", "Previous session ended without closing", { detail: { secondsAgo: Math.round((Date.now() - previous.at) / 1_000), area: previous.area ?? null } });
     }
     // Safari throws from setItem once storage is full; a heartbeat must never take a screen down with it.
