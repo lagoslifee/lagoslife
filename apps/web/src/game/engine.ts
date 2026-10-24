@@ -1684,6 +1684,7 @@ export class GameEngine {
         if (this.goalCheer && !lying && !inCar) this.player.cheer(now * 0.001);
         if (chair && !lying && chair.pose === "sit") this.player.seatHips(chair.y, chair.seat);
         else if (seatedTravel) this.player.seatHips(TRAVEL_SEAT_Y, [x, z]);
+        else if (motion === "sit" && !inCar && !bus && !water) this.player.sitGround(this.interior ? 0.02 : this.groundY, now * 0.001);
       }
     } else if (this.playerFallback) {
       this.playerFallback.position.set(x, this.groundY + 0.88, z);
@@ -2686,6 +2687,7 @@ export class GameEngine {
         if (this.goalCheer && b.motion === "sit") remote.avatar.cheer(performance.now() * 0.001 + remote.speed);
         if (b.motion === "sit" && seat && seat.rest !== "bed") remote.avatar.seatHips(seat.y, seat.at);
         else if (b.motion === "sit" && this.travelView) remote.avatar.seatHips(TRAVEL_SEAT_Y, [x, z]);
+        else if (b.motion === "sit" && !b.busId && !b.vehicleId && !water) remote.avatar.sitGround(this.interior ? 0.02 : this.world.groundHeight(x, z), performance.now() * 0.001);
       }
     }
   }

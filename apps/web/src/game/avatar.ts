@@ -229,6 +229,9 @@ type Instance = ReturnType<AvatarFactory["instantiate"]>;
 
 /** Joint angles (radians) for the sleeping and lounging poses. */
 const P = { sleepArm: 0.5, sleepIn: 1.35, sleepFore: 1.7, sleepHead: 0.5, sleepLegs: 0, sleepKnee: 0.08, readIn: 1.2, readUp: 0.62, readFore: 1.4, readHead: 0.35, readLieIn: 1.0, readLieUp: 1.35, readLieFore: 1.2, readLieHead: 0.45, loungeBack: -0.35, loungeArm: -1.2, loungeArmBack: -0.3, loungeFore: 0.9, loungeLegs: 0.4 };
+/** Sitting on the ground (radians), over the chair-sit clip; exported so the pose can be tuned. */
+export const GROUND_SIT = { leftKnee: -1.25, rightKnee: -0.8, thighUp: 0, lean: -0.3, armDown: 1.1, armBack: -0.55 };
+const G = GROUND_SIT;
 /** Carrying and handing over a held item (radians, metres). */
 const HOLD = { offerArm: 0.75, offerFore: 0.7, trayAbove: 0.04 };
 /** Swimming pose numbers (radians, metres, cycles); exported so the pose preview can tune them live. */
@@ -678,6 +681,29 @@ export class Avatar {
   private relax(joint: TransformNode | null) {
     const rest = joint && this.instance.rest.get(joint);
     if (rest && joint.rotationQuaternion) joint.rotationQuaternion.copyFrom(rest);
+  }
+
+  /**
+   * Sitting on the ground with nothing to sit on, over the chair clip: knees opened out so the legs lie forward on
+   * the ground, leaning back on both hands planted behind, hips dropped to `groundY`. Without it the chair pose
+   * hangs in mid-air.
+   */
+  sitGround(groundY: number, time: number) {
+    const limbs = this.instance.limbs;
+    const sway = Math.sin(time * 0.5) * 0.02;
+    bend(limbs.leftLow, G.leftKnee);
+    bend(limbs.rightLow, G.rightKnee);
+    bend(limbs.leftUp, G.thighUp);
+    bend(limbs.rightUp, G.thighUp * 0.6);
+    bend(limbs.spine, G.lean + sway);
+    bend(limbs.neck, -G.lean * 0.7);
+    for (const [arm, fore, side] of [[limbs.rightArm, limbs.rightFore, 1], [limbs.leftArm, limbs.leftFore, -1]] as const) {
+      this.relax(arm);
+      this.relax(fore);
+      bend(arm, side * G.armDown, Axis.Z);
+      bend(arm, G.armBack);
+    }
+    this.seatHips(groundY);
   }
 
   /** Chilling on a sofa, over the sit clip: leaning back, one arm along the backrest, legs stretched out a little. */
