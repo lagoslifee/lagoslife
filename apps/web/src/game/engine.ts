@@ -139,6 +139,7 @@ import {
 } from "@lagos-living/shared";
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
 import { COMPOUND_PLACES, compoundCars } from "./compounds";
+import { ImpactFx } from "./impact-fx";
 import { EntranceMarkers, type EntranceCandidate } from "./entrance-markers";
 import { TourGuide, tourStops } from "./tour-guide";
 import { GYM_RECEPTION, gymRegulars, gymStations, type GymRegular, type GymStation } from "./gym-stations";
@@ -450,6 +451,8 @@ export class GameEngine {
   private ownGuards = 0;
   private crews: StreetCrews | null = null;
   private entrances: EntranceMarkers | null = null;
+  private impacts: ImpactFx | null = null;
+  private readonly shakeOffset = new Vector3();
   /** The desk the HUD wants the player to walk to next inside a terminal or other travel interior. */
   private indoorGuide: { spot: string; label: string } | null = null;
   private tour: TourGuide | null = null;
@@ -939,6 +942,7 @@ export class GameEngine {
     this.showroom = this.buildShowroom(this.vehicleFactory);
     this.bikeStations = new BikeStationsView(scene, this.materials, (x, z) => this.world.groundHeight(x, z), this.vehicleFactory, (meshes) => this.addCaster(meshes));
     this.entrances = new EntranceMarkers(scene, (x, z) => this.world.groundHeight(x, z));
+    this.impacts = new ImpactFx(scene, (x, z) => (this.interior ? 0 : this.world.groundHeight(x, z)));
     this.listingBoards = new ListingBoards(scene);
     this.couriers = new Couriers(scene, () => this.avatars, () => this.vehicleFactory, () => this.navigator ?? null, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
     if (this.avatars) this.homeStaff = new HomeStaffView(this.avatars, (x, z) => this.world.groundHeight(x, z), (meshes) => this.addCaster(meshes));
@@ -1313,6 +1317,9 @@ export class GameEngine {
       this.net.send("vehicleImpact", { speed: impact });
       this.audio.crash(dialSpeed(impact) / 60);
       this.caption("Crunch — your car hit something");
+      const ahead = (car.speed >= 0 ? -1 : 1) * (car.model.length / 2);
+      const [fx, fz] = [Math.sin(car.yaw), Math.cos(car.yaw)];
+      this.impacts?.burst(car.x - fx * ahead, this.groundY + 0.5, car.z - fz * ahead, fx * Math.sign(-ahead), fz * Math.sign(-ahead), dialSpeed(impact) / 60);
     }
     if (impact > 0.5) this.lastContactAt = now;
     this.engineNote = car.model.body === "bicycle" || dry ? null : { speed: Math.abs(car.speed) / Math.max(1, topSpeed), throttle: Math.abs(throttle), bike: twoWheeled(car.model) };
@@ -1762,6 +1769,7 @@ export class GameEngine {
     }
     const tourStop = this.tour?.stop;
     const outdoorTarget = this.waypointDoor ?? (tourStop ? { key: `tour:${tourStop.id}`, point: tourStop.point, name: tourStop.name, title: "TOUR STOP" } : null);
+    this.impacts?.update(dt);
     this.entrances?.update(dt, [x, z], !this.interior && !bus && !seatedTravel, () => this.entranceCandidates(), this.interior && !seatedTravel ? (this.interior.spots.find((spot) => spot.id === "exit")?.point ?? null) : null, this.interior ? indoorTarget : outdoorTarget, this.camera.maxZ);
     this.updateGuideLine([x, z], guideSpot?.point ?? null);
     this.spotters?.update(dt, now, this.spottedCar(x, z), [x, z], !this.interior && !bus);
@@ -1956,6 +1964,7 @@ export class GameEngine {
     if (this.interior) position.y = Math.min(position.y, this.travelView ? (this.travelView.kind === "rooftop" || this.travelView.kind === "dhow" || this.travelView.kind === "safari" ? 8 : this.travelView.height - 0.15) : Math.min(this.groundY + 2.45, (this.interior as InteriorView).bounds.height - 0.2));
     this.cameraPosition.copyFrom(position);
     this.camera.position.copyFrom(position);
+    if (this.impacts) this.camera.position.addInPlace(this.impacts.shake(dt, this.shakeOffset));
     this.camera.setTarget(this.cameraTarget);
   }
 
@@ -4974,6 +4983,7 @@ export class GameEngine {
         seat: this.self?.seat ?? null,
         indoors: Boolean(this.interior),
         cameraYaw: this.cameraYaw,
+        sitting: this.sitting ? { pose: this.sitting.pose, y: this.player?.root.position.y ?? null } : null,
       }),
       buses: () => [...this.buses.values()].map((bus) => ({ ...bus.state, cx: bus.root.position.x, cz: bus.root.position.z })),
       cinema: (shot: { eye: [number, number, number]; look: [number, number, number] } | null) => {
@@ -5015,6 +5025,10 @@ export class GameEngine {
           this.autopilot = { path: [[x, z]], index: 0, sprint: false, resolve, lastProgress: performance.now(), lastPoint: [this.controller.x, this.controller.z], deadline: performance.now() + timeoutMs };
         }),
       interact: () => this.triggerInteract(),
+      impactFx: (severity: number) => {
+        const [fx, fz] = [Math.sin(this.controller.yaw), Math.cos(this.controller.yaw)];
+        this.impacts?.burst(this.controller.x + fx * 2, this.groundY + 0.5, this.controller.z + fz * 2, fx, fz, severity);
+      },
       couriers: () => this.couriers?.debug() ?? [],
       ride: () => this.ride,
       bikes: () => this.bikeStatus(),
