@@ -370,6 +370,7 @@ export type ResidentRecord = {
   sanctions: Array<{ id: string; kind: string; reason: string; createdAt: string; endsAt: string | null; liftedAt: string | null; active: boolean }>;
   history: Array<{ id: string; actorName: string; action: string; reason: string; createdAt: string }>;
 };
+export type DeviceReport = { id: number; at: string; userName: string | null; kind: string; message: string; stack: string | null; detail: Record<string, unknown> | null; quality: string | null; device: string | null; page: string | null };
 export type AuditEntry = { id: string; actorName: string; targetName: string | null; action: string; reason: string; details: Record<string, unknown>; createdAt: string };
 export type Appeal = Citation & { userId: string; userName: string };
 export type StaffOverview = {
@@ -393,6 +394,7 @@ export const modApi = {
   decideAppeal: (id: string, outcome: "upheld" | "overturned", note: string) => post<Citation>(`/api/mod/appeals/${id}/decide`, { outcome, note }),
   citationHistory: (id: string) => request<Array<{ event: string; actorName: string; note: string | null; createdAt: string }>>(`/api/mod/citations/${id}/history`),
   audit: () => request<AuditEntry[]>("/api/mod/audit?limit=200"),
+  deviceReports: (kind = "") => request<DeviceReport[]>(`/api/admin/device-reports?limit=200${kind ? `&kind=${encodeURIComponent(kind)}` : ""}`),
   setRole: (userName: string, role: StaffRole | null, reason: string) => post("/api/admin/roles", { userName, role, reason }),
 };
 

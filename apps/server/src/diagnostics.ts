@@ -71,6 +71,20 @@ export function recordClientReport(report: z.infer<typeof clientReportSchema>, u
     .catch(() => undefined);
 }
 
+export type ClientReportRow = { id: number; at: string; userName: string | null; kind: string; message: string; stack: string | null; detail: unknown; quality: string | null; device: string | null; page: string | null };
+
+/** Latest device reports for staff, newest first, optionally only one kind (for example `unclean-exit`). */
+export async function listClientReports(limit: number, kind?: string) {
+  const { rows } = await pool.query<ClientReportRow>(
+    `SELECT r.id, r.at, COALESCE(u."displayUsername", u.username, u.name) AS "userName", r.kind, r.message, r.stack, r.detail, r.quality, r.device, r.page
+       FROM client_report r LEFT JOIN "user" u ON u.id = r.user_id
+      WHERE ($2::text IS NULL OR r.kind = $2)
+      ORDER BY r.at DESC LIMIT $1`,
+    [limit, kind ?? null],
+  );
+  return rows;
+}
+
 export function processHealth() {
   const memory = process.memoryUsage();
   return {

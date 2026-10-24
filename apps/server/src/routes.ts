@@ -110,7 +110,7 @@ import { acquirePlot, buildingEvents, buyReadyBuilt, listPlots, payNextStage, re
 import { matchMaker } from "@colyseus/core";
 import { config, isWebOrigin } from "./config.js";
 import { pool } from "./database.js";
-import { clientReportSchema, processHealth, recordClientReport } from "./diagnostics.js";
+import { clientReportSchema, listClientReports, processHealth, recordClientReport } from "./diagnostics.js";
 import { getPlayerPosition, markProgressReset } from "./player-presence.js";
 import { withinRate } from "./request-rate.js";
 import {
@@ -908,6 +908,9 @@ export function configureRoutes(app: Express) {
 
   app.get("/api/mod/audit", ...moderator, guarded("Audit log unavailable", (req) =>
     listAudit(z.coerce.number().int().default(100).parse(req.query.limit))));
+
+  app.get("/api/admin/device-reports", requirePlayer, staffOnly("admin"), guarded("Device reports unavailable", (req) =>
+    listClientReports(z.coerce.number().int().min(1).max(500).default(200).parse(req.query.limit), z.string().max(30).optional().parse(req.query.kind || undefined))));
 
   app.post("/api/admin/roles", requirePlayer, staffOnly("admin"), rateLimited, guarded("Role could not be changed", (req) => {
     const body = roleChangeSchema.parse(req.body);

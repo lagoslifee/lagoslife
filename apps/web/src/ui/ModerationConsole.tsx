@@ -1,8 +1,8 @@
 import { MODERATION_ACTIONS, SONG_REQUEST, SONG_VENUE_LABEL, SONG_VENUES, type ClubSong, type ModerationActionKind, type SongVenue, type StaffRole } from "@lagos-living/shared";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, ApiError, modApi, naira, type Appeal, type AuditEntry, type ModReport, type ResidentRecord, type StaffOverview } from "../api";
+import { api, ApiError, modApi, naira, type Appeal, type AuditEntry, type DeviceReport, type ModReport, type ResidentRecord, type StaffOverview } from "../api";
 
-type Tab = "reports" | "appeals" | "residents" | "audit" | "staff" | "music";
+type Tab = "reports" | "appeals" | "residents" | "audit" | "staff" | "music" | "devices";
 
 const ACTION_LABEL: Record<ModerationActionKind, string> = {
   warn: "Warn",
@@ -78,7 +78,7 @@ export function ModerationConsole({ staffName }: { staffName: string }) {
         <a className="link" href="/">Back to the game</a>
       </header>
       <nav className="mod-tabs" role="tablist">
-        {((role === "music" ? ["music"] : ["reports", "appeals", "residents", "audit", ...(role === "admin" ? ["staff", "music"] : [])]) as Tab[]).map((id) => (
+        {((role === "music" ? ["music"] : ["reports", "appeals", "residents", "audit", ...(role === "admin" ? ["staff", "music", "devices"] : [])]) as Tab[]).map((id) => (
           <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
             {id[0]!.toUpperCase() + id.slice(1)}
           </button>
@@ -109,6 +109,7 @@ export function ModerationConsole({ staffName }: { staffName: string }) {
         />
       )}
       {tab === "audit" && <AuditTab onError={fail} />}
+      {tab === "devices" && <DevicesTab onError={fail} />}
       {tab === "music" && <MusicTab onDone={(text) => say("success", text)} onError={fail} />}
       {tab === "staff" && overview && <StaffTab overview={overview} onDone={(text) => { say("success", text); void loadOverview(); }} onError={fail} />}
     </main>
@@ -314,6 +315,45 @@ function AppealsTab({ onDone, onError }: { onDone: (text: string) => void; onErr
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+const DEVICE_KINDS = ["", "unclean-exit", "ui-crash", "error", "rejection", "context-lost", "memory", "low-fps", "disconnect"];
+
+/** What players' phones and tablets reported: crashes, page kills and lost 3D contexts, with the device and screen. */
+function DevicesTab({ onError }: { onError: (error: unknown) => void }) {
+  const [kind, setKind] = useState("");
+  const [entries, setEntries] = useState<DeviceReport[] | null>(null);
+  useEffect(() => {
+    setEntries(null);
+    modApi.deviceReports(kind).then(setEntries).catch(onError);
+  }, [kind, onError]);
+  return (
+    <section className="mod-panel">
+      <p className="muted small">Automatic reports from players' devices over the last 14 days, newest first. "unclean-exit" means the browser killed the page; the screen it was on is in Detail.</p>
+      <label>Kind{" "}
+        <select value={kind} onChange={(event) => setKind(event.target.value)}>
+          {DEVICE_KINDS.map((value) => <option key={value} value={value}>{value || "All"}</option>)}
+        </select>
+      </label>
+      <table className="mod-table" data-testid="mod-devices">
+        <thead><tr><th>When</th><th>Resident</th><th>Kind</th><th>Screen</th><th>Message</th><th>Detail</th><th>Device</th></tr></thead>
+        <tbody>
+          {entries?.map((entry) => (
+            <tr key={entry.id}>
+              <td>{when(entry.at)}</td>
+              <td>{entry.userName ?? "—"}</td>
+              <td>{entry.kind}</td>
+              <td>{entry.page ?? "—"}</td>
+              <td title={entry.stack ?? undefined}>{entry.message}</td>
+              <td>{entry.detail ? JSON.stringify(entry.detail) : "—"}</td>
+              <td className="small">{entry.device ?? "—"}{entry.quality ? ` · ${entry.quality}` : ""}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {entries?.length === 0 && <p className="muted small">No reports.</p>}
     </section>
   );
 }
