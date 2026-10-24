@@ -950,8 +950,21 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
               base.get(rx, rz, "asphaltMinor").worldRibbon(run, drainLeft, drainRight, 0.02, 1.2, [0.82, 0.83, 0.85]);
             } else {
               base.get(rx, rz, "pavers").worldRibbon(run, left, right, SIDEWALK_Y, 2.2);
-              base.get(rx, rz, "concrete").curtain(run, side * inner, 0, SIDEWALK_Y, 1.5, side > 0);
+              const painted = road.kind === "primary" || road.kind === "tertiary";
+              const kerbLeft = side > 0 ? inner : -inner - 0.22;
+              const kerbRight = side > 0 ? inner + 0.22 : -inner;
+              // Lagos main roads have their kerbs painted in black and yellow blocks.
+              base.get(rx, rz, "concrete").curtain(run, side * inner, 0, SIDEWALK_Y, 1.5, side > 0, painted ? [0.16, 0.16, 0.16] : undefined);
               base.get(rx, rz, "concrete").curtain(run, side * outer, 0, SIDEWALK_Y, 1.5, side < 0);
+              if (painted) {
+                base.get(rx, rz, "concrete").worldRibbon(run, kerbLeft, kerbRight, SIDEWALK_Y + 0.004, 1, [0.16, 0.16, 0.16]);
+                const runLength = polylineLength(run);
+                for (let s = 0.3; s + 1 < runLength; s += 2) {
+                  const block = slicePolyline(run, s, s + 1);
+                  base.get(rx, rz, "paintYellow").curtain(block, side * (inner - 0.012), 0.02, SIDEWALK_Y + 0.006, 1, side > 0);
+                  base.get(rx, rz, "paintYellow").worldRibbon(block, kerbLeft, kerbRight, SIDEWALK_Y + 0.008, 1);
+                }
+              }
               base.get(rx, rz, "drain").worldRibbon(run, drainLeft, drainRight, 0.015, 1.2);
             }
           }
@@ -1118,6 +1131,24 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     const paint = landmark ? LANDMARK_PAINT[landmark] : PAINTS[Math.floor(hash(building.id * 7) * PAINTS.length)]!;
     const trim: Color = landmark ? LANDMARK_TRIM[landmark] : hash(building.id * 11) > 0.5 ? [0.98, 0.98, 0.97] : [0.62, 0.6, 0.57];
     const obb = orientedBox(ring);
+    // Lagos compounds are paved, not lawns: interlocking stone or a screeded concrete yard round the house,
+    // grown as far as it can go without reaching a carriageway or pavement.
+    if (building.kind !== "roof" && area < 2_500) {
+      const pavers = hash(building.id * 43) < 0.6;
+      for (const margin of [4.5, 3, 1.8]) {
+        const hu = obb.hu + margin;
+        const hv = obb.hv + margin;
+        const yard: Vec2[] = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => [obb.cx + obb.ux * u! * hu - obb.uz * v! * hv, obb.cz + obb.uz * u! * hu + obb.ux * v! * hv]);
+        const edges = yard.flatMap((p, index) => {
+          const q = yard[(index + 1) % 4]!;
+          return [p, [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2] as Vec2];
+        });
+        if (edges.some(([x, z]) => roads.onAsphalt(x, z, 3.4))) continue;
+        if (pavers) base.get(cx, cz, "pavers").polygon(yard, 0.022, 2.2, [0.92, 0.86, 0.82]);
+        else base.get(cx, cz, "concrete").polygon(yard, 0.018, 3, [0.86, 0.85, 0.82]);
+        break;
+      }
+    }
     const rectangular = area / Math.max(1, obb.area) > 0.86 && ring.length <= 8;
     const hipRoof = !landmark && building.kind !== "office" && building.kind !== "apartments" && floors <= 2 && rectangular && area < 520 && seed > 0.2;
     const parapet = hipRoof || landmark === "church" || landmark === "mansion" ? 0 : 0.9;
@@ -1563,8 +1594,8 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
       s1 = Math.max(s1, hit.s);
     }
     const roadDense = densify(road.points, 2);
-    s0 = Math.max(0.5, s0 - 2.5);
-    s1 = Math.min(polylineLength(roadDense) - 0.5, s1 + 2.5);
+    s0 = Math.max(0.5, s0 - 4);
+    s1 = Math.min(polylineLength(roadDense) - 0.5, s1 + 4);
     if (s1 - s0 < 4) return;
     const gateHit = roads.nearest(doorX, doorZ, (candidate) => candidate === road);
     const gateS = gateHit ? Math.max(s0 + 2, Math.min(s1 - 2, gateHit.s)) : (s0 + s1) / 2;
