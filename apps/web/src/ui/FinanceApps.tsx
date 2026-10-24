@@ -101,16 +101,16 @@ export function DailyBonusPopup({ onRefresh, onToast }: Omit<MoneyProps, "econom
   useEffect(() => {
     if (sessionStorage.getItem("lagos-daily-seen")) return;
     api.daily().then((status) => {
-      if (!status.claimedToday) setOpen(true);
+      if (status.claimedToday || sessionStorage.getItem("lagos-daily-seen")) return;
+      // Seen once is enough: it unmounts whenever a sheet or a door load covers the city, and must not pop back.
+      sessionStorage.setItem("lagos-daily-seen", "1");
+      setOpen(true);
     }).catch(() => undefined);
   }, []);
   if (!open) return null;
-  const close = () => {
-    sessionStorage.setItem("lagos-daily-seen", "1");
-    setOpen(false);
-  };
+  const close = () => setOpen(false);
   return (
-    <div className="daily-popup" role="dialog" aria-label="Daily bonus">
+    <div className="daily-popup" role="dialog" aria-label="Daily bonus" onClick={(event) => event.target === event.currentTarget && close()}>
       <div>
         <button className="icon-button" onClick={close} aria-label="Close daily bonus">✕</button>
         <DailyBonusCard onRefresh={onRefresh} onToast={onToast} onClaimed={() => window.setTimeout(close, 900)} />

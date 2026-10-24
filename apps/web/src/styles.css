@@ -1230,6 +1230,7 @@ button.wide { width: 100%; margin: 6px 0; }
 .daily-popup > div { position: relative; width: min(380px, 100%); }
 .daily-popup .icon-button { position: absolute; right: 8px; top: 8px; z-index: 1; color: #fff; background: rgba(0,0,0,.3); }
 .daily-popup .daily-card { margin: 0; padding: 18px 14px 14px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.daily-popup .daily-card header { padding-right: 38px; }
 .market-list { list-style: none; padding: 0; margin: 10px 0; }
 .market-list li button { width: 100%; display: grid; grid-template-columns: 40px 1fr 64px auto; gap: 8px; align-items: center; padding: 9px 4px; border: 0; border-bottom: 1px solid #ebe7dc; background: none; text-align: left; color: inherit; }
 .market-list .ticker { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; background: #17312e; color: #e6bd62; font-weight: 800; font-size: 11px; }
