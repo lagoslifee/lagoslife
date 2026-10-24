@@ -140,6 +140,7 @@ import {
 import { buildTravelInterior, TRAVEL_SEAT_Y, type TravelView } from "./travel-interiors";
 import { COMPOUND_PLACES, compoundCars } from "./compounds";
 import { ImpactFx } from "./impact-fx";
+import { ColorCurves } from "@babylonjs/core/Materials/colorCurves";
 import { EntranceMarkers, type EntranceCandidate } from "./entrance-markers";
 import { TourGuide, tourStops } from "./tour-guide";
 import { GYM_RECEPTION, gymRegulars, gymStations, type GymRegular, type GymStation } from "./gym-stations";
@@ -813,6 +814,21 @@ export class GameEngine {
     scene.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
     scene.imageProcessingConfiguration.exposure = 1.05;
     scene.imageProcessingConfiguration.contrast = 1.12;
+    // A film-like finish for no extra pass: these run inside the tone-mapping step every material already does.
+    scene.imageProcessingConfiguration.vignetteEnabled = true;
+    scene.imageProcessingConfiguration.vignetteWeight = 1.6;
+    scene.imageProcessingConfiguration.vignetteStretch = 0.4;
+    scene.imageProcessingConfiguration.vignetteColor = new Color4(0.05, 0.04, 0.03, 0);
+    const curves = new ColorCurves();
+    curves.globalSaturation = 18;
+    curves.shadowsHue = 210;
+    curves.shadowsDensity = 12;
+    curves.shadowsSaturation = 20;
+    curves.highlightsHue = 40;
+    curves.highlightsDensity = 10;
+    curves.highlightsSaturation = 25;
+    scene.imageProcessingConfiguration.colorCurves = curves;
+    scene.imageProcessingConfiguration.colorCurvesEnabled = true;
     scene.fogMode = Scene.FOGMODE_EXP2;
     scene.fogDensity = FULL_FOG_DENSITY;
     scene.fogColor = new Color3(0.78, 0.84, 0.88);
