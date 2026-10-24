@@ -46,7 +46,7 @@ export class EntranceMarkers {
     // Indoors under a 3 m ceiling, beside a door that carries its own sign: a street-sized marker fills the room.
     for (const child of this.exit.root.getChildMeshes()) {
       if (child === this.exit.label) child.setEnabled(false);
-      else child.scaling.setAll(child === this.exit.arrow ? 0.55 : 0.6);
+      else child.scaling.setAll(child === this.exit.arrow ? 0.85 : 0.6);
     }
     const cyan = this.material("destination cyan", new Color3(0.2, 0.85, 1));
     this.destination = this.marker("destination marker", cyan, "#3fd8ff");
@@ -94,7 +94,8 @@ export class EntranceMarkers {
     ring.material = material;
     ring.parent = root;
     ring.position.y = 0.06;
-    const arrow = MeshBuilder.CreateCylinder(`${name} arrow`, { diameterTop: 0, diameterBottom: 0.7, height: 0.7, tessellation: 4 }, this.scene);
+    // Small enough not to fill the screen when the camera is at the door, which is exactly when it is seen most.
+    const arrow = MeshBuilder.CreateCylinder(`${name} arrow`, { diameterTop: 0, diameterBottom: 0.42, height: 0.5, tessellation: 4 }, this.scene);
     arrow.material = material;
     arrow.parent = root;
     arrow.rotation.x = Math.PI;
