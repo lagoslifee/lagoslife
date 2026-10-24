@@ -31,7 +31,7 @@ export function skinTint(appearance: CharacterAppearance) {
 }
 
 /** Garment ids baked into COLOR_0.r (id / 10) by scripts/assets/build-residents.mjs. */
-const GARMENT_IDS = ["top", "sleeve", "trousers", "shoes", "skirt"] as const;
+const GARMENT_IDS = ["top", "sleeve", "trousers", "shoes", "skirt", "sole"] as const;
 type Garment = (typeof GARMENT_IDS)[number];
 type Slot = { base: [number, number, number, number]; print: [number, number, number, number]; accent: Color3 };
 
@@ -56,6 +56,7 @@ export function garmentSlots(appearance: CharacterAppearance, kit: Kit | null = 
       trousers: slot({ colour: kit.shorts }),
       shoes: { base: [boots.r, boots.g, boots.b, 1], print: [0, 0, 0, 0], accent: boots },
       skirt: HIDDEN,
+      sole: plain(linear("#e9e6df")),
     };
   }
   const outfit = OUTFITS[appearance.outfit];
@@ -66,7 +67,16 @@ export function garmentSlots(appearance: CharacterAppearance, kit: Kit | null = 
     trousers: slot(outfit.trousers),
     shoes: { base: [shoes.r, shoes.g, shoes.b, 1], print: [0, 0, 0, 0], accent: shoes },
     skirt: slot(outfit.skirt),
+    sole: plain(soleFor(shoes)),
   };
+}
+
+const plain = (colour: Color3): Slot => ({ base: [colour.r, colour.g, colour.b, 1], print: [0, 0, 0, 0], accent: colour });
+
+/** Dark leather shoes sit on a dark sole; trainers, sandals and light shoes on an off-white rubber one. */
+function soleFor(shoes: Color3) {
+  const luminance = 0.2126 * shoes.r + 0.7152 * shoes.g + 0.0722 * shoes.b;
+  return linear(luminance < 0.03 ? "#2b2420" : "#ece9e2");
 }
 
 /** Colours, prints and hides the generated garments per avatar in the shader, from one shared mesh. */

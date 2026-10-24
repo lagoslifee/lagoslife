@@ -110,7 +110,10 @@ export class AvatarFactory {
     const outfit = part("Outfit");
     const skirt = part("Skirt");
     const garments: GarmentPlugin[] = [];
-    for (const mesh of [outfit, skirt]) if (mesh?.material instanceof PBRMaterial) garments.push(new GarmentPlugin(mesh.material, appearance));
+    // Outfit and skirt share one fabric material, which takes a single garment plugin.
+    const fabrics = new Set<PBRMaterial>();
+    for (const mesh of [outfit, skirt]) if (mesh?.material instanceof PBRMaterial) fabrics.add(mesh.material);
+    for (const material of fabrics) garments.push(new GarmentPlugin(material, appearance));
     const hair = new Map<string, AbstractMesh>();
     for (const mesh of meshes) {
       const match = mesh.name.match(/Hair_([a-z-]+)$/);
