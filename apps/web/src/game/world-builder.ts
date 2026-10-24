@@ -692,7 +692,7 @@ export function buildWorld(scene: Scene, data: WorldData, materials: Materials, 
     const c0 = Math.round((x0 - grid.originX) / cell);
     const r0 = Math.round((z0 - grid.originZ) / cell);
     const n = Math.round(TILE / cell);
-    const ground = base.get(x0 + TILE / 2, z0 + TILE / 2, dubai ? "sand" : "dirt");
+    const ground = base.get(x0 + TILE / 2, z0 + TILE / 2, dubai ? "sand" : "land");
     for (let row = 0; row < n; row += 1) {
       if (row % 4 === 0) yield;
       let runStart = -1;

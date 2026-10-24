@@ -233,6 +233,8 @@ export function createMaterials(scene: Scene, quality: Quality) {
   const dirt = textured(scene, "laterite ground", "dirt", { roughness: 1, quality, tint: "#d1a77c" });
   const grass = textured(scene, "verge grass", "grass", { roughness: 1, quality, tint: "#b7c494" });
   grass.zOffset = -1;
+  // Open land between plots: dry Lagos grass rather than bare laterite, so a street reads lived-in, not a building site.
+  const land = textured(scene, "open land", "grass", { roughness: 1, quality, tint: "#a9c27a" });
   const roof = textured(scene, "aluminium roofing", "roof", { roughness: 0.48, metallic: 0.55, quality });
   const tiles = textured(scene, "floor tiles", "tiles", { roughness: 0.35, quality });
 
@@ -316,6 +318,7 @@ export function createMaterials(scene: Scene, quality: Quality) {
     drain,
     dirt,
     grass,
+    land,
     roof,
     tiles,
     glass,
