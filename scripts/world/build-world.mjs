@@ -907,6 +907,194 @@ const places = placeSeeds.map((seed) => {
   return place;
 });
 
+// ---- Infill: OpenStreetMap has only a fraction of Lekki, VI and Ikoyi's buildings, which left whole streets as open
+// grass. Real Lagos streets are lined plot after plot with walled compounds: bungalows and duplexes on the side
+// streets, two- to four-storey shop-and-office blocks on the main roads. Each empty frontage gets one, kept clear of
+// every mapped building, road, pavement, water, open space, game site and land plot. Added after places are matched
+// so no mapped place moves; deterministic, so the client and the server see the same footprints.
+const INFILL_ID = 90_000_000_000;
+const infill = [];
+{
+  const plots = JSON.parse(await readFile(path.join(root, "packages/shared/src/generated/lagos-plots.json"), "utf8"));
+  const lagosIds = new Set(LAGOS_DISTRICTS.map((district) => district.id));
+  const OPEN_KINDS = new Set(["residential", "commercial", "retail", "industrial", "yes"]);
+  const FRONTAGE = { primary: "main", tertiary: "main", unclassified: "street", residential: "street" };
+  const sidewalk = (road) => (road.kind === "primary" ? 2.6 : road.kind === "tertiary" ? 2.2 : ["unclassified", "residential"].includes(road.kind) ? 1.8 : 0);
+  /** Clearance the renderer needs from a road's centreline: carriageway, kerb, pavement and compound wall. */
+  const roadClear = (road) => road.width / 2 + 0.55 + (sidewalk(road) || 0.6) + 0.4;
+  // Game sites laid out in code rather than mapped: event ground and street-football pitches.
+  const RESERVED = [[[-32, 376], 36], [[-199.6, 334.7], 36], [[-369.4, 71.1], 40]];
+  const CELL = 40;
+  const grid = new Map();
+  const put = (x, z, item) => {
+    const k = `${Math.floor(x / CELL)}_${Math.floor(z / CELL)}`;
+    let list = grid.get(k);
+    if (!list) grid.set(k, (list = []));
+    list.push(item);
+  };
+  const near = (x, z, radius, visit) => {
+    const seen = new Set();
+    for (let gx = Math.floor((x - radius) / CELL); gx <= Math.floor((x + radius) / CELL); gx += 1) {
+      for (let gz = Math.floor((z - radius) / CELL); gz <= Math.floor((z + radius) / CELL); gz += 1) {
+        for (const item of grid.get(`${gx}_${gz}`) ?? []) {
+          if (seen.has(item)) continue;
+          seen.add(item);
+          if (visit(item) === false) return false;
+        }
+      }
+    }
+    return true;
+  };
+  const putSegment = (item, a, b) => {
+    const steps = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (CELL / 2)));
+    for (let step = 0; step <= steps; step += 1) put(a[0] + ((b[0] - a[0]) * step) / steps, a[1] + ((b[1] - a[1]) * step) / steps, item);
+  };
+  const lagosRoads = lagos.roads;
+  for (const road of lagosRoads) {
+    for (let index = 1; index < road.points.length; index += 1) {
+      putSegment({ type: "road", road, a: road.points[index - 1], b: road.points[index] }, road.points[index - 1], road.points[index]);
+    }
+  }
+  const addRing = (type, ring, pad) => {
+    const xs = ring.map((point) => point[0]);
+    const zs = ring.map((point) => point[1]);
+    const item = { type, ring, pad, minX: Math.min(...xs) - pad, maxX: Math.max(...xs) + pad, minZ: Math.min(...zs) - pad, maxZ: Math.max(...zs) + pad };
+    for (let x = item.minX; x <= item.maxX + CELL; x += CELL) for (let z = item.minZ; z <= item.maxZ + CELL; z += CELL) put(Math.min(x, item.maxX), Math.min(z, item.maxZ), item);
+    return item;
+  };
+  for (const building of lagos.buildings) addRing("ring", building.points, 3);
+  for (const area of lagos.areas) {
+    if (OPEN_KINDS.has(area.kind)) continue;
+    const closed = area.points.length > 3 && area.points[0][0] === area.points.at(-1)[0] && area.points[0][1] === area.points.at(-1)[1];
+    if (closed) addRing("ring", area.points.slice(0, -1), 2);
+    else for (let index = 1; index < area.points.length; index += 1) putSegment({ type: "line", a: area.points[index - 1], b: area.points[index], pad: 4 }, area.points[index - 1], area.points[index]);
+  }
+  for (const plot of plots) {
+    const { center: [px, pz], along: [ax, az], inward: [ix, iz], width, depth } = plot;
+    const hw = width / 2 + 1;
+    const hd = depth / 2 + 1;
+    addRing("ring", [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => [px + ax * u * hw + ix * v * hd, pz + az * u * hw + iz * v * hd]), 6);
+    put(plot.kerb[0], plot.kerb[1], { type: "point", at: plot.kerb, radius: 8 });
+  }
+  for (const place of places) {
+    for (const at of [place.door, place.kerb]) put(at[0], at[1], { type: "point", at, radius: 26 });
+  }
+  for (const route of routes) for (const stop of route.stops) put(stop.pole[0], stop.pole[1], { type: "point", at: stop.pole, radius: 34 });
+  for (const [at, radius] of RESERVED) addRing("ring", [[at[0] - 1, at[1] - 1], [at[0] + 1, at[1] - 1], [at[0] + 1, at[1] + 1], [at[0] - 1, at[1] + 1]], radius);
+
+  const insideRing = (ring, x, z) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+      if (ring[i][1] > z !== ring[j][1] > z && x < ((ring[j][0] - ring[i][0]) * (z - ring[i][1])) / (ring[j][1] - ring[i][1]) + ring[i][0]) inside = !inside;
+    }
+    return inside;
+  };
+  const ringDistance = (ring, x, z) => (insideRing(ring, x, z) ? 0 : Math.min(...ring.map((point, index) => segmentDistance(x, z, point, ring[(index + 1) % ring.length]))));
+  const wet = ([x, z]) => {
+    const u = (x - MASK.minX) / WATER_CELL;
+    const v = (z - MASK.minZ) / WATER_CELL;
+    const col = Math.floor(u);
+    const row = Math.floor(v);
+    if (col < 0 || row < 0 || col >= cols || row >= rows) return true;
+    return blocked[row * (cols + 1) + col] + blocked[row * (cols + 1) + col + 1] + blocked[(row + 1) * (cols + 1) + col] + blocked[(row + 1) * (cols + 1) + col + 1] > 0;
+  };
+  /** Sample points over a footprint: corners, edge midpoints and the inside, so thin roads and rings are caught. */
+  const samplesOf = (ring) => {
+    const out = [...ring];
+    ring.forEach((a, index) => {
+      const b = ring[(index + 1) % ring.length];
+      const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      for (let t = 2; t < length; t += 2) out.push([a[0] + ((b[0] - a[0]) * t) / length, a[1] + ((b[1] - a[1]) * t) / length]);
+    });
+    const [cx, cz] = centroidOf(ring);
+    for (const point of ring) out.push([(point[0] + cx) / 2, (point[1] + cz) / 2]);
+    out.push([cx, cz]);
+    return out;
+  };
+  const fits = (ring, frontRoad) => {
+    const [cx, cz] = centroidOf(ring);
+    const radius = Math.max(...ring.map(([x, z]) => Math.hypot(x - cx, z - cz)));
+    const samples = samplesOf(ring);
+    if (!samples.every((point) => lagosIds.has(districtOf(point)) && !wet(point))) return false;
+    const xs = ring.map((point) => point[0]);
+    const zs = ring.map((point) => point[1]);
+    const box = { minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) };
+    return near(cx, cz, radius + 60, (item) => {
+      if (item.type === "road") {
+        const clear = item.road === frontRoad ? roadClear(item.road) + 2.8 : roadClear(item.road) + 1.2;
+        return samples.every(([x, z]) => segmentDistance(x, z, item.a, item.b) >= clear);
+      }
+      if (item.type === "line") return samples.every(([x, z]) => segmentDistance(x, z, item.a, item.b) >= item.pad);
+      if (item.type === "point") return samples.every(([x, z]) => Math.hypot(x - item.at[0], z - item.at[1]) >= item.radius);
+      if (box.maxX < item.minX || box.minX > item.maxX || box.maxZ < item.minZ || box.minZ > item.maxZ) return true;
+      if (ring.some(([x, z]) => insideRing(item.ring, x, z))) return false;
+      return samples.every(([x, z]) => ringDistance(item.ring, x, z) >= item.pad) && item.ring.every(([x, z]) => !insideRing(ring, x, z));
+    });
+  };
+  let seed = 1;
+  const random = () => {
+    seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+    return seed / 2_147_483_648;
+  };
+  for (const road of [...lagosRoads].sort((a, b) => a.id - b.id || a.points[0][0] - b.points[0][0])) {
+    const frontage = FRONTAGE[road.kind];
+    if (!frontage || road.bridge) continue;
+    const dense = [];
+    for (let index = 1; index < road.points.length; index += 1) {
+      const a = road.points[index - 1];
+      const b = road.points[index];
+      const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      for (let t = 0; t < length; t += 1) dense.push([a[0] + ((b[0] - a[0]) * t) / length, a[1] + ((b[1] - a[1]) * t) / length]);
+    }
+    dense.push(road.points.at(-1));
+    for (const side of [-1, 1]) {
+      let s = 8 + Math.floor(random() * 6);
+      while (s < dense.length - 10) {
+        const main = frontage === "main";
+        const width = main ? 14 + random() * 7 : 11.5 + random() * 5;
+        const depth = main ? 11 + random() * 6 : 9.5 + random() * 5;
+        const mid = Math.min(dense.length - 2, Math.round(s + width / 2));
+        const a = dense[Math.max(0, mid - 3)];
+        const b = dense[Math.min(dense.length - 1, mid + 3)];
+        const length = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+        const tx = (b[0] - a[0]) / length;
+        const tz = (b[1] - a[1]) / length;
+        const nx = tz * side;
+        const nz = -tx * side;
+        const front = roadClear(road) + 3 + random() * 2.5;
+        const [ox, oz] = dense[mid];
+        const at = (u, v) => [round2(ox + tx * u + nx * v), round2(oz + tz * u + nz * v)];
+        const hw = width / 2;
+        let ring = [at(-hw, front), at(hw, front), at(hw, front + depth), at(-hw, front + depth)];
+        // A third of the side-street houses are L-shaped: a wing set back on one side of the front.
+        if (!main && random() < 0.33) {
+          const cut = width * (0.35 + random() * 0.2);
+          const back = depth * (0.35 + random() * 0.2);
+          ring = random() < 0.5
+            ? [at(-hw, front + back), at(-hw + cut, front + back), at(-hw + cut, front), at(hw, front), at(hw, front + depth), at(-hw, front + depth)]
+            : [at(-hw, front), at(hw - cut, front), at(hw - cut, front + back), at(hw, front + back), at(hw, front + depth), at(-hw, front + depth)];
+        }
+        if (polygonArea(ring) < 0) ring.reverse();
+        if (random() > (main ? 0.12 : 0.08) && fits(ring, road)) {
+          const roll = random();
+          const kind = main ? (roll < 0.55 ? "commercial" : roll < 0.8 ? "retail" : "apartments") : roll < 0.62 ? "house" : roll < 0.84 ? "residential" : "apartments";
+          const levels = main ? 2 + Math.floor(random() * 3) : kind === "apartments" ? 3 + Math.floor(random() * 2) : roll < 0.25 ? 1 : 2;
+          const building = { id: INFILL_ID + infill.length, kind, levels, name: null, points: ring };
+          infill.push(building);
+          addRing("ring", ring, 2.5);
+          s += Math.ceil(width) + 3 + Math.floor(random() * 4);
+        } else {
+          s += 4;
+        }
+      }
+    }
+  }
+  for (const building of infill) {
+    buildings.push(building);
+    tileFor(tileKey(centroidOf(building.points))).buildings.push(building);
+  }
+}
+
 const districts = DISTRICTS.map(({ id, name, lga, region, rect }) => ({ id, name, lga, region, rect }));
 const world = {
   name: "Lagos Living: Lekki Phase 1, Ikoyi and Victoria Island, with a Dubai Marina holiday region",
@@ -944,7 +1132,7 @@ for (const route of routes) console.log(`route ${route.routeNumber} ${route.leng
 console.log(places.map((place) => `${place.id} (${place.district}) door ${place.door} kerb ${place.kerb}`).join("\n"));
 console.log(
   `roads ${roads.length} (named ${roads.filter((road) => road.name).length}, bridges ${roads.filter((road) => road.bridge).length}), ` +
-    `buildings ${buildings.length}, areas ${areas.length}, pois ${pois.length}, tiles ${files.length}, ` +
+    `buildings ${buildings.length} (infill ${infill.length}), areas ${areas.length}, pois ${pois.length}, tiles ${files.length}, ` +
     `water ${water.reduce((sum, bit) => sum + bit, 0)} / ${water.length} samples, blocked ${blocked.reduce((sum, bit) => sum + bit, 0)}`,
 );
 console.log(
