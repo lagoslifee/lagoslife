@@ -611,8 +611,13 @@ export function GameView({
   const objective = useMemo(() => (inDubai ? null : currentObjective(economy, properties, plots, hud, visitedHome, chosenPath)), [inDubai, economy, properties, plots, hud, visitedHome, chosenPath]);
   const objectiveKey = objective ? `${objective.step}:${objective.title}` : "";
   useEffect(() => {
-    if (objectiveKey) setGuideOpen(true);
-  }, [objectiveKey]);
+    if (!objectiveKey) return;
+    setGuideOpen(true);
+    // On a phone the open card covers the top of the view: show a new step, then fold it to its title.
+    if (!touch) return;
+    const timer = window.setTimeout(() => setGuideOpen(false), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [objectiveKey, touch]);
   useEffect(() => {
     if (economy && plotsLoaded && !loading && !settledPath && housing === null) setWelcomeOpen(true);
   }, [Boolean(economy), plotsLoaded, loading, settledPath, housing]);

@@ -799,6 +799,8 @@ button.net:hover { border-color: rgba(100, 217, 145, .6); }
 .game-view.touch .wallet strong { font-size: calc(17px * var(--text-scale)); }
 .game-view.touch .needs-mini { width: 124px; padding: 5px 8px !important; }
 .game-view.touch .net { padding: 3px 8px !important; font-size: 11px; }
+/* Phones: the neighbour count lives in the phone and saving is silent; the pill only shows while connecting or offline. */
+.game-view.touch .net.connected, .game-view.touch .save-state { display: none; }
 .game-view.touch .hud-buttons { left: auto; right: calc(8px + var(--sr)); top: calc(var(--hud-top, 96px) + var(--st)); bottom: auto; flex-direction: column; gap: 8px; }
 .game-view.touch .hud-buttons button { width: 44px; height: 44px; padding: 0; display: grid; place-items: center; font-size: 20px; border-radius: 12px; }
 .game-view.touch .hud-buttons button span { display: none; }
